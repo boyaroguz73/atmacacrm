@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import Link from 'next/link';
 import api from '@/lib/api';
 import { formatPhone } from '@/lib/utils';
 import {
@@ -22,8 +23,9 @@ import {
   MessageSquare,
   Send,
   Store,
-  Loader2,
-} from 'lucide-react';
+    Loader2,
+    ClipboardList,
+  } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { LEAD_STATUSES, SOURCES } from '@/lib/constants';
 import ContactAvatar from '@/components/ui/ContactAvatar';
@@ -538,6 +540,14 @@ export default function ContactPanel({
                   Potansiyel Müşteri Olarak İşaretle
                 </button>
               )}
+
+              <Link
+                href={`/quotes/new?contactId=${contact.id}`}
+                className="w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-purple-50 text-purple-700 rounded-xl text-xs font-medium hover:bg-purple-100 transition-colors"
+              >
+                <ClipboardList className="w-3.5 h-3.5" />
+                Teklif Oluştur
+              </Link>
             </div>
           )}
         </div>

@@ -10,7 +10,37 @@ datasource db {
 enum UserRole {
   SUPERADMIN
   ADMIN
+  ACCOUNTANT
   AGENT
+}
+
+enum QuoteStatus {
+  DRAFT
+  SENT
+  ACCEPTED
+  REJECTED
+  EXPIRED
+}
+
+enum OrderStatus {
+  PENDING
+  PROCESSING
+  SHIPPED
+  DELIVERED
+  CANCELLED
+}
+
+enum AccInvoiceStatus {
+  PENDING
+  SENT
+  PAID
+  OVERDUE
+  CANCELLED
+}
+
+enum DiscountType {
+  PERCENT
+  AMOUNT
 }
 
 enum LeadStatus {
@@ -186,6 +216,9 @@ model User {
   assignedTickets   SupportTicket[]    @relation("TicketAssignee")
   ticketMessages    TicketMessage[]    @relation("TicketMessages")
   passwordResets    PasswordReset[]
+  createdQuotes          Quote[]             @relation("QuoteCreator")
+  createdOrders          SalesOrder[]        @relation("OrderCreator")
+  createdAccInvoices     AccountingInvoice[] @relation("AccInvoiceCreator")
 
   @@index([organizationId])
   @@map("users")
@@ -230,6 +263,9 @@ model Contact {
   conversations Conversation[]
   lead          Lead?
   tasks         Task[]
+  quotes             Quote[]
+  orders             SalesOrder[]
+  accountingInvoices AccountingInvoice[]
 
   @@index([phone])
   @@index([organizationId])
@@ -528,4 +564,161 @@ model OrgIntegration {
   @@unique([organizationId, integrationKey])
   @@index([organizationId])
   @@map("org_integrations")
+}
+
+// ─── Products ───
+
+model Product {
+  id          String   @id @default(uuid())
+  sku         String   @unique
+  name        String
+  description String?
+  unit        String   @default("Adet")
+  unitPrice   Float
+  currency    String   @default("TRY")
+  vatRate     Int      @default(20)
+  stock       Int?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  quoteItems QuoteItem[]
+  orderItems OrderItem[]
+
+  @@index([sku])
+  @@map("products")
+}
+
+// ─── Quotes ───
+
+model Quote {
+  id            String       @id @default(uuid())
+  quoteNumber   Int          @unique @default(autoincrement())
+  contactId     String
+  createdById   String
+  status        QuoteStatus  @default(DRAFT)
+  currency      String       @default("TRY")
+  subtotal      Float        @default(0)
+  discountType  DiscountType @default(PERCENT)
+  discountValue Float        @default(0)
+  discountTotal Float        @default(0)
+  vatTotal      Float        @default(0)
+  grandTotal    Float        @default(0)
+  validUntil    DateTime?
+  deliveryDate  DateTime?
+  notes         String?
+  pdfUrl        String?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  contact   Contact      @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  createdBy User         @relation("QuoteCreator", fields: [createdById], references: [id])
+  items     QuoteItem[]
+  order     SalesOrder?
+  invoice   AccountingInvoice?
+
+  @@index([contactId])
+  @@index([status])
+  @@index([createdAt(sort: Desc)])
+  @@map("quotes")
+}
+
+model QuoteItem {
+  id            String        @id @default(uuid())
+  quoteId       String
+  productId     String?
+  name          String
+  description   String?
+  quantity      Float         @default(1)
+  unitPrice     Float
+  vatRate       Int           @default(20)
+  discountType  DiscountType? @default(PERCENT)
+  discountValue Float?        @default(0)
+  lineTotal     Float         @default(0)
+
+  quote   Quote    @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  product Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  @@index([quoteId])
+  @@map("quote_items")
+}
+
+// ─── Orders ───
+
+model SalesOrder {
+  id              String      @id @default(uuid())
+  orderNumber     Int         @unique @default(autoincrement())
+  quoteId         String?     @unique
+  contactId       String
+  createdById     String
+  status          OrderStatus @default(PENDING)
+  currency        String      @default("TRY")
+  subtotal        Float       @default(0)
+  vatTotal        Float       @default(0)
+  grandTotal      Float       @default(0)
+  shippingAddress String?
+  notes           String?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  quote     Quote?             @relation(fields: [quoteId], references: [id], onDelete: SetNull)
+  contact   Contact            @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  createdBy User               @relation("OrderCreator", fields: [createdById], references: [id])
+  items     OrderItem[]
+  invoice   AccountingInvoice?
+
+  @@index([contactId])
+  @@index([status])
+  @@index([createdAt(sort: Desc)])
+  @@map("sales_orders")
+}
+
+model OrderItem {
+  id        String  @id @default(uuid())
+  orderId   String
+  productId String?
+  name      String
+  quantity  Float   @default(1)
+  unitPrice Float
+  vatRate   Int     @default(20)
+  lineTotal Float   @default(0)
+
+  order   SalesOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product Product?   @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  @@index([orderId])
+  @@map("order_items")
+}
+
+// ─── Accounting Invoices ───
+
+model AccountingInvoice {
+  id              String           @id @default(uuid())
+  invoiceNumber   Int              @unique @default(autoincrement())
+  orderId         String?          @unique
+  quoteId         String?          @unique
+  contactId       String
+  createdById     String
+  status          AccInvoiceStatus @default(PENDING)
+  currency        String           @default("TRY")
+  subtotal        Float            @default(0)
+  vatTotal        Float            @default(0)
+  grandTotal      Float            @default(0)
+  dueDate         DateTime?
+  paidAt          DateTime?
+  pdfUrl          String?
+  uploadedPdfUrl  String?
+  notes           String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  order     SalesOrder? @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  quote     Quote?      @relation(fields: [quoteId], references: [id], onDelete: SetNull)
+  contact   Contact     @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  createdBy User        @relation("AccInvoiceCreator", fields: [createdById], references: [id])
+
+  @@index([contactId])
+  @@index([status])
+  @@index([createdAt(sort: Desc)])
+  @@map("accounting_invoices")
 }

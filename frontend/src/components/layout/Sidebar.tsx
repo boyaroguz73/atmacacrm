@@ -37,6 +37,10 @@ import {
   Plug,
   ShoppingCart,
   ShoppingBag,
+  Receipt,
+  ClipboardList,
+  Calculator,
+  Truck,
 } from 'lucide-react';
 
 interface SubItem {
@@ -55,6 +59,7 @@ interface MenuItem {
   icon: any;
   adminOnly?: boolean;
   superOnly?: boolean;
+  accountantVisible?: boolean;
   separator?: boolean;
   children?: SubItem[];
 }
@@ -74,6 +79,26 @@ const menuItems: MenuItem[] = [
   },
   { href: '/contacts', label: 'Kişiler', icon: Users },
   { href: '/leads', label: 'Potansiyel Müşteriler', icon: Target },
+  { href: '/products', label: 'Ürünler', icon: ShoppingBag, adminOnly: true },
+  {
+    href: '/quotes',
+    label: 'Teklifler',
+    icon: ClipboardList,
+    children: [
+      { href: '/quotes', label: 'Teklif Listesi', icon: ClipboardList },
+      { href: '/quotes/new', label: 'Yeni Teklif', icon: Receipt, adminOnly: true },
+    ],
+  },
+  { href: '/orders', label: 'Siparişler', icon: Truck },
+  {
+    href: '/accounting',
+    label: 'Muhasebe',
+    icon: Calculator,
+    accountantVisible: true,
+    children: [
+      { href: '/accounting/invoices', label: 'Faturalar', icon: Receipt },
+    ],
+  },
   { href: '/tasks', label: 'Görevler', icon: CalendarCheck },
   { href: '/calendar', label: 'Takvim', icon: CalendarDays },
   {
@@ -140,11 +165,14 @@ export default function Sidebar() {
     };
   }, [isAdmin, isSuperAdmin]);
 
+  const isAccountant = user?.role === 'ACCOUNTANT';
+
   const visibleMenuItems = useMemo(() => {
     const filtered = menuItems.filter((item) => {
       if (isSuperAdmin) return !!item.superOnly;
       if (item.superOnly) return false;
       if (item.adminOnly) return isAdmin;
+      if (item.accountantVisible) return isAdmin || isAccountant;
       return true;
     });
     if (!isSuperAdmin && isAdmin && ecommerceMenuVisible) {

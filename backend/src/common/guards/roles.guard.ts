@@ -5,6 +5,7 @@ import { ROLES_KEY } from '../decorators/roles.decorator';
 const ROLE_HIERARCHY: Record<string, number> = {
   SUPERADMIN: 100,
   ADMIN: 50,
+  ACCOUNTANT: 30,
   AGENT: 10,
 };
 

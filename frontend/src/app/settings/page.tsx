@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import api, { getApiErrorMessage } from '@/lib/api';
+import { useAuthStore } from '@/store/auth';
 import {
   Users,
   Loader2,
@@ -44,6 +45,7 @@ const roleLabels: Record<string, string> = {
 };
 
 export default function SettingsPage() {
+  const { user: currentUser } = useAuthStore();
   const [users, setUsers] = useState<UserItem[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -465,6 +467,54 @@ export default function SettingsPage() {
             </button>
           </div>
         </div>
+
+        {/* PDF Şablon Ayarları */}
+        {(currentUser?.role === 'ADMIN' || currentUser?.role === 'SUPERADMIN') && (
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 space-y-4">
+            <h2 className="text-lg font-semibold text-gray-900">PDF Şablon Ayarları</h2>
+            <p className="text-xs text-gray-400">Teklif ve fatura PDF belgelerinde kullanılacak firma bilgileri</p>
+            {[
+              { key: 'pdf_company_name', label: 'Firma Adı', type: 'text' },
+              { key: 'pdf_company_address', label: 'Firma Adresi', type: 'text' },
+              { key: 'pdf_company_phone', label: 'Telefon', type: 'text' },
+              { key: 'pdf_company_email', label: 'E-posta', type: 'text' },
+              { key: 'pdf_company_tax_office', label: 'Vergi Dairesi', type: 'text' },
+              { key: 'pdf_company_tax_number', label: 'Vergi No', type: 'text' },
+              { key: 'pdf_bank_info', label: 'Banka Bilgileri (IBAN vb.)', type: 'textarea' },
+              { key: 'pdf_terms', label: 'Ödeme Koşulları', type: 'textarea' },
+              { key: 'pdf_footer_note', label: 'Alt Not', type: 'text' },
+            ].map((field) => (
+              <div key={field.key}>
+                <label className="block text-sm font-medium text-gray-700 mb-1">{field.label}</label>
+                {field.type === 'textarea' ? (
+                  <textarea
+                    defaultValue={settings.find((s) => s.key === field.key)?.value || ''}
+                    onBlur={async (e) => {
+                      try {
+                        await api.patch('/system-settings', { key: field.key, value: e.target.value });
+                        toast.success(`${field.label} güncellendi`);
+                      } catch { toast.error('Güncellenemedi'); }
+                    }}
+                    rows={2}
+                    className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-whatsapp resize-y"
+                  />
+                ) : (
+                  <input
+                    type="text"
+                    defaultValue={settings.find((s) => s.key === field.key)?.value || ''}
+                    onBlur={async (e) => {
+                      try {
+                        await api.patch('/system-settings', { key: field.key, value: e.target.value });
+                        toast.success(`${field.label} güncellendi`);
+                      } catch { toast.error('Güncellenemedi'); }
+                    }}
+                    className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-whatsapp"
+                  />
+                )}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Add User Modal */}

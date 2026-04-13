@@ -26,6 +26,11 @@ import { SystemModule } from './modules/system/system.module';
 import { MailModule } from './modules/mail/mail.module';
 import { IntegrationsModule } from './modules/integrations/integrations.module';
 import { EcommerceModule } from './modules/ecommerce/ecommerce.module';
+import { ProductsModule } from './modules/products/products.module';
+import { QuotesModule } from './modules/quotes/quotes.module';
+import { OrdersModule } from './modules/orders/orders.module';
+import { AccountingModule } from './modules/accounting/accounting.module';
+import { PdfModule } from './modules/pdf/pdf.module';
 import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerGuard } from '@nestjs/throttler';
 
@@ -58,6 +63,11 @@ import { ThrottlerGuard } from '@nestjs/throttler';
     SystemModule,
     IntegrationsModule,
     EcommerceModule,
+    PdfModule,
+    ProductsModule,
+    QuotesModule,
+    OrdersModule,
+    AccountingModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },
