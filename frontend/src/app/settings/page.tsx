@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import api from '@/lib/api';
+import api, { getApiErrorMessage } from '@/lib/api';
 import {
   Users,
   Loader2,
@@ -20,6 +20,8 @@ import {
   MessageSquareMore,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+
+const AVATAR_REFRESH_FORCE_KEY = 'crm_settings_avatar_refresh_force';
 
 interface UserItem {
   id: string;
@@ -59,6 +61,26 @@ export default function SettingsPage() {
   const [internalChatEnabled, setInternalChatEnabled] = useState(false);
   /** Toplu avatar: true ise zaten fotoğrafı olan kişiler de WAHA'dan yeniden çekilir */
   const [avatarRefreshForce, setAvatarRefreshForce] = useState(false);
+
+  useEffect(() => {
+    try {
+      if (localStorage.getItem(AVATAR_REFRESH_FORCE_KEY) === '1') {
+        setAvatarRefreshForce(true);
+      }
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  const setAvatarRefreshForcePersist = (value: boolean) => {
+    setAvatarRefreshForce(value);
+    try {
+      if (value) localStorage.setItem(AVATAR_REFRESH_FORCE_KEY, '1');
+      else localStorage.removeItem(AVATAR_REFRESH_FORCE_KEY);
+    } catch {
+      /* ignore */
+    }
+  };
 
   const fetchUsers = async () => {
     try {
@@ -411,11 +433,14 @@ export default function SettingsPage() {
                 <input
                   type="checkbox"
                   checked={avatarRefreshForce}
-                  onChange={(e) => setAvatarRefreshForce(e.target.checked)}
+                  onChange={(e) => setAvatarRefreshForcePersist(e.target.checked)}
                   className="rounded border-gray-300 text-whatsapp focus:ring-whatsapp"
                 />
                 Mevcut profil fotoğraflarını da WAHA&apos;dan yeniden indir (daha yavaş)
               </label>
+              <p className="text-[10px] text-gray-400 mt-1">
+                Bu kutu tarayıcıda hatırlanır; asıl yenileme <strong>Güncelle</strong> ile çalışır.
+              </p>
             </div>
             <button
               onClick={async () => {
@@ -423,11 +448,11 @@ export default function SettingsPage() {
                 if (btn) btn.setAttribute('disabled', 'true');
                 try {
                   const { data } = await api.post('/contacts/refresh-all-avatars', {
-                    force: avatarRefreshForce,
+                    force: !!avatarRefreshForce,
                   });
                   toast.success(data.message || `${data.updated} fotoğraf güncellendi`);
-                } catch {
-                  toast.error('Fotoğraf güncelleme başarısız');
+                } catch (err) {
+                  toast.error(getApiErrorMessage(err, 'Fotoğraf güncelleme başarısız'));
                 } finally {
                   if (btn) btn.removeAttribute('disabled');
                 }

@@ -21,6 +21,7 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { PrismaService } from '../prisma/prisma.service';
 import { whereWhatsappSessionsForOrg, requireOrgId, assertBelongsToOrg } from '../../common/org-session-scope';
+import { RefreshAllAvatarsDto } from './dto/refresh-all-avatars.dto';
 
 @ApiTags('Contacts')
 @ApiBearerAuth()
@@ -117,9 +118,9 @@ export class ContactsController {
   @Roles('ADMIN')
   async refreshAllAvatars(
     @Req() req: any,
-    @Body('force') forceParam?: boolean,
+    @Body() body: RefreshAllAvatarsDto,
   ) {
-    const force = forceParam === true;
+    const force = body.force === true;
     const u = req.user as { role?: string; organizationId?: string | null };
     const dbSessions = await this.prisma.whatsappSession.findMany({
       where: whereWhatsappSessionsForOrg(u, { status: 'WORKING' }),
@@ -132,12 +133,15 @@ export class ContactsController {
       return { message: 'Aktif oturum bulunamadı', updated: 0 };
     }
 
+    const orgFilter =
+      u.role === 'SUPERADMIN'
+        ? workingSession.organizationId ?? undefined
+        : u.organizationId ?? undefined;
+
     const { contacts } = await this.contactsService.findAll({
       page: 1,
       limit: 99999,
-      ...(u.role !== 'SUPERADMIN' && u.organizationId
-        ? { organizationId: u.organizationId }
-        : {}),
+      ...(orgFilter ? { organizationId: orgFilter } : {}),
     });
     let updated = 0;
 
