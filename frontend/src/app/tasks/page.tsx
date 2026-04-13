@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import api from '@/lib/api';
 import { useAuthStore } from '@/store/auth';
 import { formatPhone } from '@/lib/utils';
@@ -13,6 +13,7 @@ import {
   CalendarClock,
   User,
   Phone,
+  Search,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import DateRangePicker from '@/components/ui/DateRangePicker';
@@ -43,9 +44,48 @@ export default function TasksPage() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<string>('PENDING');
   const [showForm, setShowForm] = useState(false);
-  const [newTask, setNewTask] = useState({ title: '', description: '', dueAt: '' });
+  const [newTask, setNewTask] = useState({ title: '', description: '', dueAt: '', contactId: '' });
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+
+  const [contactQuery, setContactQuery] = useState('');
+  const [contactResults, setContactResults] = useState<{ id: string; name: string | null; phone: string }[]>([]);
+  const [selectedContact, setSelectedContact] = useState<{ id: string; name: string | null; phone: string } | null>(null);
+  const [contactDropdownOpen, setContactDropdownOpen] = useState(false);
+  const contactSearchRef = useRef<HTMLInputElement>(null);
+  const contactDebounceRef = useRef<ReturnType<typeof setTimeout>>();
+
+  const searchContacts = useCallback(async (q: string) => {
+    if (q.length < 2) { setContactResults([]); return; }
+    try {
+      const { data } = await api.get('/contacts', { params: { search: q, limit: 10 } });
+      setContactResults(data.contacts || []);
+    } catch {
+      setContactResults([]);
+    }
+  }, []);
+
+  const handleContactSearch = (val: string) => {
+    setContactQuery(val);
+    setContactDropdownOpen(true);
+    if (selectedContact) { setSelectedContact(null); setNewTask((t) => ({ ...t, contactId: '' })); }
+    clearTimeout(contactDebounceRef.current);
+    contactDebounceRef.current = setTimeout(() => searchContacts(val), 300);
+  };
+
+  const pickContact = (c: { id: string; name: string | null; phone: string }) => {
+    setSelectedContact(c);
+    setContactQuery(c.name ? `${c.name} (${formatPhone(c.phone)})` : formatPhone(c.phone));
+    setNewTask((t) => ({ ...t, contactId: c.id }));
+    setContactDropdownOpen(false);
+  };
+
+  const clearContact = () => {
+    setSelectedContact(null);
+    setContactQuery('');
+    setNewTask((t) => ({ ...t, contactId: '' }));
+    setContactResults([]);
+  };
 
   const isAdmin = user?.role === 'ADMIN' || user?.role === 'SUPERADMIN';
 
@@ -105,9 +145,11 @@ export default function TasksPage() {
         title: newTask.title,
         description: newTask.description || undefined,
         dueAt: new Date(newTask.dueAt).toISOString(),
+        contactId: newTask.contactId || undefined,
       });
       toast.success('Görev oluşturuldu');
-      setNewTask({ title: '', description: '', dueAt: '' });
+      setNewTask({ title: '', description: '', dueAt: '', contactId: '' });
+      clearContact();
       setShowForm(false);
       fetchTasks();
     } catch {
@@ -211,6 +253,70 @@ export default function TasksPage() {
             onChange={(e) => setNewTask({ ...newTask, description: e.target.value })}
             className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-whatsapp"
           />
+
+          {/* Kişi seçimi */}
+          <div className="relative">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <input
+                ref={contactSearchRef}
+                type="text"
+                placeholder="Kişi ara (isim veya telefon)…"
+                value={contactQuery}
+                onChange={(e) => handleContactSearch(e.target.value)}
+                onFocus={() => contactQuery.length >= 2 && setContactDropdownOpen(true)}
+                onBlur={() => setTimeout(() => setContactDropdownOpen(false), 200)}
+                className={`w-full pl-9 pr-8 py-2.5 border rounded-xl text-sm focus:outline-none transition-colors ${
+                  selectedContact
+                    ? 'border-whatsapp bg-green-50/50 text-green-800'
+                    : 'border-gray-200 focus:border-whatsapp'
+                }`}
+              />
+              {selectedContact && (
+                <button
+                  type="button"
+                  onClick={clearContact}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 text-gray-400 hover:text-red-500"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+
+            {contactDropdownOpen && contactResults.length > 0 && (
+              <div className="absolute z-20 mt-1 w-full bg-white border border-gray-200 rounded-xl shadow-lg max-h-48 overflow-y-auto">
+                {contactResults.map((c) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onMouseDown={() => pickContact(c)}
+                    className="w-full text-left px-4 py-2.5 hover:bg-gray-50 transition-colors flex items-center gap-3 border-b last:border-b-0 border-gray-50"
+                  >
+                    <div className="w-7 h-7 bg-whatsapp/10 rounded-full flex items-center justify-center flex-shrink-0">
+                      <span className="text-whatsapp font-bold text-xs">
+                        {(c.name || c.phone || '?').charAt(0).toUpperCase()}
+                      </span>
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-gray-900 truncate">
+                        {c.name || formatPhone(c.phone)}
+                      </p>
+                      {c.name && (
+                        <p className="text-[11px] text-gray-400">{formatPhone(c.phone)}</p>
+                      )}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {contactDropdownOpen && contactQuery.length >= 2 && contactResults.length === 0 && (
+              <div className="absolute z-20 mt-1 w-full bg-white border border-gray-200 rounded-xl shadow-lg px-4 py-3">
+                <p className="text-xs text-gray-400 text-center">Kişi bulunamadı</p>
+              </div>
+            )}
+          </div>
+
           <div className="flex gap-3">
             <input
               type="datetime-local"
