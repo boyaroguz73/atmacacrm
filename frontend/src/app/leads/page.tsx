@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import api from '@/lib/api';
 import { formatPhone } from '@/lib/utils';
 import { Search, DollarSign } from 'lucide-react';
@@ -160,7 +161,13 @@ export default function LeadsPage() {
               {leads.map((lead) => (
                 <tr key={lead.id} className="border-b border-gray-50 hover:bg-gray-50/50">
                   <td className="px-5 py-3 text-sm font-medium text-gray-900">
-                    {lead.contact.name || 'İsimsiz'}
+                    <Link
+                      href={`/contacts/${lead.contact.id}`}
+                      className="text-whatsapp hover:underline"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      {lead.contact.name || 'İsimsiz'}
+                    </Link>
                   </td>
                   <td className="px-5 py-3 text-sm text-gray-600">
                     {formatPhone(lead.contact.phone)}
@@ -173,6 +180,7 @@ export default function LeadsPage() {
                     <select
                       value={lead.status}
                       onChange={(e) => updateStatus(lead.id, e.target.value)}
+                      onClick={(e) => e.stopPropagation()}
                       className="text-xs border border-gray-200 rounded-lg px-2 py-1 focus:outline-none focus:border-whatsapp"
                     >
                       {STAGES.map((s) => (
@@ -198,9 +206,12 @@ export default function LeadsPage() {
               <div className="space-y-2">
                 {stage.leads.map((lead) => (
                   <div key={lead.id} className="bg-white rounded-lg p-3 shadow-sm border border-gray-100">
-                    <p className="font-medium text-sm text-gray-900 truncate">
+                    <Link
+                      href={`/contacts/${lead.contact.id}`}
+                      className="font-medium text-sm text-whatsapp hover:underline truncate block"
+                    >
                       {lead.contact.name || formatPhone(lead.contact.phone)}
-                    </p>
+                    </Link>
                     <p className="text-xs text-gray-400 mt-0.5">{formatPhone(lead.contact.phone)}</p>
                     {lead.value && (
                       <div className="flex items-center gap-1 mt-2">
@@ -210,6 +221,12 @@ export default function LeadsPage() {
                         </span>
                       </div>
                     )}
+                    <Link
+                      href={`/contacts/${lead.contact.id}`}
+                      className="mt-2 inline-block text-[11px] font-medium text-gray-500 hover:text-whatsapp"
+                    >
+                      Detay →
+                    </Link>
                   </div>
                 ))}
               </div>

@@ -57,6 +57,8 @@ export default function SettingsPage() {
 
   const [settings, setSettings] = useState<SystemSettingItem[]>([]);
   const [internalChatEnabled, setInternalChatEnabled] = useState(false);
+  /** Toplu avatar: true ise zaten fotoğrafı olan kişiler de WAHA'dan yeniden çekilir */
+  const [avatarRefreshForce, setAvatarRefreshForce] = useState(false);
 
   const fetchUsers = async () => {
     try {
@@ -402,15 +404,27 @@ export default function SettingsPage() {
               </p>
               <p className="text-xs text-gray-400 mt-0.5">
                 Bu organizasyondaki kişiler için, org oturumları üzerinden profil
-                fotoğraflarını yeniler
+                fotoğraflarını yeniler. Varsayılan yalnızca <strong>fotoğrafı olmayan</strong>{' '}
+                kişileri işler; mevcutları da yenilemek için aşağıdaki kutuyu işaretleyin.
               </p>
+              <label className="flex items-center gap-2 mt-2 text-xs text-gray-600 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={avatarRefreshForce}
+                  onChange={(e) => setAvatarRefreshForce(e.target.checked)}
+                  className="rounded border-gray-300 text-whatsapp focus:ring-whatsapp"
+                />
+                Mevcut profil fotoğraflarını da WAHA&apos;dan yeniden indir (daha yavaş)
+              </label>
             </div>
             <button
               onClick={async () => {
                 const btn = document.getElementById('sync-avatars-btn');
                 if (btn) btn.setAttribute('disabled', 'true');
                 try {
-                  const { data } = await api.post('/contacts/refresh-all-avatars');
+                  const { data } = await api.post('/contacts/refresh-all-avatars', {
+                    force: avatarRefreshForce,
+                  });
                   toast.success(data.message || `${data.updated} fotoğraf güncellendi`);
                 } catch {
                   toast.error('Fotoğraf güncelleme başarısız');

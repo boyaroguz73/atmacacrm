@@ -4,6 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/store/auth';
+import { getApiErrorMessage } from '@/lib/api';
 import toast from 'react-hot-toast';
 import { MessageSquare } from 'lucide-react';
 
@@ -25,8 +26,8 @@ export default function LoginPage() {
       } else {
         router.push('/dashboard');
       }
-    } catch {
-      toast.error('Geçersiz e-posta veya şifre');
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, 'Geçersiz e-posta veya şifre'));
     }
   };
 

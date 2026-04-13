@@ -1,10 +1,23 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import api from '@/lib/api';
 import { formatPhone } from '@/lib/utils';
-import { Search, ChevronRight, ChevronLeft, ChevronsLeft, ChevronsRight, RefreshCw } from 'lucide-react';
+import {
+  Search,
+  ChevronRight,
+  ChevronLeft,
+  ChevronsLeft,
+  ChevronsRight,
+  RefreshCw,
+  UserPlus,
+  MessageSquare,
+  Loader2,
+  X,
+} from 'lucide-react';
 import toast from 'react-hot-toast';
+import { useChatStore } from '@/store/chat';
 import DateRangePicker from '@/components/ui/DateRangePicker';
 import ContactAvatar from '@/components/ui/ContactAvatar';
 import EcommerceCustomerBadge from '@/components/ui/EcommerceCustomerBadge';
@@ -26,6 +39,7 @@ interface Contact {
 }
 
 export default function ContactsPage() {
+  const router = useRouter();
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
@@ -36,6 +50,110 @@ export default function ContactsPage() {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [refreshingAvatars, setRefreshingAvatars] = useState(false);
+
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createSubmitting, setCreateSubmitting] = useState(false);
+  const [sessions, setSessions] = useState<{ id: string; name: string; status: string }[]>([]);
+  const [userRole, setUserRole] = useState<string | null>(null);
+  const [form, setForm] = useState({
+    phone: '',
+    name: '',
+    surname: '',
+    email: '',
+    notes: '',
+    source: '',
+    openChat: true,
+    sessionId: '',
+    organizationId: '',
+  });
+
+  const loadSessionsForModal = async () => {
+    try {
+      const { data } = await api.get('/sessions');
+      const list = Array.isArray(data) ? data : [];
+      setSessions(
+        list
+          .filter((s: { status?: string }) => s.status === 'WORKING')
+          .map((s: { id: string; name: string; status: string }) => ({
+            id: s.id,
+            name: s.name,
+            status: s.status,
+          })),
+      );
+    } catch {
+      setSessions([]);
+    }
+  };
+
+  const openCreateModal = () => {
+    try {
+      const raw = localStorage.getItem('user');
+      if (raw) setUserRole(JSON.parse(raw).role ?? null);
+    } catch {
+      setUserRole(null);
+    }
+    setForm({
+      phone: '',
+      name: '',
+      surname: '',
+      email: '',
+      notes: '',
+      source: '',
+      openChat: true,
+      sessionId: '',
+      organizationId: '',
+    });
+    setCreateOpen(true);
+    loadSessionsForModal();
+  };
+
+  const submitCreate = async (opts?: { forceOpenChat?: boolean }) => {
+    const openChat = opts?.forceOpenChat ?? form.openChat;
+    if (!form.phone.trim()) {
+      toast.error('Telefon numarası gerekli');
+      return;
+    }
+    if (userRole === 'SUPERADMIN' && !form.organizationId.trim()) {
+      toast.error('Organizasyon ID gerekli');
+      return;
+    }
+    setCreateSubmitting(true);
+    try {
+      const { data } = await api.post('/contacts', {
+        phone: form.phone.trim(),
+        name: form.name.trim() || undefined,
+        surname: form.surname.trim() || undefined,
+        email: form.email.trim() || undefined,
+        notes: form.notes.trim() || undefined,
+        source: form.source.trim() || undefined,
+        openChat,
+        sessionId: form.sessionId || undefined,
+        organizationId:
+          userRole === 'SUPERADMIN' ? form.organizationId.trim() : undefined,
+      });
+
+      toast.success('Kişi kaydedildi');
+      setCreateOpen(false);
+      fetchContacts(search, page);
+
+      if (data.conversation) {
+        useChatStore.getState().setListFilter(undefined);
+        useChatStore.getState().setActiveConversation(data.conversation);
+        useChatStore.getState().fetchConversations();
+        router.push('/inbox');
+      } else if (openChat) {
+        toast('Çalışan WhatsApp oturumu yok; kişi kaydı tamam, sohbet açılamadı', {
+          icon: 'ℹ️',
+        });
+      }
+    } catch (err: unknown) {
+      const msg =
+        (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      toast.error(msg || 'Kayıt başarısız');
+    } finally {
+      setCreateSubmitting(false);
+    }
+  };
 
   const fetchContacts = async (q?: string, p?: number) => {
     setLoading(true);
@@ -82,7 +200,15 @@ export default function ContactsPage() {
             Toplam {total} kişi{totalPages > 1 ? ` · Sayfa ${page}/${totalPages}` : ''}
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
+          <button
+            type="button"
+            onClick={openCreateModal}
+            className="flex items-center gap-2 px-4 py-2 bg-whatsapp text-white rounded-xl text-sm font-medium hover:opacity-95 shadow-sm"
+          >
+            <UserPlus className="w-4 h-4" />
+            Yeni kişi
+          </button>
           <button
             onClick={async () => {
               setRefreshingAvatars(true);
@@ -113,6 +239,154 @@ export default function ContactsPage() {
           />
         </div>
       </div>
+
+      {createOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40"
+          role="presentation"
+          onClick={() => !createSubmitting && setCreateOpen(false)}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto border border-gray-100"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-labelledby="create-contact-title"
+          >
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+              <h2 id="create-contact-title" className="text-lg font-bold text-gray-900">
+                Yeni kişi kaydı
+              </h2>
+              <button
+                type="button"
+                disabled={createSubmitting}
+                onClick={() => setCreateOpen(false)}
+                className="p-2 rounded-lg text-gray-400 hover:bg-gray-100"
+                aria-label="Kapat"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-5 space-y-3">
+              {userRole === 'SUPERADMIN' && (
+                <label className="block text-sm">
+                  <span className="text-gray-600 font-medium">Organizasyon ID</span>
+                  <input
+                    className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl text-sm"
+                    value={form.organizationId}
+                    onChange={(e) => setForm((f) => ({ ...f, organizationId: e.target.value }))}
+                    placeholder="UUID"
+                  />
+                </label>
+              )}
+              <label className="block text-sm">
+                <span className="text-gray-600 font-medium">Telefon *</span>
+                <input
+                  className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl text-sm"
+                  value={form.phone}
+                  onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
+                  placeholder="Örn. 0555 123 45 67"
+                />
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                <label className="block text-sm">
+                  <span className="text-gray-600 font-medium">Ad</span>
+                  <input
+                    className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl text-sm"
+                    value={form.name}
+                    onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+                  />
+                </label>
+                <label className="block text-sm">
+                  <span className="text-gray-600 font-medium">Soyad</span>
+                  <input
+                    className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl text-sm"
+                    value={form.surname}
+                    onChange={(e) => setForm((f) => ({ ...f, surname: e.target.value }))}
+                  />
+                </label>
+              </div>
+              <label className="block text-sm">
+                <span className="text-gray-600 font-medium">E-posta</span>
+                <input
+                  type="email"
+                  className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl text-sm"
+                  value={form.email}
+                  onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+                />
+              </label>
+              <label className="block text-sm">
+                <span className="text-gray-600 font-medium">Kaynak</span>
+                <input
+                  className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl text-sm"
+                  value={form.source}
+                  onChange={(e) => setForm((f) => ({ ...f, source: e.target.value }))}
+                  placeholder="Opsiyonel"
+                />
+              </label>
+              <label className="block text-sm">
+                <span className="text-gray-600 font-medium">Not</span>
+                <textarea
+                  rows={2}
+                  className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl text-sm resize-y"
+                  value={form.notes}
+                  onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
+                />
+              </label>
+              {sessions.length > 0 && (
+                <label className="block text-sm">
+                  <span className="text-gray-600 font-medium">WhatsApp oturumu (sohbet için)</span>
+                  <select
+                    className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl text-sm bg-white"
+                    value={form.sessionId}
+                    onChange={(e) => setForm((f) => ({ ...f, sessionId: e.target.value }))}
+                  >
+                    <option value="">Varsayılan (en son aktif)</option>
+                    {sessions.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              {sessions.length === 0 && (
+                <p className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+                  Çalışan WhatsApp oturumu yok. Kişi yine de kaydedilir; sohbet açmak için oturumu bağlayın.
+                </p>
+              )}
+              <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={form.openChat}
+                  onChange={(e) => setForm((f) => ({ ...f, openChat: e.target.checked }))}
+                  className="rounded border-gray-300 text-whatsapp focus:ring-whatsapp"
+                />
+                Kayıttan sonra gelen kutusunda sohbeti aç
+              </label>
+            </div>
+            <div className="flex flex-wrap gap-2 px-5 py-4 border-t border-gray-100 bg-gray-50/50">
+              <button
+                type="button"
+                disabled={createSubmitting}
+                onClick={() => submitCreate()}
+                className="flex-1 min-w-[120px] flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-gray-200 text-gray-800 text-sm font-medium hover:bg-gray-300 disabled:opacity-50"
+              >
+                {createSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                Kaydet
+              </button>
+              <button
+                type="button"
+                disabled={createSubmitting || sessions.length === 0}
+                onClick={() => submitCreate({ forceOpenChat: true })}
+                className="flex-1 min-w-[140px] flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-whatsapp text-white text-sm font-medium hover:opacity-95 disabled:opacity-50"
+              >
+                <MessageSquare className="w-4 h-4" />
+                Kaydet ve mesaj gönder
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="relative max-w-md">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -153,7 +427,19 @@ export default function ContactsPage() {
               </tr>
             ) : (
               contacts.map((contact) => (
-                <tr key={contact.id} className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors">
+                <tr
+                  key={contact.id}
+                  role="link"
+                  tabIndex={0}
+                  onClick={() => router.push(`/contacts/${contact.id}`)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      router.push(`/contacts/${contact.id}`);
+                    }
+                  }}
+                  className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors cursor-pointer"
+                >
                   <td className="px-5 py-3">
                     <div className="flex items-center gap-3">
                       <ContactAvatar

@@ -63,10 +63,13 @@ interface ChatState {
   isLoadingMessages: boolean;
   searchQuery: string;
   sessionFilter: string | null;
+  /** Gelen kutusu URL filtresi (senkron / arama sonrası liste için korunur) */
+  listFilter: string | undefined;
 
   setSearchQuery: (q: string) => void;
   setSessionFilter: (id: string | null) => void;
-  fetchConversations: (filter?: string) => Promise<void>;
+  setListFilter: (filter: string | undefined) => void;
+  fetchConversations: () => Promise<void>;
   setActiveConversation: (conv: Conversation) => void;
   fetchMessages: (conversationId: string) => Promise<void>;
   sendMessage: (params: {
@@ -97,18 +100,20 @@ export const useChatStore = create<ChatState>((set, get) => ({
   isLoadingMessages: false,
   searchQuery: '',
   sessionFilter: null,
+  listFilter: undefined,
 
   setSearchQuery: (q) => set({ searchQuery: q }),
   setSessionFilter: (id) => set({ sessionFilter: id }),
+  setListFilter: (filter) => set({ listFilter: filter }),
 
-  fetchConversations: async (filter?: string) => {
+  fetchConversations: async () => {
     set({ isLoadingConversations: true });
     try {
       const params: any = {};
-      const { searchQuery, sessionFilter } = get();
+      const { searchQuery, sessionFilter, listFilter } = get();
       if (searchQuery) params.search = searchQuery;
       if (sessionFilter) params.sessionId = sessionFilter;
-      if (filter) params.filter = filter;
+      if (listFilter) params.filter = listFilter;
 
       const { data } = await api.get('/conversations', { params });
       const sorted = [...(data.conversations || [])].sort(
@@ -139,17 +144,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const { data } = await api.get(`/messages/conversation/${conversationId}`);
       set({ messages: data.messages || [], isLoadingMessages: false });
 
-      api.post(`/conversations/${conversationId}/sync`)
-        .then(({ data: syncResult }) => {
-          if (syncResult.synced > 0) {
-            api.get(`/messages/conversation/${conversationId}`).then(({ data: fresh }) => {
-              const current = get();
-              if (current.activeConversation?.id === conversationId) {
-                set({ messages: fresh.messages || [] });
-              }
-            });
-            get().fetchConversations();
-          }
+      api
+        .post(`/conversations/${conversationId}/sync`)
+        .then(() =>
+          api.get(`/messages/conversation/${conversationId}`).then(({ data: fresh }) => {
+            const current = get();
+            if (current.activeConversation?.id === conversationId) {
+              set({ messages: fresh.messages || [] });
+            }
+          }),
+        )
+        .then(() => {
+          get().fetchConversations();
         })
         .catch(() => {});
     } catch {
@@ -256,7 +262,17 @@ export const useChatStore = create<ChatState>((set, get) => ({
           new Date(b.lastMessageAt).getTime() -
           new Date(a.lastMessageAt).getTime(),
       );
-      return { conversations };
+
+      let activeConversation = state.activeConversation;
+      if (activeConversation?.id === conversation.id) {
+        activeConversation = {
+          ...conversation,
+          unreadCount: 0,
+          contact: conversation.contact ?? activeConversation.contact,
+        };
+      }
+
+      return { conversations, activeConversation };
     });
   },
 

@@ -10,6 +10,7 @@ import {
   Delete,
   Logger,
   Req,
+  BadRequestException,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { ContactsService } from './contacts.service';
@@ -56,10 +57,69 @@ export class ContactsController {
     });
   }
 
+  /** Manuel kişi kaydı; openChat ile çalışan oturumda görüşme açılır */
+  @Post()
+  async create(
+    @CurrentUser()
+    user: {
+      id: string;
+      role: string;
+      organizationId?: string | null;
+    },
+    @Body()
+    body: {
+      phone: string;
+      name?: string;
+      surname?: string;
+      email?: string;
+      source?: string;
+      notes?: string;
+      company?: string;
+      city?: string;
+      organizationId?: string;
+      openChat?: boolean;
+      sessionId?: string;
+    },
+  ) {
+    let sessionId: string | undefined;
+    if (body.openChat) {
+      const sessions = await this.prisma.whatsappSession.findMany({
+        where: whereWhatsappSessionsForOrg(user, { status: 'WORKING' }),
+        orderBy: { updatedAt: 'desc' },
+      });
+      if (body.sessionId) {
+        const pick = sessions.find((s) => s.id === body.sessionId);
+        if (!pick) {
+          throw new BadRequestException('Seçilen oturum bulunamadı veya çalışmıyor');
+        }
+        sessionId = pick.id;
+      } else if (sessions[0]) {
+        sessionId = sessions[0].id;
+      }
+    }
+
+    return this.contactsService.createContact(user, {
+      phone: body.phone,
+      name: body.name,
+      surname: body.surname,
+      email: body.email,
+      source: body.source,
+      notes: body.notes,
+      company: body.company,
+      city: body.city,
+      organizationId: body.organizationId,
+      sessionId: sessionId ?? null,
+    });
+  }
+
   @Post('refresh-all-avatars')
   @UseGuards(RolesGuard)
   @Roles('ADMIN')
-  async refreshAllAvatars(@Req() req: any) {
+  async refreshAllAvatars(
+    @Req() req: any,
+    @Body('force') forceParam?: boolean,
+  ) {
+    const force = forceParam === true;
     const u = req.user as { role?: string; organizationId?: string | null };
     const dbSessions = await this.prisma.whatsappSession.findMany({
       where: whereWhatsappSessionsForOrg(u, { status: 'WORKING' }),
@@ -73,7 +133,8 @@ export class ContactsController {
     }
 
     const { contacts } = await this.contactsService.findAll({
-      limit: 1000,
+      page: 1,
+      limit: 99999,
       ...(u.role !== 'SUPERADMIN' && u.organizationId
         ? { organizationId: u.organizationId }
         : {}),
@@ -81,7 +142,7 @@ export class ContactsController {
     let updated = 0;
 
     for (const contact of contacts) {
-      if (contact.avatarUrl) continue;
+      if (!force && contact.avatarUrl) continue;
 
       const pictureUrl = await this.wahaService.getProfilePicture(
         workingSession.name,

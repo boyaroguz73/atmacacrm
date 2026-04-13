@@ -14,6 +14,7 @@ export default function InboxPage() {
   const {
     activeConversation,
     fetchConversations,
+    setListFilter,
     addMessage,
     updateConversation,
     updateMessageStatus,
@@ -22,7 +23,8 @@ export default function InboxPage() {
   } = useChatStore();
 
   useEffect(() => {
-    fetchConversations(filter);
+    setListFilter(filter);
+    fetchConversations();
 
     const socket = connectSocket();
     socket.emit('join:inbox');

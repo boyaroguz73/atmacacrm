@@ -1,10 +1,10 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
+import { createPortal, flushSync } from 'react-dom';
 import { useChatStore } from '@/store/chat';
 import { getSocket } from '@/lib/socket';
-import { cn, formatTime, formatPhone } from '@/lib/utils';
+import { cn, formatTime, formatPhone, digitsOnlyPhone } from '@/lib/utils';
 import {
   Send,
   Paperclip,
@@ -84,6 +84,7 @@ export default function ChatWindow() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const prevConversationId = useRef<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const messageInputRef = useRef<HTMLInputElement>(null);
 
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [filePreview, setFilePreview] = useState<string | null>(null);
@@ -128,6 +129,9 @@ export default function ChatWindow() {
 
   useEffect(() => {
     setMessageAuthorFilter('all');
+    setText('');
+    setShowTemplates(false);
+    setTemplateSearch('');
   }, [activeConversation?.id]);
 
   useEffect(() => {
@@ -208,14 +212,16 @@ export default function ChatWindow() {
   const contact = activeConversation.contact;
   if (!contact?.phone) return null;
 
-  const chatId = `${contact.phone}@c.us`;
+  const chatId = `${digitsOnlyPhone(contact.phone) || contact.phone}@c.us`;
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     const trimmed = text.trim();
     if (!trimmed || sending) return;
 
-    setText('');
+    flushSync(() => {
+      setText('');
+    });
     setSending(true);
     try {
       await sendMessage({
@@ -224,10 +230,16 @@ export default function ChatWindow() {
         chatId,
         body: trimmed,
       });
+      flushSync(() => {
+        setText('');
+      });
     } catch {
-      setText(trimmed);
+      flushSync(() => {
+        setText(trimmed);
+      });
     } finally {
       setSending(false);
+      messageInputRef.current?.focus();
     }
   };
 
@@ -768,7 +780,10 @@ export default function ChatWindow() {
                 </div>
               )}
               <input
+                ref={messageInputRef}
                 type="text"
+                autoComplete="off"
+                name="chat-composer"
                 value={editingMessage ? editText : text}
                 onChange={(e) => {
                   const val = e.target.value;

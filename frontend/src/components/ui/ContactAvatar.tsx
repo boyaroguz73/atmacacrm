@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 interface ContactAvatarProps {
   name?: string | null;
@@ -18,7 +18,19 @@ const sizeClasses: Record<string, { container: string; text: string; img: string
   xl: { container: 'w-20 h-20', text: 'text-3xl', img: 'w-20 h-20' },
 };
 
-const API_BASE = process.env.NEXT_PUBLIC_WS_URL || 'http://localhost:4000';
+/** Statik dosya (avatar) için HTTP kökü — WS adresi img src'de kullanılamaz */
+function backendOrigin(): string {
+  const api = process.env.NEXT_PUBLIC_API_URL;
+  if (api) {
+    const base = api.replace(/\/api\/?$/, '').trim();
+    if (base) return base;
+  }
+  const ws = process.env.NEXT_PUBLIC_WS_URL || '';
+  if (ws.startsWith('wss://')) return `https://${ws.slice(6)}`;
+  if (ws.startsWith('ws://')) return `http://${ws.slice(5)}`;
+  if (ws.startsWith('http')) return ws.replace(/\/api\/?$/, '');
+  return 'http://localhost:4000';
+}
 
 export default function ContactAvatar({
   name,
@@ -35,12 +47,17 @@ export default function ContactAvatar({
   const fullUrl = avatarUrl
     ? avatarUrl.startsWith('http')
       ? avatarUrl
-      : `${API_BASE}${avatarUrl}`
+      : `${backendOrigin()}${avatarUrl.startsWith('/') ? '' : '/'}${avatarUrl}`
     : null;
+
+  useEffect(() => {
+    setImgError(false);
+  }, [fullUrl]);
 
   if (fullUrl && !imgError) {
     return (
       <img
+        key={fullUrl}
         src={fullUrl}
         alt={name || phone || ''}
         className={`${s.img} rounded-full object-cover flex-shrink-0`}

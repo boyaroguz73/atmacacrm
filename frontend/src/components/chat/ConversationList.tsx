@@ -1,26 +1,33 @@
 'use client';
 
-import Link from 'next/link';
 import { useChatStore } from '@/store/chat';
 import { cn, formatDate, truncate, formatPhone } from '@/lib/utils';
-import { Search, Inbox, User, Clock, MessageCircleReply, CalendarCheck, UserX } from 'lucide-react';
-import { useState, useEffect } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { Search, Inbox } from 'lucide-react';
+import { useState, useEffect, useMemo } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
 import ContactAvatar from '@/components/ui/ContactAvatar';
 import EcommerceCustomerBadge from '@/components/ui/EcommerceCustomerBadge';
 
-const FILTER_LABELS: Record<string, { label: string; icon: any; color: string }> = {
-  unanswered: { label: 'Cevapsızlar', icon: Clock, color: 'bg-red-50 text-red-600' },
-  answered: { label: 'Cevaplananlar', icon: MessageCircleReply, color: 'bg-green-50 text-green-600' },
-  followup: { label: 'Takiptekiler', icon: CalendarCheck, color: 'bg-yellow-50 text-yellow-700' },
-  unassigned: { label: 'Atanmamış', icon: UserX, color: 'bg-orange-50 text-orange-600' },
-  mine: { label: 'Bana atananlar', icon: User, color: 'bg-blue-50 text-blue-600' },
-};
+/** URL filter → select value (tek seçim) */
+function filterToSelectValue(filter: string | undefined, isAgent: boolean): string {
+  if (!filter) return isAgent ? 'kutum' : 'all';
+  if (filter === 'mine_and_unassigned') return 'kutum';
+  return filter;
+}
+
+function selectValueToHref(value: string, isAgent: boolean): string {
+  if (value === 'kutum') return isAgent ? '/inbox?filter=mine_and_unassigned' : '/inbox';
+  if (value === 'all') return '/inbox?filter=all';
+  if (value === 'mine' || value === 'unassigned' || value === 'unanswered' || value === 'answered' || value === 'followup') {
+    return `/inbox?filter=${value}`;
+  }
+  return '/inbox';
+}
 
 export default function ConversationList() {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const filter = searchParams.get('filter') || undefined;
-  const filterInfo = filter ? FILTER_LABELS[filter] : null;
 
   const {
     conversations,
@@ -32,7 +39,7 @@ export default function ConversationList() {
     fetchConversations,
   } = useChatStore();
 
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<{ role?: string } | null>(null);
 
   useEffect(() => {
     const stored = localStorage.getItem('user');
@@ -47,85 +54,84 @@ export default function ConversationList() {
 
   const handleSearch = (q: string) => {
     setSearchQuery(q);
-    fetchConversations(filter);
+    fetchConversations();
   };
 
   const isAgent = user?.role === 'AGENT';
   const isAdmin = user?.role === 'ADMIN' || user?.role === 'SUPERADMIN';
 
-  const chipClass = (active: boolean) =>
-    cn(
-      'text-xs font-medium px-2.5 py-1.5 rounded-lg border transition-colors text-center',
-      active
-        ? 'bg-whatsapp text-white border-whatsapp shadow-sm'
-        : 'bg-gray-50 text-gray-600 border-gray-100 hover:bg-gray-100 hover:border-gray-200',
-    );
+  const selectValue = useMemo(
+    () => filterToSelectValue(filter, isAgent),
+    [filter, isAgent],
+  );
+
+  const filterLabel = useMemo(() => {
+    const map: Record<string, string> = {
+      kutum: isAgent ? 'Kutum' : 'Tüm sohbetler',
+      all: 'Tüm sohbetler',
+      mine: 'Bana atanan',
+      unassigned: 'Atanmamış',
+      unanswered: 'Cevapsızlar',
+      answered: 'Cevaplananlar',
+      followup: 'Takiptekiler',
+      mine_and_unassigned: 'Kutum',
+    };
+    return map[selectValue] || 'Mesajlar';
+  }, [selectValue, isAgent]);
 
   return (
     <div className="w-96 border-r border-gray-200 bg-white flex flex-col h-full min-w-0">
       <div className="p-4 border-b border-gray-100">
         <div className="flex items-center justify-between mb-2">
-          <h2 className="text-lg font-bold text-gray-900">
-            {filterInfo ? filterInfo.label : 'Mesajlar'}
-          </h2>
-          <div className="flex items-center gap-1.5">
-            {filterInfo && (
-              <span className={`text-[10px] px-2 py-1 rounded-full font-medium flex items-center gap-1 shrink-0 ${filterInfo.color}`}>
-                <filterInfo.icon className="w-3 h-3" />
-                {conversations.length}
-              </span>
-            )}
-          </div>
+          <h2 className="text-lg font-bold text-gray-900">{filterLabel}</h2>
+          <span className="text-[10px] px-2 py-1 rounded-full font-medium bg-gray-100 text-gray-600">
+            {conversations.length}
+          </span>
         </div>
 
-        {isAgent && (
-          <div className="flex flex-wrap gap-1.5 mb-3" role="tablist" aria-label="Görüşme filtresi">
-            <Link
-              href="/inbox"
-              className={chipClass(!filter)}
-              role="tab"
-              aria-selected={!filter}
-            >
-              Kutum
-            </Link>
-            <Link
-              href="/inbox?filter=mine"
-              className={chipClass(filter === 'mine')}
-              role="tab"
-              aria-selected={filter === 'mine'}
-            >
-              Bana atanan
-            </Link>
-            <Link
-              href="/inbox?filter=unassigned"
-              className={chipClass(filter === 'unassigned')}
-              role="tab"
-              aria-selected={filter === 'unassigned'}
-            >
-              Atanmamış
-            </Link>
-          </div>
-        )}
+        <label className="block text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-1">
+          Görüşme filtresi
+        </label>
+        <select
+          value={selectValue}
+          onChange={(e) => {
+            const v = e.target.value;
+            router.push(selectValueToHref(v, isAgent));
+          }}
+          className="w-full mb-2 px-3 py-2 text-sm border border-gray-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-whatsapp/25 focus:border-whatsapp"
+        >
+          {isAgent ? (
+            <>
+              <optgroup label="Kapsam">
+                <option value="kutum">Kutum (atanmamış + bana atanan)</option>
+                <option value="all">Tüm sohbetler</option>
+                <option value="mine">Sadece bana atanan</option>
+                <option value="unassigned">Sadece atanmamış</option>
+              </optgroup>
+              <optgroup label="Durum">
+                <option value="unanswered">Cevapsızlar</option>
+                <option value="answered">Cevaplananlar</option>
+                <option value="followup">Takiptekiler</option>
+              </optgroup>
+            </>
+          ) : (
+            <>
+              <optgroup label="Kapsam">
+                <option value="all">Tüm sohbetler</option>
+                <option value="unassigned">Atanmamış</option>
+                <option value="mine">Bana atanan görüşmeler</option>
+              </optgroup>
+              <optgroup label="Durum">
+                <option value="unanswered">Cevapsızlar</option>
+                <option value="answered">Cevaplananlar</option>
+                <option value="followup">Takiptekiler</option>
+              </optgroup>
+            </>
+          )}
+        </select>
 
-        {isAdmin && (
-          <div className="flex flex-wrap gap-1.5 mb-3" role="tablist" aria-label="Görüşme filtresi">
-            <Link
-              href="/inbox"
-              className={chipClass(!filter)}
-              role="tab"
-              aria-selected={!filter}
-            >
-              Tümü
-            </Link>
-            <Link
-              href="/inbox?filter=unassigned"
-              className={chipClass(filter === 'unassigned')}
-              role="tab"
-              aria-selected={filter === 'unassigned'}
-            >
-              Atanmamış
-            </Link>
-          </div>
+        {!isAgent && !isAdmin && (
+          <p className="text-[10px] text-amber-600 mb-2">Rol bilgisi yüklenemedi; sayfayı yenileyin.</p>
         )}
 
         <div className="relative">
@@ -149,9 +155,7 @@ export default function ConversationList() {
           <div className="text-center py-12 px-4">
             <Inbox className="w-10 h-10 text-gray-200 mx-auto mb-2" />
             <p className="text-gray-400 text-sm">
-              {isAgent
-                ? 'Bu listede görüşme yok (atanmamış veya size atanan)'
-                : 'Henüz görüşme yok'}
+              Bu filtreye uygun görüşme yok
             </p>
           </div>
         ) : (

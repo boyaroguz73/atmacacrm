@@ -63,6 +63,8 @@ export class ConversationsController {
     const isAgent = user.role === 'AGENT';
     /** Temsilci özel filtreleri; yoksa varsayılan: atanmamış + bana atanan */
     const agentFilters = [
+      'all',
+      'mine_and_unassigned',
       'unanswered',
       'answered',
       'followup',

@@ -5,11 +5,28 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-export function formatPhone(phone: string): string {
-  if (phone.length === 12 && phone.startsWith('90')) {
-    return `+${phone.slice(0, 2)} ${phone.slice(2, 5)} ${phone.slice(5, 8)} ${phone.slice(8)}`;
+/** Sadece rakamlar (ülke kodu ile birlikte, örn. 905551234567) */
+export function digitsOnlyPhone(phone: string | null | undefined): string {
+  if (phone == null) return '';
+  return String(phone).replace(/\D/g, '');
+}
+
+export function formatPhone(phone: string | null | undefined): string {
+  if (phone == null || phone === '') return '—';
+  const digits = digitsOnlyPhone(phone);
+  if (!digits) return phone.trim().startsWith('+') ? phone.trim() : `+${phone.trim()}`;
+
+  let d = digits;
+  if (d.startsWith('00')) d = d.slice(2);
+  if (d.length === 11 && d.startsWith('0') && d[1] === '5') d = `90${d.slice(1)}`;
+  if (d.length === 10 && d.startsWith('5')) d = `90${d}`;
+
+  if (d.length === 12 && d.startsWith('90')) {
+    const rest = d.slice(2);
+    return `+90 ${rest.slice(0, 3)} ${rest.slice(3, 6)} ${rest.slice(6, 8)} ${rest.slice(8)}`;
   }
-  return `+${phone}`;
+
+  return `+${d}`;
 }
 
 export function formatTime(date: string | Date): string {

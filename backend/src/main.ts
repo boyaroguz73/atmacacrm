@@ -22,18 +22,23 @@ async function bootstrap() {
     }),
   );
 
-  const frontendUrl = config.get('FRONTEND_URL', 'http://localhost:3000');
-  /** CRM arayüzü geliştirmede sabit http://localhost:3000 */
+  const frontendUrl = config.get('FRONTEND_URL', 'http://localhost:3000').trim();
+  const frontendBase = frontendUrl.replace(/\/$/, '');
+  /** Üretimde tarayıcı adresi FRONTEND_URL ile aynı olmalı; sonda / farkı için iki varyant */
   const corsOrigins =
     process.env.NODE_ENV === 'production'
-      ? [frontendUrl]
+      ? Array.from(new Set([frontendUrl, frontendBase, `${frontendBase}/`]))
       : Array.from(
           new Set([
             frontendUrl,
+            frontendBase,
+            `${frontendBase}/`,
             'http://localhost:3000',
             'http://127.0.0.1:3000',
           ]),
         );
+  logger.log(`CORS origins (${process.env.NODE_ENV || 'development'}): ${corsOrigins.join(', ')}`);
+
   app.enableCors({
     origin: corsOrigins,
     credentials: true,

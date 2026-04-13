@@ -34,8 +34,8 @@ export class WahaService implements OnModuleInit {
     const baseURL = this.config.get('WAHA_API_URL', 'http://localhost:3001');
     const apiKey = this.config.get('WAHA_API_KEY', '');
 
-    this.syncChatLimit = parseInt(this.config.get('SYNC_CHAT_LIMIT', '999'), 10);
-    this.syncMessageLimit = parseInt(this.config.get('SYNC_MESSAGE_LIMIT', '500'), 10);
+    this.syncChatLimit = parseInt(this.config.get('SYNC_CHAT_LIMIT', '99999'), 10);
+    this.syncMessageLimit = parseInt(this.config.get('SYNC_MESSAGE_LIMIT', '99999'), 10);
     this.syncTimeoutMs = parseInt(this.config.get('SYNC_TIMEOUT_MS', '60000'), 10);
 
     this.http = axios.create({

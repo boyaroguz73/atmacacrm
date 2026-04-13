@@ -43,7 +43,9 @@ export class ConversationsService {
 
     if (sessionId) whereExtras.sessionId = sessionId;
 
-    if (filter === 'mine' && assignedTo) {
+    if (filter === 'all') {
+      // Yalnızca org kapsamı; atama filtresi yok (temsilci "tüm sohbetler")
+    } else if (filter === 'mine' && assignedTo) {
       whereExtras.assignments = {
         some: { userId: assignedTo, unassignedAt: null },
       };

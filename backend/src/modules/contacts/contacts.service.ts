@@ -1,4 +1,12 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  NotFoundException,
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+} from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { writeFileSync, existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
@@ -75,7 +83,15 @@ export class ContactsService {
       include: {
         lead: true,
         conversations: {
-          include: { session: true },
+          include: {
+            session: true,
+            assignments: {
+              where: { unassignedAt: null },
+              include: {
+                user: { select: { id: true, name: true, avatar: true } },
+              },
+            },
+          },
           orderBy: { lastMessageAt: 'desc' },
         },
       },
@@ -169,6 +185,97 @@ export class ContactsService {
       }
     } catch (err: any) {
       this.logger.debug(`Profil fotoğrafı kaydedilemedi (${phone}): ${err.message}`);
+    }
+  }
+
+  normalizePhoneInput(raw: string): string {
+    const digits = String(raw ?? '').replace(/\D/g, '');
+    if (!digits) throw new BadRequestException('Telefon numarası gerekli');
+    let d = digits;
+    if (d.startsWith('00')) d = d.slice(2);
+    if (d.length === 11 && d.startsWith('0') && d[1] === '5') d = `90${d.slice(1)}`;
+    if (d.length === 10 && d.startsWith('5')) d = `90${d}`;
+    if (d.length < 10 || d.length > 15) {
+      throw new BadRequestException('Geçersiz telefon numarası');
+    }
+    return d;
+  }
+
+  /**
+   * Manuel kişi kaydı. sessionId verilirse ilgili oturumda görüşme satırı oluşturulur (sohbet açmak için).
+   */
+  async createContact(
+    user: { role: string; organizationId?: string | null },
+    dto: {
+      phone: string;
+      name?: string | null;
+      surname?: string | null;
+      email?: string | null;
+      source?: string | null;
+      notes?: string | null;
+      company?: string | null;
+      city?: string | null;
+      organizationId?: string | null;
+      sessionId?: string | null;
+    },
+  ): Promise<{ contact: any; conversation: any | null }> {
+    const phone = this.normalizePhoneInput(dto.phone);
+
+    let organizationId: string | null = user.organizationId ?? null;
+    if (user.role === 'SUPERADMIN') {
+      if (!dto.organizationId?.trim()) {
+        throw new BadRequestException('SUPERADMIN için organizationId zorunludur');
+      }
+      organizationId = dto.organizationId.trim();
+    } else if (!organizationId) {
+      throw new ForbiddenException('Organizasyon bulunamadı');
+    }
+
+    const convInclude = {
+      contact: { include: { lead: true } },
+      session: true,
+      assignments: {
+        where: { unassignedAt: null },
+        include: {
+          user: { select: { id: true, name: true, avatar: true } },
+        },
+      },
+    } as const;
+
+    try {
+      const contact = await this.prisma.contact.create({
+        data: {
+          phone,
+          name: dto.name?.trim() || null,
+          surname: dto.surname?.trim() || null,
+          email: dto.email?.trim() || null,
+          source: dto.source?.trim() || null,
+          notes: dto.notes?.trim() || null,
+          company: dto.company?.trim() || null,
+          city: dto.city?.trim() || null,
+          organizationId,
+        },
+        include: { lead: true },
+      });
+
+      let conversation: any | null = null;
+      if (dto.sessionId) {
+        conversation = await this.prisma.conversation.upsert({
+          where: {
+            contactId_sessionId: { contactId: contact.id, sessionId: dto.sessionId },
+          },
+          update: {},
+          create: { contactId: contact.id, sessionId: dto.sessionId },
+          include: convInclude,
+        });
+      }
+
+      return { contact, conversation };
+    } catch (e) {
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
+        throw new ConflictException('Bu telefon numarası zaten kayıtlı');
+      }
+      throw e;
     }
   }
 }
