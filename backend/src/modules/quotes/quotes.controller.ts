@@ -1,6 +1,6 @@
 import {
   Controller, Get, Post, Patch, Param, Body, Query,
-  UseGuards, Req,
+  UseGuards, Logger, InternalServerErrorException,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { QuotesService } from './quotes.service';
@@ -15,6 +15,7 @@ import { QuoteStatus } from '@prisma/client';
 @UseGuards(JwtAuthGuard)
 @Controller('quotes')
 export class QuotesController {
+  private readonly logger = new Logger(QuotesController.name);
   constructor(private quotesService: QuotesService) {}
 
   @Get()
@@ -53,8 +54,15 @@ export class QuotesController {
   }
 
   @Post(':id/send')
-  send(@Param('id') id: string, @Body('sessionName') sessionName: string) {
-    return this.quotesService.send(id, sessionName);
+  async send(@Param('id') id: string, @Body('sessionName') sessionName?: string) {
+    try {
+      return await this.quotesService.send(id, sessionName);
+    } catch (err: any) {
+      this.logger.error(`Teklif gönderme hatası [${id}]: ${err.message}`, err.stack);
+      // NestJS HTTP exception'ları olduğu gibi fırlat
+      if (err.status) throw err;
+      throw new InternalServerErrorException(err.message || 'Teklif gönderilemedi');
+    }
   }
 
   @Post(':id/convert-to-order')

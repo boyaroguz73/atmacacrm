@@ -5,6 +5,8 @@ import { WahaService } from '../waha/waha.service';
 import { MailService } from '../mail/mail.service';
 import { QuoteStatus, DiscountType } from '@prisma/client';
 import { join } from 'path';
+import { readFileSync } from 'fs';
+import { normalizeWhatsappChatId } from '../../common/whatsapp-chat-id';
 
 interface CreateQuoteItem {
   productId?: string;
@@ -226,17 +228,16 @@ export class QuotesService {
       throw new BadRequestException('Aktif WhatsApp oturumu bulunamadı. Lütfen Ayarlar > WhatsApp bölümünden oturum açın.');
     }
 
-    const chatId = `${c.phone.replace(/\D/g, '')}@c.us`;
-    const caption = `Sayın ${c.name || 'Müşteri'}, TKL-${String(quote.quoteNumber).padStart(5, '0')} numaralı teklifiniz ektedir.`;
+    const chatId = normalizeWhatsappChatId(`${c.phone.replace(/\D/g, '')}@c.us`);
+    const caption = `Sayin ${c.name || 'Musteri'}, TKL-${String(quote.quoteNumber).padStart(5, '0')} numarali teklifiniz ektedir.`;
 
     const localPath = join(process.cwd(), pdfUrl!.replace(/^\//, ''));
-    const { readFileSync } = await import('fs');
     const buf = readFileSync(localPath);
-    const base64 = buf.toString('base64');
+    const base64Data = `data:application/pdf;base64,${buf.toString('base64')}`;
 
     await this.wahaService.sendFile(sessionName, chatId, {
       mimetype: 'application/pdf',
-      data: base64,
+      data: base64Data,
       filename: `Teklif-${quote.quoteNumber}.pdf`,
     }, caption);
 

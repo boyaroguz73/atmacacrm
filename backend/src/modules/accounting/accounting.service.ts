@@ -6,6 +6,7 @@ import { MailService } from '../mail/mail.service';
 import { AccInvoiceStatus } from '@prisma/client';
 import { join } from 'path';
 import { readFileSync } from 'fs';
+import { normalizeWhatsappChatId } from '../../common/whatsapp-chat-id';
 
 @Injectable()
 export class AccountingService {
@@ -159,18 +160,18 @@ export class AccountingService {
       throw new BadRequestException('Aktif WhatsApp oturumu bulunamadı. Lütfen Ayarlar > WhatsApp bölümünden oturum açın.');
     }
 
-    const chatId = `${c.phone.replace(/\D/g, '')}@c.us`;
+    const chatId = normalizeWhatsappChatId(`${c.phone.replace(/\D/g, '')}@c.us`);
     const invNo = `FTR-${String(inv.invoiceNumber).padStart(5, '0')}`;
     const text = templateBody
-      || `Sayın ${c.name || 'Müşteri'}, ${invNo} numaralı faturanız ektedir.`;
+      || `Sayin ${c.name || 'Musteri'}, ${invNo} numarali faturaniz ektedir.`;
 
     const localPath = join(process.cwd(), pdfPath.replace(/^\//, ''));
     const buf = readFileSync(localPath);
-    const base64 = buf.toString('base64');
+    const base64Data = `data:application/pdf;base64,${buf.toString('base64')}`;
 
     await this.wahaService.sendFile(sessionName, chatId, {
       mimetype: 'application/pdf',
-      data: base64,
+      data: base64Data,
       filename: `Fatura-${inv.invoiceNumber}.pdf`,
     }, text);
 

@@ -384,7 +384,8 @@ export class PdfService {
 
       doc.end();
       stream.on('finish', () => resolve(`/uploads/pdfs/${filename}`));
-      stream.on('error', reject);
+      stream.on('error', (err) => reject(err));
+      doc.on('error', (err: any) => reject(err));
     });
   }
 }
