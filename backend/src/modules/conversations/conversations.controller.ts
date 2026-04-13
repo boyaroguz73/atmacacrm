@@ -77,14 +77,21 @@ export class ConversationsController {
         : 'mine_and_unassigned'
       : filter;
 
+    const pageNum = page ? parseInt(page, 10) : 1;
+    const rawLimit = limit ? parseInt(limit, 10) : 500;
+    const safeLimit =
+      Number.isFinite(rawLimit) && rawLimit > 0
+        ? Math.min(rawLimit, 2000)
+        : 500;
+
     return this.conversationsService.findAll(user, {
       sessionId,
       assignedTo: isAgent ? user.id : assignedTo,
       isArchived: archived === 'true',
       search,
       filter: effectiveFilter,
-      page: page ? parseInt(page) : 1,
-      limit: limit ? parseInt(limit) : 50,
+      page: Number.isFinite(pageNum) && pageNum > 0 ? pageNum : 1,
+      limit: safeLimit,
     });
   }
 

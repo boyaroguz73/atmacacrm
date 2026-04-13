@@ -36,7 +36,7 @@ export class ConversationsService {
       search,
       filter,
       page = 1,
-      limit = 50,
+      limit = 500,
     } = params;
 
     const whereExtras: any = { isArchived };

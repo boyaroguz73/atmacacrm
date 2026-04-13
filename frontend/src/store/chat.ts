@@ -1,6 +1,9 @@
 import { create } from 'zustand';
 import api from '@/lib/api';
 
+/** Gelen kutusu liste boyutu (API `limit`; backend üst sınırı 2000) */
+const CONVERSATIONS_LIST_LIMIT = 1000;
+
 interface Contact {
   id: string;
   phone: string;
@@ -109,7 +112,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
   fetchConversations: async (silent?: boolean) => {
     if (!silent) set({ isLoadingConversations: true });
     try {
-      const params: any = {};
+      const params: Record<string, string | number> = {
+        limit: CONVERSATIONS_LIST_LIMIT,
+      };
       const { searchQuery, sessionFilter, listFilter } = get();
       if (searchQuery) params.search = searchQuery;
       if (sessionFilter) params.sessionId = sessionFilter;
