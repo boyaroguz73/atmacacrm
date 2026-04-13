@@ -22,7 +22,6 @@ interface PdfSettings {
   footerNote: string;
   primaryColor: string;
   showSignatureArea: boolean;
-  showStamp: boolean;
   currencySymbolPosition: 'before' | 'after';
 }
 
@@ -61,7 +60,6 @@ export interface PdfData {
 
 const CURRENCY_SYMBOLS: Record<string, string> = { TRY: 'TL', USD: 'USD', EUR: 'EUR' };
 
-// Türkçe karakter dönüşüm tablosu (PDFKit built-in font için)
 function tr(text: string): string {
   if (!text) return '';
   return text
@@ -78,33 +76,36 @@ export class PdfService {
   private readonly logger = new Logger(PdfService.name);
   private readonly outDir = join(process.cwd(), 'uploads', 'pdfs');
   private fontPath: string | null = null;
+  private fontBoldPath: string | null = null;
 
   constructor(private prisma: PrismaService) {
     if (!existsSync(this.outDir)) mkdirSync(this.outDir, { recursive: true });
-    // DejaVu font varsa kullan (Türkçe tam destek)
+
     const candidates = [
-      join(process.cwd(), 'fonts', 'DejaVuSans.ttf'),
-      join(process.cwd(), 'fonts', 'NotoSans-Regular.ttf'),
-      '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
-      '/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf',
+      { r: join(process.cwd(), 'fonts', 'DejaVuSans.ttf'), b: join(process.cwd(), 'fonts', 'DejaVuSans-Bold.ttf') },
+      { r: '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf', b: '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf' },
+      { r: '/usr/share/fonts/dejavu/DejaVuSans.ttf', b: '/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf' },
     ];
-    for (const p of candidates) {
-      if (existsSync(p)) { this.fontPath = p; break; }
+    for (const c of candidates) {
+      if (existsSync(c.r)) {
+        this.fontPath = c.r;
+        this.fontBoldPath = existsSync(c.b) ? c.b : c.r;
+        this.logger.log(`PDF font: ${this.fontPath}`);
+        break;
+      }
     }
-    if (this.fontPath) {
-      this.logger.log(`PDF font: ${this.fontPath}`);
-    } else {
-      this.logger.warn('Türkçe font bulunamadı, ASCII dönüşümü kullanılacak');
-    }
+    if (!this.fontPath) this.logger.warn('Turkce font bulunamadi, ASCII donusumu kullanilacak');
+  }
+
+  private t(text: string): string {
+    return this.fontPath ? (text || '') : tr(text || '');
   }
 
   private async getSettings(): Promise<PdfSettings> {
-    const rows = await this.prisma.systemSetting.findMany({
-      where: { key: { startsWith: 'pdf_' } },
-    });
+    const rows = await this.prisma.systemSetting.findMany({ where: { key: { startsWith: 'pdf_' } } });
     const m = new Map(rows.map((r) => [r.key, r.value]));
     return {
-      companyName: m.get('pdf_company_name') || 'Firma Adi',
+      companyName: m.get('pdf_company_name') || 'Firma',
       companyAddress: m.get('pdf_company_address') || '',
       companyPhone: m.get('pdf_company_phone') || '',
       companyEmail: m.get('pdf_company_email') || '',
@@ -119,13 +120,8 @@ export class PdfService {
       footerNote: m.get('pdf_footer_note') || '',
       primaryColor: m.get('pdf_primary_color') || '#1a7a4a',
       showSignatureArea: m.get('pdf_show_signature') !== 'false',
-      showStamp: m.get('pdf_show_stamp') !== 'false',
       currencySymbolPosition: (m.get('pdf_currency_position') as any) || 'after',
     };
-  }
-
-  private t(text: string): string {
-    return this.fontPath ? text : tr(text);
   }
 
   private async fetchLogoBuffer(logoUrl: string): Promise<Buffer | null> {
@@ -134,11 +130,9 @@ export class PdfService {
       if (logoUrl.startsWith('http://') || logoUrl.startsWith('https://')) {
         const resp = await axios.get(logoUrl, { responseType: 'arraybuffer', timeout: 5000 });
         return Buffer.from(resp.data);
-      } else {
-        // Local path
-        const localPath = logoUrl.startsWith('/') ? join(process.cwd(), logoUrl.slice(1)) : join(process.cwd(), logoUrl);
-        if (existsSync(localPath)) return readFileSync(localPath);
       }
+      const localPath = logoUrl.startsWith('/') ? join(process.cwd(), logoUrl.slice(1)) : join(process.cwd(), logoUrl);
+      if (existsSync(localPath)) return readFileSync(localPath);
     } catch (err: any) {
       this.logger.warn(`Logo yuklenemedi: ${err.message}`);
     }
@@ -159,233 +153,235 @@ export class PdfService {
     const filename = `${uuid()}.pdf`;
     const filePath = join(this.outDir, filename);
     const cs = CURRENCY_SYMBOLS[data.currency] || data.currency;
+    const primary = settings.primaryColor || '#1a7a4a';
 
-    const fmtMoney = (v: number) =>
-      settings.currencySymbolPosition === 'before'
-        ? `${cs} ${v.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}`
-        : `${v.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ${cs}`;
-
-    const primaryColor = settings.primaryColor || '#1a7a4a';
+    const fmtMoney = (v: number) => {
+      const n = v.toLocaleString('tr-TR', { minimumFractionDigits: 2 });
+      return settings.currencySymbolPosition === 'before' ? `${cs} ${n}` : `${n} ${cs}`;
+    };
 
     return new Promise<string>((resolve, reject) => {
-      const doc = new PDFDocument({ size: 'A4', margin: 40, bufferPages: true });
-      const stream = createWriteStream(filePath);
-      doc.pipe(stream);
-
-      // Font kayıt
-      if (this.fontPath) {
-        doc.registerFont('Regular', this.fontPath);
-        // Bold için aynı fontu kullan (fallback)
-        const boldPath = this.fontPath.replace('Regular', 'Bold').replace('.ttf', 'Bold.ttf');
-        if (existsSync(boldPath)) {
-          doc.registerFont('Bold', boldPath);
-        } else {
-          doc.registerFont('Bold', this.fontPath);
-        }
-      }
-
-      const useFont = (bold = false) => {
-        if (this.fontPath) {
-          doc.font(bold ? 'Bold' : 'Regular');
-        } else {
-          doc.font(bold ? 'Helvetica-Bold' : 'Helvetica');
-        }
+      let settled = false;
+      const done = (err?: any) => {
+        if (settled) return;
+        settled = true;
+        if (err) reject(err); else resolve(`/uploads/pdfs/${filename}`);
       };
 
-      const pw = doc.page.width - 80; // usable width
+      try {
+        const doc = new PDFDocument({ size: 'A4', margin: 0, autoFirstPage: true });
+        const stream = createWriteStream(filePath);
+        doc.pipe(stream);
+        stream.on('finish', () => done());
+        stream.on('error', done);
+        doc.on('error', done);
 
-      // ── HEADER ──────────────────────────────────────────────────────────
-      let headerRightX = 40;
-      let headerBottomY = 40;
-
-      // Logo
-      if (logoBuffer) {
-        try {
-          doc.image(logoBuffer, 40, 35, { height: 50, fit: [160, 50] });
-          headerRightX = 220;
-        } catch {
-          // logo yüklenemedi
+        // ── Font setup ──────────────────────────────────────────────────
+        if (this.fontPath) {
+          doc.registerFont('R', this.fontPath);
+          doc.registerFont('B', this.fontBoldPath!);
         }
-      }
+        const R = () => doc.font(this.fontPath ? 'R' : 'Helvetica');
+        const B = () => doc.font(this.fontPath ? 'B' : 'Helvetica-Bold');
 
-      // Firma bilgileri (logo yoksa solda, varsa logonun yanında)
-      const firmX = logoBuffer ? headerRightX : 40;
-      useFont(true);
-      doc.fontSize(13).fillColor(primaryColor).text(this.t(settings.companyName), firmX, 38);
-      useFont(false);
-      doc.fontSize(8).fillColor('#444444');
-      let cy = 55;
-      if (settings.companyAddress) { doc.text(this.t(settings.companyAddress), firmX, cy, { width: 200 }); cy += 10; }
-      if (settings.companyPhone) { doc.text(`Tel: ${settings.companyPhone}`, firmX, cy); cy += 10; }
-      if (settings.companyEmail) { doc.text(`E: ${settings.companyEmail}`, firmX, cy); cy += 10; }
-      if (settings.companyWebsite) { doc.text(settings.companyWebsite, firmX, cy); cy += 10; }
-      if (settings.companyTaxOffice || settings.companyTaxNumber) {
-        doc.text(`VD: ${this.t(settings.companyTaxOffice)}  VN: ${settings.companyTaxNumber}`, firmX, cy); cy += 10;
-      }
-      if (settings.companyMersisNo) { doc.text(`Mersis: ${settings.companyMersisNo}`, firmX, cy); cy += 10; }
-      headerBottomY = Math.max(cy, 90);
+        // ── Helper: draw text at absolute position, no cursor side effects ──
+        const txt = (
+          text: string, x: number, y: number,
+          opts: { width?: number; align?: string; size?: number; color?: string; bold?: boolean } = {},
+        ) => {
+          if (opts.bold) B(); else R();
+          if (opts.size) doc.fontSize(opts.size);
+          doc.fillColor(opts.color || '#333333');
+          doc.text(text, x, y, {
+            width: opts.width,
+            align: (opts.align as any) || 'left',
+            lineBreak: false,
+          });
+        };
 
-      // Belge başlığı (sağ üst)
-      useFont(true);
-      doc.fontSize(16).fillColor(primaryColor).text(this.t(data.title), 350, 38, { width: pw - 310, align: 'right' });
-      useFont(false);
-      doc.fontSize(9).fillColor('#333333');
-      let ry2 = 60;
-      doc.text(`${this.t('No')}: ${data.documentNumber}`, 350, ry2, { width: pw - 310, align: 'right' }); ry2 += 12;
-      doc.text(`${this.t('Tarih')}: ${data.date}`, 350, ry2, { width: pw - 310, align: 'right' }); ry2 += 12;
-      if (data.validUntil) { doc.text(`${this.t('Gecerlilik')}: ${data.validUntil}`, 350, ry2, { width: pw - 310, align: 'right' }); ry2 += 12; }
-      if (data.deliveryDate) { doc.text(`${this.t('Teslim')}: ${data.deliveryDate}`, 350, ry2, { width: pw - 310, align: 'right' }); ry2 += 12; }
-      if (data.dueDate) { doc.text(`${this.t('Vade')}: ${data.dueDate}`, 350, ry2, { width: pw - 310, align: 'right' }); ry2 += 12; }
+        const ML = 40; // margin left
+        const MR = 40; // margin right
+        const PW = doc.page.width - ML - MR; // 515
+        const PAGE_H = doc.page.height; // 841.89
 
-      // ── AYRAÇ ───────────────────────────────────────────────────────────
-      const divY = headerBottomY + 8;
-      doc.moveTo(40, divY).lineTo(40 + pw, divY).lineWidth(1).strokeColor(primaryColor).stroke();
+        // ── HEADER BOX ──────────────────────────────────────────────────
+        // Colored top bar
+        doc.rect(0, 0, doc.page.width, 8).fill(primary);
 
-      // ── MÜŞTERİ BİLGİLERİ ───────────────────────────────────────────────
-      const clientY = divY + 8;
-      useFont(true);
-      doc.fontSize(9).fillColor(primaryColor).text(this.t('MUSTERI BILGILERI'), 40, clientY);
-      useFont(false);
-      doc.fillColor('#333333');
-      let ccy = clientY + 14;
-      doc.fontSize(9);
-      useFont(true);
-      doc.text(this.t(data.contactName), 40, ccy); ccy += 12;
-      useFont(false);
-      if (data.contactCompany) { doc.text(this.t(data.contactCompany), 40, ccy); ccy += 12; }
-      if (data.contactPhone) { doc.text(`Tel: ${data.contactPhone}`, 40, ccy); ccy += 12; }
-      if (data.contactEmail) { doc.text(`E: ${data.contactEmail}`, 40, ccy); ccy += 12; }
-      if (data.contactAddress) { doc.text(this.t(data.contactAddress), 40, ccy, { width: 250 }); ccy += 12; }
-      if (data.contactTaxOffice || data.contactTaxNumber) {
-        doc.text(`VD: ${this.t(data.contactTaxOffice || '')}  VN: ${data.contactTaxNumber || ''}`, 40, ccy); ccy += 12;
-      }
-
-      // ── ÜRÜN TABLOSU ────────────────────────────────────────────────────
-      const tableY = ccy + 10;
-      // Tablo başlık arka planı
-      doc.rect(40, tableY, pw, 18).fill(primaryColor);
-
-      const cols = [
-        { label: '#', w: 22, align: 'center' as const },
-        { label: this.t('Urun / Hizmet'), w: 185, align: 'left' as const },
-        { label: this.t('Miktar'), w: 45, align: 'right' as const },
-        { label: `${this.t('Birim Fiyat')} (${cs})`, w: 80, align: 'right' as const },
-        { label: 'KDV %', w: 40, align: 'right' as const },
-        { label: this.t('Indirim'), w: 55, align: 'right' as const },
-        { label: `${this.t('Toplam')} (${cs})`, w: pw - 427, align: 'right' as const },
-      ];
-
-      useFont(true);
-      doc.fontSize(8).fillColor('#ffffff');
-      let cx = 40;
-      for (const col of cols) {
-        doc.text(col.label, cx + 3, tableY + 5, { width: col.w - 6, align: col.align });
-        cx += col.w;
-      }
-
-      useFont(false);
-      doc.fillColor('#333333');
-      let ry = tableY + 22;
-      data.items.forEach((item, idx) => {
-        if (ry > 700) { doc.addPage(); ry = 40; }
-        // Zebra satır
-        if (idx % 2 === 0) {
-          doc.rect(40, ry - 2, pw, 18).fill('#f7f7f7');
+        let logoW = 0;
+        if (logoBuffer) {
+          try {
+            doc.image(logoBuffer, ML, 18, { height: 48, fit: [150, 48] });
+            logoW = 160;
+          } catch { /* skip */ }
         }
-        doc.fillColor('#333333');
-        let rx = 40;
-        doc.fontSize(8);
-        doc.text(String(idx + 1), rx + 3, ry, { width: cols[0].w - 6, align: 'center' }); rx += cols[0].w;
-        const nameBlock = item.description ? `${this.t(item.name)}\n${this.t(item.description)}` : this.t(item.name);
-        doc.text(nameBlock, rx + 3, ry, { width: cols[1].w - 6 }); rx += cols[1].w;
-        doc.text(String(item.quantity), rx + 3, ry, { width: cols[2].w - 6, align: 'right' }); rx += cols[2].w;
-        doc.text(item.unitPrice.toLocaleString('tr-TR', { minimumFractionDigits: 2 }), rx + 3, ry, { width: cols[3].w - 6, align: 'right' }); rx += cols[3].w;
-        doc.text(`%${item.vatRate}`, rx + 3, ry, { width: cols[4].w - 6, align: 'right' }); rx += cols[4].w;
-        doc.text(item.discountText ? this.t(item.discountText) : '-', rx + 3, ry, { width: cols[5].w - 6, align: 'right' }); rx += cols[5].w;
-        doc.text(item.lineTotal.toLocaleString('tr-TR', { minimumFractionDigits: 2 }), rx + 3, ry, { width: cols[6].w - 6, align: 'right' });
-        ry += item.description ? 26 : 18;
-      });
 
-      // Tablo alt çizgisi
-      doc.moveTo(40, ry).lineTo(40 + pw, ry).lineWidth(0.5).strokeColor('#cccccc').stroke();
-      ry += 10;
+        // Company info (right of logo)
+        const firmX = ML + logoW + (logoW ? 10 : 0);
+        let cy = 15;
+        txt(this.t(settings.companyName), firmX, cy, { size: 12, bold: true, color: primary });
+        cy += 15;
+        if (settings.companyAddress) { txt(this.t(settings.companyAddress), firmX, cy, { size: 7.5, color: '#555' }); cy += 10; }
+        if (settings.companyPhone)   { txt(`Tel: ${settings.companyPhone}`, firmX, cy, { size: 7.5, color: '#555' }); cy += 10; }
+        if (settings.companyEmail)   { txt(`E-posta: ${settings.companyEmail}`, firmX, cy, { size: 7.5, color: '#555' }); cy += 10; }
+        if (settings.companyWebsite) { txt(settings.companyWebsite, firmX, cy, { size: 7.5, color: '#555' }); cy += 10; }
+        if (settings.companyTaxOffice || settings.companyTaxNumber) {
+          txt(`VD: ${this.t(settings.companyTaxOffice)}  VN: ${settings.companyTaxNumber}`, firmX, cy, { size: 7.5, color: '#555' }); cy += 10;
+        }
+        if (settings.companyMersisNo) { txt(`Mersis: ${settings.companyMersisNo}`, firmX, cy, { size: 7.5, color: '#555' }); cy += 10; }
 
-      // ── ÖZET ────────────────────────────────────────────────────────────
-      const summaryX = 350;
-      const valX = 460;
-      const valW = pw - (valX - 40);
-      useFont(false);
-      doc.fontSize(9).fillColor('#555555');
-      doc.text(this.t('Ara Toplam:'), summaryX, ry);
-      doc.text(fmtMoney(data.subtotal), valX, ry, { width: valW, align: 'right' }); ry += 14;
-      if (data.discountTotal > 0) {
-        doc.fillColor('#cc0000');
-        doc.text(this.t('Indirim:'), summaryX, ry);
-        doc.text(`-${fmtMoney(data.discountTotal)}`, valX, ry, { width: valW, align: 'right' });
-        doc.fillColor('#555555'); ry += 14;
-      }
-      doc.text(this.t('KDV Toplam:'), summaryX, ry);
-      doc.text(fmtMoney(data.vatTotal), valX, ry, { width: valW, align: 'right' }); ry += 14;
+        // Document title box (right side)
+        const titleBoxX = doc.page.width - MR - 170;
+        doc.rect(titleBoxX, 12, 170, 60).fill('#f5f5f5');
+        txt(this.t(data.title), titleBoxX + 8, 18, { size: 14, bold: true, color: primary, width: 154 });
+        let ry2 = 38;
+        txt(`No: ${data.documentNumber}`, titleBoxX + 8, ry2, { size: 8, color: '#444', width: 154 }); ry2 += 11;
+        txt(`Tarih: ${data.date}`, titleBoxX + 8, ry2, { size: 8, color: '#444', width: 154 }); ry2 += 11;
+        if (data.validUntil)   { txt(`Gecerlilik: ${data.validUntil}`, titleBoxX + 8, ry2, { size: 8, color: '#444', width: 154 }); ry2 += 11; }
+        if (data.deliveryDate) { txt(`Teslim: ${data.deliveryDate}`, titleBoxX + 8, ry2, { size: 8, color: '#444', width: 154 }); ry2 += 11; }
+        if (data.dueDate)      { txt(`Vade: ${data.dueDate}`, titleBoxX + 8, ry2, { size: 8, color: '#444', width: 154 }); }
 
-      // Genel toplam kutusu
-      doc.rect(summaryX - 5, ry - 2, pw - (summaryX - 45), 20).fill(primaryColor);
-      useFont(true);
-      doc.fontSize(11).fillColor('#ffffff');
-      doc.text(this.t('GENEL TOPLAM:'), summaryX, ry + 2);
-      doc.text(fmtMoney(data.grandTotal), valX, ry + 2, { width: valW, align: 'right' });
-      ry += 28;
+        // ── DIVIDER ─────────────────────────────────────────────────────
+        const headerBottom = Math.max(cy, 80) + 8;
+        doc.moveTo(ML, headerBottom).lineTo(ML + PW, headerBottom).lineWidth(1).strokeColor(primary).stroke();
 
-      // ── NOTLAR / KOŞULLAR / BANKA ────────────────────────────────────────
-      useFont(false);
-      doc.fillColor('#333333');
-      if (data.notes) {
-        ry += 4;
-        useFont(true); doc.fontSize(9).text(this.t('Notlar:'), 40, ry); ry += 12;
-        useFont(false); doc.fontSize(8).text(this.t(data.notes), 40, ry, { width: pw }); ry += 20;
-      }
-      if (settings.terms) {
-        useFont(true); doc.fontSize(9).text(this.t('Odeme Kosullari:'), 40, ry); ry += 12;
-        useFont(false); doc.fontSize(8).text(this.t(settings.terms), 40, ry, { width: pw }); ry += 20;
-      }
-      if (settings.bankInfo || settings.bank2Info) {
-        useFont(true); doc.fontSize(9).text(this.t('Banka Bilgileri:'), 40, ry); ry += 12;
-        useFont(false); doc.fontSize(8);
-        if (settings.bankInfo) { doc.text(this.t(settings.bankInfo), 40, ry, { width: pw / 2 - 10 }); }
-        if (settings.bank2Info) { doc.text(this.t(settings.bank2Info), 40 + pw / 2, ry, { width: pw / 2 }); }
-        ry += 30;
-      }
+        // ── CUSTOMER INFO ────────────────────────────────────────────────
+        let startY = headerBottom + 8;
+        txt(this.t('MUSTERI BILGILERI'), ML, startY, { size: 8, bold: true, color: primary });
+        startY += 13;
+        txt(this.t(data.contactName), ML, startY, { size: 9, bold: true });
+        startY += 13;
+        if (data.contactCompany) { txt(this.t(data.contactCompany), ML, startY, { size: 8 }); startY += 11; }
+        if (data.contactPhone)   { txt(`Tel: ${data.contactPhone}`, ML, startY, { size: 8 }); startY += 11; }
+        if (data.contactEmail)   { txt(`E: ${data.contactEmail}`, ML, startY, { size: 8 }); startY += 11; }
+        if (data.contactTaxOffice || data.contactTaxNumber) {
+          txt(`VD: ${this.t(data.contactTaxOffice || '')}  VN: ${data.contactTaxNumber || ''}`, ML, startY, { size: 8 }); startY += 11;
+        }
 
-      // ── İMZA ALANI ───────────────────────────────────────────────────────
-      if (settings.showSignatureArea && ry < 700) {
-        const sigY = Math.max(ry + 10, 700);
-        doc.moveTo(40, sigY).lineTo(200, sigY).lineWidth(0.5).strokeColor('#aaaaaa').stroke();
-        useFont(false); doc.fontSize(8).fillColor('#666666').text(this.t('Yetkili Imza / Kase'), 40, sigY + 4);
-        doc.moveTo(360, sigY).lineTo(40 + pw, sigY).lineWidth(0.5).strokeColor('#aaaaaa').stroke();
-        doc.text(this.t('Musteri Imza / Kase'), 360, sigY + 4);
-      }
+        // ── TABLE ────────────────────────────────────────────────────────
+        const tableY = startY + 10;
+        const ROW_H = 20;
+        const HEADER_H = 18;
 
-      // ── FOOTER ───────────────────────────────────────────────────────────
-      const footerY = doc.page.height - 40;
-      doc.moveTo(40, footerY - 8).lineTo(40 + pw, footerY - 8).lineWidth(0.3).strokeColor('#dddddd').stroke();
-      useFont(false);
-      doc.fontSize(7).fillColor('#999999');
-      if (settings.footerNote) {
-        doc.text(this.t(settings.footerNote), 40, footerY - 4, { width: pw, align: 'center' });
-      }
-      // Sayfa numarası
-      const pages = doc.bufferedPageRange();
-      for (let i = 0; i < pages.count; i++) {
-        doc.switchToPage(i);
-        doc.fontSize(7).fillColor('#aaaaaa').text(
-          `${i + 1} / ${pages.count}`,
-          40, doc.page.height - 20, { width: pw, align: 'right' },
-        );
-      }
+        const cols = [
+          { label: '#',                          w: 22  },
+          { label: this.t('Urun / Hizmet'),      w: 182 },
+          { label: this.t('Miktar'),             w: 45  },
+          { label: `${this.t('B.Fiyat')} (${cs})`, w: 78 },
+          { label: 'KDV%',                       w: 38  },
+          { label: this.t('Indirim'),            w: 52  },
+          { label: `${this.t('Toplam')} (${cs})`, w: PW - 417 },
+        ];
 
-      doc.end();
-      stream.on('finish', () => resolve(`/uploads/pdfs/${filename}`));
-      stream.on('error', (err) => reject(err));
-      doc.on('error', (err: any) => reject(err));
+        // Header row
+        doc.rect(ML, tableY, PW, HEADER_H).fill(primary);
+        let colX = ML;
+        cols.forEach((col) => {
+          txt(col.label, colX + 3, tableY + 5, { size: 7.5, bold: true, color: '#ffffff', width: col.w - 6 });
+          colX += col.w;
+        });
+
+        // Data rows
+        let rowY = tableY + HEADER_H;
+        data.items.forEach((item, idx) => {
+          // Sayfa taşması
+          if (rowY + ROW_H > PAGE_H - 120) {
+            doc.addPage({ margin: 0 });
+            doc.rect(0, 0, doc.page.width, 8).fill(primary);
+            rowY = 30;
+          }
+          // Zebra
+          if (idx % 2 === 1) {
+            doc.rect(ML, rowY, PW, ROW_H).fill('#f9f9f9');
+          }
+          let rx = ML;
+          R(); doc.fontSize(8).fillColor('#333');
+          doc.text(String(idx + 1), rx + 3, rowY + 6, { width: cols[0].w - 6, align: 'center', lineBreak: false }); rx += cols[0].w;
+          // Ürün adı + açıklama
+          const hasDesc = !!(item.description);
+          txt(this.t(item.name), rx + 3, rowY + (hasDesc ? 3 : 6), { size: 8, width: cols[1].w - 6 });
+          if (hasDesc) txt(this.t(item.description!), rx + 3, rowY + 13, { size: 7, color: '#777', width: cols[1].w - 6 });
+          rx += cols[1].w;
+          const itemH = hasDesc ? 24 : ROW_H;
+          txt(String(item.quantity), rx + 3, rowY + 6, { size: 8, width: cols[2].w - 6, align: 'right' }); rx += cols[2].w;
+          txt(item.unitPrice.toFixed(2), rx + 3, rowY + 6, { size: 8, width: cols[3].w - 6, align: 'right' }); rx += cols[3].w;
+          txt(`%${item.vatRate}`, rx + 3, rowY + 6, { size: 8, width: cols[4].w - 6, align: 'right' }); rx += cols[4].w;
+          txt(item.discountText ? this.t(item.discountText) : '-', rx + 3, rowY + 6, { size: 8, width: cols[5].w - 6, align: 'right' }); rx += cols[5].w;
+          txt(item.lineTotal.toFixed(2), rx + 3, rowY + 6, { size: 8, width: cols[6].w - 6, align: 'right' });
+          rowY += itemH;
+        });
+
+        // Table bottom line
+        doc.moveTo(ML, rowY).lineTo(ML + PW, rowY).lineWidth(0.5).strokeColor('#cccccc').stroke();
+        rowY += 12;
+
+        // ── SUMMARY ──────────────────────────────────────────────────────
+        const sumX = ML + PW - 220;
+        const lblW = 110;
+        const valW = 110;
+
+        const sumRow = (label: string, value: string, y: number, bold = false, color = '#333333') => {
+          txt(label, sumX, y, { size: 9, bold, color, width: lblW });
+          txt(value, sumX + lblW, y, { size: 9, bold, color, width: valW, align: 'right' });
+        };
+
+        sumRow(this.t('Ara Toplam:'), fmtMoney(data.subtotal), rowY); rowY += 14;
+        if (data.discountTotal > 0) {
+          sumRow(this.t('Indirim:'), `-${fmtMoney(data.discountTotal)}`, rowY, false, '#cc0000'); rowY += 14;
+        }
+        sumRow(this.t('KDV Toplam:'), fmtMoney(data.vatTotal), rowY); rowY += 14;
+
+        // Grand total box
+        doc.rect(sumX - 4, rowY - 2, lblW + valW + 8, 22).fill(primary);
+        sumRow(this.t('GENEL TOPLAM:'), fmtMoney(data.grandTotal), rowY + 5, true, '#ffffff');
+        rowY += 32;
+
+        // ── NOTES / TERMS / BANK ─────────────────────────────────────────
+        rowY += 6;
+        if (data.notes) {
+          txt(this.t('Notlar:'), ML, rowY, { size: 8.5, bold: true }); rowY += 12;
+          R(); doc.fontSize(8).fillColor('#444');
+          doc.text(this.t(data.notes), ML, rowY, { width: PW, lineBreak: true }); rowY += doc.currentLineHeight(true) + 14;
+        }
+        if (settings.terms) {
+          txt(this.t('Odeme Kosullari:'), ML, rowY, { size: 8.5, bold: true }); rowY += 12;
+          R(); doc.fontSize(8).fillColor('#444');
+          doc.text(this.t(settings.terms), ML, rowY, { width: PW, lineBreak: true }); rowY += doc.currentLineHeight(true) + 14;
+        }
+        if (settings.bankInfo || settings.bank2Info) {
+          txt(this.t('Banka Bilgileri:'), ML, rowY, { size: 8.5, bold: true }); rowY += 12;
+          const halfW = (PW - 10) / 2;
+          R(); doc.fontSize(8).fillColor('#444');
+          if (settings.bankInfo)  { doc.text(this.t(settings.bankInfo),  ML,           rowY, { width: halfW, lineBreak: true }); }
+          if (settings.bank2Info) { doc.text(this.t(settings.bank2Info), ML + halfW + 10, rowY, { width: halfW, lineBreak: true }); }
+          rowY += 36;
+        }
+
+        // ── SIGNATURE ────────────────────────────────────────────────────
+        if (settings.showSignatureArea) {
+          const sigY = Math.max(rowY + 10, PAGE_H - 100);
+          if (sigY < PAGE_H - 30) {
+            doc.moveTo(ML, sigY).lineTo(ML + 150, sigY).lineWidth(0.4).strokeColor('#aaaaaa').stroke();
+            txt(this.t('Yetkili Imza / Kase'), ML, sigY + 4, { size: 8, color: '#666' });
+            doc.moveTo(ML + PW - 150, sigY).lineTo(ML + PW, sigY).lineWidth(0.4).strokeColor('#aaaaaa').stroke();
+            txt(this.t('Musteri Imza / Kase'), ML + PW - 150, sigY + 4, { size: 8, color: '#666' });
+          }
+        }
+
+        // ── FOOTER ───────────────────────────────────────────────────────
+        const footerY = PAGE_H - 20;
+        doc.moveTo(ML, footerY - 8).lineTo(ML + PW, footerY - 8).lineWidth(0.3).strokeColor('#dddddd').stroke();
+        R(); doc.fontSize(7).fillColor('#aaaaaa');
+        if (settings.footerNote) {
+          doc.text(this.t(settings.footerNote), ML, footerY - 4, { width: PW - 60, align: 'left', lineBreak: false });
+        }
+        doc.text(`Sayfa 1`, ML, footerY - 4, { width: PW, align: 'right', lineBreak: false });
+
+        doc.end();
+      } catch (err: any) {
+        this.logger.error(`PDF olusturma hatasi: ${err.message}`, err.stack);
+        done(err);
+      }
     });
   }
 }

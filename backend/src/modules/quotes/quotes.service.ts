@@ -5,7 +5,7 @@ import { WahaService } from '../waha/waha.service';
 import { MailService } from '../mail/mail.service';
 import { QuoteStatus, DiscountType } from '@prisma/client';
 import { join } from 'path';
-import { readFileSync } from 'fs';
+import { readFileSync, existsSync } from 'fs';
 import { normalizeWhatsappChatId } from '../../common/whatsapp-chat-id';
 
 interface CreateQuoteItem {
@@ -216,7 +216,10 @@ export class QuotesService {
   async send(id: string, sessionName?: string) {
     const quote = await this.findById(id);
     let pdfUrl = quote.pdfUrl;
-    if (!pdfUrl) pdfUrl = await this.generatePdf(id);
+    // PDF yoksa veya fiziksel dosya kayıpsa yeniden oluştur
+    if (!pdfUrl || !existsSync(join(process.cwd(), pdfUrl.replace(/^\//, '')))) {
+      pdfUrl = await this.generatePdf(id);
+    }
 
     const c = quote.contact;
 
