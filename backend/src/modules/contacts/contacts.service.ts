@@ -12,6 +12,10 @@ import { writeFileSync, existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import { v4 as uuid } from 'uuid';
 import axios from 'axios';
+import {
+  canonicalContactPhone,
+  contactPhoneLookupKeys,
+} from '../../common/contact-phone';
 
 @Injectable()
 export class ContactsService {
@@ -20,10 +24,41 @@ export class ContactsService {
   constructor(private prisma: PrismaService) {}
 
   async findOrCreate(phone: string, name?: string) {
-    return this.prisma.contact.upsert({
-      where: { phone },
-      update: {},
-      create: { phone, name: name || phone },
+    const keys = contactPhoneLookupKeys(phone).filter(Boolean);
+    const primary =
+      canonicalContactPhone(phone) || keys[0] || String(phone ?? '').replace(/\D/g, '');
+    if (!primary) {
+      this.logger.warn(`findOrCreate: geçersiz/boş telefon (${phone})`);
+      throw new BadRequestException('Geçersiz telefon numarası');
+    }
+
+    const existing = await this.prisma.contact.findFirst({
+      where: { phone: { in: keys } },
+    });
+
+    if (existing) {
+      if (existing.phone !== primary) {
+        try {
+          await this.prisma.contact.update({
+            where: { id: existing.id },
+            data: { phone: primary },
+          });
+        } catch {
+          /* eşsizlik çakışması: başka satır aynı primary kullanıyorsa eski kaydı bırak */
+        }
+      }
+      const displayName = (name && name.trim()) || existing.name || primary;
+      if (displayName !== existing.name && name?.trim()) {
+        return this.prisma.contact.update({
+          where: { id: existing.id },
+          data: { name: name.trim() },
+        });
+      }
+      return this.prisma.contact.findUniqueOrThrow({ where: { id: existing.id } });
+    }
+
+    return this.prisma.contact.create({
+      data: { phone: primary, name: (name && name.trim()) || primary },
     });
   }
 

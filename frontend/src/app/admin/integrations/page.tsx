@@ -38,6 +38,7 @@ function integrationOrgParams(): Record<string, string> {
   if (typeof window === 'undefined') return {};
   try {
     const user = JSON.parse(localStorage.getItem('user') || 'null');
+    /** JWT’de org varsa backend zaten kullanır; yoksa (SUPERADMIN veya eksik kayıt) seçili org’u query ile gönder */
     if (user?.organizationId) return {};
     const org = JSON.parse(localStorage.getItem('organization') || 'null');
     if (org?.id) return { organizationId: String(org.id) };

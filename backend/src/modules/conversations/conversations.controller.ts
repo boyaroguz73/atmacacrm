@@ -20,6 +20,10 @@ import {
   assertConversationBelongsToOrg,
   whereWhatsappSessionsForOrg,
 } from '../../common/org-session-scope';
+import {
+  canonicalContactPhone,
+  contactPhoneLookupKeys,
+} from '../../common/contact-phone';
 import { ConversationsService } from './conversations.service';
 import { WahaService } from '../waha/waha.service';
 import { ContactsService } from '../contacts/contacts.service';
@@ -409,6 +413,7 @@ export class ConversationsController {
     if (cleanPhone.length < 6) {
       return { synced: 0, message: 'Geçersiz telefon numarası' };
     }
+    const phoneKeys = contactPhoneLookupKeys(cleanPhone);
 
     const u = req.user as {
       role?: string;
@@ -423,8 +428,8 @@ export class ConversationsController {
       return { synced: 0, message: 'Aktif oturum bulunamadı' };
     }
 
-    const contactRow = await this.prisma.contact.findUnique({
-      where: { phone: cleanPhone },
+    const contactRow = await this.prisma.contact.findFirst({
+      where: { phone: { in: phoneKeys } },
       select: { id: true },
     });
     let session = sessions[0];
@@ -507,7 +512,10 @@ export class ConversationsController {
           },
         });
         const dbConvMap = new Map(
-          dbConversations.map((c) => [c.contact.phone, c]),
+          dbConversations.map((c) => [
+            canonicalContactPhone(c.contact.phone) || c.contact.phone,
+            c,
+          ]),
         );
 
         type SyncTask = {
@@ -522,8 +530,9 @@ export class ConversationsController {
 
         for (const chat of personalChats) {
           const chatId = chat.id?._serialized || chat.id;
-          const phone = chatId.replace('@c.us', '');
-          if (!phone || phone.length < 6) continue;
+          const phoneRaw = chatId.replace('@c.us', '');
+          if (!phoneRaw || phoneRaw.length < 6) continue;
+          const phone = canonicalContactPhone(phoneRaw) || phoneRaw;
 
           const contactName = chat.name || chat.pushname || phone;
           const wahaTs = chat.timestamp
@@ -545,7 +554,7 @@ export class ConversationsController {
           }
 
           const contact = await this.contactsService.findOrCreate(
-            phone,
+            phoneRaw,
             contactName,
           );
           const conversation = await this.conversationsService.findOrCreate(

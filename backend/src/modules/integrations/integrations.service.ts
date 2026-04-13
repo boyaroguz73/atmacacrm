@@ -37,8 +37,26 @@ export class IntegrationsService {
         return first.id;
       }
     }
+    if (user.role === 'ADMIN') {
+      const count = await this.prisma.organization.count();
+      if (count === 1) {
+        const only = await this.prisma.organization.findFirst({
+          orderBy: { createdAt: 'asc' },
+          select: { id: true },
+        });
+        if (only) {
+          this.logger.warn(
+            `Entegrasyonlar: ADMIN kullanıcıda organizationId yok; tek organizasyon kullanılıyor (${only.id}).`,
+          );
+          return only.id;
+        }
+      }
+      throw new BadRequestException(
+        'Hesabınızda organizasyon atanmamış. Süper yöneticiden kullanıcıyı bir organizasyona bağlamasını isteyin veya URL\'ye ?organizationId= ekleyin.',
+      );
+    }
     throw new BadRequestException(
-      'Organizasyon bulunamadı. Süper yöneticiyseniz URL\'ye ?organizationId= ekleyin veya en az bir organizasyon oluşturun.',
+      'Organizasyon bulunamadı. URL\'ye ?organizationId= ekleyin veya en az bir organizasyon oluşturun.',
     );
   }
 

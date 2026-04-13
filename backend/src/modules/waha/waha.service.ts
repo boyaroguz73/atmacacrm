@@ -702,6 +702,12 @@ export class WahaService implements OnModuleInit {
   }
 
   extractPhoneFromChatId(chatId: string): string {
-    return chatId.replace('@c.us', '').replace('@g.us', '');
+    const raw = chatId.replace('@c.us', '').replace('@g.us', '').replace(/\D/g, '');
+    if (!raw) return '';
+    let d = raw;
+    if (d.startsWith('00')) d = d.slice(2);
+    if (d.length === 11 && d.startsWith('0') && d[1] === '5') d = `90${d.slice(1)}`;
+    if (d.length === 10 && d.startsWith('5')) d = `90${d}`;
+    return d;
   }
 }

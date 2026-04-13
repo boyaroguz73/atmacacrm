@@ -74,7 +74,6 @@ export default function ChatWindow() {
     sendMediaMessage,
   } = useChatStore();
   const [text, setText] = useState('');
-  const [composerNonce, setComposerNonce] = useState(0);
   const [sending, setSending] = useState(false);
   const [showPanel, setShowPanel] = useState(true);
   const [internalChatEnabled, setInternalChatEnabled] = useState(false);
@@ -132,7 +131,6 @@ export default function ChatWindow() {
   useEffect(() => {
     setMessageAuthorFilter('all');
     setText('');
-    setComposerNonce(0);
     setShowTemplates(false);
     setTemplateSearch('');
   }, [activeConversation?.id]);
@@ -231,7 +229,6 @@ export default function ChatWindow() {
         body: trimmed,
       });
       setText('');
-      setComposerNonce((n) => n + 1);
     } catch (err) {
       setText(trimmed);
       toast.error(getApiErrorMessage(err, 'Mesaj gönderilemedi'));
@@ -803,7 +800,7 @@ export default function ChatWindow() {
                 />
               ) : (
                 <textarea
-                  key={`composer-${activeConversation.id}-${composerNonce}`}
+                  key={`composer-${activeConversation.id}`}
                   ref={composerRef}
                   autoComplete="off"
                   name="chat-composer"
