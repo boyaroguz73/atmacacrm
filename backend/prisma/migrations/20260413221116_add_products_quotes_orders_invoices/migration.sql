@@ -1,40 +1,20 @@
--- CreateEnum
-DO $$ BEGIN
-    CREATE TYPE "QuoteStatus" AS ENUM ('DRAFT', 'SENT', 'ACCEPTED', 'REJECTED', 'EXPIRED');
-EXCEPTION
-    WHEN duplicate_object THEN null;
-END $$;
+-- CreateEnum QuoteStatus
+CREATE TYPE "QuoteStatus" AS ENUM ('DRAFT', 'SENT', 'ACCEPTED', 'REJECTED', 'EXPIRED');
 
--- CreateEnum
-DO $$ BEGIN
-    CREATE TYPE "OrderStatus" AS ENUM ('PENDING', 'PROCESSING', 'SHIPPED', 'DELIVERED', 'CANCELLED');
-EXCEPTION
-    WHEN duplicate_object THEN null;
-END $$;
+-- CreateEnum OrderStatus
+CREATE TYPE "OrderStatus" AS ENUM ('PENDING', 'PROCESSING', 'SHIPPED', 'DELIVERED', 'CANCELLED');
 
--- CreateEnum
-DO $$ BEGIN
-    CREATE TYPE "AccInvoiceStatus" AS ENUM ('PENDING', 'SENT', 'PAID', 'OVERDUE', 'CANCELLED');
-EXCEPTION
-    WHEN duplicate_object THEN null;
-END $$;
+-- CreateEnum AccInvoiceStatus
+CREATE TYPE "AccInvoiceStatus" AS ENUM ('PENDING', 'SENT', 'PAID', 'OVERDUE', 'CANCELLED');
 
--- CreateEnum
-DO $$ BEGIN
-    CREATE TYPE "DiscountType" AS ENUM ('PERCENT', 'AMOUNT');
-EXCEPTION
-    WHEN duplicate_object THEN null;
-END $$;
+-- CreateEnum DiscountType
+CREATE TYPE "DiscountType" AS ENUM ('PERCENT', 'AMOUNT');
 
--- Add ACCOUNTANT to UserRole enum if not exists
-DO $$ BEGIN
-    ALTER TYPE "UserRole" ADD VALUE IF NOT EXISTS 'ACCOUNTANT';
-EXCEPTION
-    WHEN others THEN null;
-END $$;
+-- AlterEnum: Add ACCOUNTANT to UserRole
+ALTER TYPE "UserRole" ADD VALUE 'ACCOUNTANT';
 
 -- CreateTable products
-CREATE TABLE IF NOT EXISTS "products" (
+CREATE TABLE "products" (
     "id" TEXT NOT NULL,
     "sku" TEXT NOT NULL,
     "name" TEXT NOT NULL,
@@ -51,15 +31,10 @@ CREATE TABLE IF NOT EXISTS "products" (
     CONSTRAINT "products_pkey" PRIMARY KEY ("id")
 );
 
--- CreateSequence
-CREATE SEQUENCE IF NOT EXISTS "quotes_quoteNumber_seq";
-CREATE SEQUENCE IF NOT EXISTS "sales_orders_orderNumber_seq";
-CREATE SEQUENCE IF NOT EXISTS "accounting_invoices_invoiceNumber_seq";
-
 -- CreateTable quotes
-CREATE TABLE IF NOT EXISTS "quotes" (
+CREATE TABLE "quotes" (
     "id" TEXT NOT NULL,
-    "quoteNumber" INTEGER NOT NULL DEFAULT nextval('"quotes_quoteNumber_seq"'),
+    "quoteNumber" SERIAL NOT NULL,
     "contactId" TEXT NOT NULL,
     "createdById" TEXT NOT NULL,
     "status" "QuoteStatus" NOT NULL DEFAULT 'DRAFT',
@@ -81,7 +56,7 @@ CREATE TABLE IF NOT EXISTS "quotes" (
 );
 
 -- CreateTable quote_items
-CREATE TABLE IF NOT EXISTS "quote_items" (
+CREATE TABLE "quote_items" (
     "id" TEXT NOT NULL,
     "quoteId" TEXT NOT NULL,
     "productId" TEXT,
@@ -98,9 +73,9 @@ CREATE TABLE IF NOT EXISTS "quote_items" (
 );
 
 -- CreateTable sales_orders
-CREATE TABLE IF NOT EXISTS "sales_orders" (
+CREATE TABLE "sales_orders" (
     "id" TEXT NOT NULL,
-    "orderNumber" INTEGER NOT NULL DEFAULT nextval('"sales_orders_orderNumber_seq"'),
+    "orderNumber" SERIAL NOT NULL,
     "quoteId" TEXT,
     "contactId" TEXT NOT NULL,
     "createdById" TEXT NOT NULL,
@@ -118,7 +93,7 @@ CREATE TABLE IF NOT EXISTS "sales_orders" (
 );
 
 -- CreateTable order_items
-CREATE TABLE IF NOT EXISTS "order_items" (
+CREATE TABLE "order_items" (
     "id" TEXT NOT NULL,
     "orderId" TEXT NOT NULL,
     "productId" TEXT,
@@ -132,9 +107,9 @@ CREATE TABLE IF NOT EXISTS "order_items" (
 );
 
 -- CreateTable accounting_invoices
-CREATE TABLE IF NOT EXISTS "accounting_invoices" (
+CREATE TABLE "accounting_invoices" (
     "id" TEXT NOT NULL,
-    "invoiceNumber" INTEGER NOT NULL DEFAULT nextval('"accounting_invoices_invoiceNumber_seq"'),
+    "invoiceNumber" SERIAL NOT NULL,
     "orderId" TEXT,
     "quoteId" TEXT,
     "contactId" TEXT NOT NULL,
@@ -156,30 +131,30 @@ CREATE TABLE IF NOT EXISTS "accounting_invoices" (
 );
 
 -- CreateIndex
-CREATE UNIQUE INDEX IF NOT EXISTS "products_sku_key" ON "products"("sku");
-CREATE INDEX IF NOT EXISTS "products_sku_idx" ON "products"("sku");
+CREATE UNIQUE INDEX "products_sku_key" ON "products"("sku");
+CREATE INDEX "products_sku_idx" ON "products"("sku");
 
-CREATE UNIQUE INDEX IF NOT EXISTS "quotes_quoteNumber_key" ON "quotes"("quoteNumber");
-CREATE INDEX IF NOT EXISTS "quotes_contactId_idx" ON "quotes"("contactId");
-CREATE INDEX IF NOT EXISTS "quotes_status_idx" ON "quotes"("status");
-CREATE INDEX IF NOT EXISTS "quotes_createdAt_idx" ON "quotes"("createdAt" DESC);
+CREATE UNIQUE INDEX "quotes_quoteNumber_key" ON "quotes"("quoteNumber");
+CREATE INDEX "quotes_contactId_idx" ON "quotes"("contactId");
+CREATE INDEX "quotes_status_idx" ON "quotes"("status");
+CREATE INDEX "quotes_createdAt_idx" ON "quotes"("createdAt" DESC);
 
-CREATE INDEX IF NOT EXISTS "quote_items_quoteId_idx" ON "quote_items"("quoteId");
+CREATE INDEX "quote_items_quoteId_idx" ON "quote_items"("quoteId");
 
-CREATE UNIQUE INDEX IF NOT EXISTS "sales_orders_orderNumber_key" ON "sales_orders"("orderNumber");
-CREATE UNIQUE INDEX IF NOT EXISTS "sales_orders_quoteId_key" ON "sales_orders"("quoteId");
-CREATE INDEX IF NOT EXISTS "sales_orders_contactId_idx" ON "sales_orders"("contactId");
-CREATE INDEX IF NOT EXISTS "sales_orders_status_idx" ON "sales_orders"("status");
-CREATE INDEX IF NOT EXISTS "sales_orders_createdAt_idx" ON "sales_orders"("createdAt" DESC);
+CREATE UNIQUE INDEX "sales_orders_orderNumber_key" ON "sales_orders"("orderNumber");
+CREATE UNIQUE INDEX "sales_orders_quoteId_key" ON "sales_orders"("quoteId");
+CREATE INDEX "sales_orders_contactId_idx" ON "sales_orders"("contactId");
+CREATE INDEX "sales_orders_status_idx" ON "sales_orders"("status");
+CREATE INDEX "sales_orders_createdAt_idx" ON "sales_orders"("createdAt" DESC);
 
-CREATE INDEX IF NOT EXISTS "order_items_orderId_idx" ON "order_items"("orderId");
+CREATE INDEX "order_items_orderId_idx" ON "order_items"("orderId");
 
-CREATE UNIQUE INDEX IF NOT EXISTS "accounting_invoices_invoiceNumber_key" ON "accounting_invoices"("invoiceNumber");
-CREATE UNIQUE INDEX IF NOT EXISTS "accounting_invoices_orderId_key" ON "accounting_invoices"("orderId");
-CREATE UNIQUE INDEX IF NOT EXISTS "accounting_invoices_quoteId_key" ON "accounting_invoices"("quoteId");
-CREATE INDEX IF NOT EXISTS "accounting_invoices_contactId_idx" ON "accounting_invoices"("contactId");
-CREATE INDEX IF NOT EXISTS "accounting_invoices_status_idx" ON "accounting_invoices"("status");
-CREATE INDEX IF NOT EXISTS "accounting_invoices_createdAt_idx" ON "accounting_invoices"("createdAt" DESC);
+CREATE UNIQUE INDEX "accounting_invoices_invoiceNumber_key" ON "accounting_invoices"("invoiceNumber");
+CREATE UNIQUE INDEX "accounting_invoices_orderId_key" ON "accounting_invoices"("orderId");
+CREATE UNIQUE INDEX "accounting_invoices_quoteId_key" ON "accounting_invoices"("quoteId");
+CREATE INDEX "accounting_invoices_contactId_idx" ON "accounting_invoices"("contactId");
+CREATE INDEX "accounting_invoices_status_idx" ON "accounting_invoices"("status");
+CREATE INDEX "accounting_invoices_createdAt_idx" ON "accounting_invoices"("createdAt" DESC);
 
 -- AddForeignKey
 ALTER TABLE "quotes" ADD CONSTRAINT "quotes_contactId_fkey" FOREIGN KEY ("contactId") REFERENCES "contacts"("id") ON DELETE CASCADE ON UPDATE CASCADE;

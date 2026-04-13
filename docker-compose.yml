@@ -84,6 +84,8 @@ services:
       IYZICO_SECRET_KEY: ${IYZICO_SECRET_KEY:-}
       IYZICO_BASE_URL: ${IYZICO_BASE_URL:-https://sandbox-api.iyzipay.com}
       WAHA_WEBHOOK_SECRET: ${WAHA_WEBHOOK_SECRET:-}
+    volumes:
+      - backend_uploads:/app/uploads
     depends_on:
       postgres:
         condition: service_healthy
@@ -113,3 +115,4 @@ volumes:
   postgres_data:
   redis_data:
   waha_data:
+  backend_uploads:
