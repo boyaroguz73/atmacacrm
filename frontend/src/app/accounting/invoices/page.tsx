@@ -34,8 +34,11 @@ interface InvoiceRow {
   currency?: string | null;
   total?: number | string | null;
   amount?: number | string | null;
+  /** API (Prisma) alanı; liste/detayda toplam için kullanılır */
+  grandTotal?: number | string | null;
   dueDate?: string | null;
   pdfUrl?: string | null;
+  uploadedPdfUrl?: string | null;
   createdAt?: string | null;
 }
 
@@ -137,11 +140,12 @@ function orderNoLabel(inv: InvoiceRow): string {
 }
 
 function moneyAmount(inv: InvoiceRow | PendingBillingRow): number {
+  const g = 'grandTotal' in inv ? (inv as InvoiceRow).grandTotal : undefined;
   const t = 'total' in inv ? inv.total : undefined;
   const a = 'amount' in inv ? inv.amount : undefined;
-  const v = t ?? a;
+  const v = g ?? t ?? a;
   if (v == null) return 0;
-  const n = typeof v === 'string' ? parseFloat(v.replace(',', '.')) : Number(v);
+  const n = typeof v === 'string' ? parseFloat(String(v).replace(',', '.')) : Number(v);
   return Number.isFinite(n) ? n : 0;
 }
 
@@ -202,7 +206,7 @@ function normalizePendingRow(raw: unknown): PendingBillingRow | null {
     orderNumber: o.orderNumber != null ? String(o.orderNumber) : null,
     contact,
     contactName: o.contactName != null ? String(o.contactName) : null,
-    total: o.total as PendingBillingRow['total'],
+    total: (o.grandTotal ?? o.total ?? o.amount ?? o.subtotal) as PendingBillingRow['total'],
     amount: o.amount as PendingBillingRow['amount'],
     createdAt: o.createdAt != null ? String(o.createdAt) : null,
     orderDate: o.orderDate != null ? String(o.orderDate) : null,
@@ -233,10 +237,15 @@ function normalizeInvoiceRow(raw: unknown): InvoiceRow | null {
     orderNumber: o.orderNumber != null ? String(o.orderNumber) : null,
     status: String(o.status ?? 'PENDING'),
     currency: o.currency != null ? String(o.currency) : null,
-    total: o.total as InvoiceRow['total'],
+    grandTotal: o.grandTotal as InvoiceRow['grandTotal'],
+    total: (o.grandTotal ?? o.total ?? o.amount ?? o.subtotal) as InvoiceRow['total'],
     amount: o.amount as InvoiceRow['amount'],
-    dueDate: o.dueDate != null ? String(o.dueDate) : null,
+    dueDate:
+      o.dueDate != null && o.dueDate !== ''
+        ? String(o.dueDate)
+        : null,
     pdfUrl: o.pdfUrl != null ? String(o.pdfUrl) : null,
+    uploadedPdfUrl: o.uploadedPdfUrl != null ? String(o.uploadedPdfUrl) : null,
     createdAt: o.createdAt != null ? String(o.createdAt) : null,
   };
 }
@@ -732,11 +741,11 @@ export default function AccountingInvoicesPage() {
                     <p className="font-medium text-gray-900">{formatDate(detail.dueDate)}</p>
                   </div>
                 </div>
-                {detail.pdfUrl ? (
+                {detail.pdfUrl || detail.uploadedPdfUrl ? (
                   <p className="text-xs text-whatsapp pt-1 break-all">
                     PDF:{' '}
                     <a
-                      href={detail.pdfUrl}
+                      href={detail.uploadedPdfUrl || detail.pdfUrl || '#'}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="underline"
