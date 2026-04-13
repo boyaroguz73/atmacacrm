@@ -261,7 +261,6 @@ export default function AccountingInvoicesPage() {
   const [detail, setDetail] = useState<InvoiceRow | null>(null);
   const [detailBusy, setDetailBusy] = useState(false);
   const [showSendForm, setShowSendForm] = useState(false);
-  const [sendSessionName, setSendSessionName] = useState('');
   const [sendTemplateBody, setSendTemplateBody] = useState('');
   const pdfInputRef = useRef<HTMLInputElement>(null);
 
@@ -339,7 +338,6 @@ export default function AccountingInvoicesPage() {
   const closeDetail = () => {
     setDetail(null);
     setShowSendForm(false);
-    setSendSessionName('');
     setSendTemplateBody('');
   };
 
@@ -398,7 +396,6 @@ export default function AccountingInvoicesPage() {
       });
       toast.success('Fatura gönderildi');
       setShowSendForm(false);
-      setSendSessionName('');
       setSendTemplateBody('');
       fetchInvoices();
       const merged = normalizeInvoiceRow({ ...inv, status: 'SENT' });
@@ -514,7 +511,6 @@ export default function AccountingInvoicesPage() {
                         onClick={() => {
                           setDetail(inv);
                           setShowSendForm(false);
-                          setSendSessionName('');
                           setSendTemplateBody('');
                         }}
                         onKeyDown={(e) => {
