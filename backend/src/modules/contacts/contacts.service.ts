@@ -201,6 +201,13 @@ export class ContactsService {
     return d;
   }
 
+  /** WAHA profil fotoğrafı için telefon (yalnızca rakam, en az 10 hane) */
+  digitsForWahaProfile(phone: string): string | null {
+    const d = String(phone ?? '').replace(/\D/g, '');
+    if (d.length < 10) return null;
+    return d;
+  }
+
   /**
    * Manuel kişi kaydı. sessionId verilirse ilgili oturumda görüşme satırı oluşturulur (sohbet açmak için).
    */

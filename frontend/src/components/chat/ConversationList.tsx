@@ -54,7 +54,7 @@ export default function ConversationList() {
 
   const handleSearch = (q: string) => {
     setSearchQuery(q);
-    fetchConversations();
+    fetchConversations(true);
   };
 
   const isAgent = user?.role === 'AGENT';

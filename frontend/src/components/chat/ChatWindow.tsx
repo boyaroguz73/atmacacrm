@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { createPortal, flushSync } from 'react-dom';
+import { createPortal } from 'react-dom';
 import { useChatStore } from '@/store/chat';
 import { getSocket } from '@/lib/socket';
 import { cn, formatTime, formatPhone, digitsOnlyPhone } from '@/lib/utils';
@@ -74,6 +74,7 @@ export default function ChatWindow() {
     sendMediaMessage,
   } = useChatStore();
   const [text, setText] = useState('');
+  const [composerNonce, setComposerNonce] = useState(0);
   const [sending, setSending] = useState(false);
   const [showPanel, setShowPanel] = useState(true);
   const [internalChatEnabled, setInternalChatEnabled] = useState(false);
@@ -84,7 +85,8 @@ export default function ChatWindow() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const prevConversationId = useRef<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const messageInputRef = useRef<HTMLInputElement>(null);
+  const composerRef = useRef<HTMLTextAreaElement | null>(null);
+  const editInputRef = useRef<HTMLInputElement | null>(null);
 
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [filePreview, setFilePreview] = useState<string | null>(null);
@@ -130,6 +132,7 @@ export default function ChatWindow() {
   useEffect(() => {
     setMessageAuthorFilter('all');
     setText('');
+    setComposerNonce(0);
     setShowTemplates(false);
     setTemplateSearch('');
   }, [activeConversation?.id]);
@@ -214,14 +217,9 @@ export default function ChatWindow() {
 
   const chatId = `${digitsOnlyPhone(contact.phone) || contact.phone}@c.us`;
 
-  const handleSend = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const submitComposer = async () => {
     const trimmed = text.trim();
     if (!trimmed || sending) return;
-
-    flushSync(() => {
-      setText('');
-    });
     setSending(true);
     try {
       await sendMessage({
@@ -230,16 +228,13 @@ export default function ChatWindow() {
         chatId,
         body: trimmed,
       });
-      flushSync(() => {
-        setText('');
-      });
+      setText('');
+      setComposerNonce((n) => n + 1);
     } catch {
-      flushSync(() => {
-        setText(trimmed);
-      });
+      setText(trimmed);
     } finally {
       setSending(false);
-      messageInputRef.current?.focus();
+      queueMicrotask(() => composerRef.current?.focus());
     }
   };
 
@@ -426,7 +421,7 @@ export default function ChatWindow() {
                 if (!confirm('Bu sohbeti arşivlemek istediğinize emin misiniz?')) return;
                 try {
                   await api.patch(`/conversations/${activeConversation.id}/archive`);
-                  useChatStore.getState().fetchConversations();
+                  useChatStore.getState().fetchConversations(true);
                   toast.success('Sohbet arşivlendi');
                 } catch {
                   toast.error('Arşivleme başarısız');
@@ -678,11 +673,12 @@ export default function ChatWindow() {
         {/* Input */}
         {!selectedFile && (
           <form
-            onSubmit={editingMessage
-              ? (e) => { e.preventDefault(); handleEditMessage(); }
-              : handleSend
-            }
-            className="bg-white border-t border-gray-200 px-4 py-3 flex items-center gap-3"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (editingMessage) void handleEditMessage();
+              else void submitComposer();
+            }}
+            className="bg-white border-t border-gray-200 px-4 py-3 flex items-end gap-3"
           >
             <input
               ref={fileInputRef}
@@ -779,53 +775,63 @@ export default function ChatWindow() {
                   )}
                 </div>
               )}
-              <input
-                ref={messageInputRef}
-                type="text"
-                autoComplete="off"
-                name="chat-composer"
-                value={editingMessage ? editText : text}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  if (editingMessage) {
-                    setEditText(val);
-                    return;
-                  }
-                  setText(val);
-                  if (val.startsWith('/') && templates.length > 0) {
-                    setShowTemplates(true);
-                    setTemplateSearch(val.slice(1));
-                    const matched = templates.find(
-                      (t) => t.shortcut && val === `/${t.shortcut}`,
-                    );
-                    if (matched) {
-                      const contactName = [contact.name, contact.surname].filter(Boolean).join(' ') || '';
-                      const replaced = matched.body
-                        .replace(/\{isim\}/g, contactName)
-                        .replace(/\{telefon\}/g, contact.phone);
-                      setText(replaced);
+              {editingMessage ? (
+                <input
+                  ref={editInputRef}
+                  type="text"
+                  autoComplete="off"
+                  value={editText}
+                  onChange={(e) => setEditText(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Escape') {
+                      setEditingMessage(null);
+                      setEditText('');
+                    }
+                  }}
+                  placeholder="Düzenlenmiş mesajı yazın..."
+                  className="w-full px-4 py-2.5 rounded-full text-sm focus:outline-none focus:ring-1 border bg-blue-50 border-blue-200 focus:ring-blue-300"
+                />
+              ) : (
+                <textarea
+                  key={`composer-${activeConversation.id}-${composerNonce}`}
+                  ref={composerRef}
+                  autoComplete="off"
+                  name="chat-composer"
+                  rows={1}
+                  value={text}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setText(val);
+                    if (val.startsWith('/') && templates.length > 0) {
+                      setShowTemplates(true);
+                      setTemplateSearch(val.slice(1));
+                      const matched = templates.find(
+                        (t) => t.shortcut && val === `/${t.shortcut}`,
+                      );
+                      if (matched) {
+                        const contactName = [contact.name, contact.surname].filter(Boolean).join(' ') || '';
+                        const replaced = matched.body
+                          .replace(/\{isim\}/g, contactName)
+                          .replace(/\{telefon\}/g, contact.phone);
+                        setText(replaced);
+                        setShowTemplates(false);
+                        setTemplateSearch('');
+                      }
+                    } else {
                       setShowTemplates(false);
                       setTemplateSearch('');
                     }
-                  } else {
-                    setShowTemplates(false);
-                    setTemplateSearch('');
-                  }
-                }}
-                onKeyDown={(e) => {
-                  if (editingMessage && e.key === 'Escape') {
-                    setEditingMessage(null);
-                    setEditText('');
-                  }
-                }}
-                placeholder={editingMessage ? 'Düzenlenmiş mesajı yazın...' : 'Mesaj yazın... ( / ile şablon ara)'}
-                className={cn(
-                  'w-full px-4 py-2.5 rounded-full text-sm focus:outline-none focus:ring-1 border',
-                  editingMessage
-                    ? 'bg-blue-50 border-blue-200 focus:ring-blue-300'
-                    : 'bg-gray-50 border-gray-100 focus:ring-whatsapp/30'
-                )}
-              />
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      void submitComposer();
+                    }
+                  }}
+                  placeholder="Mesaj yazın… Enter gönderir, Shift+Enter satır atlar. (/ ile şablon)"
+                  className="w-full min-h-[44px] max-h-36 px-4 py-2.5 rounded-2xl text-sm focus:outline-none focus:ring-1 border bg-gray-50 border-gray-100 focus:ring-whatsapp/30 resize-y leading-snug"
+                />
+              )}
             </div>
             <button
               type="submit"

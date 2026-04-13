@@ -69,7 +69,7 @@ interface ChatState {
   setSearchQuery: (q: string) => void;
   setSessionFilter: (id: string | null) => void;
   setListFilter: (filter: string | undefined) => void;
-  fetchConversations: () => Promise<void>;
+  fetchConversations: (silent?: boolean) => Promise<void>;
   setActiveConversation: (conv: Conversation) => void;
   fetchMessages: (conversationId: string) => Promise<void>;
   sendMessage: (params: {
@@ -106,8 +106,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
   setSessionFilter: (id) => set({ sessionFilter: id }),
   setListFilter: (filter) => set({ listFilter: filter }),
 
-  fetchConversations: async () => {
-    set({ isLoadingConversations: true });
+  fetchConversations: async (silent?: boolean) => {
+    if (!silent) set({ isLoadingConversations: true });
     try {
       const params: any = {};
       const { searchQuery, sessionFilter, listFilter } = get();
@@ -122,7 +122,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
       );
       set({ conversations: sorted, isLoadingConversations: false });
     } catch {
-      set({ isLoadingConversations: false, conversations: [] });
+      set((state) => ({
+        isLoadingConversations: false,
+        conversations: silent ? state.conversations : [],
+      }));
     }
   },
 
@@ -155,7 +158,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           }),
         )
         .then(() => {
-          get().fetchConversations();
+          get().fetchConversations(true);
         })
         .catch(() => {});
     } catch {
@@ -185,6 +188,33 @@ export const useChatStore = create<ChatState>((set, get) => ({
           m.id === tempId ? { ...data } : m,
         ),
       }));
+
+      const preview = (data.body as string | null) ?? '';
+      const ts = (data.timestamp as string) || new Date().toISOString();
+      set((state) => {
+        const idx = state.conversations.findIndex((c) => c.id === params.conversationId);
+        if (idx < 0) return {};
+        const prevConv = state.conversations[idx];
+        const bumped: Conversation = {
+          ...prevConv,
+          lastMessageAt: ts,
+          lastMessageText: preview || prevConv.lastMessageText,
+        };
+        const others = state.conversations.filter((c) => c.id !== params.conversationId);
+        const conversations = [...others, bumped].sort(
+          (a, b) =>
+            new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime(),
+        );
+        let activeConversation = state.activeConversation;
+        if (activeConversation?.id === bumped.id) {
+          activeConversation = {
+            ...activeConversation,
+            lastMessageAt: bumped.lastMessageAt,
+            lastMessageText: bumped.lastMessageText,
+          };
+        }
+        return { conversations, activeConversation };
+      });
     } catch (error) {
       set((state) => ({
         messages: state.messages.filter((m) => m.id !== tempId),
@@ -215,6 +245,35 @@ export const useChatStore = create<ChatState>((set, get) => ({
           m.id === tempId ? { ...data } : m,
         ),
       }));
+
+      const preview =
+        (data.body as string | null) ||
+        (data.mediaType === 'IMAGE' ? '📷 Görsel' : '📎 Medya');
+      const ts = (data.timestamp as string) || new Date().toISOString();
+      set((state) => {
+        const idx = state.conversations.findIndex((c) => c.id === params.conversationId);
+        if (idx < 0) return {};
+        const prevConv = state.conversations[idx];
+        const bumped: Conversation = {
+          ...prevConv,
+          lastMessageAt: ts,
+          lastMessageText: preview || prevConv.lastMessageText,
+        };
+        const others = state.conversations.filter((c) => c.id !== params.conversationId);
+        const conversations = [...others, bumped].sort(
+          (a, b) =>
+            new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime(),
+        );
+        let activeConversation = state.activeConversation;
+        if (activeConversation?.id === bumped.id) {
+          activeConversation = {
+            ...activeConversation,
+            lastMessageAt: bumped.lastMessageAt,
+            lastMessageText: bumped.lastMessageText,
+          };
+        }
+        return { conversations, activeConversation };
+      });
     } catch (error) {
       set((state) => ({
         messages: state.messages.filter((m) => m.id !== tempId),

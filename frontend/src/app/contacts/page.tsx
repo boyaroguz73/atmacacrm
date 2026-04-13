@@ -139,7 +139,7 @@ export default function ContactsPage() {
       if (data.conversation) {
         useChatStore.getState().setListFilter(undefined);
         useChatStore.getState().setActiveConversation(data.conversation);
-        useChatStore.getState().fetchConversations();
+        useChatStore.getState().fetchConversations(true);
         router.push('/inbox');
       } else if (openChat) {
         toast('Çalışan WhatsApp oturumu yok; kişi kaydı tamam, sohbet açılamadı', {

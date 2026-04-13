@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useChatStore } from '@/store/chat';
 import { connectSocket, getSocket } from '@/lib/socket';
@@ -22,9 +22,13 @@ export default function InboxPage() {
     updateMessageEdit,
   } = useChatStore();
 
+  const inboxLoadedOnce = useRef(false);
+
   useEffect(() => {
     setListFilter(filter);
-    fetchConversations();
+    const silent = inboxLoadedOnce.current;
+    inboxLoadedOnce.current = true;
+    fetchConversations(silent);
 
     const socket = connectSocket();
     socket.emit('join:inbox');

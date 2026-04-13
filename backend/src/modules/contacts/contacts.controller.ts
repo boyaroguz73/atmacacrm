@@ -144,21 +144,24 @@ export class ContactsController {
     for (const contact of contacts) {
       if (!force && contact.avatarUrl) continue;
 
+      const waPhone = this.contactsService.digitsForWahaProfile(contact.phone);
+      if (!waPhone) continue;
+
       const pictureUrl = await this.wahaService.getProfilePicture(
         workingSession.name,
-        contact.phone,
+        waPhone,
       );
 
       if (pictureUrl) {
         await this.contactsService.fetchAndSaveProfilePicture(
           contact.id,
-          contact.phone,
+          waPhone,
           pictureUrl,
         );
         updated++;
       }
 
-      await new Promise((r) => setTimeout(r, 500));
+      await new Promise((r) => setTimeout(r, 120));
     }
 
     this.logger.log(`${updated} kişinin profil fotoğrafı güncellendi`);
@@ -216,15 +219,20 @@ export class ContactsController {
       return { message: 'Aktif oturum bulunamadı', avatarUrl: contact.avatarUrl };
     }
 
+    const waPhone = this.contactsService.digitsForWahaProfile(contact.phone);
+    if (!waPhone) {
+      return { message: 'Geçersiz telefon', avatarUrl: contact.avatarUrl };
+    }
+
     const pictureUrl = await this.wahaService.getProfilePicture(
       workingSession.name,
-      contact.phone,
+      waPhone,
     );
 
     if (pictureUrl) {
       await this.contactsService.fetchAndSaveProfilePicture(
         contact.id,
-        contact.phone,
+        waPhone,
         pictureUrl,
       );
       const updated = await this.contactsService.findById(id);

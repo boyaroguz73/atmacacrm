@@ -12,3 +12,4 @@ frontend/.env.local
 backups/
 backend/uploads/
 frontend/tsconfig.tsbuildinfo
+backend/tsconfig.tsbuildinfo
