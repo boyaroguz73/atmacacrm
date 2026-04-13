@@ -129,7 +129,8 @@ export class WahaWebhookHandler {
         );
       }
 
-      const waMessageId = msg.id?._serialized || msg.id;
+      const rawId = msg.id?._serialized || msg.id?.id || msg.id;
+      const waMessageId = typeof rawId === 'string' ? rawId : String(rawId ?? '');
       const direction = isFromMe ? MessageDirection.OUTGOING : MessageDirection.INCOMING;
       const messageData = {
         conversationId: conversation.id,

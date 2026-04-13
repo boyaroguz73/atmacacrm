@@ -54,7 +54,7 @@ api.interceptors.response.use(
 /** Axios / ağ hatalarından okunabilir mesaj (Nest `message` dizisi dahil) */
 export function getApiErrorMessage(err: unknown, fallback: string): string {
   const e = err as {
-    response?: { data?: { message?: unknown } };
+    response?: { data?: { message?: unknown }; status?: number };
     code?: string;
     message?: string;
   };

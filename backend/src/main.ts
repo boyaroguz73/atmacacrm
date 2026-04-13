@@ -69,7 +69,7 @@ async function bootstrap() {
 
   const port = config.get('PORT', 4000);
   await app.listen(port);
-  logger.log(`Server running on http://localhost:${port}`);
+  logger.log(`Server running on http://localhost:${port} — build 2026-04-13T21`);
 }
 
 bootstrap().catch((err) => {
