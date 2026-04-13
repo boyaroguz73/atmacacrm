@@ -169,7 +169,9 @@ export default function Sidebar() {
 
   const visibleMenuItems = useMemo(() => {
     const filtered = menuItems.filter((item) => {
-      if (isSuperAdmin) return !!item.superOnly;
+      // SUPERADMIN: SaaS paneli + tenant CRM (entegrasyonlar, ayarlar vb.) — eskiden yalnızca superOnly
+      // kalıyordu; /admin/integrations menüde yoktu ve sayfa “erişilemiyor” gibi görünüyordu.
+      if (isSuperAdmin) return true;
       if (item.superOnly) return false;
       if (item.adminOnly) return isAdmin;
       if (item.accountantVisible) return isAdmin || isAccountant;

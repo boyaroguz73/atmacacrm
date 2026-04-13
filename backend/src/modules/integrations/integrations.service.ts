@@ -24,7 +24,7 @@ export class IntegrationsService {
         select: { id: true },
       });
       if (exists) return exists.id;
-      // Eski localStorage / SUPERADMIN seçimi: DB sıfırlandıktan sonra geçersiz id gelirse yok say
+      this.logger.warn(`resolveOrganizationId: query organizationId geçersiz, yok sayılıyor (${q})`);
     }
     if (user.organizationId) {
       const stillThere = await this.prisma.organization.findUnique({
@@ -32,12 +32,19 @@ export class IntegrationsService {
         select: { id: true },
       });
       if (stillThere) return stillThere.id;
+      this.logger.warn(
+        `Kullanıcı organizationId geçersiz veya silinmiş (userId ilişkili), findFirst deneniyor`,
+      );
     }
     const first = await this.prisma.organization.findFirst({
       orderBy: { createdAt: 'asc' },
       select: { id: true },
     });
-    if (first) return first.id;
+    if (first) {
+      this.logger.debug(`Entegrasyonlar org çözüldü: ilk organizasyon ${first.id}`);
+      return first.id;
+    }
+    this.logger.error('Entegrasyonlar: veritabanında hiç Organization yok (seed gerekli)');
     throw new BadRequestException(
       'Veritabanında organizasyon kaydı yok. `npx prisma db seed` veya en az bir Organization oluşturun.',
     );
@@ -48,7 +55,10 @@ export class IntegrationsService {
       where: { id: organizationId },
       select: { plan: true },
     });
-    if (!org) throw new NotFoundException('Organizasyon bulunamadı');
+    if (!org) {
+      this.logger.warn(`getCatalog: organizasyon bulunamadı id=${organizationId}`);
+      throw new NotFoundException('Organizasyon bulunamadı');
+    }
 
     const planConfig = getPlanConfig(org.plan);
     const flags = planConfig.featureFlags as Record<string, boolean>;
