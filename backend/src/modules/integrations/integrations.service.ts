@@ -18,8 +18,21 @@ export class IntegrationsService {
     queryOrganizationId?: string,
   ): Promise<string> {
     const q = queryOrganizationId?.trim();
-    if (q) return q;
-    if (user.organizationId) return user.organizationId;
+    if (q) {
+      const exists = await this.prisma.organization.findUnique({
+        where: { id: q },
+        select: { id: true },
+      });
+      if (exists) return exists.id;
+      // Eski localStorage / SUPERADMIN seçimi: DB sıfırlandıktan sonra geçersiz id gelirse yok say
+    }
+    if (user.organizationId) {
+      const stillThere = await this.prisma.organization.findUnique({
+        where: { id: user.organizationId },
+        select: { id: true },
+      });
+      if (stillThere) return stillThere.id;
+    }
     const first = await this.prisma.organization.findFirst({
       orderBy: { createdAt: 'asc' },
       select: { id: true },
