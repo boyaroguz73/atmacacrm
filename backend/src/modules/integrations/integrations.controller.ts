@@ -5,8 +5,8 @@ import {
   Patch,
   Param,
   Body,
+  Query,
   UseGuards,
-  BadRequestException,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { IntegrationsService } from './integrations.service';
@@ -23,48 +23,70 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 export class IntegrationsController {
   constructor(private integrationsService: IntegrationsService) {}
 
-  private getOrgId(user: { organizationId?: string | null }): string {
-    if (!user.organizationId) throw new BadRequestException('Organizasyon bulunamadı');
-    return user.organizationId;
-  }
-
   @Get()
-  getCatalog(@CurrentUser() user: { organizationId?: string | null }) {
-    return this.integrationsService.getCatalog(this.getOrgId(user));
+  async getCatalog(
+    @CurrentUser() user: { role?: string; organizationId?: string | null },
+    @Query('organizationId') organizationId?: string,
+  ) {
+    const orgId = await this.integrationsService.resolveOrganizationId(
+      user,
+      organizationId,
+    );
+    return this.integrationsService.getCatalog(orgId);
   }
 
   @Post(':key/toggle')
-  toggleIntegration(
-    @CurrentUser() user: { organizationId?: string | null },
+  async toggleIntegration(
+    @CurrentUser() user: { role?: string; organizationId?: string | null },
+    @Query('organizationId') organizationId: string | undefined,
     @Param('key') key: string,
     @Body('enable') enable: boolean,
   ) {
-    return this.integrationsService.toggleIntegration(this.getOrgId(user), key, enable);
+    const orgId = await this.integrationsService.resolveOrganizationId(
+      user,
+      organizationId,
+    );
+    return this.integrationsService.toggleIntegration(orgId, key, enable);
   }
 
   @Patch(':key/config')
-  updateConfig(
-    @CurrentUser() user: { organizationId?: string | null },
+  async updateConfig(
+    @CurrentUser() user: { role?: string; organizationId?: string | null },
+    @Query('organizationId') organizationId: string | undefined,
     @Param('key') key: string,
     @Body('config') config: any,
   ) {
-    return this.integrationsService.updateConfig(this.getOrgId(user), key, config);
+    const orgId = await this.integrationsService.resolveOrganizationId(
+      user,
+      organizationId,
+    );
+    return this.integrationsService.updateConfig(orgId, key, config);
   }
 
   @Post(':key/config')
-  saveConfig(
-    @CurrentUser() user: { organizationId?: string | null },
+  async saveConfig(
+    @CurrentUser() user: { role?: string; organizationId?: string | null },
+    @Query('organizationId') organizationId: string | undefined,
     @Param('key') key: string,
     @Body() body: any,
   ) {
-    return this.integrationsService.saveConfig(this.getOrgId(user), key, body);
+    const orgId = await this.integrationsService.resolveOrganizationId(
+      user,
+      organizationId,
+    );
+    return this.integrationsService.saveConfig(orgId, key, body);
   }
 
   @Post(':key/purchase')
-  purchaseAddon(
-    @CurrentUser() user: { organizationId?: string | null },
+  async purchaseAddon(
+    @CurrentUser() user: { role?: string; organizationId?: string | null },
+    @Query('organizationId') organizationId: string | undefined,
     @Param('key') key: string,
   ) {
-    return this.integrationsService.purchaseAddon(this.getOrgId(user), key);
+    const orgId = await this.integrationsService.resolveOrganizationId(
+      user,
+      organizationId,
+    );
+    return this.integrationsService.purchaseAddon(orgId, key);
   }
 }

@@ -10,6 +10,38 @@ export class IntegrationsService {
 
   constructor(private prisma: PrismaService) {}
 
+  /**
+   * ADMIN: JWT’deki organizationId.
+   * SUPERADMIN + boş JWT org: `?organizationId=` veya veritabanındaki ilk organizasyon (tek kiracılı kurulumlar için).
+   */
+  async resolveOrganizationId(
+    user: { role?: string; organizationId?: string | null },
+    queryOrganizationId?: string,
+  ): Promise<string> {
+    if (user.organizationId) {
+      return user.organizationId;
+    }
+    const q = queryOrganizationId?.trim();
+    if (q) {
+      return q;
+    }
+    if (user.role === 'SUPERADMIN') {
+      const first = await this.prisma.organization.findFirst({
+        orderBy: { createdAt: 'asc' },
+        select: { id: true },
+      });
+      if (first) {
+        this.logger.warn(
+          `Entegrasyonlar: SUPERADMIN için organizationId yok; ilk organizasyon kullanılıyor (${first.id}).`,
+        );
+        return first.id;
+      }
+    }
+    throw new BadRequestException(
+      'Organizasyon bulunamadı. Süper yöneticiyseniz URL\'ye ?organizationId= ekleyin veya en az bir organizasyon oluşturun.',
+    );
+  }
+
   async getCatalog(organizationId: string) {
     const org = await this.prisma.organization.findUnique({
       where: { id: organizationId },

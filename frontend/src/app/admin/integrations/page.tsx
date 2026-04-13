@@ -33,6 +33,20 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
+/** JWT’de organizationId yoksa (çoğunlukla SUPERADMIN) seçili org’u query ile gönder */
+function integrationOrgParams(): Record<string, string> {
+  if (typeof window === 'undefined') return {};
+  try {
+    const user = JSON.parse(localStorage.getItem('user') || 'null');
+    if (user?.organizationId) return {};
+    const org = JSON.parse(localStorage.getItem('organization') || 'null');
+    if (org?.id) return { organizationId: String(org.id) };
+  } catch {
+    /* ignore */
+  }
+  return {};
+}
+
 interface Integration {
   key: string;
   name: string;
@@ -148,11 +162,15 @@ export default function IntegrationsPage() {
 
   const fetchCatalog = useCallback(async () => {
     try {
-      const { data } = await api.get('/integrations');
-      setCategories(data.categories);
-      setPlan(data.plan);
-    } catch {
-      toast.error('Entegrasyonlar yüklenemedi');
+      const { data } = await api.get('/integrations', {
+        params: integrationOrgParams(),
+      });
+      setCategories(Array.isArray(data?.categories) ? data.categories : []);
+      setPlan(typeof data?.plan === 'string' ? data.plan : 'FREE');
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, 'Entegrasyonlar yüklenemedi'));
+      setCategories([]);
+      setPlan('FREE');
     } finally {
       setLoading(false);
     }
@@ -165,7 +183,7 @@ export default function IntegrationsPage() {
   const handleToggle = async (key: string, enable: boolean) => {
     setToggling(key);
     try {
-      await api.post(`/integrations/${key}/toggle`, { enable });
+      await api.post(`/integrations/${key}/toggle`, { enable }, { params: integrationOrgParams() });
       await fetchCatalog();
       toast.success(enable ? 'Entegrasyon aktif edildi' : 'Entegrasyon pasif yapıldı');
     } catch (err: any) {
@@ -179,7 +197,11 @@ export default function IntegrationsPage() {
     if (!confirm(`${integration.name} eklentisini ${integration.addonPrice} TRY/ay karşılığında satın almak istiyor musunuz?`)) return;
     setPurchasing(integration.key);
     try {
-      await api.post(`/integrations/${integration.key}/purchase`, {});
+      await api.post(
+        `/integrations/${integration.key}/purchase`,
+        {},
+        { params: integrationOrgParams() },
+      );
       await fetchCatalog();
       toast.success(`${integration.name} eklentisi satın alındı`);
     } catch (err: any) {
@@ -189,7 +211,9 @@ export default function IntegrationsPage() {
     }
   };
 
-  const allIntegrations = categories.flatMap((c) => c.integrations);
+  const allIntegrations = categories.flatMap((c) =>
+    Array.isArray(c?.integrations) ? c.integrations : [],
+  );
   const selected = allIntegrations.find((i) => i.key === selectedKey) || null;
 
   if (loading) {
@@ -221,6 +245,7 @@ export default function IntegrationsPage() {
 
         {categories.map((category) => {
           const CatIcon = CATEGORY_ICONS[category.key] || ShoppingBag;
+          const items = Array.isArray(category?.integrations) ? category.integrations : [];
           return (
             <div key={category.key}>
               <div className="flex items-center gap-2 mb-2">
@@ -228,7 +253,7 @@ export default function IntegrationsPage() {
                 <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">{category.label}</h2>
               </div>
               <div className={`grid gap-2 ${selected ? 'grid-cols-1 xl:grid-cols-2' : 'grid-cols-2 md:grid-cols-3 xl:grid-cols-4'}`}>
-                {category.integrations.map((integration) => (
+                {items.map((integration) => (
                   <IntegrationCard
                     key={integration.key}
                     integration={integration}
@@ -702,7 +727,11 @@ function ChatbotPanel({ integration }: { integration: Integration }) {
   const handleSave = async () => {
     setSaving(true);
     try {
-      await api.post(`/integrations/${integration.key}/config`, { model, systemPrompt, autoReply, maxTokens });
+      await api.post(
+        `/integrations/${integration.key}/config`,
+        { model, systemPrompt, autoReply, maxTokens },
+        { params: integrationOrgParams() },
+      );
       toast.success('Chatbot yapılandırması kaydedildi');
     } catch (err: any) {
       toast.error(getApiErrorMessage(err, 'Kaydetme başarısız'));
@@ -789,7 +818,11 @@ function MessagingPanel({ integration }: { integration: Integration }) {
   const handleSave = async () => {
     setSaving(true);
     try {
-      await api.post(`/integrations/${integration.key}/config`, { accessToken: token });
+      await api.post(
+        `/integrations/${integration.key}/config`,
+        { accessToken: token },
+        { params: integrationOrgParams() },
+      );
       toast.success('Yapılandırma kaydedildi');
     } catch (err: any) {
       toast.error(getApiErrorMessage(err, 'Kaydetme başarısız'));
@@ -870,12 +903,16 @@ function TsoftPanel({ integration }: { integration: Integration }) {
   const handleSave = async () => {
     setSaving(true);
     try {
-      await api.post(`/integrations/${integration.key}/config`, {
-        baseUrl: baseUrl.trim(),
-        apiEmail: apiEmail.trim(),
-        apiPassword,
-        pathPrefix: usePanelApi ? '/panel' : '',
-      });
+      await api.post(
+        `/integrations/${integration.key}/config`,
+        {
+          baseUrl: baseUrl.trim(),
+          apiEmail: apiEmail.trim(),
+          apiPassword,
+          pathPrefix: usePanelApi ? '/panel' : '',
+        },
+        { params: integrationOrgParams() },
+      );
       toast.success('T-Soft yapılandırması kaydedildi');
     } catch (err: any) {
       toast.error(getApiErrorMessage(err, 'Kaydetme başarısız'));
@@ -1035,7 +1072,11 @@ function EcommercePanel({ integration }: { integration: Integration }) {
   const handleSave = async () => {
     setSaving(true);
     try {
-      await api.post(`/integrations/${integration.key}/config`, { storeUrl, apiKey, apiSecret });
+      await api.post(
+        `/integrations/${integration.key}/config`,
+        { storeUrl, apiKey, apiSecret },
+        { params: integrationOrgParams() },
+      );
       toast.success('Yapılandırma kaydedildi');
     } catch (err: any) {
       toast.error(getApiErrorMessage(err, 'Kaydetme başarısız'));
