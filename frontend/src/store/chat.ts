@@ -1,0 +1,286 @@
+import { create } from 'zustand';
+import api from '@/lib/api';
+
+interface Contact {
+  id: string;
+  phone: string;
+  name: string | null;
+  surname?: string | null;
+  email?: string | null;
+  avatarUrl?: string | null;
+  tags: string[];
+  source?: string | null;
+  company?: string | null;
+  city?: string | null;
+  notes?: string | null;
+  metadata?: unknown;
+  organizationId?: string | null;
+  lead?: any;
+}
+
+interface Assignment {
+  id: string;
+  user: { id: string; name: string; avatar: string | null };
+}
+
+interface Conversation {
+  id: string;
+  contactId: string;
+  sessionId: string;
+  lastMessageAt: string;
+  lastMessageText: string | null;
+  unreadCount: number;
+  contact: Contact;
+  session: { id: string; name: string; phone: string | null; organizationId?: string | null };
+  assignments: Assignment[];
+}
+
+interface Reaction {
+  emoji: string;
+  sender: string;
+  senderName: string;
+}
+
+export interface Message {
+  id: string;
+  conversationId: string;
+  direction: 'INCOMING' | 'OUTGOING';
+  body: string | null;
+  mediaType: string | null;
+  mediaUrl: string | null;
+  status: string;
+  timestamp: string;
+  reactions?: Reaction[] | null;
+  isEdited?: boolean;
+  sentBy: { id: string; name: string } | null;
+}
+
+interface ChatState {
+  conversations: Conversation[];
+  activeConversation: Conversation | null;
+  messages: Message[];
+  isLoadingConversations: boolean;
+  isLoadingMessages: boolean;
+  searchQuery: string;
+  sessionFilter: string | null;
+
+  setSearchQuery: (q: string) => void;
+  setSessionFilter: (id: string | null) => void;
+  fetchConversations: (filter?: string) => Promise<void>;
+  setActiveConversation: (conv: Conversation) => void;
+  fetchMessages: (conversationId: string) => Promise<void>;
+  sendMessage: (params: {
+    conversationId: string;
+    sessionName: string;
+    chatId: string;
+    body: string;
+  }) => Promise<void>;
+  sendMediaMessage: (params: {
+    conversationId: string;
+    sessionName: string;
+    chatId: string;
+    mediaUrl: string;
+    caption?: string;
+  }) => Promise<void>;
+  addMessage: (message: Message) => void;
+  updateConversation: (conversation: Conversation) => void;
+  updateMessageStatus: (messageId: string, status: string) => void;
+  updateMessageReactions: (messageId: string, reactions: Reaction[]) => void;
+  updateMessageEdit: (messageId: string, body: string) => void;
+}
+
+export const useChatStore = create<ChatState>((set, get) => ({
+  conversations: [],
+  activeConversation: null,
+  messages: [],
+  isLoadingConversations: false,
+  isLoadingMessages: false,
+  searchQuery: '',
+  sessionFilter: null,
+
+  setSearchQuery: (q) => set({ searchQuery: q }),
+  setSessionFilter: (id) => set({ sessionFilter: id }),
+
+  fetchConversations: async (filter?: string) => {
+    set({ isLoadingConversations: true });
+    try {
+      const params: any = {};
+      const { searchQuery, sessionFilter } = get();
+      if (searchQuery) params.search = searchQuery;
+      if (sessionFilter) params.sessionId = sessionFilter;
+      if (filter) params.filter = filter;
+
+      const { data } = await api.get('/conversations', { params });
+      const sorted = [...(data.conversations || [])].sort(
+        (a: Conversation, b: Conversation) =>
+          new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime(),
+      );
+      set({ conversations: sorted, isLoadingConversations: false });
+    } catch {
+      set({ isLoadingConversations: false, conversations: [] });
+    }
+  },
+
+  setActiveConversation: (conv) => {
+    const updated = { ...conv, unreadCount: 0 };
+    set((state) => ({
+      activeConversation: updated,
+      messages: [],
+      conversations: state.conversations.map((c) =>
+        c.id === conv.id ? { ...c, unreadCount: 0 } : c,
+      ),
+    }));
+    api.patch(`/conversations/${conv.id}/read`).catch(() => {});
+  },
+
+  fetchMessages: async (conversationId) => {
+    set({ isLoadingMessages: true });
+    try {
+      const { data } = await api.get(`/messages/conversation/${conversationId}`);
+      set({ messages: data.messages || [], isLoadingMessages: false });
+
+      api.post(`/conversations/${conversationId}/sync`)
+        .then(({ data: syncResult }) => {
+          if (syncResult.synced > 0) {
+            api.get(`/messages/conversation/${conversationId}`).then(({ data: fresh }) => {
+              const current = get();
+              if (current.activeConversation?.id === conversationId) {
+                set({ messages: fresh.messages || [] });
+              }
+            });
+            get().fetchConversations();
+          }
+        })
+        .catch(() => {});
+    } catch {
+      set({ isLoadingMessages: false });
+    }
+  },
+
+  sendMessage: async (params) => {
+    const tempId = `temp-${Date.now()}`;
+    const optimisticMsg: Message = {
+      id: tempId,
+      conversationId: params.conversationId,
+      direction: 'OUTGOING',
+      body: params.body,
+      mediaType: null,
+      mediaUrl: null,
+      status: 'PENDING',
+      timestamp: new Date().toISOString(),
+      sentBy: null,
+    };
+    set((state) => ({ messages: [...state.messages, optimisticMsg] }));
+
+    try {
+      const { data } = await api.post('/messages/send', params);
+      set((state) => ({
+        messages: state.messages.map((m) =>
+          m.id === tempId ? { ...data } : m,
+        ),
+      }));
+    } catch (error) {
+      set((state) => ({
+        messages: state.messages.filter((m) => m.id !== tempId),
+      }));
+      throw error;
+    }
+  },
+
+  sendMediaMessage: async (params) => {
+    const tempId = `temp-media-${Date.now()}`;
+    const optimisticMsg: Message = {
+      id: tempId,
+      conversationId: params.conversationId,
+      direction: 'OUTGOING',
+      body: params.caption || null,
+      mediaType: 'IMAGE',
+      mediaUrl: params.mediaUrl,
+      status: 'PENDING',
+      timestamp: new Date().toISOString(),
+      sentBy: null,
+    };
+    set((state) => ({ messages: [...state.messages, optimisticMsg] }));
+
+    try {
+      const { data } = await api.post('/messages/send-media', params);
+      set((state) => ({
+        messages: state.messages.map((m) =>
+          m.id === tempId ? { ...data } : m,
+        ),
+      }));
+    } catch (error) {
+      set((state) => ({
+        messages: state.messages.filter((m) => m.id !== tempId),
+      }));
+      throw error;
+    }
+  },
+
+  addMessage: (message) => {
+    const { activeConversation } = get();
+    if (activeConversation?.id === message.conversationId) {
+      set((state) => {
+        const exists = state.messages.some((m) => m.id === message.id);
+        if (exists) return state;
+        const tempIdx = state.messages.findIndex(
+          (m) =>
+            m.id.startsWith('temp-') &&
+            m.direction === message.direction &&
+            (m.body === message.body ||
+              (m.mediaUrl && message.mediaUrl)),
+        );
+        if (tempIdx >= 0) {
+          const updated = [...state.messages];
+          updated[tempIdx] = message;
+          return { messages: updated };
+        }
+        return { messages: [...state.messages, message] };
+      });
+    }
+  },
+
+  updateConversation: (conversation) => {
+    set((state) => {
+      const index = state.conversations.findIndex(
+        (c) => c.id === conversation.id,
+      );
+      const conversations = [...state.conversations];
+      if (index >= 0) {
+        conversations[index] = conversation;
+      } else {
+        conversations.unshift(conversation);
+      }
+      conversations.sort(
+        (a, b) =>
+          new Date(b.lastMessageAt).getTime() -
+          new Date(a.lastMessageAt).getTime(),
+      );
+      return { conversations };
+    });
+  },
+
+  updateMessageStatus: (messageId, status) => {
+    set((state) => ({
+      messages: state.messages.map((m) =>
+        m.id === messageId ? { ...m, status } : m,
+      ),
+    }));
+  },
+
+  updateMessageReactions: (messageId, reactions) => {
+    set((state) => ({
+      messages: state.messages.map((m) =>
+        m.id === messageId ? { ...m, reactions } : m,
+      ),
+    }));
+  },
+
+  updateMessageEdit: (messageId, body) => {
+    set((state) => ({
+      messages: state.messages.map((m) =>
+        m.id === messageId ? { ...m, body, isEdited: true } : m,
+      ),
+    }));
+  },
+}));

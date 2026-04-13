@@ -1,0 +1,73 @@
+import { NestFactory } from '@nestjs/core';
+import { ValidationPipe, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { NestExpressApplication } from '@nestjs/platform-express';
+import helmet from 'helmet';
+import { join } from 'path';
+import { existsSync, mkdirSync } from 'fs';
+import { AppModule } from './app.module';
+
+async function bootstrap() {
+  const logger = new Logger('Bootstrap');
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  const config = app.get(ConfigService);
+
+  const uploadsDir = join(process.cwd(), 'uploads');
+  if (!existsSync(uploadsDir)) mkdirSync(uploadsDir, { recursive: true });
+
+  app.use(
+    helmet({
+      crossOriginResourcePolicy: { policy: 'cross-origin' },
+    }),
+  );
+
+  const frontendUrl = config.get('FRONTEND_URL', 'http://localhost:3000');
+  /** CRM arayüzü geliştirmede sabit http://localhost:3000 */
+  const corsOrigins =
+    process.env.NODE_ENV === 'production'
+      ? [frontendUrl]
+      : Array.from(
+          new Set([
+            frontendUrl,
+            'http://localhost:3000',
+            'http://127.0.0.1:3000',
+          ]),
+        );
+  app.enableCors({
+    origin: corsOrigins,
+    credentials: true,
+  });
+
+  app.useStaticAssets(uploadsDir, { prefix: '/uploads/' });
+
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true,
+      forbidNonWhitelisted: true,
+      transform: true,
+    }),
+  );
+
+  app.setGlobalPrefix('api');
+
+  if (process.env.NODE_ENV !== 'production') {
+    const swaggerConfig = new DocumentBuilder()
+      .setTitle('WhatsApp CRM API')
+      .setDescription('WhatsApp CRM System API Documentation')
+      .setVersion('1.0')
+      .addBearerAuth()
+      .build();
+    const document = SwaggerModule.createDocument(app, swaggerConfig);
+    SwaggerModule.setup('api/docs', app, document);
+  }
+
+  const port = config.get('PORT', 4000);
+  await app.listen(port);
+  logger.log(`Server running on http://localhost:${port}`);
+}
+
+bootstrap().catch((err) => {
+  console.error('Application failed to start:', err);
+  process.exit(1);
+});

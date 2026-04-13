@@ -1,0 +1,14 @@
+node_modules
+dist
+.next
+.env
+backend/.env
+frontend/.env.local
+*.log
+.DS_Store
+
+# Büyük / yerel veri — GitHub'a gitmemeli
+*.zip
+backups/
+backend/uploads/
+frontend/tsconfig.tsbuildinfo
