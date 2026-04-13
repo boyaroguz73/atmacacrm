@@ -292,7 +292,7 @@ export class ConversationsController {
     id: string,
   ): Promise<{ synced: number; message: string }> {
     const conversation = await this.conversationsService.findById(id);
-    const phone = conversation.contact.phone;
+    const phone = canonicalContactPhone(conversation.contact.phone) || conversation.contact.phone;
     const sessionName = conversation.session.name;
     const chatId = `${phone}@c.us`;
 

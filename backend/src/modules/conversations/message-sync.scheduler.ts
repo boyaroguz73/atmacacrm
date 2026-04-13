@@ -5,6 +5,7 @@ import { WahaService } from '../waha/waha.service';
 import { ContactsService } from '../contacts/contacts.service';
 import { ConversationsService } from './conversations.service';
 import { ConversationsController } from './conversations.controller';
+import { canonicalContactPhone } from '../../common/contact-phone';
 
 @Injectable()
 export class MessageSyncScheduler implements OnModuleInit {
@@ -70,23 +71,18 @@ export class MessageSyncScheduler implements OnModuleInit {
             return cid && cid.endsWith('@c.us') && cid !== 'status@broadcast' && !cid.includes('@broadcast');
           });
 
-          const fiveMinAgo = Math.floor(Date.now() / 1000) - 5 * 60;
-          const recentChats = personalChats
-            .filter((c: any) => c.timestamp && c.timestamp > fiveMinAgo)
-            .sort((a: any, b: any) => (b.timestamp || 0) - (a.timestamp || 0));
-
-          const sortedChats = recentChats.length > 0 ? recentChats : personalChats
+          const sortedChats = personalChats
             .filter((c: any) => c.timestamp)
-            .sort((a: any, b: any) => (b.timestamp || 0) - (a.timestamp || 0))
-            .slice(0, 20);
+            .sort((a: any, b: any) => (b.timestamp || 0) - (a.timestamp || 0));
 
           this.logger.debug(`Oturum ${session.name}: ${sortedChats.length} sohbet senkron ediliyor (toplam: ${personalChats.length})`);
 
           for (const chat of sortedChats) {
             try {
               const chatId = chat.id?._serialized || chat.id;
-              const phone = chatId.replace('@c.us', '');
-              if (!phone || phone.length < 6) continue;
+              const rawPhone = chatId.replace('@c.us', '');
+              if (!rawPhone || rawPhone.length < 6) continue;
+              const phone = canonicalContactPhone(rawPhone) || rawPhone;
 
               const contactName = chat.name || chat.pushname || phone;
               const contact = await this.contactsService.findOrCreate(phone, contactName);
