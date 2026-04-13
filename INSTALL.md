@@ -511,6 +511,15 @@ Kök `docker-compose.yml` geliştirme içindir. Canlıda mutlaka:
 
 4. **`WAHA_WEBHOOK_URL`:** İnternetten erişilen **HTTPS** veya en azından WAHA’nın ulaştığı tam URL, örn. `https://api.ornek.com/api/waha/webhook`.
 
+**WAHA Plus (özel Docker imajı):** `docker-compose.yml` servisi `devlikeapro/waha-plus:latest` kullanır. İmajı çekmeden önce sunucuda Docker Hub’a giriş yapın (Docker Hub kullanıcı adı + **Personal Access Token**; token’ı `.env` dosyasına yazmayın, sadece `docker login` için kullanın). Ardından:
+
+```bash
+docker compose pull waha
+docker compose up -d
+```
+
+Pull bittikten sonra güvenlik için `docker logout` kullanabilirsiniz (token yalnızca çekme amaçlı verildiyse özellikle önerilir).
+
 ### 4.3 TLS ve reverse proxy (tek sunucu örneği)
 
 Sunucuda **Caddy** veya **Nginx**:

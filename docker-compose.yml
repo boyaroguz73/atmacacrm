@@ -31,8 +31,9 @@ services:
       timeout: 5s
       retries: 5
 
+  # Özel imaj: sunucuda önce `docker login` (Docker Hub kullanıcı + PAT), sonra `docker compose pull waha`
   waha:
-    image: devlikeapro/waha
+    image: devlikeapro/waha-plus:latest
     container_name: crm-waha
     restart: unless-stopped
     ports:

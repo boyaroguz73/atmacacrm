@@ -55,8 +55,10 @@ docker run -d --name crm-postgres -p 5432:5432 -e POSTGRES_DB=whatsapp_crm -e PO
 docker run -d --name crm-redis -p 6379:6379 redis:7-alpine
 ```
 
+Özel WAHA Plus imajı için önce `docker login` (Docker Hub erişiminiz), ardından:
+
 ```bash
-docker run -d --name crm-waha -p 3001:3000 -e WHATSAPP_DEFAULT_ENGINE=WEBJS -e WAHA_DASHBOARD_ENABLED=true devlikeapro/waha
+docker run -d --name crm-waha -p 3001:3000 -e WHATSAPP_DEFAULT_ENGINE=WEBJS -e WAHA_DASHBOARD_ENABLED=true devlikeapro/waha-plus:latest
 ```
 
 #### Seçenek B: Hepsini Tek Komutla Başlatma (docker-compose)
