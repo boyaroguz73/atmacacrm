@@ -862,29 +862,53 @@ export default function ChatWindow() {
         createPortal(
           <div
             data-lightbox-overlay=""
-            style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 99999, background: 'rgba(0,0,0,0.92)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, cursor: 'pointer' }}
+            style={{
+              position: 'fixed',
+              inset: 0,
+              zIndex: 99999,
+              background: 'rgba(0,0,0,0.92)',
+              cursor: 'pointer',
+            }}
             onClick={() => setLightboxUrl(null)}
           >
             <button
-              onClick={(e) => { e.stopPropagation(); setLightboxUrl(null); }}
-              style={{ position: 'absolute', top: 20, right: 20, padding: 12, background: 'rgba(255,255,255,0.15)', borderRadius: '50%', border: 'none', cursor: 'pointer', zIndex: 10 }}
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setLightboxUrl(null);
+              }}
+              style={{
+                position: 'absolute',
+                top: 20,
+                right: 20,
+                padding: 12,
+                background: 'rgba(255,255,255,0.15)',
+                borderRadius: '50%',
+                border: 'none',
+                cursor: 'pointer',
+                zIndex: 10,
+              }}
             >
               <X className="w-7 h-7" style={{ color: 'white' }} />
             </button>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={lightboxUrl}
-              alt=""
-              style={{ maxWidth: '95vw', maxHeight: '95vh', width: 'auto', height: 'auto', objectFit: 'contain', borderRadius: 8, display: 'block', margin: '0 auto' }}
-              onClick={(e) => e.stopPropagation()}
-              onLoad={(e) => {
-                const img = e.currentTarget;
-                if (img.naturalWidth > 0) {
-                  img.style.width = 'auto';
-                  img.style.height = 'auto';
-                }
-              }}
-            />
+            <div data-lightbox-stage="">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={lightboxUrl}
+                alt=""
+                style={{
+                  maxWidth: '100%',
+                  maxHeight: '100%',
+                  width: 'auto',
+                  height: 'auto',
+                  objectFit: 'contain',
+                  borderRadius: 8,
+                  pointerEvents: 'auto',
+                  cursor: 'default',
+                }}
+                onClick={(e) => e.stopPropagation()}
+              />
+            </div>
           </div>,
           document.body,
         )}
