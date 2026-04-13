@@ -94,61 +94,29 @@ export class MessagesService {
     const waMessageId = this.extractWaMessageId(waResponse);
     this.logger.debug(`WAHA sendText response waMessageId: ${waMessageId}`);
 
+    const messageData = {
+      conversationId,
+      sessionId: conversation.sessionId,
+      waMessageId,
+      direction: MessageDirection.OUTGOING,
+      body,
+      status: MessageStatus.SENT,
+      sentById,
+    };
+
     let message;
-    try {
-      message = await this.prisma.message.create({
-        data: {
-          conversationId,
-          sessionId: conversation.sessionId,
-          waMessageId,
-          direction: MessageDirection.OUTGOING,
-          body,
-          status: MessageStatus.SENT,
-          sentById,
-        },
-        include: {
-          sentBy: { select: { id: true, name: true } },
-        },
+    if (waMessageId) {
+      message = await this.prisma.message.upsert({
+        where: { waMessageId },
+        create: messageData,
+        update: { sentById: sentById || undefined },
+        include: { sentBy: { select: { id: true, name: true } } },
       });
-    } catch (err: any) {
-      const code = err?.code;
-      if (code === 'P2002' && waMessageId) {
-        const dup = await this.prisma.message.findUnique({
-          where: { waMessageId },
-          include: { sentBy: { select: { id: true, name: true } } },
-        });
-        if (dup?.conversationId === conversationId) {
-          this.logger.warn(
-            `sendText: waMessageId zaten var (çoğunlukla webhook); aynı mesaj kabul ediliyor: ${waMessageId}`,
-          );
-          if (sentById && dup.sentById !== sentById) {
-            message = await this.prisma.message.update({
-              where: { id: dup.id },
-              data: { sentById },
-              include: { sentBy: { select: { id: true, name: true } } },
-            });
-          } else {
-            message = dup;
-          }
-        } else {
-          this.logger.error(
-            `sendText waMessageId çakışması (farklı görüşme?): ${err?.message}`,
-            err?.stack,
-          );
-          throw new BadRequestException(
-            'Mesaj kimliği veritabanında çakıştı; tekrar deneyin.',
-          );
-        }
-      } else {
-        this.logger.error(
-          `sendText DB kayıt hatası (WAHA gönderimi yapılmış olabilir): ${err?.message}`,
-          err?.stack,
-        );
-        throw new BadRequestException(
-          err?.message ||
-            'Mesaj veritabanına kaydedilemedi. Migrasyon ve bağlantıyı kontrol edin.',
-        );
-      }
+    } else {
+      message = await this.prisma.message.create({
+        data: messageData,
+        include: { sentBy: { select: { id: true, name: true } } },
+      });
     }
 
     try {
@@ -247,54 +215,31 @@ export class MessagesService {
     const waMessageId = this.extractWaMessageId(waResponse);
     this.logger.debug(`WAHA send response waMessageId: ${waMessageId}`);
 
+    const mediaData = {
+      conversationId,
+      sessionId: conversation.sessionId,
+      waMessageId,
+      direction: MessageDirection.OUTGOING,
+      body: caption || '',
+      mediaUrl,
+      mediaType: mediaType as any,
+      status: MessageStatus.SENT,
+      sentById,
+    };
+
     let message;
-    try {
-      message = await this.prisma.message.create({
-        data: {
-          conversationId,
-          sessionId: conversation.sessionId,
-          waMessageId,
-          direction: MessageDirection.OUTGOING,
-          body: caption || '',
-          mediaUrl,
-          mediaType: mediaType as any,
-          status: MessageStatus.SENT,
-          sentById,
-        },
-        include: {
-          sentBy: { select: { id: true, name: true } },
-        },
+    if (waMessageId) {
+      message = await this.prisma.message.upsert({
+        where: { waMessageId },
+        create: mediaData,
+        update: { sentById: sentById || undefined },
+        include: { sentBy: { select: { id: true, name: true } } },
       });
-    } catch (err: any) {
-      if (err?.code === 'P2002' && waMessageId) {
-        const dup = await this.prisma.message.findUnique({
-          where: { waMessageId },
-          include: { sentBy: { select: { id: true, name: true } } },
-        });
-        if (dup?.conversationId === conversationId) {
-          this.logger.warn(
-            `sendMedia: waMessageId zaten var (webhook); aynı mesaj: ${waMessageId}`,
-          );
-          if (sentById && dup.sentById !== sentById) {
-            message = await this.prisma.message.update({
-              where: { id: dup.id },
-              data: { sentById },
-              include: { sentBy: { select: { id: true, name: true } } },
-            });
-          } else {
-            message = dup;
-          }
-        } else {
-          throw new BadRequestException(
-            'Mesaj kimliği veritabanında çakıştı; tekrar deneyin.',
-          );
-        }
-      } else {
-        throw new BadRequestException(
-          err?.message ||
-            'Medya mesajı veritabanına kaydedilemedi. Migrasyon ve bağlantıyı kontrol edin.',
-        );
-      }
+    } else {
+      message = await this.prisma.message.create({
+        data: mediaData,
+        include: { sentBy: { select: { id: true, name: true } } },
+      });
     }
 
     await this.conversationsService.updateLastMessage(

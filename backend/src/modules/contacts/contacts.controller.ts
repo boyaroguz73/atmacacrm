@@ -149,31 +149,52 @@ export class ContactsController {
 
     let updated = 0;
 
+    let skipped = 0;
+    let noPhone = 0;
+    let noPhoto = 0;
+    let errors = 0;
+
     for (const contact of contacts) {
-      if (!force && contact.avatarUrl) continue;
-
-      const waPhone = this.contactsService.digitsForWahaProfile(contact.phone);
-      if (!waPhone) continue;
-
-      const pictureUrl = await this.wahaService.getProfilePicture(
-        workingSession.name,
-        waPhone,
-      );
-
-      if (pictureUrl) {
-        await this.contactsService.fetchAndSaveProfilePicture(
-          contact.id,
-          waPhone,
-          pictureUrl,
-        );
-        updated++;
+      if (!force && contact.avatarUrl) {
+        skipped++;
+        continue;
       }
 
-      await new Promise((r) => setTimeout(r, 120));
+      const waPhone = this.contactsService.digitsForWahaProfile(contact.phone);
+      if (!waPhone) {
+        noPhone++;
+        continue;
+      }
+
+      try {
+        const pictureUrl = await this.wahaService.getProfilePicture(
+          workingSession.name,
+          waPhone,
+        );
+
+        if (pictureUrl) {
+          await this.contactsService.fetchAndSaveProfilePicture(
+            contact.id,
+            waPhone,
+            pictureUrl,
+          );
+          updated++;
+        } else {
+          noPhoto++;
+        }
+      } catch (err: any) {
+        errors++;
+        this.logger.debug(`Avatar hatası (${contact.phone}): ${err.message}`);
+      }
+
+      await new Promise((r) => setTimeout(r, 150));
     }
 
-    this.logger.log(`${updated} kişinin profil fotoğrafı güncellendi`);
-    return { message: `${updated} kişinin profil fotoğrafı güncellendi`, updated };
+    const msg =
+      `${updated} kişinin profil fotoğrafı güncellendi` +
+      ` (toplam: ${contacts.length}, atlandı: ${skipped}, telefon yok: ${noPhone}, foto yok: ${noPhoto}, hata: ${errors})`;
+    this.logger.log(msg);
+    return { message: msg, updated };
   }
 
   @Get(':id')

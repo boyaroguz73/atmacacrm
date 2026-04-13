@@ -603,18 +603,42 @@ export class WahaService implements OnModuleInit {
     sessionName: string,
     contactId: string,
   ): Promise<string | null> {
-    try {
-      const chatId = contactId.includes('@') ? contactId : `${contactId}@c.us`;
-      const response = await this.http.get('/api/contacts/profile-picture', {
-        params: { contactId: chatId, session: sessionName },
-      });
-      return response.data?.profilePictureURL || null;
-    } catch (error: any) {
-      this.logger.debug(
-        `Profil fotoğrafı alınamadı: ${contactId} - ${error.message}`,
-      );
-      return null;
+    const chatId = contactId.includes('@') ? contactId : `${contactId}@c.us`;
+
+    const endpoints = [
+      { url: `/api/contacts/profile-picture`, params: { contactId: chatId, session: sessionName } },
+      { url: `/api/${encodeURIComponent(sessionName)}/contacts/profile-picture`, params: { contactId: chatId } },
+    ];
+
+    for (const ep of endpoints) {
+      try {
+        const response = await this.http.get(ep.url, {
+          params: ep.params,
+          timeout: 15000,
+        });
+        const picUrl =
+          response.data?.profilePictureURL ||
+          response.data?.profilePicture ||
+          response.data?.url ||
+          null;
+        if (picUrl) {
+          this.logger.debug(`Profil fotoğrafı bulundu (${contactId}): ${picUrl}`);
+          return picUrl;
+        }
+      } catch (error: any) {
+        const status = error.response?.status;
+        if (status === 404) {
+          this.logger.debug(
+            `Profil fotoğrafı: ${ep.url} 404 (${contactId})`,
+          );
+          continue;
+        }
+        this.logger.debug(
+          `Profil fotoğrafı alınamadı: ${ep.url} ${contactId} - ${error.message}`,
+        );
+      }
     }
+    return null;
   }
 
   async getChatMessages(
