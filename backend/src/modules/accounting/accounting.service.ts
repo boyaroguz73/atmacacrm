@@ -167,7 +167,8 @@ export class AccountingService {
 
     const localPath = join(process.cwd(), pdfPath.replace(/^\//, ''));
     const buf = readFileSync(localPath);
-    const base64Data = `data:application/pdf;base64,${buf.toString('base64')}`;
+    // WAHA WEBJS engine saf base64 bekliyor, data: prefix olmadan
+    const base64Data = buf.toString('base64');
 
     await this.wahaService.sendFile(sessionName, chatId, {
       mimetype: 'application/pdf',
