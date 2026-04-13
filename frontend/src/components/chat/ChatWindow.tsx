@@ -4,7 +4,14 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useChatStore } from '@/store/chat';
 import { getSocket } from '@/lib/socket';
-import { cn, formatTime, formatPhone, phoneToWhatsappChatId } from '@/lib/utils';
+import {
+  cn,
+  formatTime,
+  formatPhone,
+  phoneToWhatsappChatId,
+  backendPublicUrl,
+  rewriteMediaUrlForClient,
+} from '@/lib/utils';
 import {
   Send,
   Paperclip,
@@ -28,8 +35,6 @@ import toast from 'react-hot-toast';
 import ContactAvatar from '@/components/ui/ContactAvatar';
 import EcommerceCustomerBadge from '@/components/ui/EcommerceCustomerBadge';
 import type { Message } from '@/store/chat';
-
-const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL?.replace('/api', '') || 'http://localhost:4000';
 
 function filterMessagesByAuthor(
   msgs: Message[],
@@ -272,7 +277,7 @@ export default function ChatWindow() {
 
       const { data: uploadResult } = await api.post('/messages/upload', formData);
 
-      const fullMediaUrl = `${BACKEND_URL}${uploadResult.url}`;
+      const fullMediaUrl = `${backendPublicUrl()}${uploadResult.url}`;
 
       await sendMediaMessage({
         conversationId: activeConversation.id,
@@ -325,16 +330,17 @@ export default function ChatWindow() {
 
   const resolveMediaUrl = (url: string | null) => {
     if (!url) return null;
-    if (url.startsWith('http')) return url;
+    const t = url.trim();
+    if (t.startsWith('http')) return rewriteMediaUrlForClient(t);
     if (
-      url.startsWith('/uploads/') ||
-      url.startsWith('/api/') ||
-      url.startsWith('uploads/')
+      t.startsWith('/uploads/') ||
+      t.startsWith('/api/') ||
+      t.startsWith('uploads/')
     ) {
-      const path = url.startsWith('/') ? url : `/${url}`;
-      return `${BACKEND_URL}${path}`;
+      const path = t.startsWith('/') ? t : `/${t}`;
+      return `${backendPublicUrl()}${path}`;
     }
-    return url;
+    return t;
   };
 
   const handleDownload = async (url: string, filename?: string) => {

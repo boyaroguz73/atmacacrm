@@ -5,6 +5,37 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+/** Statik dosya / medya için API HTTP kökü (`NEXT_PUBLIC_API_URL` içinden `/api` kırpılır). */
+export function backendPublicUrl(): string {
+  const api = process.env.NEXT_PUBLIC_API_URL;
+  if (api) {
+    const base = api.replace(/\/api\/?$/, '').trim();
+    if (base) return base;
+  }
+  const ws = process.env.NEXT_PUBLIC_WS_URL || '';
+  if (ws.startsWith('wss://')) return `https://${ws.slice(6)}`;
+  if (ws.startsWith('ws://')) return `http://${ws.slice(5)}`;
+  if (ws.startsWith('http')) return ws.replace(/\/api\/?$/, '');
+  return 'http://localhost:4000';
+}
+
+/**
+ * Veritabanında `http://localhost:4000/uploads/...` gibi kayıtlı URL'leri,
+ * tarayıcıda gerçek sunucu adresine çevirir (Docker / uzak kurulum).
+ */
+export function rewriteMediaUrlForClient(url: string): string {
+  try {
+    if (!url.startsWith('http')) return url;
+    const u = new URL(url);
+    if (u.hostname !== 'localhost' && u.hostname !== '127.0.0.1') return url;
+    const baseStr = backendPublicUrl();
+    const b = new URL(baseStr.startsWith('http') ? baseStr : `http://${baseStr}`);
+    return `${b.origin}${u.pathname}${u.search}`;
+  } catch {
+    return url;
+  }
+}
+
 /** Sadece rakamlar (ülke kodu ile birlikte, örn. 905551234567) */
 export function digitsOnlyPhone(phone: string | null | undefined): string {
   if (phone == null) return '';

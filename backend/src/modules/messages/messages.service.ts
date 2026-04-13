@@ -112,19 +112,43 @@ export class MessagesService {
       });
     } catch (err: any) {
       const code = err?.code;
-      this.logger.error(
-        `sendText DB kayıt hatası (WAHA gönderimi yapılmış olabilir): ${err?.message}`,
-        err?.stack,
-      );
-      if (code === 'P2002') {
+      if (code === 'P2002' && waMessageId) {
+        const dup = await this.prisma.message.findUnique({
+          where: { waMessageId },
+          include: { sentBy: { select: { id: true, name: true } } },
+        });
+        if (dup?.conversationId === conversationId) {
+          this.logger.warn(
+            `sendText: waMessageId zaten var (çoğunlukla webhook); aynı mesaj kabul ediliyor: ${waMessageId}`,
+          );
+          if (sentById && dup.sentById !== sentById) {
+            message = await this.prisma.message.update({
+              where: { id: dup.id },
+              data: { sentById },
+              include: { sentBy: { select: { id: true, name: true } } },
+            });
+          } else {
+            message = dup;
+          }
+        } else {
+          this.logger.error(
+            `sendText waMessageId çakışması (farklı görüşme?): ${err?.message}`,
+            err?.stack,
+          );
+          throw new BadRequestException(
+            'Mesaj kimliği veritabanında çakıştı; tekrar deneyin.',
+          );
+        }
+      } else {
+        this.logger.error(
+          `sendText DB kayıt hatası (WAHA gönderimi yapılmış olabilir): ${err?.message}`,
+          err?.stack,
+        );
         throw new BadRequestException(
-          'Mesaj kimliği veritabanında çakıştı; tekrar deneyin.',
+          err?.message ||
+            'Mesaj veritabanına kaydedilemedi. Migrasyon ve bağlantıyı kontrol edin.',
         );
       }
-      throw new BadRequestException(
-        err?.message ||
-          'Mesaj veritabanına kaydedilemedi. Migrasyon ve bağlantıyı kontrol edin.',
-      );
     }
 
     try {
@@ -223,34 +247,74 @@ export class MessagesService {
     const waMessageId = this.extractWaMessageId(waResponse);
     this.logger.debug(`WAHA send response waMessageId: ${waMessageId}`);
 
-    const message = await this.prisma.message.create({
-      data: {
-        conversationId,
-        sessionId: conversation.sessionId,
-        waMessageId,
-        direction: MessageDirection.OUTGOING,
-        body: caption || '',
-        mediaUrl,
-        mediaType: mediaType as any,
-        status: MessageStatus.SENT,
-        sentById,
-      },
-      include: {
-        sentBy: { select: { id: true, name: true } },
-      },
-    });
+    let message;
+    try {
+      message = await this.prisma.message.create({
+        data: {
+          conversationId,
+          sessionId: conversation.sessionId,
+          waMessageId,
+          direction: MessageDirection.OUTGOING,
+          body: caption || '',
+          mediaUrl,
+          mediaType: mediaType as any,
+          status: MessageStatus.SENT,
+          sentById,
+        },
+        include: {
+          sentBy: { select: { id: true, name: true } },
+        },
+      });
+    } catch (err: any) {
+      if (err?.code === 'P2002' && waMessageId) {
+        const dup = await this.prisma.message.findUnique({
+          where: { waMessageId },
+          include: { sentBy: { select: { id: true, name: true } } },
+        });
+        if (dup?.conversationId === conversationId) {
+          this.logger.warn(
+            `sendMedia: waMessageId zaten var (webhook); aynı mesaj: ${waMessageId}`,
+          );
+          if (sentById && dup.sentById !== sentById) {
+            message = await this.prisma.message.update({
+              where: { id: dup.id },
+              data: { sentById },
+              include: { sentBy: { select: { id: true, name: true } } },
+            });
+          } else {
+            message = dup;
+          }
+        } else {
+          throw new BadRequestException(
+            'Mesaj kimliği veritabanında çakıştı; tekrar deneyin.',
+          );
+        }
+      } else {
+        throw new BadRequestException(
+          err?.message ||
+            'Medya mesajı veritabanına kaydedilemedi. Migrasyon ve bağlantıyı kontrol edin.',
+        );
+      }
+    }
 
     await this.conversationsService.updateLastMessage(
       conversationId,
       caption || preview,
     );
 
-    const fullConversation =
-      await this.conversationsService.findById(conversationId);
-    this.chatGateway.emitNewMessage(conversationId, {
-      message,
-      conversation: fullConversation,
-    });
+    try {
+      const fullConversation =
+        await this.conversationsService.findById(conversationId);
+      this.chatGateway.emitNewMessage(conversationId, {
+        message,
+        conversation: fullConversation,
+      });
+    } catch (err: any) {
+      this.logger.error(
+        `sendMedia sonrası socket güncellenemedi: ${err?.message}`,
+        err?.stack,
+      );
+    }
 
     return message;
   }

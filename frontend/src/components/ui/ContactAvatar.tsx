@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { backendPublicUrl, rewriteMediaUrlForClient } from '@/lib/utils';
 
 interface ContactAvatarProps {
   name?: string | null;
@@ -18,20 +19,6 @@ const sizeClasses: Record<string, { container: string; text: string; img: string
   xl: { container: 'w-20 h-20', text: 'text-3xl', img: 'w-20 h-20' },
 };
 
-/** Statik dosya (avatar) için HTTP kökü — WS adresi img src'de kullanılamaz */
-function backendOrigin(): string {
-  const api = process.env.NEXT_PUBLIC_API_URL;
-  if (api) {
-    const base = api.replace(/\/api\/?$/, '').trim();
-    if (base) return base;
-  }
-  const ws = process.env.NEXT_PUBLIC_WS_URL || '';
-  if (ws.startsWith('wss://')) return `https://${ws.slice(6)}`;
-  if (ws.startsWith('ws://')) return `http://${ws.slice(5)}`;
-  if (ws.startsWith('http')) return ws.replace(/\/api\/?$/, '');
-  return 'http://localhost:4000';
-}
-
 export default function ContactAvatar({
   name,
   surname,
@@ -46,8 +33,8 @@ export default function ContactAvatar({
 
   const fullUrl = avatarUrl
     ? avatarUrl.startsWith('http')
-      ? avatarUrl
-      : `${backendOrigin()}${avatarUrl.startsWith('/') ? '' : '/'}${avatarUrl}`
+      ? rewriteMediaUrlForClient(avatarUrl)
+      : `${backendPublicUrl()}${avatarUrl.startsWith('/') ? '' : '/'}${avatarUrl}`
     : null;
 
   useEffect(() => {
