@@ -65,6 +65,7 @@ export class AccountingService {
         include: {
           contact: { select: { id: true, name: true, phone: true, company: true } },
           items: true,
+          createdBy: { select: { id: true, name: true } },
         },
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * limit,
@@ -82,6 +83,9 @@ export class AccountingService {
     });
     if (!order) throw new NotFoundException('Sipariş bulunamadı');
     if (order.invoice) throw new BadRequestException('Bu sipariş için zaten fatura kesilmiş');
+    if (order.status === 'CANCELLED') {
+      throw new BadRequestException('İptal edilmiş siparişten fatura oluşturulamaz');
+    }
 
     const due =
       dueDate != null && String(dueDate).trim() !== ''
@@ -141,6 +145,21 @@ export class AccountingService {
     return this.prisma.accountingInvoice.update({
       where: { id },
       data,
+      include: this.includeRelations,
+    });
+  }
+
+  async updateMeta(id: string, data: { dueDate?: string | null; notes?: string | null }) {
+    await this.findById(id);
+    const patch: { dueDate?: Date | null; notes?: string | null } = {};
+    if ('dueDate' in data) {
+      const v = data.dueDate;
+      patch.dueDate = v == null || String(v).trim() === '' ? null : new Date(String(v));
+    }
+    if ('notes' in data) patch.notes = data.notes == null ? null : String(data.notes);
+    return this.prisma.accountingInvoice.update({
+      where: { id },
+      data: patch,
       include: this.includeRelations,
     });
   }

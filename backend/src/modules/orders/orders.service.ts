@@ -46,6 +46,7 @@ export class OrdersService {
     currency?: string;
     shippingAddress?: string;
     notes?: string;
+    expectedDeliveryDate?: string;
     items: { productId?: string; name: string; quantity: number; unitPrice: number; vatRate: number }[];
   }) {
     if (!data.items?.length) throw new BadRequestException('En az bir kalem gerekli');
@@ -70,6 +71,10 @@ export class OrdersService {
         grandTotal: Math.round((subtotal + vatTotal) * 100) / 100,
         shippingAddress: data.shippingAddress,
         notes: data.notes,
+        expectedDeliveryDate:
+          data.expectedDeliveryDate && String(data.expectedDeliveryDate).trim() !== ''
+            ? new Date(data.expectedDeliveryDate)
+            : undefined,
         items: {
           create: items.map((i) => ({
             productId: i.productId || null,
@@ -90,6 +95,37 @@ export class OrdersService {
     return this.prisma.salesOrder.update({
       where: { id },
       data: { status },
+      include: this.includeRelations,
+    });
+  }
+
+  async updateMeta(
+    id: string,
+    data: {
+      expectedDeliveryDate?: string | null;
+      notes?: string | null;
+      shippingAddress?: string | null;
+    },
+  ) {
+    await this.findById(id);
+    const patch: {
+      expectedDeliveryDate?: Date | null;
+      notes?: string | null;
+      shippingAddress?: string | null;
+    } = {};
+    if ('expectedDeliveryDate' in data) {
+      const v = data.expectedDeliveryDate;
+      patch.expectedDeliveryDate =
+        v == null || String(v).trim() === '' ? null : new Date(String(v));
+    }
+    if ('notes' in data) patch.notes = data.notes == null ? null : String(data.notes);
+    if ('shippingAddress' in data) {
+      patch.shippingAddress =
+        data.shippingAddress == null ? null : String(data.shippingAddress);
+    }
+    return this.prisma.salesOrder.update({
+      where: { id },
+      data: patch,
       include: this.includeRelations,
     });
   }

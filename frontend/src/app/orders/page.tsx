@@ -14,7 +14,16 @@ import {
   ChevronsRight,
   FileText,
   RefreshCw,
+  User,
+  Calendar,
 } from 'lucide-react';
+
+function toDateInputValue(iso: string | null | undefined): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toISOString().slice(0, 10);
+}
 
 type OrderStatus = 'PENDING' | 'PROCESSING' | 'SHIPPED' | 'DELIVERED' | 'CANCELLED';
 
@@ -39,8 +48,10 @@ interface SalesOrder {
   grandTotal: number;
   shippingAddress: string | null;
   notes: string | null;
+  expectedDeliveryDate?: string | null;
   createdAt: string;
   updatedAt: string;
+  createdBy?: { id: string; name: string | null } | null;
   contact: {
     id: string;
     name: string | null;
@@ -127,6 +138,11 @@ export default function OrdersPage() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [statusSaving, setStatusSaving] = useState(false);
   const [invoiceSaving, setInvoiceSaving] = useState(false);
+  const [metaSaving, setMetaSaving] = useState(false);
+  const [expectedDeliveryDraft, setExpectedDeliveryDraft] = useState('');
+  const [notesDraft, setNotesDraft] = useState('');
+  const [shippingDraft, setShippingDraft] = useState('');
+  const [invoiceDueDraft, setInvoiceDueDraft] = useState('');
 
   const totalPages = useMemo(() => Math.max(1, Math.ceil(total / LIMIT)), [total]);
 
@@ -154,6 +170,17 @@ export default function OrdersPage() {
   useEffect(() => {
     fetchOrders();
   }, [fetchOrders]);
+
+  useEffect(() => {
+    if (!selectedOrder || detailLoading) return;
+    setExpectedDeliveryDraft(toDateInputValue(selectedOrder.expectedDeliveryDate ?? null));
+    setNotesDraft(selectedOrder.notes ?? '');
+    setShippingDraft(selectedOrder.shippingAddress ?? '');
+  }, [selectedOrder?.id, selectedOrder?.expectedDeliveryDate, selectedOrder?.notes, selectedOrder?.shippingAddress, detailLoading]);
+
+  useEffect(() => {
+    if (selectedOrder?.id) setInvoiceDueDraft('');
+  }, [selectedOrder?.id]);
 
   const openDetail = async (order: SalesOrder) => {
     setSelectedOrder(order);
@@ -186,11 +213,37 @@ export default function OrdersPage() {
     }
   };
 
+  const saveOrderMeta = async () => {
+    if (!selectedOrder) return;
+    setMetaSaving(true);
+    try {
+      const { data } = await api.patch<SalesOrder>(`/orders/${selectedOrder.id}`, {
+        expectedDeliveryDate: expectedDeliveryDraft
+          ? new Date(expectedDeliveryDraft).toISOString()
+          : null,
+        notes: notesDraft.trim() === '' ? null : notesDraft,
+        shippingAddress: shippingDraft.trim() === '' ? null : shippingDraft,
+      });
+      setSelectedOrder((cur) => (cur && cur.id === data.id ? { ...cur, ...data } : cur));
+      toast.success('Sipariş bilgileri kaydedildi');
+      void fetchOrders(true);
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, 'Kayıt başarısız'));
+    } finally {
+      setMetaSaving(false);
+    }
+  };
+
   const createInvoiceFromOrder = async () => {
     if (!selectedOrder) return;
     setInvoiceSaving(true);
     try {
-      await api.post('/accounting/invoices/from-order', { orderId: selectedOrder.id });
+      await api.post('/accounting/invoices/from-order', {
+        orderId: selectedOrder.id,
+        ...(invoiceDueDraft
+          ? { dueDate: new Date(invoiceDueDraft).toISOString() }
+          : {}),
+      });
       toast.success('Fatura oluşturuldu');
       closeDetail();
       void fetchOrders(true);
@@ -255,13 +308,14 @@ export default function OrdersPage() {
                 <th className="px-5 py-3">Durum</th>
                 <th className="px-5 py-3">Para Birimi</th>
                 <th className="px-5 py-3 text-right">Toplam</th>
-                <th className="px-5 py-3">Tarih</th>
+                <th className="px-5 py-3">Plan. teslim</th>
+                <th className="px-5 py-3">Sipariş tarihi</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={7} className="text-center py-16 text-gray-400">
+                  <td colSpan={8} className="text-center py-16 text-gray-400">
                     <div className="flex flex-col items-center gap-2">
                       <Loader2 className="w-8 h-8 animate-spin text-whatsapp" />
                       <span className="text-sm">Yükleniyor…</span>
@@ -270,7 +324,7 @@ export default function OrdersPage() {
                 </tr>
               ) : orders.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="text-center py-16 text-gray-400 text-sm">
+                  <td colSpan={8} className="text-center py-16 text-gray-400 text-sm">
                     Sipariş bulunamadı
                   </td>
                 </tr>
@@ -311,6 +365,11 @@ export default function OrdersPage() {
                     <td className="px-5 py-3 text-gray-600">{order.currency || 'TRY'}</td>
                     <td className="px-5 py-3 text-right font-medium text-gray-900 tabular-nums">
                       {formatMoney(order.grandTotal, order.currency)}
+                    </td>
+                    <td className="px-5 py-3 text-xs text-gray-500 whitespace-nowrap">
+                      {order.expectedDeliveryDate
+                        ? new Date(order.expectedDeliveryDate).toLocaleDateString('tr-TR')
+                        : '—'}
                     </td>
                     <td className="px-5 py-3 text-xs text-gray-500 whitespace-nowrap">
                       {new Date(order.createdAt).toLocaleString('tr-TR', {
@@ -405,6 +464,22 @@ export default function OrdersPage() {
                 <p className="text-sm text-gray-500 mt-0.5">
                   {contactDisplayName(selectedOrder.contact)} · {formatPhone(selectedOrder.contact.phone)}
                 </p>
+                {selectedOrder.createdBy?.name ? (
+                  <p className="text-xs text-gray-400 mt-1 flex items-center gap-1">
+                    <User className="w-3.5 h-3.5 shrink-0" />
+                    Oluşturan: <span className="font-medium text-gray-600">{selectedOrder.createdBy.name}</span>
+                  </p>
+                ) : null}
+                <p className="text-xs text-gray-400 mt-0.5">
+                  Sipariş tarihi:{' '}
+                  {new Date(selectedOrder.createdAt).toLocaleString('tr-TR', {
+                    day: '2-digit',
+                    month: '2-digit',
+                    year: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })}
+                </p>
               </div>
               <button
                 type="button"
@@ -466,6 +541,65 @@ export default function OrdersPage() {
                       <span className="font-mono font-medium text-gray-700">{formatQuoteNo(selectedOrder.quote.quoteNumber)}</span>
                     </p>
                   )}
+
+                  <div className="rounded-xl border border-gray-100 bg-gray-50/40 p-4 space-y-3">
+                    <div className="flex items-center gap-2 text-sm font-semibold text-gray-800">
+                      <Calendar className="w-4 h-4 text-whatsapp" />
+                      Tarih ve adres
+                    </div>
+                    <div>
+                      <label className="text-xs font-medium text-gray-500 block mb-1">Planlanan teslim tarihi</label>
+                      <input
+                        type="date"
+                        value={expectedDeliveryDraft}
+                        onChange={(e) => setExpectedDeliveryDraft(e.target.value)}
+                        className="w-full max-w-xs px-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-whatsapp/25 focus:border-whatsapp"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs font-medium text-gray-500 block mb-1">Sevk adresi</label>
+                      <textarea
+                        value={shippingDraft}
+                        onChange={(e) => setShippingDraft(e.target.value)}
+                        rows={2}
+                        placeholder="İsteğe bağlı"
+                        className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-whatsapp/25 focus:border-whatsapp resize-y"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs font-medium text-gray-500 block mb-1">Notlar</label>
+                      <textarea
+                        value={notesDraft}
+                        onChange={(e) => setNotesDraft(e.target.value)}
+                        rows={2}
+                        className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-whatsapp/25 focus:border-whatsapp resize-y"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      disabled={metaSaving || statusSaving}
+                      onClick={() => void saveOrderMeta()}
+                      className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-gray-900 text-white text-sm font-medium hover:bg-gray-800 disabled:opacity-50"
+                    >
+                      {metaSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                      Bilgileri kaydet
+                    </button>
+                  </div>
+
+                  <div className="rounded-xl border border-amber-100 bg-amber-50/30 p-4 space-y-2">
+                    <p className="text-xs font-semibold text-gray-800">Fatura oluştururken vade tarihi</p>
+                    <p className="text-[11px] text-gray-500">Boş bırakılırsa sistem +30 gün vade uygular.</p>
+                    <input
+                      type="date"
+                      value={invoiceDueDraft}
+                      onChange={(e) => setInvoiceDueDraft(e.target.value)}
+                      className="w-full max-w-xs px-3 py-2 rounded-xl border border-gray-200 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-whatsapp/25 focus:border-whatsapp"
+                    />
+                  </div>
+
+                  {selectedOrder.status === 'CANCELLED' ? (
+                    <p className="text-xs text-red-600 font-medium">İptal edilmiş siparişten fatura oluşturulamaz.</p>
+                  ) : null}
 
                   <div>
                     <h3 className="text-sm font-semibold text-gray-800 mb-2">Kalemler</h3>
@@ -533,7 +667,12 @@ export default function OrdersPage() {
               </button>
               <button
                 type="button"
-                disabled={invoiceSaving || detailLoading || !selectedOrder}
+                disabled={
+                  invoiceSaving ||
+                  detailLoading ||
+                  !selectedOrder ||
+                  selectedOrder.status === 'CANCELLED'
+                }
                 onClick={() => void createInvoiceFromOrder()}
                 className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-whatsapp text-white text-sm font-medium shadow-sm hover:bg-green-600 transition-colors disabled:opacity-50"
               >

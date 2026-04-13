@@ -82,6 +82,14 @@ export class AccountingController {
     return this.accountingService.updateStatus(id, status);
   }
 
+  @Patch('invoices/:id')
+  updateInvoiceMeta(
+    @Param('id') id: string,
+    @Body() body: { dueDate?: string | null; notes?: string | null },
+  ) {
+    return this.accountingService.updateMeta(id, body);
+  }
+
   @Post('invoices/:id/upload-pdf')
   @UseInterceptors(FileInterceptor('file', {
     storage: pdfStorage,

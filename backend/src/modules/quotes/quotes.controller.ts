@@ -48,6 +48,14 @@ export class QuotesController {
     return this.quotesService.updateStatus(id, status);
   }
 
+  @Patch(':id')
+  updateMeta(
+    @Param('id') id: string,
+    @Body() body: { validUntil?: string | null; deliveryDate?: string | null; notes?: string | null },
+  ) {
+    return this.quotesService.updateMeta(id, body);
+  }
+
   @Post(':id/generate-pdf')
   generatePdf(@Param('id') id: string) {
     return this.quotesService.generatePdf(id).then((pdfUrl) => ({ pdfUrl }));

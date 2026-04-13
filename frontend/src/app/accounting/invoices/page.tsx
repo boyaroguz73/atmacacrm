@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import api, { getApiErrorMessage } from '@/lib/api';
 import { formatPhone } from '@/lib/utils';
 import toast from 'react-hot-toast';
@@ -17,6 +17,13 @@ import {
 } from 'lucide-react';
 
 const LIMIT = 15;
+
+function toDateInputValue(iso: string | null | undefined): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toISOString().slice(0, 10);
+}
 
 type InvoiceStatus = 'PENDING' | 'SENT' | 'PAID' | 'OVERDUE' | 'CANCELLED' | string;
 
@@ -40,6 +47,8 @@ interface InvoiceRow {
   pdfUrl?: string | null;
   uploadedPdfUrl?: string | null;
   createdAt?: string | null;
+  notes?: string | null;
+  createdBy?: { id?: string; name?: string | null } | null;
 }
 
 interface PendingBillingRow {
@@ -53,6 +62,8 @@ interface PendingBillingRow {
   createdAt?: string | null;
   orderDate?: string | null;
   date?: string | null;
+  expectedDeliveryDate?: string | null;
+  createdBy?: { name?: string | null } | null;
 }
 
 const STATUS_FILTERS: { key: string | null; label: string; api?: InvoiceStatus }[] = [
@@ -200,6 +211,10 @@ function normalizePendingRow(raw: unknown): PendingBillingRow | null {
     o.contact && typeof o.contact === 'object'
       ? (o.contact as PendingBillingRow['contact'])
       : undefined;
+  const createdBy =
+    o.createdBy && typeof o.createdBy === 'object'
+      ? (o.createdBy as PendingBillingRow['createdBy'])
+      : undefined;
   return {
     orderId,
     id: o.id != null ? String(o.id) : undefined,
@@ -211,7 +226,42 @@ function normalizePendingRow(raw: unknown): PendingBillingRow | null {
     createdAt: o.createdAt != null ? String(o.createdAt) : null,
     orderDate: o.orderDate != null ? String(o.orderDate) : null,
     date: o.date != null ? String(o.date) : null,
+    expectedDeliveryDate:
+      o.expectedDeliveryDate != null ? String(o.expectedDeliveryDate) : null,
+    createdBy,
   };
+}
+
+function PendingInvoiceCreateButton({
+  onCreate,
+}: {
+  onCreate: (dueIso?: string) => void;
+}) {
+  const [due, setDue] = useState('');
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    onCreate(due ? new Date(due).toISOString() : undefined);
+    setDue('');
+  };
+  return (
+    <form onSubmit={submit} className="inline-flex flex-col items-end gap-1.5" onClick={(e) => e.stopPropagation()}>
+      <input
+        type="date"
+        value={due}
+        onChange={(e) => setDue(e.target.value)}
+        className="max-w-[132px] px-2 py-1 rounded-lg border border-gray-200 text-[10px] bg-white"
+        title="Vade (boş = +30 gün)"
+      />
+      <button
+        type="submit"
+        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-whatsapp text-white shadow-sm hover:opacity-95"
+      >
+        <FileText className="w-3.5 h-3.5" />
+        Fatura
+      </button>
+    </form>
+  );
 }
 
 function normalizeInvoiceRow(raw: unknown): InvoiceRow | null {
@@ -247,6 +297,11 @@ function normalizeInvoiceRow(raw: unknown): InvoiceRow | null {
     pdfUrl: o.pdfUrl != null ? String(o.pdfUrl) : null,
     uploadedPdfUrl: o.uploadedPdfUrl != null ? String(o.uploadedPdfUrl) : null,
     createdAt: o.createdAt != null ? String(o.createdAt) : null,
+    notes: o.notes != null ? String(o.notes) : null,
+    createdBy:
+      o.createdBy && typeof o.createdBy === 'object'
+        ? (o.createdBy as InvoiceRow['createdBy'])
+        : undefined,
   };
 }
 
@@ -272,6 +327,8 @@ export default function AccountingInvoicesPage() {
   const [showSendForm, setShowSendForm] = useState(false);
   const [sendTemplateBody, setSendTemplateBody] = useState('');
   const pdfInputRef = useRef<HTMLInputElement>(null);
+  const [dueEdit, setDueEdit] = useState('');
+  const [notesEdit, setNotesEdit] = useState('');
 
   const fetchInvoices = useCallback(async () => {
     setLoading(true);
@@ -339,6 +396,12 @@ export default function AccountingInvoicesPage() {
     if (tab === 'pending') fetchPending();
   }, [tab, fetchPending]);
 
+  useEffect(() => {
+    if (!detail) return;
+    setDueEdit(toDateInputValue(detail.dueDate));
+    setNotesEdit(detail.notes != null ? String(detail.notes) : '');
+  }, [detail?.id, detail?.dueDate, detail?.notes]);
+
   const invoicePageCount =
     invoiceTotalCount != null ? Math.max(1, Math.ceil(invoiceTotalCount / LIMIT)) : null;
   const pendingPageCount =
@@ -348,11 +411,50 @@ export default function AccountingInvoicesPage() {
     setDetail(null);
     setShowSendForm(false);
     setSendTemplateBody('');
+    setDueEdit('');
+    setNotesEdit('');
+  };
+
+  const openInvoiceDetail = async (inv: InvoiceRow) => {
+    setDetail(inv);
+    setShowSendForm(false);
+    setSendTemplateBody('');
+    setDetailBusy(true);
+    try {
+      const { data } = await api.get(`/accounting/invoices/${inv.id}`);
+      const n = normalizeInvoiceRow(data);
+      if (n) setDetail(n);
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, 'Fatura detayı alınamadı'));
+    } finally {
+      setDetailBusy(false);
+    }
   };
 
   const refreshDetailInList = (updated: InvoiceRow) => {
     setInvoices((prev) => prev.map((r) => (r.id === updated.id ? { ...r, ...updated } : r)));
     setDetail((d) => (d && d.id === updated.id ? { ...d, ...updated } : d));
+  };
+
+  const saveInvoiceMeta = async (inv: InvoiceRow) => {
+    setDetailBusy(true);
+    try {
+      const { data } = await api.patch(`/accounting/invoices/${inv.id}`, {
+        dueDate: dueEdit ? new Date(dueEdit).toISOString() : null,
+        notes: notesEdit.trim() === '' ? null : notesEdit,
+      });
+      const merged = normalizeInvoiceRow({
+        ...inv,
+        ...(data && typeof data === 'object' ? data : {}),
+      });
+      if (merged) refreshDetailInList(merged);
+      toast.success('Vade ve notlar kaydedildi');
+      fetchInvoices();
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, 'Kayıt başarısız'));
+    } finally {
+      setDetailBusy(false);
+    }
   };
 
   const patchStatus = async (inv: InvoiceRow, status: InvoiceStatus) => {
@@ -416,9 +518,12 @@ export default function AccountingInvoicesPage() {
     }
   };
 
-  const createFromOrder = async (orderId: string) => {
+  const createFromOrder = async (orderId: string, dueDateIso?: string) => {
     try {
-      await api.post('/accounting/invoices/from-order', { orderId });
+      await api.post('/accounting/invoices/from-order', {
+        orderId,
+        ...(dueDateIso ? { dueDate: dueDateIso } : {}),
+      });
       toast.success('Fatura oluşturuldu');
       fetchPending();
       if (tab === 'invoices') fetchInvoices();
@@ -499,7 +604,7 @@ export default function AccountingInvoicesPage() {
               <p className="text-center py-16 text-gray-400 text-sm">Kayıt bulunamadı.</p>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full text-sm min-w-[720px]">
+                <table className="w-full text-sm min-w-[820px]">
                   <thead>
                     <tr className="border-b border-gray-100 bg-gray-50/60 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
                       <th className="px-5 py-3">Fatura No</th>
@@ -508,7 +613,8 @@ export default function AccountingInvoicesPage() {
                       <th className="px-5 py-3">Durum</th>
                       <th className="px-5 py-3">Para Birimi</th>
                       <th className="px-5 py-3">Toplam</th>
-                      <th className="px-5 py-3">Vade Tarihi</th>
+                      <th className="px-5 py-3">Vade</th>
+                      <th className="px-5 py-3">Oluşturan</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -517,16 +623,11 @@ export default function AccountingInvoicesPage() {
                         key={inv.id}
                         role="button"
                         tabIndex={0}
-                        onClick={() => {
-                          setDetail(inv);
-                          setShowSendForm(false);
-                          setSendTemplateBody('');
-                        }}
+                        onClick={() => void openInvoiceDetail(inv)}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter' || e.key === ' ') {
                             e.preventDefault();
-                            setDetail(inv);
-                            setShowSendForm(false);
+                            void openInvoiceDetail(inv);
                           }
                         }}
                         className="border-b border-gray-50 hover:bg-whatsapp/5 cursor-pointer transition-colors"
@@ -553,6 +654,9 @@ export default function AccountingInvoicesPage() {
                           {formatMoney(moneyAmount(inv), inv.currency)}
                         </td>
                         <td className="px-5 py-3 text-gray-600">{formatDate(inv.dueDate)}</td>
+                        <td className="px-5 py-3 text-gray-600 text-xs max-w-[100px] truncate" title={inv.createdBy?.name || ''}>
+                          {inv.createdBy?.name || '—'}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -598,13 +702,15 @@ export default function AccountingInvoicesPage() {
             <p className="text-center py-16 text-gray-400 text-sm">Fatura bekleyen sipariş yok.</p>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full text-sm min-w-[640px]">
+              <table className="w-full text-sm min-w-[920px]">
                 <thead>
                   <tr className="border-b border-gray-100 bg-gray-50/60 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
                     <th className="px-5 py-3">Sipariş No</th>
                     <th className="px-5 py-3">Kişi</th>
                     <th className="px-5 py-3">Toplam</th>
+                    <th className="px-5 py-3">Plan. teslim</th>
                     <th className="px-5 py-3">Tarih</th>
+                    <th className="px-5 py-3">Oluşturan</th>
                     <th className="px-5 py-3 text-right">İşlem</th>
                   </tr>
                 </thead>
@@ -629,16 +735,15 @@ export default function AccountingInvoicesPage() {
                         <td className="px-5 py-3 text-gray-800">
                           {formatMoney(moneyAmount(row), 'TRY')}
                         </td>
+                        <td className="px-5 py-3 text-gray-600 text-xs whitespace-nowrap">
+                          {formatDate(row.expectedDeliveryDate)}
+                        </td>
                         <td className="px-5 py-3 text-gray-600">{formatDate(dateStr)}</td>
+                        <td className="px-5 py-3 text-gray-600 text-xs max-w-[90px] truncate" title={row.createdBy?.name || ''}>
+                          {row.createdBy?.name || '—'}
+                        </td>
                         <td className="px-5 py-3 text-right">
-                          <button
-                            type="button"
-                            onClick={() => createFromOrder(row.orderId)}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-whatsapp text-white shadow-sm hover:opacity-95"
-                          >
-                            <FileText className="w-3.5 h-3.5" />
-                            Fatura Oluştur
-                          </button>
+                          <PendingInvoiceCreateButton onCreate={(due) => void createFromOrder(row.orderId, due)} />
                         </td>
                       </tr>
                     );
@@ -692,6 +797,17 @@ export default function AccountingInvoicesPage() {
               <div>
                 <h2 className="text-lg font-bold text-gray-900">{formatInvoiceNo(detail)}</h2>
                 <p className="text-xs text-gray-500 mt-0.5">Fatura detayı</p>
+                {detail.createdAt ? (
+                  <p className="text-[11px] text-gray-400 mt-1">
+                    Oluşturulma: {formatDate(detail.createdAt)}
+                  </p>
+                ) : null}
+                {detail.createdBy?.name ? (
+                  <p className="text-[11px] text-gray-500 mt-0.5 flex items-center gap-1">
+                    <User className="w-3 h-3 shrink-0" />
+                    Kaydı açan: <span className="font-medium text-gray-700">{detail.createdBy.name}</span>
+                  </p>
+                ) : null}
               </div>
               <button
                 type="button"
@@ -702,6 +818,12 @@ export default function AccountingInvoicesPage() {
                 <X className="w-5 h-5" />
               </button>
             </div>
+            {detailBusy ? (
+              <p className="px-5 pb-2 text-xs text-gray-400 flex items-center gap-2">
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-whatsapp" />
+                Sunucudan güncelleniyor…
+              </p>
+            ) : null}
 
             <div className="px-5 py-4 space-y-4 text-sm">
               <div className="rounded-xl border border-gray-100 bg-gray-50/50 p-4 space-y-2">
@@ -737,7 +859,7 @@ export default function AccountingInvoicesPage() {
                     </p>
                   </div>
                   <div>
-                    <p className="text-xs text-gray-500">Vade</p>
+                    <p className="text-xs text-gray-500">Vade (kayıtlı)</p>
                     <p className="font-medium text-gray-900">{formatDate(detail.dueDate)}</p>
                   </div>
                 </div>
@@ -754,6 +876,37 @@ export default function AccountingInvoicesPage() {
                     </a>
                   </p>
                 ) : null}
+              </div>
+
+              <div className="rounded-xl border border-gray-200 bg-white p-4 space-y-3">
+                <p className="text-xs font-semibold text-gray-700">Vade ve notlar</p>
+                <div>
+                  <label className="text-xs text-gray-500 block mb-1">Vade tarihi</label>
+                  <input
+                    type="date"
+                    value={dueEdit}
+                    onChange={(e) => setDueEdit(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-whatsapp/25 focus:border-whatsapp"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-gray-500 block mb-1">Notlar</label>
+                  <textarea
+                    value={notesEdit}
+                    onChange={(e) => setNotesEdit(e.target.value)}
+                    rows={3}
+                    className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-whatsapp/25 focus:border-whatsapp resize-y"
+                    placeholder="Fatura notu…"
+                  />
+                </div>
+                <button
+                  type="button"
+                  disabled={detailBusy}
+                  onClick={() => void saveInvoiceMeta(detail)}
+                  className="w-full py-2.5 rounded-xl text-sm font-semibold bg-gray-900 text-white hover:bg-gray-800 disabled:opacity-50"
+                >
+                  Kaydet
+                </button>
               </div>
 
               <div className="flex flex-wrap gap-2">

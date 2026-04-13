@@ -6,8 +6,15 @@ import api, { getApiErrorMessage } from '@/lib/api';
 import { formatPhone } from '@/lib/utils';
 import {
   ArrowLeft, FileText, Send, ShoppingCart, CheckCircle2, XCircle,
-  Clock, Loader2,
+  Loader2, User, Calendar,
 } from 'lucide-react';
+
+function toDateInputValue(iso: string | null | undefined): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toISOString().slice(0, 10);
+}
 import toast from 'react-hot-toast';
 
 const CURRENCY: Record<string, string> = { TRY: '₺', USD: '$', EUR: '€' };
@@ -25,6 +32,10 @@ export default function QuoteDetailPage() {
   const [quote, setQuote] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState('');
+  const [validUntilInput, setValidUntilInput] = useState('');
+  const [deliveryDateInput, setDeliveryDateInput] = useState('');
+  const [notesInput, setNotesInput] = useState('');
+  const [metaSaving, setMetaSaving] = useState(false);
 
   const fetchQuote = async () => {
     try {
@@ -38,6 +49,30 @@ export default function QuoteDetailPage() {
   };
 
   useEffect(() => { fetchQuote(); }, [id]);
+
+  useEffect(() => {
+    if (!quote) return;
+    setValidUntilInput(toDateInputValue(quote.validUntil));
+    setDeliveryDateInput(toDateInputValue(quote.deliveryDate));
+    setNotesInput(quote.notes != null ? String(quote.notes) : '');
+  }, [quote?.id, quote?.validUntil, quote?.deliveryDate, quote?.notes]);
+
+  const saveMeta = async () => {
+    setMetaSaving(true);
+    try {
+      const { data } = await api.patch(`/quotes/${id}`, {
+        validUntil: validUntilInput ? new Date(validUntilInput).toISOString() : null,
+        deliveryDate: deliveryDateInput ? new Date(deliveryDateInput).toISOString() : null,
+        notes: notesInput.trim() === '' ? null : notesInput,
+      });
+      setQuote(data);
+      toast.success('Tarih ve notlar kaydedildi');
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, 'Kayıt başarısız'));
+    } finally {
+      setMetaSaving(false);
+    }
+  };
 
   const handleAction = async (action: string) => {
     setActionLoading(action);
@@ -93,8 +128,21 @@ export default function QuoteDetailPage() {
             TKL-{String(quote.quoteNumber).padStart(5, '0')}
           </h1>
           <p className="text-sm text-gray-500">
-            {[c.name, c.surname].filter(Boolean).join(' ') || formatPhone(c.phone)} — {new Date(quote.createdAt).toLocaleDateString('tr-TR')}
+            {[c.name, c.surname].filter(Boolean).join(' ') || formatPhone(c.phone)} —{' '}
+            {new Date(quote.createdAt).toLocaleString('tr-TR', {
+              day: '2-digit',
+              month: '2-digit',
+              year: 'numeric',
+              hour: '2-digit',
+              minute: '2-digit',
+            })}
           </p>
+          {quote.createdBy?.name ? (
+            <p className="text-xs text-gray-400 mt-0.5 flex items-center gap-1">
+              <User className="w-3.5 h-3.5 shrink-0" />
+              Oluşturan: <span className="font-medium text-gray-600">{quote.createdBy.name}</span>
+            </p>
+          ) : null}
         </div>
         <span className={`px-3 py-1 rounded-full text-xs font-medium ${badge.cls}`}>{badge.label}</span>
       </div>
@@ -135,12 +183,54 @@ export default function QuoteDetailPage() {
             </table>
           </div>
 
-          {quote.notes && (
-            <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
-              <p className="text-xs text-gray-500 font-medium mb-1">Notlar</p>
-              <p className="text-sm text-gray-700 whitespace-pre-wrap">{quote.notes}</p>
+          <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4 space-y-4">
+            <div className="flex items-center gap-2 text-sm font-semibold text-gray-800">
+              <Calendar className="w-4 h-4 text-whatsapp" />
+              Tarihler ve notlar
             </div>
-          )}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs text-gray-500 block mb-1">Geçerlilik tarihi</label>
+                <input
+                  type="date"
+                  value={validUntilInput}
+                  onChange={(e) => setValidUntilInput(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-whatsapp/25 focus:border-whatsapp"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 block mb-1">Teslim tarihi</label>
+                <input
+                  type="date"
+                  value={deliveryDateInput}
+                  onChange={(e) => setDeliveryDateInput(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-whatsapp/25 focus:border-whatsapp"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 block mb-1">Notlar</label>
+              <textarea
+                value={notesInput}
+                onChange={(e) => setNotesInput(e.target.value)}
+                rows={3}
+                placeholder="Teklif notları…"
+                className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-whatsapp/25 focus:border-whatsapp resize-y min-h-[72px]"
+              />
+            </div>
+            <button
+              type="button"
+              disabled={metaSaving}
+              onClick={() => void saveMeta()}
+              className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-gray-900 text-white text-sm font-medium hover:bg-gray-800 disabled:opacity-50"
+            >
+              {metaSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+              Kaydet
+            </button>
+            <p className="text-[11px] text-gray-400">
+              PDF daha önce oluşturulduysa tarih değişikliğinden sonra PDF’i yeniden oluşturmanız gerekir.
+            </p>
+          </div>
         </div>
 
         <div className="space-y-4">
@@ -159,8 +249,12 @@ export default function QuoteDetailPage() {
             {c.company && <p className="text-gray-600">{c.company}</p>}
             <p className="text-gray-600">{formatPhone(c.phone)}</p>
             {c.email && <p className="text-gray-600">{c.email}</p>}
-            {quote.validUntil && <p className="text-xs text-gray-400">Geçerlilik: {new Date(quote.validUntil).toLocaleDateString('tr-TR')}</p>}
-            {quote.deliveryDate && <p className="text-xs text-gray-400">Teslim: {new Date(quote.deliveryDate).toLocaleDateString('tr-TR')}</p>}
+            {quote.validUntil && (
+              <p className="text-xs text-gray-400">Geçerlilik: {new Date(quote.validUntil).toLocaleDateString('tr-TR')}</p>
+            )}
+            {quote.deliveryDate && (
+              <p className="text-xs text-gray-400">Teslim: {new Date(quote.deliveryDate).toLocaleDateString('tr-TR')}</p>
+            )}
           </div>
 
           <div className="space-y-2">

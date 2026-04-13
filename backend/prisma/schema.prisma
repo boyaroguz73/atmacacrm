@@ -646,20 +646,22 @@ model QuoteItem {
 // ─── Orders ───
 
 model SalesOrder {
-  id              String      @id @default(uuid())
-  orderNumber     Int         @unique @default(autoincrement())
-  quoteId         String?     @unique
-  contactId       String
-  createdById     String
-  status          OrderStatus @default(PENDING)
-  currency        String      @default("TRY")
-  subtotal        Float       @default(0)
-  vatTotal        Float       @default(0)
-  grandTotal      Float       @default(0)
-  shippingAddress String?
-  notes           String?
-  createdAt       DateTime    @default(now())
-  updatedAt       DateTime    @updatedAt
+  id                    String      @id @default(uuid())
+  orderNumber           Int         @unique @default(autoincrement())
+  quoteId               String?     @unique
+  contactId             String
+  createdById           String
+  status                OrderStatus @default(PENDING)
+  currency              String      @default("TRY")
+  subtotal              Float       @default(0)
+  vatTotal              Float       @default(0)
+  grandTotal            Float       @default(0)
+  shippingAddress       String?
+  notes                 String?
+  /// Planlanan teslim tarihi; teklifteki teslim tarihinden siparişe kopyalanabilir
+  expectedDeliveryDate  DateTime?
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
 
   quote     Quote?             @relation(fields: [quoteId], references: [id], onDelete: SetNull)
   contact   Contact            @relation(fields: [contactId], references: [id], onDelete: Cascade)

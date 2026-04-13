@@ -175,6 +175,36 @@ export class QuotesService {
     });
   }
 
+  /** Geçerlilik, teslim ve notlar — kalemleri değiştirmez; PDF varsa yeniden üretilmelidir. */
+  async updateMeta(
+    id: string,
+    data: { validUntil?: string | null; deliveryDate?: string | null; notes?: string | null },
+  ) {
+    await this.findById(id);
+    const patch: {
+      validUntil?: Date | null;
+      deliveryDate?: Date | null;
+      notes?: string | null;
+    } = {};
+    if ('validUntil' in data) {
+      const v = data.validUntil;
+      patch.validUntil =
+        v == null || String(v).trim() === '' ? null : new Date(String(v));
+    }
+    if ('deliveryDate' in data) {
+      const v = data.deliveryDate;
+      patch.deliveryDate =
+        v == null || String(v).trim() === '' ? null : new Date(String(v));
+    }
+    if ('notes' in data) patch.notes = data.notes == null ? null : String(data.notes);
+
+    return this.prisma.quote.update({
+      where: { id },
+      data: patch,
+      include: this.includeRelations,
+    });
+  }
+
   async generatePdf(id: string): Promise<string> {
     const quote = await this.findById(id);
     const c = quote.contact;
@@ -279,6 +309,7 @@ export class QuotesService {
         subtotal: quote.subtotal,
         vatTotal: quote.vatTotal,
         grandTotal: quote.grandTotal,
+        expectedDeliveryDate: quote.deliveryDate ?? undefined,
         items: {
           create: quote.items.map((item) => ({
             productId: item.productId,
@@ -292,7 +323,9 @@ export class QuotesService {
       },
       include: {
         items: true,
-        contact: { select: { id: true, name: true, phone: true } },
+        contact: { select: { id: true, name: true, surname: true, phone: true, email: true, company: true } },
+        createdBy: { select: { id: true, name: true } },
+        quote: { select: { id: true, quoteNumber: true } },
       },
     });
     return order;

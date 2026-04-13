@@ -40,4 +40,17 @@ export class OrdersController {
   updateStatus(@Param('id') id: string, @Body('status') status: OrderStatus) {
     return this.ordersService.updateStatus(id, status);
   }
+
+  @Patch(':id')
+  updateMeta(
+    @Param('id') id: string,
+    @Body()
+    body: {
+      expectedDeliveryDate?: string | null;
+      notes?: string | null;
+      shippingAddress?: string | null;
+    },
+  ) {
+    return this.ordersService.updateMeta(id, body);
+  }
 }

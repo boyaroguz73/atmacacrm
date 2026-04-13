@@ -22,6 +22,9 @@ interface QuoteRow {
   currency: string;
   grandTotal: number;
   createdAt: string;
+  validUntil?: string | null;
+  deliveryDate?: string | null;
+  createdBy?: { id: string; name: string | null } | null;
   contact: {
     id: string;
     name: string | null;
@@ -73,6 +76,13 @@ function contactDisplayName(q: QuoteRow): string {
 
 function formatQuoteNo(n: number): string {
   return `TKL-${String(n).padStart(5, '0')}`;
+}
+
+function formatShortDate(iso: string | null | undefined): string {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleDateString('tr-TR', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
 
 function formatMoney(amount: number, currency: string): string {
@@ -182,13 +192,15 @@ export default function QuotesPage() {
                 <th className="px-4 py-3">Durum</th>
                 <th className="px-4 py-3">Para Birimi</th>
                 <th className="px-4 py-3 text-right">Genel Toplam</th>
+                <th className="px-4 py-3">Geçerlilik</th>
+                <th className="px-4 py-3">Oluşturan</th>
                 <th className="px-4 py-3">Tarih</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {quotes.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-16 text-center text-gray-400">
+                  <td colSpan={8} className="px-4 py-16 text-center text-gray-400">
                     {loading ? (
                       <span className="inline-flex items-center gap-2">
                         <Loader2 className="w-5 h-5 animate-spin text-whatsapp" />
@@ -231,6 +243,12 @@ export default function QuotesPage() {
                     <td className="px-4 py-3 text-gray-700 font-medium">{q.currency}</td>
                     <td className="px-4 py-3 text-right font-semibold text-gray-900 tabular-nums">
                       {formatMoney(q.grandTotal, q.currency)}
+                    </td>
+                    <td className="px-4 py-3 text-gray-600 whitespace-nowrap text-xs">
+                      {formatShortDate(q.validUntil)}
+                    </td>
+                    <td className="px-4 py-3 text-gray-600 text-xs max-w-[120px] truncate" title={q.createdBy?.name || ''}>
+                      {q.createdBy?.name || '—'}
                     </td>
                     <td className="px-4 py-3 text-gray-600 whitespace-nowrap">
                       {new Date(q.createdAt).toLocaleDateString('tr-TR', {
