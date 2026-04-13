@@ -11,7 +11,6 @@ import { ConfigService } from '@nestjs/config';
 import { writeFileSync, existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import { v4 as uuid } from 'uuid';
-import axios from 'axios';
 import {
   collectWhatsappMessageText,
   isWhatsappE2eOrSecuritySystemText,
@@ -106,8 +105,15 @@ export class WahaWebhookHandler {
         else if (msg.hasMedia || msg.type === 'document') mediaType = 'DOCUMENT';
 
         const base64Data = msg.media?.data || msg._data?.body || msg.body;
-        if (base64Data && typeof base64Data === 'string' && base64Data.length > 200) {
-          mediaUrl = await this.saveBase64Media(base64Data, mediaMimeType);
+        const looksB64 =
+          typeof base64Data === 'string' &&
+          base64Data.length > 80 &&
+          /^[A-Za-z0-9+/=\s]+$/.test(base64Data.replace(/\s/g, ''));
+        if (base64Data && looksB64) {
+          mediaUrl = await this.saveBase64Media(
+            base64Data.replace(/\s/g, ''),
+            mediaMimeType,
+          );
         }
 
         if (!mediaUrl) {
@@ -352,11 +358,14 @@ export class WahaWebhookHandler {
     mimetype?: string,
   ): Promise<string | undefined> {
     try {
+      let raw = base64Data.replace(/\s/g, '');
+      const dataPrefix = raw.indexOf('base64,');
+      if (dataPrefix !== -1) raw = raw.slice(dataPrefix + 7);
       const dir = this.ensureUploadsDir();
       const ext = this.getExtFromMime(mimetype);
       const filename = `${uuid()}${ext}`;
       const filePath = join(dir, filename);
-      writeFileSync(filePath, Buffer.from(base64Data, 'base64'));
+      writeFileSync(filePath, Buffer.from(raw, 'base64'));
       this.logger.debug(`Saved base64 media: ${filename} (${ext})`);
       return `/uploads/${filename}`;
     } catch (err: any) {
@@ -397,13 +406,12 @@ export class WahaWebhookHandler {
       const filename = `${uuid()}${ext}`;
       const filePath = join(dir, filename);
 
-      const response = await axios.get(url, {
-        responseType: 'arraybuffer',
-        timeout: 30000,
-        maxContentLength: 50 * 1024 * 1024,
-      });
-
-      writeFileSync(filePath, Buffer.from(response.data));
+      const buf = await this.wahaService.downloadMediaBuffer(url);
+      if (!buf?.length) {
+        this.logger.warn(`Medya indirilemedi veya boş: ${url}`);
+        return undefined;
+      }
+      writeFileSync(filePath, buf);
       this.logger.debug(`Downloaded media: ${filename} from ${url}`);
       return `/uploads/${filename}`;
     } catch (err: any) {

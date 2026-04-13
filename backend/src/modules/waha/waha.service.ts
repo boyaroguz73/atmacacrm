@@ -499,6 +499,37 @@ export class WahaService implements OnModuleInit {
     }
   }
 
+  /**
+   * Webhook vb. WAHA’dan medya indirir; axios örneği X-Api-Key taşır (Plus’ta zorunlu olabilir).
+   * Tam veya göreli URL; göreli ise WAHA_API_URL ile birleştirilir.
+   */
+  async downloadMediaBuffer(url: string): Promise<Buffer | null> {
+    const trimmed = (url || '').trim();
+    if (!trimmed) return null;
+    const base = (this.config.get('WAHA_API_URL', 'http://localhost:3001') || '').replace(
+      /\/$/,
+      '',
+    );
+    const target = trimmed.startsWith('http')
+      ? trimmed
+      : `${base}${trimmed.startsWith('/') ? '' : '/'}${trimmed}`;
+    try {
+      const response = await this.http.get(target, {
+        responseType: 'arraybuffer',
+        timeout: 120_000,
+        maxContentLength: 50 * 1024 * 1024,
+        maxBodyLength: 50 * 1024 * 1024,
+      });
+      return Buffer.from(response.data as ArrayBuffer);
+    } catch (error: any) {
+      const detail = error.response?.data
+        ? String(error.response.data)
+        : error.message;
+      this.logger.error(`WAHA medya indirilemedi: ${target} — ${detail}`);
+      return null;
+    }
+  }
+
   async sendText(sessionName: string, chatId: string, text: string) {
     try {
       const response = await this.http.post('/api/sendText', {
@@ -508,7 +539,15 @@ export class WahaService implements OnModuleInit {
       });
       return response.data;
     } catch (error: any) {
-      this.logger.error(`Mesaj gönderilemedi: ${chatId}`, error.message);
+      const detail =
+        error.response?.data?.message ||
+        error.response?.data?.error ||
+        (typeof error.response?.data === 'string'
+          ? error.response.data
+          : JSON.stringify(error.response?.data || {}));
+      this.logger.error(
+        `Mesaj gönderilemedi: ${chatId} — ${error.message}${detail ? ` | ${detail}` : ''}`,
+      );
       throw error;
     }
   }

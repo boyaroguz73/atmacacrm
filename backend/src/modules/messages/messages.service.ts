@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { WahaService } from '../waha/waha.service';
 import { ConversationsService } from '../conversations/conversations.service';
@@ -66,11 +66,21 @@ export class MessagesService {
     });
     if (!conversation) throw new Error('Conversation not found');
 
-    const waResponse = await this.wahaService.sendText(
-      sessionName,
-      chatId,
-      body,
-    );
+    let waResponse: any;
+    try {
+      waResponse = await this.wahaService.sendText(sessionName, chatId, body);
+    } catch (err: any) {
+      const d = err.response?.data;
+      const msg =
+        (typeof d?.message === 'string' && d.message) ||
+        (typeof d?.error === 'string' && d.error) ||
+        (typeof d === 'string' && d) ||
+        (Array.isArray(d?.message) ? d.message.join(', ') : null) ||
+        err.message ||
+        'WhatsApp üzerinden mesaj gönderilemedi (WAHA).';
+      this.logger.warn(`sendText WAHA hata: ${msg}`);
+      throw new BadRequestException(msg);
+    }
 
     const waMessageId = this.extractWaMessageId(waResponse);
     this.logger.debug(`WAHA sendText response waMessageId: ${waMessageId}`);

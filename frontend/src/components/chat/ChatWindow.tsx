@@ -23,7 +23,7 @@ import {
   ListFilter,
 } from 'lucide-react';
 import ContactPanel from './ContactPanel';
-import api from '@/lib/api';
+import api, { getApiErrorMessage } from '@/lib/api';
 import toast from 'react-hot-toast';
 import ContactAvatar from '@/components/ui/ContactAvatar';
 import EcommerceCustomerBadge from '@/components/ui/EcommerceCustomerBadge';
@@ -230,8 +230,9 @@ export default function ChatWindow() {
       });
       setText('');
       setComposerNonce((n) => n + 1);
-    } catch {
+    } catch (err) {
       setText(trimmed);
+      toast.error(getApiErrorMessage(err, 'Mesaj gönderilemedi'));
     } finally {
       setSending(false);
       queueMicrotask(() => composerRef.current?.focus());
@@ -326,7 +327,14 @@ export default function ChatWindow() {
   const resolveMediaUrl = (url: string | null) => {
     if (!url) return null;
     if (url.startsWith('http')) return url;
-    if (url.startsWith('/uploads/') || url.startsWith('/api/')) return `${BACKEND_URL}${url}`;
+    if (
+      url.startsWith('/uploads/') ||
+      url.startsWith('/api/') ||
+      url.startsWith('uploads/')
+    ) {
+      const path = url.startsWith('/') ? url : `/${url}`;
+      return `${BACKEND_URL}${path}`;
+    }
     return url;
   };
 
