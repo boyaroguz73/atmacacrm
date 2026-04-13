@@ -94,27 +94,32 @@ export class MessagesService {
     const waMessageId = this.extractWaMessageId(waResponse);
     this.logger.debug(`WAHA sendText response waMessageId: ${waMessageId}`);
 
-    const messageData = {
-      conversationId,
-      sessionId: conversation.sessionId,
-      waMessageId,
-      direction: MessageDirection.OUTGOING,
-      body,
-      status: MessageStatus.SENT,
-      sentById,
-    };
-
     let message;
     if (waMessageId) {
       message = await this.prisma.message.upsert({
         where: { waMessageId },
-        create: messageData,
+        create: {
+          conversationId,
+          sessionId: conversation.sessionId,
+          waMessageId,
+          direction: MessageDirection.OUTGOING,
+          body,
+          status: MessageStatus.SENT,
+          sentById,
+        },
         update: { sentById: sentById || undefined },
         include: { sentBy: { select: { id: true, name: true } } },
       });
     } else {
       message = await this.prisma.message.create({
-        data: messageData,
+        data: {
+          conversationId,
+          sessionId: conversation.sessionId,
+          direction: MessageDirection.OUTGOING,
+          body,
+          status: MessageStatus.SENT,
+          sentById,
+        },
         include: { sentBy: { select: { id: true, name: true } } },
       });
     }

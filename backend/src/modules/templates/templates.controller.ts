@@ -8,9 +8,6 @@ import {
   Param,
   Query,
   UseGuards,
-  BadRequestException,
-  HttpException,
-  Logger,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { TemplatesService } from './templates.service';
@@ -25,8 +22,6 @@ import { requireOrgId, assertBelongsToOrg } from '../../common/org-session-scope
 @UseGuards(JwtAuthGuard)
 @Controller('templates')
 export class TemplatesController {
-  private readonly logger = new Logger(TemplatesController.name);
-
   constructor(private templatesService: TemplatesService) {}
 
   @Get()
@@ -36,36 +31,23 @@ export class TemplatesController {
     @Query('active') active?: string,
   ) {
     const isActive = active === 'true' ? true : active === 'false' ? false : undefined;
-    try {
-      return await this.templatesService.findAll({
-        category,
-        isActive,
-        organizationId: requireOrgId(user),
-      });
-    } catch (err: unknown) {
-      if (err instanceof HttpException) throw err;
-      const e = err as { message?: string; stack?: string };
-      this.logger.error(`GET /templates: ${e?.message}`, e?.stack);
-      throw new BadRequestException(
-        e?.message ||
-          'Şablonlar yüklenemedi. Veritabanı migrasyonlarını (npx prisma migrate deploy) kontrol edin.',
-      );
-    }
+    return this.templatesService.findAll({
+      category,
+      isActive,
+    });
   }
 
   @Get('categories')
-  getCategories(@CurrentUser() user: { role: string; organizationId?: string }) {
-    return this.templatesService.getCategories(requireOrgId(user));
+  getCategories(@CurrentUser() _user: { role: string; organizationId?: string }) {
+    return this.templatesService.getCategories();
   }
 
   @Get(':id')
   async findById(
-    @CurrentUser() user: { role: string; organizationId?: string },
+    @CurrentUser() _user: { role: string; organizationId?: string },
     @Param('id') id: string,
   ) {
-    const template = await this.templatesService.findById(id);
-    this.assertTemplateOrg(template, user);
-    return template;
+    return this.templatesService.findById(id);
   }
 
   @Post()
@@ -75,7 +57,7 @@ export class TemplatesController {
     @Body() body: { title: string; body: string; category?: string; shortcut?: string },
     @CurrentUser() user: { id: string; role: string; organizationId?: string },
   ) {
-    return this.templatesService.create(body, user.id, user.organizationId);
+    return this.templatesService.create(body, user.id);
   }
 
   @Patch(':id')

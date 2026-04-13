@@ -200,6 +200,7 @@ export default function ChatWindow() {
     const trimmed = text.trim();
     if (!trimmed || sending) return;
     setSending(true);
+    setText('');
     try {
       await sendMessage({
         conversationId: activeConversation.id,
@@ -207,9 +208,7 @@ export default function ChatWindow() {
         chatId,
         body: trimmed,
       });
-      setText('');
     } catch (err) {
-      setText(trimmed);
       toast.error(getApiErrorMessage(err, 'Mesaj gönderilemedi'));
     } finally {
       setSending(false);

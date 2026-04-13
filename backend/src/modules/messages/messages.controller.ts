@@ -81,20 +81,10 @@ export class MessagesController {
       body.conversationId,
     );
     assertConversationBelongsToOrg(conversation, user);
-    try {
-      return await this.messagesService.sendText({
-        ...body,
-        sentById: user.id,
-      });
-    } catch (err: unknown) {
-      if (err instanceof HttpException) throw err;
-      const e = err as { message?: string; stack?: string };
-      this.logger.error(`POST /messages/send: ${e?.message}`, e?.stack);
-      throw new BadRequestException(
-        e?.message ||
-          'Mesaj gönderilemedi. Backend günlüğünü (docker compose logs backend) kontrol edin.',
-      );
-    }
+    return this.messagesService.sendText({
+      ...body,
+      sentById: user.id,
+    });
   }
 
   @Post('send-media')

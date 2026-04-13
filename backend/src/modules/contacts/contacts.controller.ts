@@ -46,7 +46,6 @@ export class ContactsController {
     @Query('page') page?: string,
     @Query('limit') limit?: string,
   ) {
-    const orgId = requireOrgId(user);
     return this.contactsService.findAll({
       search,
       tag,
@@ -54,7 +53,6 @@ export class ContactsController {
       to,
       page: page ? parseInt(page) : 1,
       limit: limit ? parseInt(limit) : 50,
-      organizationId: orgId,
     });
   }
 
@@ -133,7 +131,6 @@ export class ContactsController {
       return { message: 'Aktif oturum bulunamadı', updated: 0 };
     }
 
-    /** Tek firma: tüm kişiler (üst sınır). WAHA profil çekimi seçilen WORKING oturum üzerinden. */
     const contacts = await this.prisma.contact.findMany({
       orderBy: { updatedAt: 'desc' },
       take: 15000,
@@ -143,32 +140,42 @@ export class ContactsController {
       return { message: 'Veritabanında kişi kaydı yok.', updated: 0 };
     }
 
+    const eligible = contacts.filter((c) => {
+      if (!force && c.avatarUrl) return false;
+      const d = this.contactsService.digitsForWahaProfile(c.phone);
+      return !!d;
+    });
+
     this.logger.log(
-      `Profil foto toplu yenileme: ${contacts.length} kişi adayı (oturum=${workingSession.name}, force=${force})`,
+      `Profil foto toplu yenileme başlatıldı: ${eligible.length} kişi (toplam=${contacts.length}, force=${force}, oturum=${workingSession.name})`,
     );
 
-    let updated = 0;
+    this.runAvatarRefreshInBackground(workingSession.name, eligible, force);
 
-    let skipped = 0;
-    let noPhone = 0;
+    return {
+      message: `${eligible.length} kişi için arka planda güncelleme başlatıldı. İlerleme backend loglarında görünür.`,
+      updated: 0,
+      total: eligible.length,
+    };
+  }
+
+  private async runAvatarRefreshInBackground(
+    sessionName: string,
+    contacts: { id: string; phone: string }[],
+    _force: boolean,
+  ) {
+    let updated = 0;
     let noPhoto = 0;
     let errors = 0;
 
-    for (const contact of contacts) {
-      if (!force && contact.avatarUrl) {
-        skipped++;
-        continue;
-      }
-
+    for (let i = 0; i < contacts.length; i++) {
+      const contact = contacts[i];
       const waPhone = this.contactsService.digitsForWahaProfile(contact.phone);
-      if (!waPhone) {
-        noPhone++;
-        continue;
-      }
+      if (!waPhone) continue;
 
       try {
         const pictureUrl = await this.wahaService.getProfilePicture(
-          workingSession.name,
+          sessionName,
           waPhone,
         );
 
@@ -187,14 +194,18 @@ export class ContactsController {
         this.logger.debug(`Avatar hatası (${contact.phone}): ${err.message}`);
       }
 
-      await new Promise((r) => setTimeout(r, 150));
+      if ((i + 1) % 25 === 0 || i === contacts.length - 1) {
+        this.logger.log(
+          `Avatar ilerleme: ${i + 1}/${contacts.length} işlendi (güncellendi=${updated}, foto yok=${noPhoto}, hata=${errors})`,
+        );
+      }
+
+      await new Promise((r) => setTimeout(r, 100));
     }
 
-    const msg =
-      `${updated} kişinin profil fotoğrafı güncellendi` +
-      ` (toplam: ${contacts.length}, atlandı: ${skipped}, telefon yok: ${noPhone}, foto yok: ${noPhoto}, hata: ${errors})`;
-    this.logger.log(msg);
-    return { message: msg, updated };
+    this.logger.log(
+      `Avatar toplu yenileme tamamlandı: ${updated} güncellendi, ${noPhoto} foto yok, ${errors} hata (toplam ${contacts.length})`,
+    );
   }
 
   @Get(':id')
