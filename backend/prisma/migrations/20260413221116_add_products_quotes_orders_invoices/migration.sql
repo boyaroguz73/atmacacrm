@@ -1,20 +1,29 @@
--- CreateEnum QuoteStatus
-CREATE TYPE "QuoteStatus" AS ENUM ('DRAFT', 'SENT', 'ACCEPTED', 'REJECTED', 'EXPIRED');
+-- Idempotent migration: her adım IF NOT EXISTS ile korunuyor
 
--- CreateEnum OrderStatus
-CREATE TYPE "OrderStatus" AS ENUM ('PENDING', 'PROCESSING', 'SHIPPED', 'DELIVERED', 'CANCELLED');
+-- Enums (varsa atla)
+DO $$ BEGIN
+  CREATE TYPE "QuoteStatus" AS ENUM ('DRAFT', 'SENT', 'ACCEPTED', 'REJECTED', 'EXPIRED');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
--- CreateEnum AccInvoiceStatus
-CREATE TYPE "AccInvoiceStatus" AS ENUM ('PENDING', 'SENT', 'PAID', 'OVERDUE', 'CANCELLED');
+DO $$ BEGIN
+  CREATE TYPE "OrderStatus" AS ENUM ('PENDING', 'PROCESSING', 'SHIPPED', 'DELIVERED', 'CANCELLED');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
--- CreateEnum DiscountType
-CREATE TYPE "DiscountType" AS ENUM ('PERCENT', 'AMOUNT');
+DO $$ BEGIN
+  CREATE TYPE "AccInvoiceStatus" AS ENUM ('PENDING', 'SENT', 'PAID', 'OVERDUE', 'CANCELLED');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
--- AlterEnum: Add ACCOUNTANT to UserRole
-ALTER TYPE "UserRole" ADD VALUE 'ACCOUNTANT';
+DO $$ BEGIN
+  CREATE TYPE "DiscountType" AS ENUM ('PERCENT', 'AMOUNT');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
--- CreateTable products
-CREATE TABLE "products" (
+-- ACCOUNTANT değeri ekle (varsa atla)
+DO $$ BEGIN
+  ALTER TYPE "UserRole" ADD VALUE 'ACCOUNTANT';
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+-- Tablolar
+CREATE TABLE IF NOT EXISTS "products" (
     "id" TEXT NOT NULL,
     "sku" TEXT NOT NULL,
     "name" TEXT NOT NULL,
@@ -26,13 +35,11 @@ CREATE TABLE "products" (
     "stock" INTEGER,
     "isActive" BOOLEAN NOT NULL DEFAULT true,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMP(3) NOT NULL,
-
+    "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT "products_pkey" PRIMARY KEY ("id")
 );
 
--- CreateTable quotes
-CREATE TABLE "quotes" (
+CREATE TABLE IF NOT EXISTS "quotes" (
     "id" TEXT NOT NULL,
     "quoteNumber" SERIAL NOT NULL,
     "contactId" TEXT NOT NULL,
@@ -50,13 +57,11 @@ CREATE TABLE "quotes" (
     "notes" TEXT,
     "pdfUrl" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMP(3) NOT NULL,
-
+    "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT "quotes_pkey" PRIMARY KEY ("id")
 );
 
--- CreateTable quote_items
-CREATE TABLE "quote_items" (
+CREATE TABLE IF NOT EXISTS "quote_items" (
     "id" TEXT NOT NULL,
     "quoteId" TEXT NOT NULL,
     "productId" TEXT,
@@ -68,12 +73,10 @@ CREATE TABLE "quote_items" (
     "discountType" "DiscountType" DEFAULT 'PERCENT',
     "discountValue" DOUBLE PRECISION DEFAULT 0,
     "lineTotal" DOUBLE PRECISION NOT NULL DEFAULT 0,
-
     CONSTRAINT "quote_items_pkey" PRIMARY KEY ("id")
 );
 
--- CreateTable sales_orders
-CREATE TABLE "sales_orders" (
+CREATE TABLE IF NOT EXISTS "sales_orders" (
     "id" TEXT NOT NULL,
     "orderNumber" SERIAL NOT NULL,
     "quoteId" TEXT,
@@ -87,13 +90,11 @@ CREATE TABLE "sales_orders" (
     "shippingAddress" TEXT,
     "notes" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMP(3) NOT NULL,
-
+    "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT "sales_orders_pkey" PRIMARY KEY ("id")
 );
 
--- CreateTable order_items
-CREATE TABLE "order_items" (
+CREATE TABLE IF NOT EXISTS "order_items" (
     "id" TEXT NOT NULL,
     "orderId" TEXT NOT NULL,
     "productId" TEXT,
@@ -102,12 +103,10 @@ CREATE TABLE "order_items" (
     "unitPrice" DOUBLE PRECISION NOT NULL,
     "vatRate" INTEGER NOT NULL DEFAULT 20,
     "lineTotal" DOUBLE PRECISION NOT NULL DEFAULT 0,
-
     CONSTRAINT "order_items_pkey" PRIMARY KEY ("id")
 );
 
--- CreateTable accounting_invoices
-CREATE TABLE "accounting_invoices" (
+CREATE TABLE IF NOT EXISTS "accounting_invoices" (
     "id" TEXT NOT NULL,
     "invoiceNumber" SERIAL NOT NULL,
     "orderId" TEXT,
@@ -125,52 +124,85 @@ CREATE TABLE "accounting_invoices" (
     "uploadedPdfUrl" TEXT,
     "notes" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMP(3) NOT NULL,
-
+    "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT "accounting_invoices_pkey" PRIMARY KEY ("id")
 );
 
--- CreateIndex
-CREATE UNIQUE INDEX "products_sku_key" ON "products"("sku");
-CREATE INDEX "products_sku_idx" ON "products"("sku");
+-- İndeksler (varsa atla)
+CREATE UNIQUE INDEX IF NOT EXISTS "products_sku_key" ON "products"("sku");
+CREATE INDEX IF NOT EXISTS "products_sku_idx" ON "products"("sku");
 
-CREATE UNIQUE INDEX "quotes_quoteNumber_key" ON "quotes"("quoteNumber");
-CREATE INDEX "quotes_contactId_idx" ON "quotes"("contactId");
-CREATE INDEX "quotes_status_idx" ON "quotes"("status");
-CREATE INDEX "quotes_createdAt_idx" ON "quotes"("createdAt" DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS "quotes_quoteNumber_key" ON "quotes"("quoteNumber");
+CREATE INDEX IF NOT EXISTS "quotes_contactId_idx" ON "quotes"("contactId");
+CREATE INDEX IF NOT EXISTS "quotes_status_idx" ON "quotes"("status");
+CREATE INDEX IF NOT EXISTS "quotes_createdAt_idx" ON "quotes"("createdAt" DESC);
 
-CREATE INDEX "quote_items_quoteId_idx" ON "quote_items"("quoteId");
+CREATE INDEX IF NOT EXISTS "quote_items_quoteId_idx" ON "quote_items"("quoteId");
 
-CREATE UNIQUE INDEX "sales_orders_orderNumber_key" ON "sales_orders"("orderNumber");
-CREATE UNIQUE INDEX "sales_orders_quoteId_key" ON "sales_orders"("quoteId");
-CREATE INDEX "sales_orders_contactId_idx" ON "sales_orders"("contactId");
-CREATE INDEX "sales_orders_status_idx" ON "sales_orders"("status");
-CREATE INDEX "sales_orders_createdAt_idx" ON "sales_orders"("createdAt" DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS "sales_orders_orderNumber_key" ON "sales_orders"("orderNumber");
+CREATE UNIQUE INDEX IF NOT EXISTS "sales_orders_quoteId_key" ON "sales_orders"("quoteId");
+CREATE INDEX IF NOT EXISTS "sales_orders_contactId_idx" ON "sales_orders"("contactId");
+CREATE INDEX IF NOT EXISTS "sales_orders_status_idx" ON "sales_orders"("status");
+CREATE INDEX IF NOT EXISTS "sales_orders_createdAt_idx" ON "sales_orders"("createdAt" DESC);
 
-CREATE INDEX "order_items_orderId_idx" ON "order_items"("orderId");
+CREATE INDEX IF NOT EXISTS "order_items_orderId_idx" ON "order_items"("orderId");
 
-CREATE UNIQUE INDEX "accounting_invoices_invoiceNumber_key" ON "accounting_invoices"("invoiceNumber");
-CREATE UNIQUE INDEX "accounting_invoices_orderId_key" ON "accounting_invoices"("orderId");
-CREATE UNIQUE INDEX "accounting_invoices_quoteId_key" ON "accounting_invoices"("quoteId");
-CREATE INDEX "accounting_invoices_contactId_idx" ON "accounting_invoices"("contactId");
-CREATE INDEX "accounting_invoices_status_idx" ON "accounting_invoices"("status");
-CREATE INDEX "accounting_invoices_createdAt_idx" ON "accounting_invoices"("createdAt" DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS "accounting_invoices_invoiceNumber_key" ON "accounting_invoices"("invoiceNumber");
+CREATE UNIQUE INDEX IF NOT EXISTS "accounting_invoices_orderId_key" ON "accounting_invoices"("orderId");
+CREATE UNIQUE INDEX IF NOT EXISTS "accounting_invoices_quoteId_key" ON "accounting_invoices"("quoteId");
+CREATE INDEX IF NOT EXISTS "accounting_invoices_contactId_idx" ON "accounting_invoices"("contactId");
+CREATE INDEX IF NOT EXISTS "accounting_invoices_status_idx" ON "accounting_invoices"("status");
+CREATE INDEX IF NOT EXISTS "accounting_invoices_createdAt_idx" ON "accounting_invoices"("createdAt" DESC);
 
--- AddForeignKey
-ALTER TABLE "quotes" ADD CONSTRAINT "quotes_contactId_fkey" FOREIGN KEY ("contactId") REFERENCES "contacts"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-ALTER TABLE "quotes" ADD CONSTRAINT "quotes_createdById_fkey" FOREIGN KEY ("createdById") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+-- Foreign Key'ler (varsa atla)
+DO $$ BEGIN
+  ALTER TABLE "quotes" ADD CONSTRAINT "quotes_contactId_fkey" FOREIGN KEY ("contactId") REFERENCES "contacts"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
-ALTER TABLE "quote_items" ADD CONSTRAINT "quote_items_quoteId_fkey" FOREIGN KEY ("quoteId") REFERENCES "quotes"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-ALTER TABLE "quote_items" ADD CONSTRAINT "quote_items_productId_fkey" FOREIGN KEY ("productId") REFERENCES "products"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+DO $$ BEGIN
+  ALTER TABLE "quotes" ADD CONSTRAINT "quotes_createdById_fkey" FOREIGN KEY ("createdById") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
-ALTER TABLE "sales_orders" ADD CONSTRAINT "sales_orders_quoteId_fkey" FOREIGN KEY ("quoteId") REFERENCES "quotes"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-ALTER TABLE "sales_orders" ADD CONSTRAINT "sales_orders_contactId_fkey" FOREIGN KEY ("contactId") REFERENCES "contacts"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-ALTER TABLE "sales_orders" ADD CONSTRAINT "sales_orders_createdById_fkey" FOREIGN KEY ("createdById") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+DO $$ BEGIN
+  ALTER TABLE "quote_items" ADD CONSTRAINT "quote_items_quoteId_fkey" FOREIGN KEY ("quoteId") REFERENCES "quotes"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
-ALTER TABLE "order_items" ADD CONSTRAINT "order_items_orderId_fkey" FOREIGN KEY ("orderId") REFERENCES "sales_orders"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-ALTER TABLE "order_items" ADD CONSTRAINT "order_items_productId_fkey" FOREIGN KEY ("productId") REFERENCES "products"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+DO $$ BEGIN
+  ALTER TABLE "quote_items" ADD CONSTRAINT "quote_items_productId_fkey" FOREIGN KEY ("productId") REFERENCES "products"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
-ALTER TABLE "accounting_invoices" ADD CONSTRAINT "accounting_invoices_orderId_fkey" FOREIGN KEY ("orderId") REFERENCES "sales_orders"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-ALTER TABLE "accounting_invoices" ADD CONSTRAINT "accounting_invoices_quoteId_fkey" FOREIGN KEY ("quoteId") REFERENCES "quotes"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-ALTER TABLE "accounting_invoices" ADD CONSTRAINT "accounting_invoices_contactId_fkey" FOREIGN KEY ("contactId") REFERENCES "contacts"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-ALTER TABLE "accounting_invoices" ADD CONSTRAINT "accounting_invoices_createdById_fkey" FOREIGN KEY ("createdById") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+DO $$ BEGIN
+  ALTER TABLE "sales_orders" ADD CONSTRAINT "sales_orders_quoteId_fkey" FOREIGN KEY ("quoteId") REFERENCES "quotes"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN
+  ALTER TABLE "sales_orders" ADD CONSTRAINT "sales_orders_contactId_fkey" FOREIGN KEY ("contactId") REFERENCES "contacts"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN
+  ALTER TABLE "sales_orders" ADD CONSTRAINT "sales_orders_createdById_fkey" FOREIGN KEY ("createdById") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN
+  ALTER TABLE "order_items" ADD CONSTRAINT "order_items_orderId_fkey" FOREIGN KEY ("orderId") REFERENCES "sales_orders"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN
+  ALTER TABLE "order_items" ADD CONSTRAINT "order_items_productId_fkey" FOREIGN KEY ("productId") REFERENCES "products"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN
+  ALTER TABLE "accounting_invoices" ADD CONSTRAINT "accounting_invoices_orderId_fkey" FOREIGN KEY ("orderId") REFERENCES "sales_orders"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN
+  ALTER TABLE "accounting_invoices" ADD CONSTRAINT "accounting_invoices_quoteId_fkey" FOREIGN KEY ("quoteId") REFERENCES "quotes"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN
+  ALTER TABLE "accounting_invoices" ADD CONSTRAINT "accounting_invoices_contactId_fkey" FOREIGN KEY ("contactId") REFERENCES "contacts"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN
+  ALTER TABLE "accounting_invoices" ADD CONSTRAINT "accounting_invoices_createdById_fkey" FOREIGN KEY ("createdById") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
