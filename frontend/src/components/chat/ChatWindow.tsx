@@ -196,24 +196,28 @@ export default function ChatWindow() {
     phoneToWhatsappChatId(contact.phone) ||
     `${String(contact.phone).replace(/\D/g, '')}@c.us`;
 
-  const submitComposer = async () => {
+  const submitComposer = () => {
     const trimmed = text.trim();
     if (!trimmed || sending) return;
-    setSending(true);
+
     setText('');
-    try {
-      await sendMessage({
-        conversationId: activeConversation.id,
-        sessionName: activeConversation.session.name,
-        chatId,
-        body: trimmed,
+    if (composerRef.current) composerRef.current.value = '';
+
+    setSending(true);
+
+    sendMessage({
+      conversationId: activeConversation.id,
+      sessionName: activeConversation.session.name,
+      chatId,
+      body: trimmed,
+    })
+      .catch((err) => {
+        toast.error(getApiErrorMessage(err, 'Mesaj gönderilemedi'));
+      })
+      .finally(() => {
+        setSending(false);
+        queueMicrotask(() => composerRef.current?.focus());
       });
-    } catch (err) {
-      toast.error(getApiErrorMessage(err, 'Mesaj gönderilemedi'));
-    } finally {
-      setSending(false);
-      queueMicrotask(() => composerRef.current?.focus());
-    }
   };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -662,7 +666,7 @@ export default function ChatWindow() {
             onSubmit={(e) => {
               e.preventDefault();
               if (editingMessage) void handleEditMessage();
-              else void submitComposer();
+              else submitComposer();
             }}
             className="bg-white border-t border-gray-200 px-4 py-3 flex items-end gap-3"
           >
@@ -811,7 +815,7 @@ export default function ChatWindow() {
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && !e.shiftKey) {
                       e.preventDefault();
-                      void submitComposer();
+                      submitComposer();
                     }
                   }}
                   placeholder="Mesaj yazın… Enter gönderir, Shift+Enter satır atlar. (/ ile şablon)"
