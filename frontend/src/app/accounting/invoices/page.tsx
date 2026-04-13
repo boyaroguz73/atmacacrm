@@ -108,12 +108,17 @@ function formatInvoiceNo(inv: InvoiceRow): string {
   return `FTR-${idDigits.padStart(5, '0').slice(-5)}`;
 }
 
+function safeStr(v: unknown): string {
+  if (v == null) return '';
+  return String(v).trim();
+}
+
 function personLabel(inv: InvoiceRow): string {
   const c = inv.contact;
   return (
-    c?.name?.trim() ||
-    inv.contactName?.trim() ||
-    inv.personName?.trim() ||
+    safeStr(c?.name) ||
+    safeStr(inv.contactName) ||
+    safeStr(inv.personName) ||
     '—'
   );
 }
@@ -124,9 +129,9 @@ function personPhone(inv: InvoiceRow): string | null | undefined {
 
 function orderNoLabel(inv: InvoiceRow): string {
   return (
-    inv.order?.orderNumber?.trim() ||
-    inv.orderNumber?.trim() ||
-    inv.orderId?.trim() ||
+    safeStr(inv.order?.orderNumber) ||
+    safeStr(inv.orderNumber) ||
+    safeStr(inv.orderId) ||
     '—'
   );
 }
@@ -141,7 +146,7 @@ function moneyAmount(inv: InvoiceRow | PendingBillingRow): number {
 }
 
 function formatMoney(amount: number, currency: string | null | undefined): string {
-  const cur = currency?.trim() || 'TRY';
+  const cur = safeStr(currency) || 'TRY';
   return `${amount.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${cur}`;
 }
 
@@ -543,7 +548,7 @@ export default function AccountingInvoicesPage() {
                             {statusLabelTr(String(inv.status))}
                           </span>
                         </td>
-                        <td className="px-5 py-3 text-gray-600">{inv.currency?.trim() || 'TRY'}</td>
+                        <td className="px-5 py-3 text-gray-600">{safeStr(inv.currency) || 'TRY'}</td>
                         <td className="px-5 py-3 font-medium text-gray-900">
                           {formatMoney(moneyAmount(inv), inv.currency)}
                         </td>
@@ -606,9 +611,9 @@ export default function AccountingInvoicesPage() {
                 <tbody>
                   {pendingRows.map((row) => {
                     const orderLabel =
-                      row.orderNumber?.trim() || row.orderId || row.id || '—';
+                      safeStr(row.orderNumber) || safeStr(row.orderId) || safeStr(row.id) || '—';
                     const name =
-                      row.contact?.name?.trim() || row.contactName?.trim() || '—';
+                      safeStr(row.contact?.name) || safeStr(row.contactName) || '—';
                     const phone = row.contact?.phone;
                     const dateStr =
                       row.orderDate || row.createdAt || row.date || null;
