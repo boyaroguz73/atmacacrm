@@ -87,9 +87,18 @@ function calcTotals(
   };
 }
 
+function genKey(): string {
+  try {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      return crypto.randomUUID();
+    }
+  } catch {}
+  return Math.random().toString(36).slice(2) + Date.now().toString(36);
+}
+
 function emptyLine(): LocalLineItem {
   return {
-    key: typeof crypto !== 'undefined' ? crypto.randomUUID() : String(Date.now()),
+    key: genKey(),
     name: '',
     quantity: 1,
     unitPrice: 0,
@@ -193,7 +202,7 @@ export default function NewQuotePage() {
     setLines((prev) => [
       ...prev,
       {
-        key: crypto.randomUUID(),
+        key: genKey(),
         productId: p.id,
         name: p.name,
         description: p.description || undefined,
