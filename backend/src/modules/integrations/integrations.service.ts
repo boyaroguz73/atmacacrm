@@ -75,13 +75,18 @@ export class IntegrationsService {
     };
 
     for (const def of INTEGRATION_CATALOG) {
+      const bucket = categories[def.category];
+      if (!bucket) {
+        this.logger.error(`Entegrasyon kataloğunda bilinmeyen kategori: ${def.category} (${def.key})`);
+        continue;
+      }
       const includedInPlan = !!flags[def.featureFlag];
       const orgInt = orgMap.get(def.key);
       const purchased = !!orgInt?.purchasedAt;
       const isEnabled = !!orgInt?.isEnabled;
       const available = includedInPlan || purchased;
 
-      categories[def.category].push({
+      bucket.push({
         key: def.key,
         name: def.name,
         description: def.description,
