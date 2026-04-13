@@ -42,14 +42,11 @@ export class UsersController {
     return this.usersService.findAgents(requireOrgId(req.user));
   }
 
-  /** Gelen kutusu mesaj filtresi: org içi ADMIN + AGENT. SUPERADMIN için ?organizationId=… zorunlu. */
+  /** Gelen kutusu mesaj filtresi: ADMIN + AGENT (tek firma; isteğe bağlı ?organizationId= daraltır). */
   @Get('inbox-peers')
   findInboxPeers(@Req() req: any, @Query('organizationId') organizationId?: string) {
     const u = req.user;
-    const org =
-      u.role === 'SUPERADMIN'
-        ? organizationId || null
-        : requireOrgId(u) ?? null;
+    const org = organizationId?.trim() || u.organizationId || undefined;
     return this.usersService.findInboxPeers(org);
   }
 

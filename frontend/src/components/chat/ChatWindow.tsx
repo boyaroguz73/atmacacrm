@@ -143,44 +143,18 @@ export default function ChatWindow() {
   useEffect(() => {
     if (!activeConversation) return;
     let cancelled = false;
-    const orgId =
-      activeConversation.session?.organizationId ??
-      activeConversation.contact?.organizationId ??
-      null;
-    try {
-      const stored = localStorage.getItem('user');
-      if (!stored) {
-        setInboxPeers([]);
-        return;
-      }
-      const u = JSON.parse(stored);
-      let url = '/users/inbox-peers';
-      if (u.role === 'SUPERADMIN') {
-        if (!orgId) {
-          setInboxPeers([]);
-          return;
-        }
-        url += `?organizationId=${encodeURIComponent(orgId)}`;
-      }
-      api
-        .get(url)
-        .then(({ data }) => {
-          if (!cancelled) setInboxPeers(Array.isArray(data) ? data : []);
-        })
-        .catch(() => {
-          if (!cancelled) setInboxPeers([]);
-        });
-    } catch {
-      setInboxPeers([]);
-    }
+    api
+      .get('/users/inbox-peers')
+      .then(({ data }) => {
+        if (!cancelled) setInboxPeers(Array.isArray(data) ? data : []);
+      })
+      .catch(() => {
+        if (!cancelled) setInboxPeers([]);
+      });
     return () => {
       cancelled = true;
     };
-  }, [
-    activeConversation?.id,
-    activeConversation?.session?.organizationId,
-    activeConversation?.contact?.organizationId,
-  ]);
+  }, [activeConversation?.id]);
 
   const activeConvId = activeConversation?.id;
   useEffect(() => {

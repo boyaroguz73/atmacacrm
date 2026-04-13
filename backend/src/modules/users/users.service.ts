@@ -68,15 +68,17 @@ export class UsersService {
     });
   }
 
-  /** Gelen kutusunda mesaj gönderen kullanıcılar (ADMIN + AGENT); organizationId yoksa boş. */
+  /** Gelen kutusu: ADMIN + AGENT. Tek firma — organizationId verilirse daraltır, yoksa tüm aktif yönetici/temsilciler. */
   async findInboxPeers(organizationId: string | null | undefined) {
-    if (!organizationId) return [];
+    const where: Prisma.UserWhereInput = {
+      role: { in: ['AGENT', 'ADMIN'] },
+      isActive: true,
+    };
+    if (organizationId) {
+      where.organizationId = organizationId;
+    }
     return this.prisma.user.findMany({
-      where: {
-        organizationId,
-        role: { in: ['AGENT', 'ADMIN'] },
-        isActive: true,
-      },
+      where,
       select: { id: true, name: true, email: true },
       orderBy: { name: 'asc' },
     });

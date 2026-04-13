@@ -19,7 +19,6 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { whereWhatsappSessionsForOrg, requireOrgId, assertBelongsToOrg } from '../../common/org-session-scope';
 import { RefreshAllAvatarsDto } from './dto/refresh-all-avatars.dto';
@@ -134,34 +133,14 @@ export class ContactsController {
       return { message: 'Aktif oturum bulunamadı', updated: 0 };
     }
 
-    const orgFilter =
-      u.role === 'SUPERADMIN'
-        ? workingSession.organizationId ?? undefined
-        : u.organizationId ?? undefined;
-
-    /**
-     * WA webhook ile gelen kişilerde organizationId çoğunlukla null olur; sadece org filtresiyle
-     * findAll kullanılırsa liste boş kalır. Seçilen WORKING oturumdaki sohbetler + org’a atanmış kişiler.
-     */
-    const contactWhere: Prisma.ContactWhereInput = {
-      OR: [
-        { conversations: { some: { sessionId: workingSession.id } } },
-        ...(orgFilter ? [{ organizationId: orgFilter }] : []),
-      ],
-    };
-
+    /** Tek firma: tüm kişiler (üst sınır). WAHA profil çekimi seçilen WORKING oturum üzerinden. */
     const contacts = await this.prisma.contact.findMany({
-      where: contactWhere,
       orderBy: { updatedAt: 'desc' },
       take: 15000,
     });
 
     if (contacts.length === 0) {
-      return {
-        message:
-          'Güncellenecek kişi bulunamadı. Bu WhatsApp oturumunda açılmış sohbet veya bu organizasyona atanmış kişi olmalı.',
-        updated: 0,
-      };
+      return { message: 'Veritabanında kişi kaydı yok.', updated: 0 };
     }
 
     this.logger.log(

@@ -33,9 +33,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     setAuthReady(true);
   }, [loadFromStorage]);
 
-  /** SuperAdmin panelden atanan paket vb. login anındaki localStorage’ı geçersiz kılar; API’den günceller */
+  /** Tek firma: /organizations/my ilk org’u da döner (JWT’de org olmasa bile). */
   useEffect(() => {
-    if (!user?.organizationId || user.role === 'SUPERADMIN') return;
+    if (!user || user.role === 'AGENT') return;
     let cancelled = false;
     (async () => {
       try {
@@ -63,7 +63,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [user?.organizationId, user?.role, updateOrganization]);
+  }, [user?.id, user?.role, updateOrganization]);
 
   const userId = user?.id;
   useEffect(() => {

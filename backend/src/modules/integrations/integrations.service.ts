@@ -11,52 +11,22 @@ export class IntegrationsService {
   constructor(private prisma: PrismaService) {}
 
   /**
-   * ADMIN: JWT’deki organizationId.
-   * SUPERADMIN + boş JWT org: `?organizationId=` veya veritabanındaki ilk organizasyon (tek kiracılı kurulumlar için).
+   * Tek firma: önce sorgu/JWT org, yoksa veritabanındaki ilk organizasyon (OrgIntegration FK için gerekli).
    */
   async resolveOrganizationId(
     user: { role?: string; organizationId?: string | null },
     queryOrganizationId?: string,
   ): Promise<string> {
-    if (user.organizationId) {
-      return user.organizationId;
-    }
     const q = queryOrganizationId?.trim();
-    if (q) {
-      return q;
-    }
-    if (user.role === 'SUPERADMIN') {
-      const first = await this.prisma.organization.findFirst({
-        orderBy: { createdAt: 'asc' },
-        select: { id: true },
-      });
-      if (first) {
-        this.logger.warn(
-          `Entegrasyonlar: SUPERADMIN için organizationId yok; ilk organizasyon kullanılıyor (${first.id}).`,
-        );
-        return first.id;
-      }
-    }
-    if (user.role === 'ADMIN') {
-      const count = await this.prisma.organization.count();
-      if (count === 1) {
-        const only = await this.prisma.organization.findFirst({
-          orderBy: { createdAt: 'asc' },
-          select: { id: true },
-        });
-        if (only) {
-          this.logger.warn(
-            `Entegrasyonlar: ADMIN kullanıcıda organizationId yok; tek organizasyon kullanılıyor (${only.id}).`,
-          );
-          return only.id;
-        }
-      }
-      throw new BadRequestException(
-        'Hesabınızda organizasyon atanmamış. Süper yöneticiden kullanıcıyı bir organizasyona bağlamasını isteyin veya URL\'ye ?organizationId= ekleyin.',
-      );
-    }
+    if (q) return q;
+    if (user.organizationId) return user.organizationId;
+    const first = await this.prisma.organization.findFirst({
+      orderBy: { createdAt: 'asc' },
+      select: { id: true },
+    });
+    if (first) return first.id;
     throw new BadRequestException(
-      'Organizasyon bulunamadı. URL\'ye ?organizationId= ekleyin veya en az bir organizasyon oluşturun.',
+      'Veritabanında organizasyon kaydı yok. `npx prisma db seed` veya en az bir Organization oluşturun.',
     );
   }
 

@@ -28,13 +28,20 @@ import { v4 as uuid } from 'uuid';
 export class OrganizationsController {
   constructor(private orgService: OrganizationsService) {}
 
+  private async resolveMyOrgId(req: any): Promise<string> {
+    const direct = req.user.organizationId as string | null | undefined;
+    if (direct) return direct;
+    const first = await this.orgService.getFirstOrganizationId();
+    if (!first) throw new BadRequestException('Organizasyon kaydı yok');
+    return first;
+  }
+
   // ===== ADMIN endpoints (kendi organizasyonu) =====
 
   @Get('my')
   @Roles('ADMIN')
   async getMyOrganization(@Req() req: any) {
-    const orgId = req.user.organizationId;
-    if (!orgId) throw new BadRequestException('Organizasyon bulunamadı');
+    const orgId = await this.resolveMyOrgId(req);
     return this.orgService.findById(orgId);
   }
 
@@ -52,8 +59,7 @@ export class OrganizationsController {
       taxNumber?: string;
     },
   ) {
-    const orgId = req.user.organizationId;
-    if (!orgId) throw new BadRequestException('Organizasyon bulunamadı');
+    const orgId = await this.resolveMyOrgId(req);
     return this.orgService.updateBranding(orgId, body);
   }
 
@@ -78,8 +84,7 @@ export class OrganizationsController {
     }),
   )
   async uploadLogo(@Req() req: any, @UploadedFile() file: any) {
-    const orgId = req.user.organizationId;
-    if (!orgId) throw new BadRequestException('Organizasyon bulunamadı');
+    const orgId = await this.resolveMyOrgId(req);
     if (!file) throw new BadRequestException('Dosya yüklenmedi');
 
     const logoUrl = `/uploads/logos/${file.filename}`;

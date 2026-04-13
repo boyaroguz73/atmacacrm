@@ -88,7 +88,6 @@ const menuItems: MenuItem[] = [
       { href: '/admin/templates', label: 'Mesaj Şablonları', icon: FileText },
       { href: '/admin/auto-reply', label: 'Otomatik Yanıt', icon: Zap },
       { href: '/admin/audit-log', label: 'Aktivite Logu', icon: Activity },
-      { href: '/admin/organization', label: 'Organizasyon', icon: Building2 },
     ],
   },
   { href: '/reports', label: 'Raporlar', icon: BarChart3, adminOnly: true },
@@ -102,7 +101,6 @@ const menuItems: MenuItem[] = [
     superOnly: true,
     children: [
       { href: '/superadmin', label: 'Genel Bakış', icon: LayoutDashboard },
-      { href: '/superadmin/organizations', label: 'Organizasyonlar', icon: Building2 },
       { href: '/superadmin/users', label: 'Kullanıcılar', icon: Users },
       { href: '/superadmin/plans', label: 'Paketler', icon: Package },
       { href: '/superadmin/tickets', label: 'Destek Talepleri', icon: LifeBuoy },

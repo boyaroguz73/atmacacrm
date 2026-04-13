@@ -118,13 +118,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       | (OrgSessionScopeUser & { role?: string })
       | undefined;
     if (!user) return;
-    if (user.role === 'SUPERADMIN') {
-      client.join('inbox:superadmin');
-      return;
-    }
-    if (user.organizationId) {
-      client.join(`inbox:org:${user.organizationId}`);
-    }
+    client.join('inbox:all');
   }
 
   emitNewMessage(conversationId: string, data: any) {
@@ -153,11 +147,8 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       .emit('message:status', data);
   }
 
-  emitSessionStatus(sessionName: string, status: string, organizationId?: string | null) {
-    if (organizationId) {
-      this.server.to(`inbox:org:${organizationId}`).emit('session:status', { sessionName, status });
-    }
-    this.server.to('inbox:superadmin').emit('session:status', { sessionName, status });
+  emitSessionStatus(sessionName: string, status: string, _organizationId?: string | null) {
+    this.server.to('inbox:all').emit('session:status', { sessionName, status });
   }
 
   emitConversationAssigned(

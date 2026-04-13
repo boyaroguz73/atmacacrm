@@ -5,6 +5,15 @@ import { PrismaService } from '../prisma/prisma.service';
 export class OrganizationsService {
   constructor(private prisma: PrismaService) {}
 
+  /** Tek firma: kullanıcıda organizationId yoksa branding/entegrasyon için ilk kayıt */
+  async getFirstOrganizationId(): Promise<string | null> {
+    const row = await this.prisma.organization.findFirst({
+      orderBy: { createdAt: 'asc' },
+      select: { id: true },
+    });
+    return row?.id ?? null;
+  }
+
   async findAll() {
     return this.prisma.organization.findMany({
       include: {
