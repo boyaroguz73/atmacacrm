@@ -45,8 +45,10 @@ services:
       WAHA_LOG_LEVEL: info
       WAHA_API_KEY: ${WAHA_API_KEY:-}
       WAHA_NO_API_KEY: ${WAHA_NO_API_KEY:-true}
+      # Panel: https://waha.devlike.pro/docs/how-to/dashboard/ (Plus’ta geçerli)
+      WAHA_DASHBOARD_USERNAME: ${WAHA_DASHBOARD_USERNAME:-admin}
       WAHA_DASHBOARD_PASSWORD: ${WAHA_DASHBOARD_PASSWORD:-}
-      WAHA_DASHBOARD_NO_PASSWORD: ${WAHA_DASHBOARD_NO_PASSWORD:-True}
+      WAHA_DASHBOARD_NO_PASSWORD: "${WAHA_DASHBOARD_NO_PASSWORD:-false}"
     volumes:
       - waha_data:/app/.sessions
 
