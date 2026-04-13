@@ -42,6 +42,7 @@ const roleLabels: Record<string, string> = {
   SUPERADMIN: 'Yönetici',
   ADMIN: 'Yönetici',
   AGENT: 'Temsilci',
+  ACCOUNTANT: 'Muhasebeci',
 };
 
 export default function SettingsPage() {
@@ -470,49 +471,211 @@ export default function SettingsPage() {
 
         {/* PDF Şablon Ayarları */}
         {(currentUser?.role === 'ADMIN' || currentUser?.role === 'SUPERADMIN') && (
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 space-y-4">
-            <h2 className="text-lg font-semibold text-gray-900">PDF Şablon Ayarları</h2>
-            <p className="text-xs text-gray-400">Teklif ve fatura PDF belgelerinde kullanılacak firma bilgileri</p>
-            {[
-              { key: 'pdf_company_name', label: 'Firma Adı', type: 'text' },
-              { key: 'pdf_company_address', label: 'Firma Adresi', type: 'text' },
-              { key: 'pdf_company_phone', label: 'Telefon', type: 'text' },
-              { key: 'pdf_company_email', label: 'E-posta', type: 'text' },
-              { key: 'pdf_company_tax_office', label: 'Vergi Dairesi', type: 'text' },
-              { key: 'pdf_company_tax_number', label: 'Vergi No', type: 'text' },
-              { key: 'pdf_bank_info', label: 'Banka Bilgileri (IBAN vb.)', type: 'textarea' },
-              { key: 'pdf_terms', label: 'Ödeme Koşulları', type: 'textarea' },
-              { key: 'pdf_footer_note', label: 'Alt Not', type: 'text' },
-            ].map((field) => (
-              <div key={field.key}>
-                <label className="block text-sm font-medium text-gray-700 mb-1">{field.label}</label>
-                {field.type === 'textarea' ? (
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 space-y-5">
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">PDF Şablon Ayarları</h2>
+              <p className="text-xs text-gray-400 mt-1">Teklif ve fatura PDF belgelerinde kullanılacak firma bilgileri</p>
+            </div>
+
+            {/* Firma Bilgileri */}
+            <div>
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Firma Bilgileri</p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {[
+                  { key: 'pdf_company_name', label: 'Firma Adı *', type: 'text' },
+                  { key: 'pdf_company_phone', label: 'Telefon', type: 'text' },
+                  { key: 'pdf_company_email', label: 'E-posta', type: 'text' },
+                  { key: 'pdf_company_website', label: 'Web Sitesi', type: 'text' },
+                  { key: 'pdf_company_tax_office', label: 'Vergi Dairesi', type: 'text' },
+                  { key: 'pdf_company_tax_number', label: 'Vergi No', type: 'text' },
+                  { key: 'pdf_company_mersis_no', label: 'Mersis No', type: 'text' },
+                ].map((field) => (
+                  <div key={field.key}>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">{field.label}</label>
+                    <input
+                      type="text"
+                      defaultValue={settings.find((s) => s.key === field.key)?.value || ''}
+                      onBlur={async (e) => {
+                        try {
+                          await api.patch('/system-settings', { key: field.key, value: e.target.value });
+                          toast.success(`${field.label} güncellendi`);
+                        } catch { toast.error('Güncellenemedi'); }
+                      }}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-whatsapp"
+                    />
+                  </div>
+                ))}
+                <div className="md:col-span-2">
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Firma Adresi</label>
                   <textarea
-                    defaultValue={settings.find((s) => s.key === field.key)?.value || ''}
+                    defaultValue={settings.find((s) => s.key === 'pdf_company_address')?.value || ''}
                     onBlur={async (e) => {
                       try {
-                        await api.patch('/system-settings', { key: field.key, value: e.target.value });
-                        toast.success(`${field.label} güncellendi`);
+                        await api.patch('/system-settings', { key: 'pdf_company_address', value: e.target.value });
+                        toast.success('Adres güncellendi');
                       } catch { toast.error('Güncellenemedi'); }
                     }}
                     rows={2}
-                    className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-whatsapp resize-y"
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-whatsapp resize-y"
                   />
-                ) : (
-                  <input
-                    type="text"
-                    defaultValue={settings.find((s) => s.key === field.key)?.value || ''}
-                    onBlur={async (e) => {
+                </div>
+              </div>
+            </div>
+
+            {/* Logo */}
+            <div>
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Logo</p>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Logo URL (https://... veya /uploads/...)</label>
+                <input
+                  type="text"
+                  defaultValue={settings.find((s) => s.key === 'pdf_logo_url')?.value || ''}
+                  onBlur={async (e) => {
+                    try {
+                      await api.patch('/system-settings', { key: 'pdf_logo_url', value: e.target.value });
+                      toast.success('Logo URL güncellendi');
+                    } catch { toast.error('Güncellenemedi'); }
+                  }}
+                  placeholder="https://example.com/logo.png"
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-whatsapp"
+                />
+                <p className="text-xs text-gray-400 mt-1">Logo PNG/JPG formatında olmalı. Tarayıcıdan erişilebilir bir URL girin.</p>
+              </div>
+              {settings.find((s) => s.key === 'pdf_logo_url')?.value && (
+                <div className="mt-2">
+                  <img
+                    src={settings.find((s) => s.key === 'pdf_logo_url')?.value}
+                    alt="Logo önizleme"
+                    className="h-12 object-contain border border-gray-100 rounded-lg p-1"
+                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* Banka Bilgileri */}
+            <div>
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Banka Bilgileri</p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {[
+                  { key: 'pdf_bank_info', label: 'Banka 1 (IBAN, Hesap No vb.)' },
+                  { key: 'pdf_bank2_info', label: 'Banka 2 (opsiyonel)' },
+                ].map((field) => (
+                  <div key={field.key}>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">{field.label}</label>
+                    <textarea
+                      defaultValue={settings.find((s) => s.key === field.key)?.value || ''}
+                      onBlur={async (e) => {
+                        try {
+                          await api.patch('/system-settings', { key: field.key, value: e.target.value });
+                          toast.success('Banka bilgisi güncellendi');
+                        } catch { toast.error('Güncellenemedi'); }
+                      }}
+                      rows={3}
+                      placeholder="Banka Adı: ...\nIBAN: TR..."
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-whatsapp resize-y font-mono"
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Koşullar & Notlar */}
+            <div>
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Koşullar & Notlar</p>
+              <div className="space-y-4">
+                {[
+                  { key: 'pdf_terms', label: 'Ödeme Koşulları', rows: 3 },
+                  { key: 'pdf_footer_note', label: 'Alt Not (PDF footer)', rows: 2 },
+                ].map((field) => (
+                  <div key={field.key}>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">{field.label}</label>
+                    <textarea
+                      defaultValue={settings.find((s) => s.key === field.key)?.value || ''}
+                      onBlur={async (e) => {
+                        try {
+                          await api.patch('/system-settings', { key: field.key, value: e.target.value });
+                          toast.success(`${field.label} güncellendi`);
+                        } catch { toast.error('Güncellenemedi'); }
+                      }}
+                      rows={field.rows}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-whatsapp resize-y"
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Görünüm */}
+            <div>
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Görünüm</p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Ana Renk (HEX)</label>
+                  <div className="flex gap-2 items-center">
+                    <input
+                      type="color"
+                      defaultValue={settings.find((s) => s.key === 'pdf_primary_color')?.value || '#1a7a4a'}
+                      onBlur={async (e) => {
+                        try {
+                          await api.patch('/system-settings', { key: 'pdf_primary_color', value: e.target.value });
+                          toast.success('Renk güncellendi');
+                        } catch { toast.error('Güncellenemedi'); }
+                      }}
+                      className="h-9 w-16 rounded border border-gray-200 cursor-pointer"
+                    />
+                    <input
+                      type="text"
+                      defaultValue={settings.find((s) => s.key === 'pdf_primary_color')?.value || '#1a7a4a'}
+                      onBlur={async (e) => {
+                        try {
+                          await api.patch('/system-settings', { key: 'pdf_primary_color', value: e.target.value });
+                          toast.success('Renk güncellendi');
+                        } catch { toast.error('Güncellenemedi'); }
+                      }}
+                      placeholder="#1a7a4a"
+                      className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-whatsapp"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Para Birimi Konumu</label>
+                  <select
+                    defaultValue={settings.find((s) => s.key === 'pdf_currency_position')?.value || 'after'}
+                    onChange={async (e) => {
                       try {
-                        await api.patch('/system-settings', { key: field.key, value: e.target.value });
-                        toast.success(`${field.label} güncellendi`);
+                        await api.patch('/system-settings', { key: 'pdf_currency_position', value: e.target.value });
+                        toast.success('Güncellendi');
                       } catch { toast.error('Güncellenemedi'); }
                     }}
-                    className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-whatsapp"
-                  />
-                )}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-whatsapp"
+                  >
+                    <option value="after">Sonra (1.000,00 TL)</option>
+                    <option value="before">Önce (TL 1.000,00)</option>
+                  </select>
+                </div>
+                <div className="flex items-center gap-3">
+                  <label className="text-xs font-medium text-gray-600">İmza Alanı Göster</label>
+                  <button
+                    onClick={async () => {
+                      const current = settings.find((s) => s.key === 'pdf_show_signature')?.value !== 'false';
+                      try {
+                        await api.patch('/system-settings', { key: 'pdf_show_signature', value: current ? 'false' : 'true' });
+                        toast.success('Güncellendi');
+                        window.location.reload();
+                      } catch { toast.error('Güncellenemedi'); }
+                    }}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                      settings.find((s) => s.key === 'pdf_show_signature')?.value !== 'false' ? 'bg-whatsapp' : 'bg-gray-200'
+                    }`}
+                  >
+                    <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                      settings.find((s) => s.key === 'pdf_show_signature')?.value !== 'false' ? 'translate-x-6' : 'translate-x-1'
+                    }`} />
+                  </button>
+                </div>
               </div>
-            ))}
+            </div>
           </div>
         )}
       </div>
@@ -649,6 +812,7 @@ export default function SettingsPage() {
                   className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-blue-500"
                 >
                   <option value="AGENT">Temsilci</option>
+                  <option value="ACCOUNTANT">Muhasebeci</option>
                   <option value="ADMIN">Yönetici</option>
                 </select>
               </div>

@@ -47,11 +47,8 @@ export default function QuoteDetailPage() {
         toast.success('PDF oluşturuldu');
         setQuote((q: any) => ({ ...q, pdfUrl: data.pdfUrl }));
       } else if (action === 'send') {
-        const sessions = await api.get('/waha/sessions').then(r => r.data).catch(() => []);
-        const working = Array.isArray(sessions) ? sessions.find((s: any) => s.status === 'WORKING') : null;
-        if (!working) { toast.error('Aktif WhatsApp oturumu bulunamadı'); return; }
-        await api.post(`/quotes/${id}/send`, { sessionName: working.name });
-        toast.success('Teklif gönderildi');
+        await api.post(`/quotes/${id}/send`, {});
+        toast.success('Teklif WhatsApp ile gönderildi');
         fetchQuote();
       } else if (action === 'accept') {
         await api.patch(`/quotes/${id}/status`, { status: 'ACCEPTED' });

@@ -734,4 +734,28 @@ export class WahaService implements OnModuleInit {
     if (d.length === 10 && d.startsWith('5')) d = `90${d}`;
     return d;
   }
+
+  /**
+   * Bir kişiyle (contactId) aktif konuşması olan WORKING session'ı döner.
+   * Bulamazsa herhangi bir WORKING session döner.
+   * Hiç WORKING yoksa null döner.
+   */
+  async getWorkingSessionForContact(contactId: string): Promise<string | null> {
+    // Önce bu kişiyle konuşması olan session'ı bul
+    const conv = await this.prisma.conversation.findFirst({
+      where: { contactId },
+      include: { session: true },
+      orderBy: { lastMessageAt: 'desc' },
+    });
+    if (conv?.session?.status === 'WORKING') {
+      return conv.session.name;
+    }
+
+    // Yoksa herhangi bir WORKING session bul
+    const session = await this.prisma.whatsappSession.findFirst({
+      where: { status: 'WORKING' },
+      orderBy: { createdAt: 'asc' },
+    });
+    return session?.name || null;
+  }
 }

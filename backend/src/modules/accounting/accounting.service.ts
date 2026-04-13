@@ -144,12 +144,21 @@ export class AccountingService {
     });
   }
 
-  async send(id: string, sessionName: string, templateBody?: string) {
+  async send(id: string, sessionName?: string, templateBody?: string) {
     const inv = await this.findById(id);
     const pdfPath = inv.uploadedPdfUrl || inv.pdfUrl;
     if (!pdfPath) throw new BadRequestException('Gönderilecek PDF yok. Önce fatura PDF yükleyin.');
 
     const c = inv.contact;
+
+    // Session belirtilmemişse kişiyle konuşan session'ı bul
+    if (!sessionName) {
+      sessionName = await this.wahaService.getWorkingSessionForContact(c.id) ?? undefined;
+    }
+    if (!sessionName) {
+      throw new BadRequestException('Aktif WhatsApp oturumu bulunamadı. Lütfen Ayarlar > WhatsApp bölümünden oturum açın.');
+    }
+
     const chatId = `${c.phone.replace(/\D/g, '')}@c.us`;
     const invNo = `FTR-${String(inv.invoiceNumber).padStart(5, '0')}`;
     const text = templateBody

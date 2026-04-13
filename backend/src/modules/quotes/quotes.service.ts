@@ -211,12 +211,21 @@ export class QuotesService {
     return pdfUrl;
   }
 
-  async send(id: string, sessionName: string) {
+  async send(id: string, sessionName?: string) {
     const quote = await this.findById(id);
     let pdfUrl = quote.pdfUrl;
     if (!pdfUrl) pdfUrl = await this.generatePdf(id);
 
     const c = quote.contact;
+
+    // Session belirtilmemişse kişiyle konuşan session'ı bul
+    if (!sessionName) {
+      sessionName = await this.wahaService.getWorkingSessionForContact(c.id) ?? undefined;
+    }
+    if (!sessionName) {
+      throw new BadRequestException('Aktif WhatsApp oturumu bulunamadı. Lütfen Ayarlar > WhatsApp bölümünden oturum açın.');
+    }
+
     const chatId = `${c.phone.replace(/\D/g, '')}@c.us`;
     const caption = `Sayın ${c.name || 'Müşteri'}, TKL-${String(quote.quoteNumber).padStart(5, '0')} numaralı teklifiniz ektedir.`;
 
