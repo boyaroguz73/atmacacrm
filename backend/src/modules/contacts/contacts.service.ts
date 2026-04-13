@@ -8,9 +8,9 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { writeFileSync, existsSync, mkdirSync } from 'fs';
+import { writeFileSync, existsSync, mkdirSync, unlinkSync, readdirSync } from 'fs';
 import { join } from 'path';
-import { v4 as uuid } from 'uuid';
+import { createHash } from 'crypto';
 import axios from 'axios';
 import {
   canonicalContactPhone,
@@ -182,7 +182,13 @@ export class ContactsService {
     });
   }
 
-  async downloadAndSaveAvatar(remoteUrl: string, phone: string): Promise<string | null> {
+  /**
+   * Avatarı indir ve disk'e kaydet.
+   * - Dosya adı telefon numarasından türetilir (sabit) → aynı kişi için tek dosya
+   * - Yeni URL hash'i eskiyle aynıysa tekrar indirmez
+   * - Yeni içerik varsa eski dosyayı sil, yenisini yaz
+   */
+  async downloadAndSaveAvatar(remoteUrl: string, phone: string, currentLocalPath?: string | null): Promise<string | null> {
     try {
       const dir = join(process.cwd(), 'uploads', 'avatars');
       if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
@@ -192,12 +198,42 @@ export class ContactsService {
         timeout: 15000,
       });
 
+      const newBuffer = Buffer.from(response.data);
+      const newHash = createHash('md5').update(newBuffer).digest('hex');
+
+      // Aynı telefona ait tüm eski dosyaları bul ve kontrol et
+      const safePhone = phone.replace(/\D/g, '');
+      const prefix = `av_${safePhone}`;
+
+      // Mevcut dosya aynı hash'e sahipse tekrar kaydetme
+      if (currentLocalPath) {
+        const existingPath = join(process.cwd(), currentLocalPath.replace(/^\//, ''));
+        if (existsSync(existingPath)) {
+          const { readFileSync } = await import('fs');
+          const existingHash = createHash('md5').update(readFileSync(existingPath)).digest('hex');
+          if (existingHash === newHash) {
+            this.logger.debug(`Avatar değişmemiş, atlanıyor: ${safePhone}`);
+            return currentLocalPath;
+          }
+        }
+      }
+
+      // Eski avatar dosyalarını temizle (aynı prefix'e sahip tüm dosyalar)
+      try {
+        const files = readdirSync(dir);
+        for (const f of files) {
+          if (f.startsWith(prefix)) {
+            unlinkSync(join(dir, f));
+          }
+        }
+      } catch { /* dizin okuma hatası görmezden gel */ }
+
       const contentType = response.headers['content-type'] || 'image/jpeg';
       const ext = contentType.includes('png') ? '.png' : '.jpg';
-      const filename = `${phone}-${uuid().slice(0, 8)}${ext}`;
+      const filename = `${prefix}${ext}`;
       const filePath = join(dir, filename);
 
-      writeFileSync(filePath, Buffer.from(response.data));
+      writeFileSync(filePath, newBuffer);
       this.logger.debug(`Avatar kaydedildi: ${filename}`);
       return `/uploads/avatars/${filename}`;
     } catch (err: any) {
@@ -214,13 +250,50 @@ export class ContactsService {
     if (!profilePictureUrl) return;
 
     try {
-      const localUrl = await this.downloadAndSaveAvatar(profilePictureUrl, phone);
-      if (localUrl) {
+      // Mevcut avatarı al — hash karşılaştırması için
+      const contact = await this.prisma.contact.findUnique({
+        where: { id: contactId },
+        select: { avatarUrl: true },
+      });
+
+      const localUrl = await this.downloadAndSaveAvatar(
+        profilePictureUrl,
+        phone,
+        contact?.avatarUrl,
+      );
+      if (localUrl && localUrl !== contact?.avatarUrl) {
         await this.updateAvatar(contactId, localUrl);
       }
     } catch (err: any) {
       this.logger.debug(`Profil fotoğrafı kaydedilemedi (${phone}): ${err.message}`);
     }
+  }
+
+  /**
+   * Tüm kişilerin avatarUrl'sini null yap ve disk'teki tüm avatar dosyalarını sil.
+   * Sonraki sync'te numaraya göre yeniden indirilir.
+   */
+  async resetAllAvatars(): Promise<{ cleared: number; filesDeleted: number }> {
+    // DB'yi temizle
+    const result = await this.prisma.contact.updateMany({
+      where: { avatarUrl: { not: null } },
+      data: { avatarUrl: null },
+    });
+
+    // Disk'i temizle
+    let filesDeleted = 0;
+    try {
+      const dir = join(process.cwd(), 'uploads', 'avatars');
+      if (existsSync(dir)) {
+        const files = readdirSync(dir);
+        for (const f of files) {
+          try { unlinkSync(join(dir, f)); filesDeleted++; } catch { /* skip */ }
+        }
+      }
+    } catch { /* skip */ }
+
+    this.logger.log(`Avatar sıfırlama: ${result.count} DB kaydı, ${filesDeleted} dosya silindi`);
+    return { cleared: result.count, filesDeleted };
   }
 
   normalizePhoneInput(raw: string): string {

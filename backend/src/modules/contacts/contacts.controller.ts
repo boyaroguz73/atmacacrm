@@ -111,6 +111,17 @@ export class ContactsController {
     });
   }
 
+  @Post('reset-all-avatars')
+  @UseGuards(RolesGuard)
+  @Roles('ADMIN')
+  async resetAllAvatars() {
+    const result = await this.contactsService.resetAllAvatars();
+    return {
+      message: `${result.cleared} kişinin avatarı sıfırlandı, ${result.filesDeleted} dosya silindi. Bir sonraki senkronda yeniden indirilecek.`,
+      ...result,
+    };
+  }
+
   @Post('refresh-all-avatars')
   @UseGuards(RolesGuard)
   @Roles('ADMIN')

@@ -19,6 +19,7 @@ import {
   Database,
   ImageIcon,
   MessageSquareMore,
+  Trash2,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -428,9 +429,8 @@ export default function SettingsPage() {
                 Profil Fotoğraflarını Güncelle
               </p>
               <p className="text-xs text-gray-400 mt-0.5">
-                Bu organizasyondaki kişiler için, org oturumları üzerinden profil
-                fotoğraflarını yeniler. Varsayılan yalnızca <strong>fotoğrafı olmayan</strong>{' '}
-                kişileri işler; mevcutları da yenilemek için aşağıdaki kutuyu işaretleyin.
+                Yalnızca fotoğrafı <strong>olmayan</strong> kişiler için WhatsApp&apos;tan indirir.
+                Aynı kişi için disk'te tek dosya tutulur.
               </p>
               <label className="flex items-center gap-2 mt-2 text-xs text-gray-600 cursor-pointer select-none">
                 <input
@@ -439,11 +439,8 @@ export default function SettingsPage() {
                   onChange={(e) => setAvatarRefreshForcePersist(e.target.checked)}
                   className="rounded border-gray-300 text-whatsapp focus:ring-whatsapp"
                 />
-                Mevcut profil fotoğraflarını da WAHA&apos;dan yeniden indir (daha yavaş)
+                Fotoğrafı olanları da yenile (değişen fotoğraflar güncellenir)
               </label>
-              <p className="text-[10px] text-gray-400 mt-1">
-                Bu kutu tarayıcıda hatırlanır; asıl yenileme <strong>Güncelle</strong> ile çalışır.
-              </p>
             </div>
             <button
               onClick={async () => {
@@ -453,7 +450,7 @@ export default function SettingsPage() {
                   const { data } = await api.post('/contacts/refresh-all-avatars', {
                     force: !!avatarRefreshForce,
                   });
-                  toast.success(data.message || `${data.updated} fotoğraf güncellendi`);
+                  toast.success(data.message || `Güncelleme başlatıldı`);
                 } catch (err) {
                   toast.error(getApiErrorMessage(err, 'Fotoğraf güncelleme başarısız'));
                 } finally {
@@ -465,6 +462,37 @@ export default function SettingsPage() {
             >
               <ImageIcon className="w-4 h-4" />
               Güncelle
+            </button>
+          </div>
+
+          <div className="flex items-center justify-between p-4 bg-red-50 rounded-xl border border-red-100">
+            <div>
+              <p className="font-medium text-sm text-red-800">Tüm Avatarları Sıfırla</p>
+              <p className="text-xs text-red-500 mt-0.5">
+                DB&apos;deki tüm avatar kayıtlarını temizler ve disk&apos;teki dosyaları siler.
+                Bir sonraki senkronda telefon numarasına göre yeniden indirilir.
+                <strong> Disk doluysa bunu çalıştır.</strong>
+              </p>
+            </div>
+            <button
+              onClick={async () => {
+                if (!confirm('Tüm avatar dosyaları silinecek. Emin misiniz?')) return;
+                const btn = document.getElementById('reset-avatars-btn');
+                if (btn) btn.setAttribute('disabled', 'true');
+                try {
+                  const { data } = await api.post('/contacts/reset-all-avatars', {});
+                  toast.success(data.message || 'Avatarlar sıfırlandı');
+                } catch (err) {
+                  toast.error(getApiErrorMessage(err, 'Sıfırlama başarısız'));
+                } finally {
+                  if (btn) btn.removeAttribute('disabled');
+                }
+              }}
+              id="reset-avatars-btn"
+              className="flex-shrink-0 flex items-center gap-2 px-4 py-2 bg-red-100 text-red-700 rounded-lg text-xs font-medium hover:bg-red-200 transition-colors disabled:opacity-50"
+            >
+              <Trash2 className="w-4 h-4" />
+              Sıfırla
             </button>
           </div>
         </div>
