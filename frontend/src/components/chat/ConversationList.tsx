@@ -3,7 +3,7 @@
 import { useChatStore } from '@/store/chat';
 import { cn, formatDate, truncate, formatPhone } from '@/lib/utils';
 import { Search, Inbox } from 'lucide-react';
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import ContactAvatar from '@/components/ui/ContactAvatar';
 import EcommerceCustomerBadge from '@/components/ui/EcommerceCustomerBadge';
@@ -40,6 +40,7 @@ export default function ConversationList() {
   } = useChatStore();
 
   const [user, setUser] = useState<{ role?: string } | null>(null);
+  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     const stored = localStorage.getItem('user');
@@ -50,12 +51,22 @@ export default function ConversationList() {
         /* ignore */
       }
     }
+    return () => {
+      if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    };
   }, []);
 
-  const handleSearch = (q: string) => {
-    setSearchQuery(q);
-    fetchConversations(true);
-  };
+  const handleSearchInput = useCallback(
+    (q: string) => {
+      setSearchQuery(q);
+      if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+      searchDebounceRef.current = setTimeout(() => {
+        searchDebounceRef.current = null;
+        fetchConversations(true);
+      }, 400);
+    },
+    [setSearchQuery, fetchConversations],
+  );
 
   const isAgent = user?.role === 'AGENT';
   const isAdmin = user?.role === 'ADMIN' || user?.role === 'SUPERADMIN';
@@ -140,7 +151,7 @@ export default function ConversationList() {
             type="text"
             placeholder="Kişi veya numara ara..."
             value={searchQuery}
-            onChange={(e) => handleSearch(e.target.value)}
+            onChange={(e) => handleSearchInput(e.target.value)}
             className="w-full pl-10 pr-4 py-2.5 bg-gray-50 border border-gray-100 rounded-xl text-sm focus:outline-none focus:border-whatsapp focus:ring-1 focus:ring-whatsapp/20"
           />
         </div>

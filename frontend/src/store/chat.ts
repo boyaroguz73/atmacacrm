@@ -162,9 +162,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
             }
           }),
         )
-        .then(() => {
-          get().fetchConversations(true);
-        })
         .catch(() => {});
     } catch {
       set({ isLoadingMessages: false });
