@@ -2,16 +2,19 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-COPY package.json package-lock.json* ./
-RUN npm install
+# Prisma postinstall (npm install) şemayı ister; ayrıca Alpine'da openssl önerilir
+RUN apk add --no-cache openssl libc6-compat
 
+COPY package.json package-lock.json* ./
 COPY prisma ./prisma
-RUN npx prisma generate
+RUN npm install
 
 COPY . .
 RUN npm run build
 
 FROM node:20-alpine
+
+RUN apk add --no-cache openssl libc6-compat
 
 WORKDIR /app
 
