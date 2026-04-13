@@ -7,6 +7,9 @@ RUN npm install
 
 COPY . .
 
+# Next standalone imajı public bekler; repo'da boş olsa bile klasör olsun
+RUN mkdir -p public
+
 # Build-time (Next.js embeds these). Override at build: docker compose build --build-arg ...
 ARG NEXT_PUBLIC_API_URL=http://localhost:4000/api
 ARG NEXT_PUBLIC_WS_URL=http://localhost:4000
