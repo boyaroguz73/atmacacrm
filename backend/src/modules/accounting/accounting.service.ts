@@ -5,7 +5,7 @@ import { WahaService } from '../waha/waha.service';
 import { MailService } from '../mail/mail.service';
 import { AccInvoiceStatus } from '@prisma/client';
 import { join } from 'path';
-import { readFileSync } from 'fs';
+import { readFileSync, existsSync } from 'fs';
 import { normalizeWhatsappChatId } from '../../common/whatsapp-chat-id';
 
 @Injectable()
@@ -166,6 +166,9 @@ export class AccountingService {
       || `Sayin ${c.name || 'Musteri'}, ${invNo} numarali faturaniz ektedir.`;
 
     const localPath = join(process.cwd(), pdfPath.replace(/^\//, ''));
+    if (!existsSync(localPath)) {
+      throw new BadRequestException(`PDF dosyası bulunamadı. Lütfen faturayı tekrar yükleyin. (${pdfPath})`);
+    }
     const buf = readFileSync(localPath);
     // WAHA WEBJS engine saf base64 bekliyor, data: prefix olmadan
     const base64Data = buf.toString('base64');

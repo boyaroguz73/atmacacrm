@@ -391,14 +391,9 @@ export default function AccountingInvoicesPage() {
   };
 
   const sendInvoice = async (inv: InvoiceRow) => {
-    if (!sendSessionName.trim()) {
-      toast.error('Oturum adı gerekli');
-      return;
-    }
     setDetailBusy(true);
     try {
       await api.post(`/accounting/invoices/${inv.id}/send`, {
-        sessionName: sendSessionName.trim(),
         ...(sendTemplateBody.trim() ? { templateBody: sendTemplateBody.trim() } : {}),
       });
       toast.success('Fatura gönderildi');
@@ -797,23 +792,15 @@ export default function AccountingInvoicesPage() {
 
               {showSendForm ? (
                 <div className="rounded-xl border border-whatsapp/25 bg-whatsapp/5 p-4 space-y-3">
-                  <p className="text-xs font-semibold text-gray-700">WhatsApp gönderimi</p>
+                  <p className="text-xs font-semibold text-gray-700">WhatsApp ile gönder</p>
+                  <p className="text-xs text-gray-500">Sistem aktif WhatsApp oturumunu otomatik seçer.</p>
                   <div>
-                    <label className="text-xs text-gray-500 block mb-1">Oturum adı (sessionName)</label>
-                    <input
-                      value={sendSessionName}
-                      onChange={(e) => setSendSessionName(e.target.value)}
-                      placeholder="Örn: default"
-                      className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-whatsapp/30 focus:border-whatsapp"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs text-gray-500 block mb-1">Şablon gövdesi (isteğe bağlı)</label>
+                    <label className="text-xs text-gray-500 block mb-1">Özel mesaj (isteğe bağlı)</label>
                     <textarea
                       value={sendTemplateBody}
                       onChange={(e) => setSendTemplateBody(e.target.value)}
                       rows={3}
-                      placeholder="Boş bırakılabilir"
+                      placeholder="Boş bırakılırsa otomatik mesaj gönderilir"
                       className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-whatsapp/30 focus:border-whatsapp resize-none"
                     />
                   </div>
@@ -823,7 +810,7 @@ export default function AccountingInvoicesPage() {
                     onClick={() => sendInvoice(detail)}
                     className="w-full py-2.5 rounded-xl text-sm font-semibold bg-whatsapp text-white shadow-sm disabled:opacity-50"
                   >
-                    Gönderimi başlat
+                    {detailBusy ? 'Gönderiliyor…' : 'Gönder'}
                   </button>
                 </div>
               ) : null}

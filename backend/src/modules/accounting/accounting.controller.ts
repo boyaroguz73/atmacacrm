@@ -11,18 +11,25 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { AccInvoiceStatus } from '@prisma/client';
 import { diskStorage } from 'multer';
-import { extname } from 'path';
+import { extname, join } from 'path';
+import { mkdirSync, existsSync } from 'fs';
 import { v4 as uuid } from 'uuid';
 
+const invoicesDir = join(process.cwd(), 'uploads', 'invoices');
+if (!existsSync(invoicesDir)) mkdirSync(invoicesDir, { recursive: true });
+
 const pdfStorage = diskStorage({
-  destination: './uploads/invoices',
+  destination: (_req, _file, cb) => {
+    if (!existsSync(invoicesDir)) mkdirSync(invoicesDir, { recursive: true });
+    cb(null, invoicesDir);
+  },
   filename: (_req, file, cb) => cb(null, `${uuid()}${extname(file.originalname) || '.pdf'}`),
 });
 
 @ApiTags('Accounting')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles('ACCOUNTANT')
+@Roles('ADMIN', 'ACCOUNTANT')
 @Controller('accounting')
 export class AccountingController {
   constructor(private accountingService: AccountingService) {}
@@ -87,8 +94,8 @@ export class AccountingController {
   @Post('invoices/:id/send')
   send(
     @Param('id') id: string,
-    @Body() body: { sessionName: string; templateBody?: string },
+    @Body() body: { sessionName?: string; templateBody?: string },
   ) {
-    return this.accountingService.send(id, body.sessionName, body.templateBody);
+    return this.accountingService.send(id, body.sessionName || undefined, body.templateBody);
   }
 }
