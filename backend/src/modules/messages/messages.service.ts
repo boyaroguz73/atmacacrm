@@ -1,9 +1,4 @@
-import {
-  BadRequestException,
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { WahaService } from '../waha/waha.service';
 import { ConversationsService } from '../conversations/conversations.service';
@@ -36,6 +31,55 @@ export class MessagesService {
     return null;
   }
 
+  /**
+   * Mesajı veritabanına kaydet. waMessageId varsa upsert (webhook yarışını önler),
+   * yoksa waMessageId'siz create.
+   */
+  private async persistMessage(
+    data: {
+      conversationId: string;
+      sessionId: string;
+      waMessageId: string | null;
+      direction: MessageDirection;
+      body: string;
+      status: MessageStatus;
+      sentById?: string;
+      mediaUrl?: string;
+      mediaType?: any;
+    },
+  ) {
+    const { waMessageId, ...rest } = data;
+
+    if (waMessageId) {
+      return this.prisma.message.upsert({
+        where: { waMessageId },
+        create: { ...rest, waMessageId },
+        update: { sentById: rest.sentById || undefined },
+        include: { sentBy: { select: { id: true, name: true } } },
+      });
+    }
+
+    return this.prisma.message.create({
+      data: rest,
+      include: { sentBy: { select: { id: true, name: true } } },
+    });
+  }
+
+  private emitAndUpdateList(conversationId: string, message: any, previewText: string) {
+    this.conversationsService
+      .updateLastMessage(conversationId, previewText)
+      .then(() => this.conversationsService.findById(conversationId))
+      .then((fullConv) =>
+        this.chatGateway.emitNewMessage(conversationId, {
+          message,
+          conversation: fullConv,
+        }),
+      )
+      .catch((err) =>
+        this.logger.error(`Socket/liste güncelleme hatası: ${err?.message}`),
+      );
+  }
+
   async getByConversation(
     conversationId: string,
     params: { cursor?: string; limit?: number },
@@ -47,9 +91,7 @@ export class MessagesService {
       orderBy: { timestamp: 'desc' },
       take: limit,
       ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
-      include: {
-        sentBy: { select: { id: true, name: true } },
-      },
+      include: { sentBy: { select: { id: true, name: true } } },
     });
 
     return {
@@ -71,13 +113,28 @@ export class MessagesService {
     const conversation = await this.prisma.conversation.findUnique({
       where: { id: conversationId },
     });
-    if (!conversation) {
-      throw new NotFoundException('Görüşme bulunamadı');
-    }
+    if (!conversation) throw new NotFoundException('Görüşme bulunamadı');
 
-    let waResponse: any;
+    const waResponse = await this.callWahaSendText(sessionName, jid, body);
+    const waMessageId = this.extractWaMessageId(waResponse);
+
+    const message = await this.persistMessage({
+      conversationId,
+      sessionId: conversation.sessionId,
+      waMessageId,
+      direction: MessageDirection.OUTGOING,
+      body,
+      status: MessageStatus.SENT,
+      sentById,
+    });
+
+    this.emitAndUpdateList(conversationId, message, body);
+    return message;
+  }
+
+  private async callWahaSendText(session: string, chatId: string, text: string) {
     try {
-      waResponse = await this.wahaService.sendText(sessionName, jid, body);
+      return await this.wahaService.sendText(session, chatId, text);
     } catch (err: any) {
       const d = err.response?.data;
       const msg =
@@ -86,60 +143,10 @@ export class MessagesService {
         (typeof d === 'string' && d) ||
         (Array.isArray(d?.message) ? d.message.join(', ') : null) ||
         err.message ||
-        'WhatsApp üzerinden mesaj gönderilemedi (WAHA).';
-      this.logger.warn(`sendText WAHA hata: ${msg}`);
+        'WhatsApp üzerinden mesaj gönderilemedi.';
+      this.logger.warn(`WAHA sendText hata: ${msg}`);
       throw new BadRequestException(msg);
     }
-
-    const waMessageId = this.extractWaMessageId(waResponse);
-    this.logger.debug(`WAHA sendText response waMessageId: ${waMessageId}`);
-
-    let message;
-    if (waMessageId) {
-      message = await this.prisma.message.upsert({
-        where: { waMessageId },
-        create: {
-          conversationId,
-          sessionId: conversation.sessionId,
-          waMessageId,
-          direction: MessageDirection.OUTGOING,
-          body,
-          status: MessageStatus.SENT,
-          sentById,
-        },
-        update: { sentById: sentById || undefined },
-        include: { sentBy: { select: { id: true, name: true } } },
-      });
-    } else {
-      message = await this.prisma.message.create({
-        data: {
-          conversationId,
-          sessionId: conversation.sessionId,
-          direction: MessageDirection.OUTGOING,
-          body,
-          status: MessageStatus.SENT,
-          sentById,
-        },
-        include: { sentBy: { select: { id: true, name: true } } },
-      });
-    }
-
-    try {
-      await this.conversationsService.updateLastMessage(conversationId, body);
-      const fullConversation =
-        await this.conversationsService.findById(conversationId);
-      this.chatGateway.emitNewMessage(conversationId, {
-        message,
-        conversation: fullConversation,
-      });
-    } catch (err: any) {
-      this.logger.error(
-        `sendText sonrası liste/socket güncellenemedi: ${err?.message}`,
-        err?.stack,
-      );
-    }
-
-    return message;
   }
 
   private detectMediaType(mimetype: string): { mediaType: string; preview: string } {
@@ -157,25 +164,17 @@ export class MessagesService {
     caption?: string;
     sentById: string;
   }) {
-    const {
-      conversationId,
-      sessionName,
-      chatId,
-      mediaUrl,
-      caption,
-      sentById,
-    } = params;
+    const { conversationId, sessionName, chatId, mediaUrl, caption, sentById } = params;
     const jid = normalizeWhatsappChatId(chatId);
 
     const conversation = await this.prisma.conversation.findUnique({
       where: { id: conversationId },
     });
-    if (!conversation) throw new Error('Conversation not found');
+    if (!conversation) throw new NotFoundException('Görüşme bulunamadı');
 
     const localPath = this.resolveLocalPath(mediaUrl);
     if (!localPath || !existsSync(localPath)) {
-      this.logger.error(`Media file not found: ${mediaUrl} -> ${localPath}`);
-      throw new Error('Media file not found on server');
+      throw new BadRequestException('Medya dosyası sunucuda bulunamadı');
     }
 
     const fileBuffer = readFileSync(localPath);
@@ -183,98 +182,43 @@ export class MessagesService {
     const ext = extname(localPath);
     const mimetype = (lookup(ext) as string) || 'application/octet-stream';
     const originalFilename = localPath.split(/[\\/]/).pop() || `file${ext}`;
-
     const { mediaType, preview } = this.detectMediaType(mimetype);
-
-    this.logger.debug(
-      `Sending media: file=${localPath} size=${fileBuffer.length} mimetype=${mimetype} type=${mediaType}`,
-    );
 
     let waResponse: any;
     try {
-      if (mediaType === 'IMAGE') {
-        waResponse = await this.wahaService.sendImage(
-          sessionName,
-          jid,
-          { mimetype, data: base64Data, filename: originalFilename },
-          caption,
-        );
-      } else {
-        waResponse = await this.wahaService.sendFile(
-          sessionName,
-          jid,
-          { mimetype, data: base64Data, filename: originalFilename },
-          caption,
-        );
-      }
+      waResponse =
+        mediaType === 'IMAGE'
+          ? await this.wahaService.sendImage(sessionName, jid, { mimetype, data: base64Data, filename: originalFilename }, caption)
+          : await this.wahaService.sendFile(sessionName, jid, { mimetype, data: base64Data, filename: originalFilename }, caption);
     } catch (err: any) {
       const errMsg = err.response?.data?.message || err.message || '';
-      if (errMsg.includes('Plus version')) {
-        throw new Error(
-          'Bu dosya tipi WAHA ücretsiz sürümde desteklenmiyor. WAHA Plus gereklidir.',
-        );
-      }
-      throw err;
+      if (errMsg.includes('Plus version'))
+        throw new BadRequestException('Bu dosya tipi WAHA ücretsiz sürümde desteklenmiyor.');
+      throw new BadRequestException(errMsg || 'Medya gönderilemedi');
     }
 
     const waMessageId = this.extractWaMessageId(waResponse);
-    this.logger.debug(`WAHA send response waMessageId: ${waMessageId}`);
 
-    const mediaData = {
+    const message = await this.persistMessage({
       conversationId,
       sessionId: conversation.sessionId,
       waMessageId,
       direction: MessageDirection.OUTGOING,
       body: caption || '',
-      mediaUrl,
-      mediaType: mediaType as any,
       status: MessageStatus.SENT,
       sentById,
-    };
+      mediaUrl,
+      mediaType: mediaType as any,
+    });
 
-    let message;
-    if (waMessageId) {
-      message = await this.prisma.message.upsert({
-        where: { waMessageId },
-        create: mediaData,
-        update: { sentById: sentById || undefined },
-        include: { sentBy: { select: { id: true, name: true } } },
-      });
-    } else {
-      message = await this.prisma.message.create({
-        data: mediaData,
-        include: { sentBy: { select: { id: true, name: true } } },
-      });
-    }
-
-    await this.conversationsService.updateLastMessage(
-      conversationId,
-      caption || preview,
-    );
-
-    try {
-      const fullConversation =
-        await this.conversationsService.findById(conversationId);
-      this.chatGateway.emitNewMessage(conversationId, {
-        message,
-        conversation: fullConversation,
-      });
-    } catch (err: any) {
-      this.logger.error(
-        `sendMedia sonrası socket güncellenemedi: ${err?.message}`,
-        err?.stack,
-      );
-    }
-
+    this.emitAndUpdateList(conversationId, message, caption || preview);
     return message;
   }
 
   private resolveLocalPath(mediaUrl: string): string | null {
     if (mediaUrl.includes('/uploads/')) {
       const filename = mediaUrl.split('/uploads/').pop();
-      if (filename) {
-        return join(process.cwd(), 'uploads', filename);
-      }
+      if (filename) return join(process.cwd(), 'uploads', filename);
     }
     return null;
   }
@@ -289,7 +233,7 @@ export class MessagesService {
     mediaMimeType?: string;
     timestamp: Date;
   }) {
-    const message = await this.prisma.message.create({
+    return this.prisma.message.create({
       data: {
         conversationId: params.conversationId,
         sessionId: params.sessionId,
@@ -302,12 +246,8 @@ export class MessagesService {
         status: MessageStatus.DELIVERED,
         timestamp: params.timestamp,
       },
-      include: {
-        sentBy: { select: { id: true, name: true } },
-      },
+      include: { sentBy: { select: { id: true, name: true } } },
     });
-
-    return message;
   }
 
   async editMessage(params: {
@@ -320,26 +260,18 @@ export class MessagesService {
     const { messageId, sessionName, chatId, newBody, userId } = params;
     const jid = normalizeWhatsappChatId(chatId);
 
-    const message = await this.prisma.message.findUnique({
-      where: { id: messageId },
-    });
-    if (!message) throw new Error('Mesaj bulunamadı');
-    if (message.direction !== 'OUTGOING') throw new Error('Sadece giden mesajlar düzenlenebilir');
-    if (!message.waMessageId) throw new Error('WAHA mesaj ID bulunamadı');
+    const message = await this.prisma.message.findUnique({ where: { id: messageId } });
+    if (!message) throw new NotFoundException('Mesaj bulunamadı');
+    if (message.direction !== 'OUTGOING') throw new BadRequestException('Sadece giden mesajlar düzenlenebilir');
+    if (!message.waMessageId) throw new BadRequestException('WAHA mesaj ID bulunamadı');
 
     try {
-      await this.wahaService.editMessage(
-        sessionName,
-        jid,
-        message.waMessageId,
-        newBody,
-      );
+      await this.wahaService.editMessage(sessionName, jid, message.waMessageId, newBody);
     } catch (err: any) {
       const errMsg = err.response?.data?.message || err.message || '';
-      if (errMsg.includes('Plus version') || errMsg.includes('not support')) {
-        throw new Error('Mesaj düzenleme WAHA Plus gerektirir.');
-      }
-      throw err;
+      if (errMsg.includes('Plus version') || errMsg.includes('not support'))
+        throw new BadRequestException('Mesaj düzenleme WAHA Plus gerektirir.');
+      throw new BadRequestException(errMsg || 'Mesaj düzenlenemedi');
     }
 
     const updated = await this.prisma.message.update({
