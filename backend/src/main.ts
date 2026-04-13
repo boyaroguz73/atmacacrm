@@ -25,9 +25,22 @@ async function bootstrap() {
   const frontendUrl = config.get('FRONTEND_URL', 'http://localhost:3000').trim();
   const frontendBase = frontendUrl.replace(/\/$/, '');
   /** Üretimde tarayıcı adresi FRONTEND_URL ile aynı olmalı; sonda / farkı için iki varyant */
+  const extraOrigins = (config.get<string>('CORS_EXTRA_ORIGINS') || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
   const corsOrigins =
     process.env.NODE_ENV === 'production'
-      ? Array.from(new Set([frontendUrl, frontendBase, `${frontendBase}/`]))
+      ? Array.from(
+          new Set([
+            frontendUrl,
+            frontendBase,
+            `${frontendBase}/`,
+            ...extraOrigins,
+            ...extraOrigins.map((o) => o.replace(/\/$/, '')),
+            ...extraOrigins.map((o) => (o.endsWith('/') ? o : `${o}/`)),
+          ]),
+        )
       : Array.from(
           new Set([
             frontendUrl,
@@ -35,6 +48,7 @@ async function bootstrap() {
             `${frontendBase}/`,
             'http://localhost:3000',
             'http://127.0.0.1:3000',
+            ...extraOrigins,
           ]),
         );
   logger.log(`CORS origins (${process.env.NODE_ENV || 'development'}): ${corsOrigins.join(', ')}`);

@@ -1,4 +1,11 @@
-import { Injectable, Logger, BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  BadRequestException,
+  ForbiddenException,
+  NotFoundException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { getPlanConfig } from '../billing/plan-config';
@@ -63,9 +70,23 @@ export class IntegrationsService {
     const planConfig = getPlanConfig(org.plan);
     const flags = planConfig.featureFlags as Record<string, boolean>;
 
-    const orgIntegrations = await this.prisma.orgIntegration.findMany({
-      where: { organizationId },
-    });
+    let orgIntegrations;
+    try {
+      orgIntegrations = await this.prisma.orgIntegration.findMany({
+        where: { organizationId },
+      });
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      this.logger.error(`orgIntegration.findMany başarısız: ${msg}`);
+      if (msg.includes('org_integrations') || msg.includes('does not exist') || msg.includes('relation')) {
+        throw new ServiceUnavailableException(
+          'org_integrations tablosu eksik veya güncel değil. Sunucuda: git pull, ardından ' +
+            '`docker compose build --no-cache backend && docker compose up -d` (imajda yeni migration olmalı), ' +
+            'sonra konteyner içinde `npx prisma migrate deploy`.',
+        );
+      }
+      throw e;
+    }
     const orgMap = new Map(orgIntegrations.map((i) => [i.integrationKey, i]));
 
     const categories: Record<IntegrationCategory, any[]> = {
