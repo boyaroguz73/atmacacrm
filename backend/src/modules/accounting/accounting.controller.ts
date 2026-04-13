@@ -49,8 +49,14 @@ export class AccountingController {
   }
 
   @Get('invoices/pending-billing')
-  pendingBilling(@Query('page') page?: string) {
-    return this.accountingService.pendingBilling(page ? parseInt(page) : 1);
+  pendingBilling(
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.accountingService.pendingBilling(
+      page ? parseInt(page, 10) : 1,
+      limit ? parseInt(limit, 10) : 50,
+    );
   }
 
   @Get('invoices/:id')

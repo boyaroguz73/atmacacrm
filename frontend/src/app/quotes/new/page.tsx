@@ -204,7 +204,7 @@ export default function NewQuotePage() {
       {
         key: genKey(),
         productId: p.id,
-        name: p.name,
+        name: String(p.name ?? ''),
         description: p.description || undefined,
         quantity: 1,
         unitPrice: p.unitPrice,
@@ -240,7 +240,7 @@ export default function NewQuotePage() {
       toast.error('Lütfen bir kişi seçin');
       return;
     }
-    const validLines = lines.filter((l) => l.name.trim() !== '');
+    const validLines = lines.filter((l) => String(l.name ?? '').trim() !== '');
     if (!validLines.length) {
       toast.error('En az bir ürün satırı ekleyin');
       return;
@@ -255,10 +255,10 @@ export default function NewQuotePage() {
         discountValue,
         validUntil: validUntil ? new Date(validUntil).toISOString() : undefined,
         deliveryDate: deliveryDate ? new Date(deliveryDate).toISOString() : undefined,
-        notes: notes.trim() || undefined,
+        notes: String(notes ?? '').trim() || undefined,
         items: validLines.map((l) => ({
           productId: l.productId || undefined,
-          name: l.name.trim(),
+          name: String(l.name ?? '').trim(),
           description: l.description || undefined,
           quantity: l.quantity,
           unitPrice: l.unitPrice,

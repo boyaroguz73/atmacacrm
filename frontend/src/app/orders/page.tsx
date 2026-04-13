@@ -77,7 +77,7 @@ function formatOrderNo(n: number) {
 }
 
 function formatQuoteNo(n: number) {
-  return `TKF-${String(n).padStart(5, '0')}`;
+  return `TKL-${String(n).padStart(5, '0')}`;
 }
 
 function formatMoney(amount: number, currency: string) {

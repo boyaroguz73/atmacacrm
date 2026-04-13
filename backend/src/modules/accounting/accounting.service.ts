@@ -83,6 +83,15 @@ export class AccountingService {
     if (!order) throw new NotFoundException('Sipariş bulunamadı');
     if (order.invoice) throw new BadRequestException('Bu sipariş için zaten fatura kesilmiş');
 
+    const due =
+      dueDate != null && String(dueDate).trim() !== ''
+        ? new Date(dueDate)
+        : (() => {
+            const d = new Date();
+            d.setDate(d.getDate() + 30);
+            return d;
+          })();
+
     return this.prisma.accountingInvoice.create({
       data: {
         orderId,
@@ -92,7 +101,7 @@ export class AccountingService {
         subtotal: order.subtotal,
         vatTotal: order.vatTotal,
         grandTotal: order.grandTotal,
-        dueDate: dueDate ? new Date(dueDate) : null,
+        dueDate: due,
         notes,
       },
       include: this.includeRelations,
