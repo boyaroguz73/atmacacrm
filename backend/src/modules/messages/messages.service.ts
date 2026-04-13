@@ -1,4 +1,9 @@
-import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { WahaService } from '../waha/waha.service';
 import { ConversationsService } from '../conversations/conversations.service';
@@ -8,6 +13,7 @@ import { MessageDirection, MessageStatus } from '@prisma/client';
 import { readFileSync, existsSync } from 'fs';
 import { join, extname } from 'path';
 import { lookup } from 'mime-types';
+import { normalizeWhatsappChatId } from '../../common/whatsapp-chat-id';
 
 @Injectable()
 export class MessagesService {
@@ -60,15 +66,18 @@ export class MessagesService {
     sentById: string;
   }) {
     const { conversationId, sessionName, chatId, body, sentById } = params;
+    const jid = normalizeWhatsappChatId(chatId);
 
     const conversation = await this.prisma.conversation.findUnique({
       where: { id: conversationId },
     });
-    if (!conversation) throw new Error('Conversation not found');
+    if (!conversation) {
+      throw new NotFoundException('Görüşme bulunamadı');
+    }
 
     let waResponse: any;
     try {
-      waResponse = await this.wahaService.sendText(sessionName, chatId, body);
+      waResponse = await this.wahaService.sendText(sessionName, jid, body);
     } catch (err: any) {
       const d = err.response?.data;
       const msg =
@@ -85,29 +94,53 @@ export class MessagesService {
     const waMessageId = this.extractWaMessageId(waResponse);
     this.logger.debug(`WAHA sendText response waMessageId: ${waMessageId}`);
 
-    const message = await this.prisma.message.create({
-      data: {
-        conversationId,
-        sessionId: conversation.sessionId,
-        waMessageId,
-        direction: MessageDirection.OUTGOING,
-        body,
-        status: MessageStatus.SENT,
-        sentById,
-      },
-      include: {
-        sentBy: { select: { id: true, name: true } },
-      },
-    });
+    let message;
+    try {
+      message = await this.prisma.message.create({
+        data: {
+          conversationId,
+          sessionId: conversation.sessionId,
+          waMessageId,
+          direction: MessageDirection.OUTGOING,
+          body,
+          status: MessageStatus.SENT,
+          sentById,
+        },
+        include: {
+          sentBy: { select: { id: true, name: true } },
+        },
+      });
+    } catch (err: any) {
+      const code = err?.code;
+      this.logger.error(
+        `sendText DB kayıt hatası (WAHA gönderimi yapılmış olabilir): ${err?.message}`,
+        err?.stack,
+      );
+      if (code === 'P2002') {
+        throw new BadRequestException(
+          'Mesaj kimliği veritabanında çakıştı; tekrar deneyin.',
+        );
+      }
+      throw new BadRequestException(
+        err?.message ||
+          'Mesaj veritabanına kaydedilemedi. Migrasyon ve bağlantıyı kontrol edin.',
+      );
+    }
 
-    await this.conversationsService.updateLastMessage(conversationId, body);
-
-    const fullConversation =
-      await this.conversationsService.findById(conversationId);
-    this.chatGateway.emitNewMessage(conversationId, {
-      message,
-      conversation: fullConversation,
-    });
+    try {
+      await this.conversationsService.updateLastMessage(conversationId, body);
+      const fullConversation =
+        await this.conversationsService.findById(conversationId);
+      this.chatGateway.emitNewMessage(conversationId, {
+        message,
+        conversation: fullConversation,
+      });
+    } catch (err: any) {
+      this.logger.error(
+        `sendText sonrası liste/socket güncellenemedi: ${err?.message}`,
+        err?.stack,
+      );
+    }
 
     return message;
   }
@@ -135,6 +168,7 @@ export class MessagesService {
       caption,
       sentById,
     } = params;
+    const jid = normalizeWhatsappChatId(chatId);
 
     const conversation = await this.prisma.conversation.findUnique({
       where: { id: conversationId },
@@ -164,14 +198,14 @@ export class MessagesService {
       if (mediaType === 'IMAGE') {
         waResponse = await this.wahaService.sendImage(
           sessionName,
-          chatId,
+          jid,
           { mimetype, data: base64Data, filename: originalFilename },
           caption,
         );
       } else {
         waResponse = await this.wahaService.sendFile(
           sessionName,
-          chatId,
+          jid,
           { mimetype, data: base64Data, filename: originalFilename },
           caption,
         );
@@ -270,6 +304,7 @@ export class MessagesService {
     userId: string;
   }) {
     const { messageId, sessionName, chatId, newBody, userId } = params;
+    const jid = normalizeWhatsappChatId(chatId);
 
     const message = await this.prisma.message.findUnique({
       where: { id: messageId },
@@ -281,7 +316,7 @@ export class MessagesService {
     try {
       await this.wahaService.editMessage(
         sessionName,
-        chatId,
+        jid,
         message.waMessageId,
         newBody,
       );

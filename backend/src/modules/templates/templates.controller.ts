@@ -8,6 +8,9 @@ import {
   Param,
   Query,
   UseGuards,
+  BadRequestException,
+  HttpException,
+  Logger,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { TemplatesService } from './templates.service';
@@ -22,20 +25,32 @@ import { requireOrgId, assertBelongsToOrg } from '../../common/org-session-scope
 @UseGuards(JwtAuthGuard)
 @Controller('templates')
 export class TemplatesController {
+  private readonly logger = new Logger(TemplatesController.name);
+
   constructor(private templatesService: TemplatesService) {}
 
   @Get()
-  findAll(
+  async findAll(
     @CurrentUser() user: { role: string; organizationId?: string },
     @Query('category') category?: string,
     @Query('active') active?: string,
   ) {
     const isActive = active === 'true' ? true : active === 'false' ? false : undefined;
-    return this.templatesService.findAll({
-      category,
-      isActive,
-      organizationId: requireOrgId(user),
-    });
+    try {
+      return await this.templatesService.findAll({
+        category,
+        isActive,
+        organizationId: requireOrgId(user),
+      });
+    } catch (err: unknown) {
+      if (err instanceof HttpException) throw err;
+      const e = err as { message?: string; stack?: string };
+      this.logger.error(`GET /templates: ${e?.message}`, e?.stack);
+      throw new BadRequestException(
+        e?.message ||
+          'Şablonlar yüklenemedi. Veritabanı migrasyonlarını (npx prisma migrate deploy) kontrol edin.',
+      );
+    }
   }
 
   @Get('categories')

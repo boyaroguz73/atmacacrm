@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useChatStore } from '@/store/chat';
 import { getSocket } from '@/lib/socket';
-import { cn, formatTime, formatPhone, digitsOnlyPhone } from '@/lib/utils';
+import { cn, formatTime, formatPhone, phoneToWhatsappChatId } from '@/lib/utils';
 import {
   Send,
   Paperclip,
@@ -215,7 +215,9 @@ export default function ChatWindow() {
   const contact = activeConversation.contact;
   if (!contact?.phone) return null;
 
-  const chatId = `${digitsOnlyPhone(contact.phone) || contact.phone}@c.us`;
+  const chatId =
+    phoneToWhatsappChatId(contact.phone) ||
+    `${String(contact.phone).replace(/\D/g, '')}@c.us`;
 
   const submitComposer = async () => {
     const trimmed = text.trim();

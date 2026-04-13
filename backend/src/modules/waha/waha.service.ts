@@ -32,7 +32,8 @@ export class WahaService implements OnModuleInit {
     private prisma: PrismaService,
   ) {
     const baseURL = this.config.get('WAHA_API_URL', 'http://localhost:3001');
-    const apiKey = this.config.get('WAHA_API_KEY', '');
+    const rawKey = this.config.get<string>('WAHA_API_KEY', '') ?? '';
+    const apiKey = typeof rawKey === 'string' ? rawKey.trim() : '';
 
     this.syncChatLimit = parseInt(this.config.get('SYNC_CHAT_LIMIT', '99999'), 10);
     this.syncMessageLimit = parseInt(this.config.get('SYNC_MESSAGE_LIMIT', '99999'), 10);

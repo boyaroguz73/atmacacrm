@@ -201,10 +201,15 @@ export class ContactsService {
     return d;
   }
 
-  /** WAHA profil fotoğrafı için telefon (yalnızca rakam, en az 10 hane) */
+  /** WAHA profil fotoğrafı için telefon (ülke kodu ile, TR 0→90) */
   digitsForWahaProfile(phone: string): string | null {
-    const d = String(phone ?? '').replace(/\D/g, '');
-    if (d.length < 10) return null;
+    const digits = String(phone ?? '').replace(/\D/g, '');
+    if (!digits) return null;
+    let d = digits;
+    if (d.startsWith('00')) d = d.slice(2);
+    if (d.length === 11 && d.startsWith('0') && d[1] === '5') d = `90${d.slice(1)}`;
+    if (d.length === 10 && d.startsWith('5')) d = `90${d}`;
+    if (d.length < 10 || d.length > 15) return null;
     return d;
   }
 

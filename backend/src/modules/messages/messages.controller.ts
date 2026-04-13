@@ -11,6 +11,8 @@ import {
   UploadedFile,
   BadRequestException,
   NotFoundException,
+  HttpException,
+  Logger,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
@@ -23,6 +25,9 @@ import { PrismaService } from '../prisma/prisma.service';
 import { diskStorage } from 'multer';
 import { extname } from 'path';
 import { v4 as uuid } from 'uuid';
+import { SendTextMessageDto } from './dto/send-text.dto';
+import { SendMediaMessageDto } from './dto/send-media.dto';
+import { EditMessageDto } from './dto/edit-message.dto';
 
 const imageStorage = diskStorage({
   destination: './uploads',
@@ -37,6 +42,8 @@ const imageStorage = diskStorage({
 @UseGuards(JwtAuthGuard)
 @Controller('messages')
 export class MessagesController {
+  private readonly logger = new Logger(MessagesController.name);
+
   constructor(
     private messagesService: MessagesService,
     private conversationsService: ConversationsService,
@@ -62,13 +69,7 @@ export class MessagesController {
 
   @Post('send')
   async sendText(
-    @Body()
-    body: {
-      conversationId: string;
-      sessionName: string;
-      chatId: string;
-      body: string;
-    },
+    @Body() body: SendTextMessageDto,
     @CurrentUser()
     user: {
       id: string;
@@ -80,22 +81,25 @@ export class MessagesController {
       body.conversationId,
     );
     assertConversationBelongsToOrg(conversation, user);
-    return this.messagesService.sendText({
-      ...body,
-      sentById: user.id,
-    });
+    try {
+      return await this.messagesService.sendText({
+        ...body,
+        sentById: user.id,
+      });
+    } catch (err: unknown) {
+      if (err instanceof HttpException) throw err;
+      const e = err as { message?: string; stack?: string };
+      this.logger.error(`POST /messages/send: ${e?.message}`, e?.stack);
+      throw new BadRequestException(
+        e?.message ||
+          'Mesaj gönderilemedi. Backend günlüğünü (docker compose logs backend) kontrol edin.',
+      );
+    }
   }
 
   @Post('send-media')
   async sendMedia(
-    @Body()
-    body: {
-      conversationId: string;
-      sessionName: string;
-      chatId: string;
-      mediaUrl: string;
-      caption?: string;
-    },
+    @Body() body: SendMediaMessageDto,
     @CurrentUser()
     user: {
       id: string;
@@ -120,12 +124,7 @@ export class MessagesController {
   @Patch(':messageId/edit')
   async editMessage(
     @Param('messageId') messageId: string,
-    @Body()
-    body: {
-      sessionName: string;
-      chatId: string;
-      newBody: string;
-    },
+    @Body() body: EditMessageDto,
     @CurrentUser()
     user: {
       id: string;

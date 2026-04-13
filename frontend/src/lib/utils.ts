@@ -11,6 +11,24 @@ export function digitsOnlyPhone(phone: string | null | undefined): string {
   return String(phone).replace(/\D/g, '');
 }
 
+/** TR yerel formatını WAHA chatId rakamlarına çevirir (0555… → 90555…) */
+export function normalizePhoneDigitsForWaha(
+  phone: string | null | undefined,
+): string {
+  let d = digitsOnlyPhone(phone);
+  if (!d) return '';
+  if (d.startsWith('00')) d = d.slice(2);
+  if (d.length === 11 && d.startsWith('0') && d[1] === '5') d = `90${d.slice(1)}`;
+  if (d.length === 10 && d.startsWith('5')) d = `90${d}`;
+  return d;
+}
+
+/** Kişi telefonundan WhatsApp DM chatId (905551234567@c.us) */
+export function phoneToWhatsappChatId(phone: string | null | undefined): string {
+  const d = normalizePhoneDigitsForWaha(phone);
+  return d ? `${d}@c.us` : '';
+}
+
 export function formatPhone(phone: string | null | undefined): string {
   if (phone == null || phone === '') return '—';
   const digits = digitsOnlyPhone(phone);
