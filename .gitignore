@@ -2,8 +2,11 @@ node_modules
 dist
 .next
 .env
+.env.example
 backend/.env
+backend/.env.example
 frontend/.env.local
+frontend/.env.example
 *.log
 .DS_Store
 
