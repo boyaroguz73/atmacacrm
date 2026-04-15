@@ -113,8 +113,18 @@ export default function ChatWindow() {
   const [productPickerOpen, setProductPickerOpen] = useState(false);
   const [productSearch, setProductSearch] = useState('');
   const [productHits, setProductHits] = useState<
-    { id: string; name: string; sku: string; imageUrl?: string | null; unitPrice: number; currency: string }[]
+    {
+      id: string;
+      name: string;
+      sku: string;
+      imageUrl?: string | null;
+      unitPrice: number;
+      currency: string;
+      category?: string | null;
+    }[]
   >([]);
+  const [productCategoryFilter, setProductCategoryFilter] = useState('');
+  const [productCategories, setProductCategories] = useState<{ category: string; count: number }[]>([]);
   const [productSearchLoading, setProductSearchLoading] = useState(false);
 
   useEffect(() => {
@@ -131,13 +141,29 @@ export default function ChatWindow() {
     const t = setTimeout(() => {
       setProductSearchLoading(true);
       api
-        .get('/products', { params: { search: q || undefined, limit: 24, page: 1 } })
+        .get('/products', {
+          params: {
+            search: q || undefined,
+            category: productCategoryFilter || undefined,
+            isActive: true,
+            limit: 24,
+            page: 1,
+          },
+        })
         .then(({ data }) => setProductHits(data.products || []))
         .catch(() => setProductHits([]))
         .finally(() => setProductSearchLoading(false));
     }, 280);
     return () => clearTimeout(t);
-  }, [productSearch, productPickerOpen]);
+  }, [productSearch, productPickerOpen, productCategoryFilter]);
+
+  useEffect(() => {
+    if (!productPickerOpen) return;
+    api
+      .get('/products/categories-summary')
+      .then(({ data }) => setProductCategories(Array.isArray(data) ? data : []))
+      .catch(() => setProductCategories([]));
+  }, [productPickerOpen]);
 
   useEffect(() => {
     api
@@ -166,6 +192,7 @@ export default function ChatWindow() {
     setProductPickerOpen(false);
     setProductSearch('');
     setProductHits([]);
+    setProductCategoryFilter('');
   }, [activeConversation?.id]);
 
   useEffect(() => {
@@ -792,11 +819,24 @@ export default function ChatWindow() {
                     <input
                       type="search"
                       autoComplete="off"
-                      placeholder="Ürün adı veya SKU…"
+                      placeholder="Ürün adı veya SKU ara…"
                       value={productSearch}
                       onChange={(e) => setProductSearch(e.target.value)}
                       className="flex-1 min-w-0 text-sm py-1.5 px-1 border-0 focus:ring-0 focus:outline-none bg-transparent"
                     />
+                    <select
+                      value={productCategoryFilter}
+                      onChange={(e) => setProductCategoryFilter(e.target.value)}
+                      className="text-xs border border-gray-200 rounded-lg px-2 py-1 bg-white max-w-[45%]"
+                      title="Kategoriye göre filtrele"
+                    >
+                      <option value="">Tüm kategoriler</option>
+                      {productCategories.map((c) => (
+                        <option key={c.category} value={c.category}>
+                          {c.category} ({c.count})
+                        </option>
+                      ))}
+                    </select>
                   </div>
                   <div className="overflow-y-auto flex-1">
                     {productSearchLoading ? (
@@ -847,6 +887,9 @@ export default function ChatWindow() {
                           <div className="min-w-0 flex-1">
                             <p className="text-sm font-medium text-gray-900 truncate">{p.name}</p>
                             <p className="text-[11px] text-gray-500 font-mono truncate">{p.sku}</p>
+                            {p.category ? (
+                              <p className="text-[11px] text-gray-400 truncate">{p.category}</p>
+                            ) : null}
                           </div>
                         </button>
                       ))

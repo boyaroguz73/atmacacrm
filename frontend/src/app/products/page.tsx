@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import api, { getApiErrorMessage } from '@/lib/api';
 import toast from 'react-hot-toast';
 import { useAuthStore } from '@/store/auth';
+import { rewriteMediaUrlForClient } from '@/lib/utils';
 import {
   Package,
   Search,
@@ -35,6 +36,7 @@ interface Product {
   productFeedSource?: 'MANUAL' | 'XML';
   productUrl?: string | null;
   imageUrl?: string | null;
+  category?: string | null;
   listPrice?: number | null;
   salePriceAmount?: number | null;
   salePriceEffectiveRange?: string | null;
@@ -469,12 +471,14 @@ export default function ProductsPage() {
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full text-sm min-w-[880px]">
+              <table className="w-full text-sm min-w-[980px]">
                 <thead>
                   <tr className="border-b border-gray-100 bg-gray-50/80 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                    <th className="px-4 py-3 whitespace-nowrap">Görsel</th>
                     <th className="px-4 py-3 whitespace-nowrap">SKU</th>
                     <th className="px-4 py-3 whitespace-nowrap">Kaynak</th>
                     <th className="px-4 py-3">Ad</th>
+                    <th className="px-4 py-3 whitespace-nowrap">Kategori</th>
                     <th className="px-4 py-3 whitespace-nowrap">Birim Fiyat</th>
                     <th className="px-4 py-3 whitespace-nowrap">Para Birimi</th>
                     <th className="px-4 py-3 whitespace-nowrap">KDV %</th>
@@ -486,13 +490,29 @@ export default function ProductsPage() {
                 <tbody>
                   {products.length === 0 ? (
                     <tr>
-                      <td colSpan={9} className="px-4 py-16 text-center text-gray-400">
+                      <td colSpan={11} className="px-4 py-16 text-center text-gray-400">
                         Ürün bulunamadı
                       </td>
                     </tr>
                   ) : (
                     products.map((p) => (
                       <tr key={p.id} className="border-b border-gray-50 hover:bg-gray-50/60 transition-colors">
+                        <td className="px-4 py-3">
+                          <div className="w-11 h-11 rounded-lg border border-gray-100 bg-gray-50 overflow-hidden">
+                            {p.imageUrl ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img
+                                src={rewriteMediaUrlForClient(p.imageUrl)}
+                                alt={p.name}
+                                className="w-full h-full object-cover"
+                              />
+                            ) : (
+                              <span className="flex w-full h-full items-center justify-center text-[10px] text-gray-300">
+                                —
+                              </span>
+                            )}
+                          </div>
+                        </td>
                         <td className="px-4 py-3 font-mono text-xs text-gray-800">{p.sku}</td>
                         <td className="px-4 py-3">
                           <span
@@ -507,6 +527,9 @@ export default function ProductsPage() {
                         </td>
                         <td className="px-4 py-3 font-medium text-gray-900 max-w-[200px] truncate" title={p.name}>
                           {p.name}
+                        </td>
+                        <td className="px-4 py-3 text-gray-600 max-w-[220px] truncate" title={p.category || ''}>
+                          {p.category || '—'}
                         </td>
                         <td className="px-4 py-3 text-gray-700 tabular-nums">{formatMoney(p.unitPrice, p.currency)}</td>
                         <td className="px-4 py-3 text-gray-600">{p.currency}</td>

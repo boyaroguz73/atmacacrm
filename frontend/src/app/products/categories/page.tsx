@@ -12,6 +12,10 @@ interface CategoryRow {
   description: string | null;
   sortOrder: number;
 }
+interface AutoCategoryRow {
+  category: string;
+  count: number;
+}
 
 export default function ProductCategoriesPage() {
   const { user } = useAuthStore();
@@ -25,6 +29,7 @@ export default function ProductCategoriesPage() {
   const [description, setDescription] = useState('');
   const [sortOrder, setSortOrder] = useState('0');
   const [saving, setSaving] = useState(false);
+  const [autoRows, setAutoRows] = useState<AutoCategoryRow[]>([]);
 
   const fetchRows = useCallback(async () => {
     setLoading(true);
@@ -41,6 +46,13 @@ export default function ProductCategoriesPage() {
   useEffect(() => {
     void fetchRows();
   }, [fetchRows]);
+
+  useEffect(() => {
+    api
+      .get<AutoCategoryRow[]>('/products/categories-summary')
+      .then(({ data }) => setAutoRows(Array.isArray(data) ? data : []))
+      .catch(() => setAutoRows([]));
+  }, []);
 
   const openCreate = () => {
     setEditing(null);
@@ -195,6 +207,39 @@ export default function ProductCategoriesPage() {
               </tbody>
             </table>
           )}
+        </div>
+
+        <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+          <div className="px-4 py-3 border-b bg-gray-50/70">
+            <h2 className="text-sm font-semibold text-gray-800">XML’den otomatik kategoriler (g:product_type)</h2>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Ürün feed senkronu sırasında oluşur; chat ürün seçicide kategori filtresi olarak kullanılır.
+            </p>
+          </div>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-gray-50 border-b text-left text-xs font-semibold text-gray-500 uppercase">
+                <th className="px-4 py-3">Kategori</th>
+                <th className="px-4 py-3 text-right">Ürün sayısı</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {!autoRows.length ? (
+                <tr>
+                  <td colSpan={2} className="px-4 py-10 text-center text-gray-400">
+                    XML kategori bulunamadı
+                  </td>
+                </tr>
+              ) : (
+                autoRows.map((r) => (
+                  <tr key={r.category} className="hover:bg-gray-50/60">
+                    <td className="px-4 py-2.5 text-gray-800">{r.category}</td>
+                    <td className="px-4 py-2.5 text-right tabular-nums text-gray-600">{r.count}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
 

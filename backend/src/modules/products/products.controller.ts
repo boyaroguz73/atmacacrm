@@ -34,16 +34,23 @@ export class ProductsController {
   @Get()
   findAll(
     @Query('search') search?: string,
+    @Query('category') category?: string,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
     @Query('isActive') isActive?: string,
   ) {
     return this.productsService.findAll({
       search,
+      category,
       page: page ? parseInt(page) : 1,
       limit: limit ? parseInt(limit) : 50,
       isActive: isActive === 'true' ? true : isActive === 'false' ? false : undefined,
     });
+  }
+
+  @Get('categories-summary')
+  getCategoriesSummary() {
+    return this.productsService.getCategoriesSummary();
   }
 
   @Get(':id')

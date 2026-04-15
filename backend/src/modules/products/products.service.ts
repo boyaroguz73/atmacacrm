@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { Prisma, ProductFeedSource } from '@prisma/client';
 import { XMLParser } from 'fast-xml-parser';
 import axios from 'axios';
+import { randomUUID } from 'crypto';
 
 function normalizeText(v: unknown): string {
   if (v == null) return '';
@@ -106,10 +107,17 @@ export class ProductsService {
 
   constructor(private prisma: PrismaService) {}
 
-  async findAll(params: { search?: string; page?: number; limit?: number; isActive?: boolean }) {
-    const { search, page = 1, limit = 50, isActive } = params;
-    const where: Prisma.ProductWhereInput = {};
+  async findAll(params: {
+    search?: string;
+    category?: string;
+    page?: number;
+    limit?: number;
+    isActive?: boolean;
+  }) {
+    const { search, category, page = 1, limit = 50, isActive } = params;
+    const where: any = {};
     if (isActive !== undefined) where.isActive = isActive;
+    if (category && category.trim()) where.category = category.trim();
     if (search) {
       where.OR = [
         { name: { contains: search, mode: 'insensitive' } },
@@ -135,6 +143,22 @@ export class ProductsService {
     ]);
 
     return { products, total, page, totalPages: Math.ceil(total / limit) };
+  }
+
+  async getCategoriesSummary() {
+    const rows = await this.prisma.$queryRaw<{ category: string | null; count: bigint }[]>`
+      SELECT NULLIF(TRIM(p.category), '') AS category, COUNT(*)::bigint AS count
+      FROM products p
+      WHERE p.category IS NOT NULL AND TRIM(p.category) <> ''
+      GROUP BY 1
+      ORDER BY 1 ASC
+    `;
+    return rows
+      .map((r) => ({
+        category: String(r.category || '').trim(),
+        count: Number(r.count || 0),
+      }))
+      .filter((x) => x.category !== '');
   }
 
   async findById(id: string) {
@@ -229,6 +253,7 @@ export class ProductsService {
     const items = extractItems(parsed);
     const now = new Date();
     const seenSkus = new Set<string>();
+    const seenCategories = new Set<string>();
     let imported = 0;
     let updated = 0;
     const errors: string[] = [];
@@ -252,6 +277,7 @@ export class ProductsService {
         : null;
       const googleProductType = field(item, 'product_type', 'g:product_type') || null;
       const category = googleProductType?.trim() || null;
+      if (category) seenCategories.add(category);
       const googleCustomLabel0 = impMerch
         ? field(item, 'custom_label_0', 'g:custom_label_0') || null
         : null;
@@ -304,7 +330,7 @@ export class ProductsService {
           imageUrlFromFeed ||
           (existing?.imageUrl && String(existing.imageUrl).trim() ? String(existing.imageUrl).trim() : null);
 
-        const createData: Prisma.ProductCreateInput = {
+        const createData: any = {
           sku,
           name,
           description: impDesc ? description : null,
@@ -333,7 +359,7 @@ export class ProductsService {
           xmlSyncedAt: now,
         };
 
-        const updateData: Prisma.ProductUpdateInput = {
+        const updateData: any = {
           name,
           unitPrice,
           currency,
@@ -387,6 +413,18 @@ export class ProductsService {
         data: { isActive: false },
       });
       deactivated = res.count;
+    }
+
+    if (seenCategories.size > 0) {
+      const uniqueCategories = [...seenCategories];
+      for (const name of uniqueCategories) {
+        const id = randomUUID();
+        await this.prisma.$executeRaw`
+          INSERT INTO product_categories (id, name, "createdAt", "updatedAt")
+          VALUES (${id}, ${name}, NOW(), NOW())
+          ON CONFLICT (name) DO NOTHING
+        `;
+      }
     }
 
     this.logger.log(
