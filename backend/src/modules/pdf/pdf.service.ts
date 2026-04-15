@@ -233,16 +233,27 @@ export class PdfService {
         // ── Helper: draw text at absolute position, no cursor side effects ──
         const txt = (
           text: string, x: number, y: number,
-          opts: { width?: number; align?: string; size?: number; color?: string; bold?: boolean } = {},
+          opts: {
+            width?: number;
+            align?: string;
+            size?: number;
+            color?: string;
+            bold?: boolean;
+            lineBreak?: boolean;
+          } = {},
         ) => {
           if (opts.bold) B(); else R();
           if (opts.size) doc.fontSize(opts.size);
           doc.fillColor(opts.color || '#333333');
+          const content = text || '';
+          const maxWidth = opts.width ?? 200;
+          const h = doc.heightOfString(content, { width: maxWidth, align: (opts.align as any) || 'left' });
           doc.text(text, x, y, {
             width: opts.width,
             align: (opts.align as any) || 'left',
-            lineBreak: false,
+            lineBreak: opts.lineBreak ?? false,
           });
+          return h;
         };
 
         const ML = 40; // margin left
@@ -264,20 +275,20 @@ export class PdfService {
 
         // Company info (right of logo)
         const firmX = ML + logoW + (logoW ? 10 : 0);
+        const titleBoxX = doc.page.width - MR - 170;
         let cy = 15;
-        txt(this.t(settings.companyName), firmX, cy, { size: 12, bold: true, color: primary });
-        cy += 15;
-        if (settings.companyAddress) { txt(this.t(settings.companyAddress), firmX, cy, { size: 7.5, color: '#555' }); cy += 10; }
-        if (settings.companyPhone)   { txt(`Tel: ${settings.companyPhone}`, firmX, cy, { size: 7.5, color: '#555' }); cy += 10; }
-        if (settings.companyEmail)   { txt(`E-posta: ${settings.companyEmail}`, firmX, cy, { size: 7.5, color: '#555' }); cy += 10; }
-        if (settings.companyWebsite) { txt(settings.companyWebsite, firmX, cy, { size: 7.5, color: '#555' }); cy += 10; }
+        const companyInfoW = Math.max(120, titleBoxX - firmX - 12);
+        cy += txt(this.t(settings.companyName), firmX, cy, { size: 12, bold: true, color: primary, width: companyInfoW, lineBreak: true }) + 3;
+        if (settings.companyAddress) { cy += txt(this.t(settings.companyAddress), firmX, cy, { size: 7.5, color: '#555', width: companyInfoW, lineBreak: true }) + 2; }
+        if (settings.companyPhone)   { cy += txt(`Tel: ${settings.companyPhone}`, firmX, cy, { size: 7.5, color: '#555', width: companyInfoW, lineBreak: true }) + 2; }
+        if (settings.companyEmail)   { cy += txt(`E-posta: ${settings.companyEmail}`, firmX, cy, { size: 7.5, color: '#555', width: companyInfoW, lineBreak: true }) + 2; }
+        if (settings.companyWebsite) { cy += txt(settings.companyWebsite, firmX, cy, { size: 7.5, color: '#555', width: companyInfoW, lineBreak: true }) + 2; }
         if (settings.companyTaxOffice || settings.companyTaxNumber) {
-          txt(`VD: ${this.t(settings.companyTaxOffice)}  VN: ${settings.companyTaxNumber}`, firmX, cy, { size: 7.5, color: '#555' }); cy += 10;
+          cy += txt(`VD: ${this.t(settings.companyTaxOffice)}  VN: ${settings.companyTaxNumber}`, firmX, cy, { size: 7.5, color: '#555', width: companyInfoW, lineBreak: true }) + 2;
         }
-        if (settings.companyMersisNo) { txt(`Mersis: ${settings.companyMersisNo}`, firmX, cy, { size: 7.5, color: '#555' }); cy += 10; }
+        if (settings.companyMersisNo) { cy += txt(`Mersis: ${settings.companyMersisNo}`, firmX, cy, { size: 7.5, color: '#555', width: companyInfoW, lineBreak: true }) + 2; }
 
         // Document title box (right side)
-        const titleBoxX = doc.page.width - MR - 170;
         doc.rect(titleBoxX, 12, 170, 60).fill('#f5f5f5');
         txt(this.t(data.title), titleBoxX + 8, 18, { size: 14, bold: true, color: primary, width: 154 });
         let ry2 = 38;
@@ -293,15 +304,13 @@ export class PdfService {
 
         // ── CUSTOMER INFO ────────────────────────────────────────────────
         let startY = headerBottom + 8;
-        txt(this.t('MUSTERI BILGILERI'), ML, startY, { size: 8, bold: true, color: primary });
-        startY += 13;
-        txt(this.t(data.contactName), ML, startY, { size: 9, bold: true });
-        startY += 13;
-        if (data.contactCompany) { txt(this.t(data.contactCompany), ML, startY, { size: 8 }); startY += 11; }
-        if (data.contactPhone)   { txt(`Tel: ${data.contactPhone}`, ML, startY, { size: 8 }); startY += 11; }
-        if (data.contactEmail)   { txt(`E: ${data.contactEmail}`, ML, startY, { size: 8 }); startY += 11; }
+        startY += txt(this.t('MUSTERI BILGILERI'), ML, startY, { size: 8, bold: true, color: primary, width: PW, lineBreak: true }) + 3;
+        startY += txt(this.t(data.contactName), ML, startY, { size: 9, bold: true, width: PW, lineBreak: true }) + 3;
+        if (data.contactCompany) { startY += txt(this.t(data.contactCompany), ML, startY, { size: 8, width: PW, lineBreak: true }) + 2; }
+        if (data.contactPhone)   { startY += txt(`Tel: ${data.contactPhone}`, ML, startY, { size: 8, width: PW, lineBreak: true }) + 2; }
+        if (data.contactEmail)   { startY += txt(`E: ${data.contactEmail}`, ML, startY, { size: 8, width: PW, lineBreak: true }) + 2; }
         if (data.contactTaxOffice || data.contactTaxNumber) {
-          txt(`VD: ${this.t(data.contactTaxOffice || '')}  VN: ${data.contactTaxNumber || ''}`, ML, startY, { size: 8 }); startY += 11;
+          startY += txt(`VD: ${this.t(data.contactTaxOffice || '')}  VN: ${data.contactTaxNumber || ''}`, ML, startY, { size: 8, width: PW, lineBreak: true }) + 2;
         }
 
         // ── TABLE ────────────────────────────────────────────────────────
@@ -429,22 +438,34 @@ export class PdfService {
         // ── NOTES / TERMS / BANK ─────────────────────────────────────────
         rowY += 6;
         if (data.notes) {
-          txt(this.t('Notlar:'), ML, rowY, { size: 8.5, bold: true }); rowY += 12;
+          rowY += txt(this.t('Notlar:'), ML, rowY, { size: 8.5, bold: true, width: PW, lineBreak: true }) + 2;
           R(); doc.fontSize(8).fillColor('#444');
-          doc.text(this.t(data.notes), ML, rowY, { width: PW, lineBreak: true }); rowY += doc.currentLineHeight(true) + 14;
+          const h = doc.heightOfString(this.t(data.notes), { width: PW });
+          doc.text(this.t(data.notes), ML, rowY, { width: PW, lineBreak: true });
+          rowY += h + 10;
         }
         if (settings.terms) {
-          txt(this.t('Odeme Kosullari:'), ML, rowY, { size: 8.5, bold: true }); rowY += 12;
+          rowY += txt(this.t('Odeme Kosullari:'), ML, rowY, { size: 8.5, bold: true, width: PW, lineBreak: true }) + 2;
           R(); doc.fontSize(8).fillColor('#444');
-          doc.text(this.t(settings.terms), ML, rowY, { width: PW, lineBreak: true }); rowY += doc.currentLineHeight(true) + 14;
+          const h = doc.heightOfString(this.t(settings.terms), { width: PW });
+          doc.text(this.t(settings.terms), ML, rowY, { width: PW, lineBreak: true });
+          rowY += h + 10;
         }
         if (settings.bankInfo || settings.bank2Info) {
-          txt(this.t('Banka Bilgileri:'), ML, rowY, { size: 8.5, bold: true }); rowY += 12;
+          rowY += txt(this.t('Banka Bilgileri:'), ML, rowY, { size: 8.5, bold: true, width: PW, lineBreak: true }) + 2;
           const halfW = (PW - 10) / 2;
           R(); doc.fontSize(8).fillColor('#444');
-          if (settings.bankInfo)  { doc.text(this.t(settings.bankInfo),  ML,           rowY, { width: halfW, lineBreak: true }); }
-          if (settings.bank2Info) { doc.text(this.t(settings.bank2Info), ML + halfW + 10, rowY, { width: halfW, lineBreak: true }); }
-          rowY += 36;
+          let h1 = 0;
+          let h2 = 0;
+          if (settings.bankInfo)  {
+            h1 = doc.heightOfString(this.t(settings.bankInfo), { width: halfW });
+            doc.text(this.t(settings.bankInfo),  ML, rowY, { width: halfW, lineBreak: true });
+          }
+          if (settings.bank2Info) {
+            h2 = doc.heightOfString(this.t(settings.bank2Info), { width: halfW });
+            doc.text(this.t(settings.bank2Info), ML + halfW + 10, rowY, { width: halfW, lineBreak: true });
+          }
+          rowY += Math.max(h1, h2, 0) + 10;
         }
 
         // ── SIGNATURE ────────────────────────────────────────────────────
@@ -460,6 +481,8 @@ export class PdfService {
 
         // ── FOOTER ───────────────────────────────────────────────────────
         const footerY = PAGE_H - 20;
+        const sigBottomPad = settings.showSignatureArea ? 92 : 56;
+        if (rowY > PAGE_H - sigBottomPad) rowY = PAGE_H - sigBottomPad;
         doc.moveTo(ML, footerY - 8).lineTo(ML + PW, footerY - 8).lineWidth(0.3).strokeColor('#dddddd').stroke();
         R(); doc.fontSize(7).fillColor('#aaaaaa');
         if (settings.footerNote) {
