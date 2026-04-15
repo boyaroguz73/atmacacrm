@@ -131,8 +131,10 @@ function contactDisplayName(o: SalesOrder['contact']) {
 }
 
 function lineVatAmount(item: OrderItemRow) {
-  const net = item.quantity * item.unitPrice;
-  return Math.round(net * (item.vatRate / 100) * 100) / 100;
+  const gross = item.lineTotal;
+  const divider = 1 + (item.vatRate / 100);
+  const net = divider > 0 ? gross / divider : gross;
+  return Math.round((gross - net) * 100) / 100;
 }
 
 export default function OrdersPage() {

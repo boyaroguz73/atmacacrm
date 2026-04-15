@@ -75,6 +75,7 @@ export class ContactsController {
       notes?: string;
       company?: string;
       city?: string;
+      address?: string;
       organizationId?: string;
       openChat?: boolean;
       sessionId?: string;
@@ -106,6 +107,7 @@ export class ContactsController {
       notes: body.notes,
       company: body.company,
       city: body.city,
+      address: body.address,
       organizationId: body.organizationId,
       sessionId: sessionId ?? null,
     });

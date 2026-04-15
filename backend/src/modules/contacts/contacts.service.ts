@@ -146,6 +146,7 @@ export class ContactsService {
       source?: string;
       company?: string;
       city?: string;
+      address?: string;
       metadata?: object;
     },
   ) {
@@ -335,6 +336,7 @@ export class ContactsService {
       notes?: string | null;
       company?: string | null;
       city?: string | null;
+      address?: string | null;
       organizationId?: string | null;
       sessionId?: string | null;
     },
@@ -373,6 +375,7 @@ export class ContactsService {
           notes: dto.notes?.trim() || null,
           company: dto.company?.trim() || null,
           city: dto.city?.trim() || null,
+          address: dto.address?.trim() || null,
           organizationId,
         },
         include: { lead: true },

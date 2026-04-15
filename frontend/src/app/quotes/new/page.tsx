@@ -50,37 +50,46 @@ function calcTotals(
   discountType: DiscountType,
   discountValue: number,
 ) {
-  let subtotal = 0;
-  let vatTotal = 0;
+  let netSubtotalBeforeGeneralDiscount = 0;
+  let vatTotalBeforeGeneralDiscount = 0;
+  let grossSubtotalBeforeGeneralDiscount = 0;
   const calculated = items.map((item) => {
-    let base = item.quantity * item.unitPrice;
+    const lineGross = item.quantity * item.unitPrice;
     let lineDiscount = 0;
     if (item.discountValue && item.discountValue > 0) {
       lineDiscount =
         item.discountType === 'AMOUNT'
           ? item.discountValue
-          : base * (item.discountValue / 100);
+          : lineGross * (item.discountValue / 100);
     }
-    base -= lineDiscount;
-    const vat = base * (item.vatRate / 100);
-    subtotal += base;
-    vatTotal += vat;
-    const lineTotal = Math.round((base + vat) * 100) / 100;
+    const grossAfterLineDiscount = Math.max(0, lineGross - lineDiscount);
+    const divider = 1 + (item.vatRate / 100);
+    const lineNet = divider > 0 ? grossAfterLineDiscount / divider : grossAfterLineDiscount;
+    const lineVat = grossAfterLineDiscount - lineNet;
+    netSubtotalBeforeGeneralDiscount += lineNet;
+    vatTotalBeforeGeneralDiscount += lineVat;
+    grossSubtotalBeforeGeneralDiscount += grossAfterLineDiscount;
+    const lineTotal = Math.round(grossAfterLineDiscount * 100) / 100;
     return { ...item, lineTotal };
   });
 
   let discountTotal = 0;
   if (discountValue > 0) {
     discountTotal =
-      discountType === 'AMOUNT' ? discountValue : subtotal * (discountValue / 100);
+      discountType === 'AMOUNT' ? discountValue : grossSubtotalBeforeGeneralDiscount * (discountValue / 100);
   }
-  const afterDiscount = subtotal - discountTotal;
-  const adjustedVat = vatTotal * (afterDiscount / (subtotal || 1));
-  const grandTotal = Math.round((afterDiscount + adjustedVat) * 100) / 100;
+  const grossAfterGeneralDiscount = Math.max(0, grossSubtotalBeforeGeneralDiscount - discountTotal);
+  const discountRatio =
+    grossSubtotalBeforeGeneralDiscount > 0
+      ? grossAfterGeneralDiscount / grossSubtotalBeforeGeneralDiscount
+      : 1;
+  const adjustedNet = netSubtotalBeforeGeneralDiscount * discountRatio;
+  const adjustedVat = vatTotalBeforeGeneralDiscount * discountRatio;
+  const grandTotal = Math.round(grossAfterGeneralDiscount * 100) / 100;
 
   return {
     lineTotals: calculated.map((c) => c.lineTotal),
-    subtotal: Math.round(subtotal * 100) / 100,
+    subtotal: Math.round(adjustedNet * 100) / 100,
     discountTotal: Math.round(discountTotal * 100) / 100,
     vatTotal: Math.round(adjustedVat * 100) / 100,
     grandTotal,
@@ -134,6 +143,8 @@ export default function NewQuotePage() {
   const [validUntil, setValidUntil] = useState('');
   const [deliveryDate, setDeliveryDate] = useState('');
   const [notes, setNotes] = useState('');
+  const [termsOverride, setTermsOverride] = useState('');
+  const [footerNoteOverride, setFooterNoteOverride] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
   const sym = currencySymbol(currency);
@@ -228,6 +239,19 @@ export default function NewQuotePage() {
   };
 
   useEffect(() => {
+    const loadPdfDefaults = async () => {
+      try {
+        const { data } = await api.get('/system-settings');
+        const all = Array.isArray(data) ? data : [];
+        const terms = all.find((s: any) => s?.key === 'pdf_terms')?.value || '';
+        const footer = all.find((s: any) => s?.key === 'pdf_footer_note')?.value || '';
+        setTermsOverride(String(terms));
+        setFooterNoteOverride(String(footer));
+      } catch {
+        // Sessiz geç: varsayılanlar olmadan da teklif oluşturulabilir.
+      }
+    };
+    void loadPdfDefaults();
     return () => {
       clearTimeout(contactDebounceRef.current);
       clearTimeout(productDebounceRef.current);
@@ -256,6 +280,8 @@ export default function NewQuotePage() {
         validUntil: validUntil ? new Date(validUntil).toISOString() : undefined,
         deliveryDate: deliveryDate ? new Date(deliveryDate).toISOString() : undefined,
         notes: String(notes ?? '').trim() || undefined,
+        termsOverride: String(termsOverride ?? '').trim() || undefined,
+        footerNoteOverride: String(footerNoteOverride ?? '').trim() || undefined,
         items: validLines.map((l) => ({
           productId: l.productId || undefined,
           name: String(l.name ?? '').trim(),
@@ -406,13 +432,16 @@ export default function NewQuotePage() {
                 + Boş satır
               </button>
             </div>
+            <p className="px-5 pt-3 text-[11px] text-gray-500">
+              Ürün seçili satırlarda birim fiyat ve KDV, XML’den gelen değer olarak kilitlidir; sadece indirim düzenlenir.
+            </p>
             <div className="overflow-x-auto">
               <table className="w-full text-xs min-w-[720px]">
                 <thead>
                   <tr className="bg-gray-50/90 text-gray-500 font-semibold uppercase tracking-wide text-[10px]">
                     <th className="text-left px-3 py-2 w-[28%]">Ürün</th>
                     <th className="text-left px-2 py-2 w-16">Miktar</th>
-                    <th className="text-left px-2 py-2 w-24">Birim Fiyat</th>
+                    <th className="text-left px-2 py-2 w-24">Birim Fiyat (KDV Dahil)</th>
                     <th className="text-left px-2 py-2 w-14">KDV %</th>
                     <th className="text-left px-2 py-2 w-24">İndirim</th>
                     <th className="text-left px-2 py-2 w-20">Değer</th>
@@ -449,10 +478,11 @@ export default function NewQuotePage() {
                           min={0}
                           step={0.01}
                           value={line.unitPrice}
+                          disabled={!!line.productId}
                           onChange={(e) =>
                             updateLine(line.key, { unitPrice: parseFloat(e.target.value) || 0 })
                           }
-                          className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm tabular-nums"
+                          className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm tabular-nums disabled:bg-gray-50 disabled:text-gray-500"
                         />
                       </td>
                       <td className="px-2 py-2">
@@ -462,10 +492,11 @@ export default function NewQuotePage() {
                           max={100}
                           step={1}
                           value={line.vatRate}
+                          disabled={!!line.productId}
                           onChange={(e) =>
                             updateLine(line.key, { vatRate: parseFloat(e.target.value) || 0 })
                           }
-                          className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm"
+                          className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm disabled:bg-gray-50 disabled:text-gray-500"
                         />
                       </td>
                       <td className="px-2 py-2">
@@ -577,6 +608,30 @@ export default function NewQuotePage() {
                 onChange={(e) => setNotes(e.target.value)}
                 rows={3}
                 placeholder="Teklif ile ilgili notlar…"
+                className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-whatsapp resize-y min-h-[80px]"
+              />
+            </div>
+            <div className="sm:col-span-2">
+              <label className="block text-xs font-semibold text-gray-500 mb-1">
+                Ödeme Koşulları (bu teklife özel)
+              </label>
+              <textarea
+                value={termsOverride}
+                onChange={(e) => setTermsOverride(e.target.value)}
+                rows={4}
+                placeholder="Bu teklifte PDF’e basılacak ödeme koşulları…"
+                className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-whatsapp resize-y min-h-[96px]"
+              />
+            </div>
+            <div className="sm:col-span-2">
+              <label className="block text-xs font-semibold text-gray-500 mb-1">
+                Alt Not (bu teklife özel)
+              </label>
+              <textarea
+                value={footerNoteOverride}
+                onChange={(e) => setFooterNoteOverride(e.target.value)}
+                rows={3}
+                placeholder="Bu teklifte PDF’e basılacak alt not…"
                 className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-whatsapp resize-y min-h-[80px]"
               />
             </div>

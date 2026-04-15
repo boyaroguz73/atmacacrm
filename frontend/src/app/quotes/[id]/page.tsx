@@ -49,6 +49,8 @@ export default function QuoteDetailPage() {
   const [validUntilInput, setValidUntilInput] = useState('');
   const [deliveryDateInput, setDeliveryDateInput] = useState('');
   const [notesInput, setNotesInput] = useState('');
+  const [termsOverrideInput, setTermsOverrideInput] = useState('');
+  const [footerNoteOverrideInput, setFooterNoteOverrideInput] = useState('');
   const [documentKindSelect, setDocumentKindSelect] = useState<'PROFORMA' | 'QUOTE'>('PROFORMA');
   const [metaSaving, setMetaSaving] = useState(false);
   const [showAcceptModal, setShowAcceptModal] = useState(false);
@@ -74,9 +76,11 @@ export default function QuoteDetailPage() {
     setValidUntilInput(toDateInputValue(quote.validUntil));
     setDeliveryDateInput(toDateInputValue(quote.deliveryDate));
     setNotesInput(quote.notes != null ? String(quote.notes) : '');
+    setTermsOverrideInput(quote.termsOverride != null ? String(quote.termsOverride) : '');
+    setFooterNoteOverrideInput(quote.footerNoteOverride != null ? String(quote.footerNoteOverride) : '');
     const dk = quote.documentKind === 'QUOTE' ? 'QUOTE' : 'PROFORMA';
     setDocumentKindSelect(dk);
-  }, [quote?.id, quote?.validUntil, quote?.deliveryDate, quote?.notes, quote?.documentKind]);
+  }, [quote?.id, quote?.validUntil, quote?.deliveryDate, quote?.notes, quote?.termsOverride, quote?.footerNoteOverride, quote?.documentKind]);
 
   const saveMeta = async () => {
     setMetaSaving(true);
@@ -85,6 +89,8 @@ export default function QuoteDetailPage() {
         validUntil: validUntilInput ? new Date(validUntilInput).toISOString() : null,
         deliveryDate: deliveryDateInput ? new Date(deliveryDateInput).toISOString() : null,
         notes: notesInput.trim() === '' ? null : notesInput,
+        termsOverride: termsOverrideInput.trim() === '' ? null : termsOverrideInput,
+        footerNoteOverride: footerNoteOverrideInput.trim() === '' ? null : footerNoteOverrideInput,
         documentKind: documentKindSelect,
       });
       setQuote(data);
@@ -364,6 +370,26 @@ export default function QuoteDetailPage() {
                 onChange={(e) => setNotesInput(e.target.value)}
                 rows={3}
                 placeholder="Teklif notları…"
+                className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-whatsapp/25 focus:border-whatsapp resize-y min-h-[72px]"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 block mb-1">Ödeme koşulları (bu teklife özel)</label>
+              <textarea
+                value={termsOverrideInput}
+                onChange={(e) => setTermsOverrideInput(e.target.value)}
+                rows={4}
+                placeholder="Bu teklifte PDF’e basılacak ödeme koşulları…"
+                className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-whatsapp/25 focus:border-whatsapp resize-y min-h-[88px]"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 block mb-1">Alt not (bu teklife özel)</label>
+              <textarea
+                value={footerNoteOverrideInput}
+                onChange={(e) => setFooterNoteOverrideInput(e.target.value)}
+                rows={3}
+                placeholder="Bu teklifte PDF’e basılacak alt not…"
                 className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-whatsapp/25 focus:border-whatsapp resize-y min-h-[72px]"
               />
             </div>

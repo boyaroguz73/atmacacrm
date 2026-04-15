@@ -277,6 +277,7 @@ model Contact {
   source         String?
   company        String?
   city           String?
+  address        String?
   metadata       Json?
   organizationId String?
   createdAt      DateTime @default(now())
@@ -675,6 +676,10 @@ model Quote {
   validUntil    DateTime?
   deliveryDate  DateTime?
   notes         String?
+  /// Bu teklife özel ödeme koşulları (sistem ayarını ezer)
+  termsOverride String?
+  /// Bu teklife özel alt not (sistem ayarını ezer)
+  footerNoteOverride String?
   pdfUrl        String?
   /// Kabul sonrası ödeme modeli
   paymentMode   QuotePaymentMode @default(FULL)

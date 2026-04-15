@@ -31,13 +31,14 @@ export class QuotesService {
   ) {}
 
   private calcLineTotal(item: CreateQuoteItem): number {
-    let base = item.quantity * item.unitPrice;
+    const gross = item.quantity * item.unitPrice;
+    let lineDiscount = 0;
     if (item.discountValue && item.discountValue > 0) {
-      if (item.discountType === 'AMOUNT') base -= item.discountValue;
-      else base -= base * (item.discountValue / 100);
+      if (item.discountType === 'AMOUNT') lineDiscount = item.discountValue;
+      else lineDiscount = gross * (item.discountValue / 100);
     }
-    const vat = base * (item.vatRate / 100);
-    return Math.round((base + vat) * 100) / 100;
+    const grossAfterDiscount = Math.max(0, gross - lineDiscount);
+    return Math.round(grossAfterDiscount * 100) / 100;
   }
 
   private calcTotals(
@@ -45,44 +46,53 @@ export class QuotesService {
     discountType: DiscountType,
     discountValue: number,
   ) {
-    let subtotal = 0;
-    let vatTotal = 0;
+    let netSubtotalBeforeGeneralDiscount = 0;
+    let vatTotalBeforeGeneralDiscount = 0;
+    let grossSubtotalBeforeGeneralDiscount = 0;
     const calculated = items.map((item) => {
-      let base = item.quantity * item.unitPrice;
+      const lineGross = item.quantity * item.unitPrice;
       let lineDiscount = 0;
       if (item.discountValue && item.discountValue > 0) {
         lineDiscount = item.discountType === 'AMOUNT'
           ? item.discountValue
-          : base * (item.discountValue / 100);
+          : lineGross * (item.discountValue / 100);
       }
-      base -= lineDiscount;
-      const vat = base * (item.vatRate / 100);
-      subtotal += base;
-      vatTotal += vat;
-      return { ...item, lineTotal: Math.round((base + vat) * 100) / 100 };
+      const grossAfterLineDiscount = Math.max(0, lineGross - lineDiscount);
+      const divider = 1 + (item.vatRate / 100);
+      const lineNet = divider > 0 ? grossAfterLineDiscount / divider : grossAfterLineDiscount;
+      const lineVat = grossAfterLineDiscount - lineNet;
+      grossSubtotalBeforeGeneralDiscount += grossAfterLineDiscount;
+      netSubtotalBeforeGeneralDiscount += lineNet;
+      vatTotalBeforeGeneralDiscount += lineVat;
+      return { ...item, lineTotal: Math.round(grossAfterLineDiscount * 100) / 100 };
     });
 
     let discountTotal = 0;
     if (discountValue > 0) {
       discountTotal = discountType === 'AMOUNT'
         ? discountValue
-        : subtotal * (discountValue / 100);
+        : grossSubtotalBeforeGeneralDiscount * (discountValue / 100);
     }
-    const afterDiscount = subtotal - discountTotal;
-    const adjustedVat = vatTotal * (afterDiscount / (subtotal || 1));
-    const grandTotal = Math.round((afterDiscount + adjustedVat) * 100) / 100;
+    const grossAfterGeneralDiscount = Math.max(0, grossSubtotalBeforeGeneralDiscount - discountTotal);
+    const discountRatio =
+      grossSubtotalBeforeGeneralDiscount > 0
+        ? grossAfterGeneralDiscount / grossSubtotalBeforeGeneralDiscount
+        : 1;
+    const adjustedNetSubtotal = netSubtotalBeforeGeneralDiscount * discountRatio;
+    const adjustedVatTotal = vatTotalBeforeGeneralDiscount * discountRatio;
+    const grandTotal = Math.round(grossAfterGeneralDiscount * 100) / 100;
 
     return {
       items: calculated,
-      subtotal: Math.round(subtotal * 100) / 100,
+      subtotal: Math.round(adjustedNetSubtotal * 100) / 100,
       discountTotal: Math.round(discountTotal * 100) / 100,
-      vatTotal: Math.round(adjustedVat * 100) / 100,
+      vatTotal: Math.round(adjustedVatTotal * 100) / 100,
       grandTotal,
     };
   }
 
   private readonly includeRelations = {
-    contact: { select: { id: true, name: true, surname: true, phone: true, email: true, company: true, city: true } },
+    contact: { select: { id: true, name: true, surname: true, phone: true, email: true, company: true, city: true, address: true } },
     createdBy: { select: { id: true, name: true } },
     items: {
       include: {
@@ -138,6 +148,8 @@ export class QuotesService {
     validUntil?: string;
     deliveryDate?: string;
     notes?: string;
+    termsOverride?: string;
+    footerNoteOverride?: string;
     items: CreateQuoteItem[];
   }) {
     if (!data.items?.length) throw new BadRequestException('En az bir kalem gerekli');
@@ -162,6 +174,14 @@ export class QuotesService {
         validUntil: data.validUntil ? new Date(data.validUntil) : null,
         deliveryDate: data.deliveryDate ? new Date(data.deliveryDate) : null,
         notes: data.notes,
+        termsOverride:
+          data.termsOverride != null && String(data.termsOverride).trim() !== ''
+            ? String(data.termsOverride)
+            : null,
+        footerNoteOverride:
+          data.footerNoteOverride != null && String(data.footerNoteOverride).trim() !== ''
+            ? String(data.footerNoteOverride)
+            : null,
         items: {
           create: totals.items.map((item) => ({
             productId: item.productId || null,
@@ -211,6 +231,8 @@ export class QuotesService {
       validUntil?: string | null;
       deliveryDate?: string | null;
       notes?: string | null;
+      termsOverride?: string | null;
+      footerNoteOverride?: string | null;
       documentKind?: string | null;
     },
   ) {
@@ -219,6 +241,8 @@ export class QuotesService {
       validUntil?: Date | null;
       deliveryDate?: Date | null;
       notes?: string | null;
+      termsOverride?: string | null;
+      footerNoteOverride?: string | null;
       documentKind?: string;
     } = {};
     if ('validUntil' in data) {
@@ -232,6 +256,18 @@ export class QuotesService {
         v == null || String(v).trim() === '' ? null : new Date(String(v));
     }
     if ('notes' in data) patch.notes = data.notes == null ? null : String(data.notes);
+    if ('termsOverride' in data) {
+      patch.termsOverride =
+        data.termsOverride == null || String(data.termsOverride).trim() === ''
+          ? null
+          : String(data.termsOverride);
+    }
+    if ('footerNoteOverride' in data) {
+      patch.footerNoteOverride =
+        data.footerNoteOverride == null || String(data.footerNoteOverride).trim() === ''
+          ? null
+          : String(data.footerNoteOverride);
+    }
     if ('documentKind' in data && data.documentKind != null && data.documentKind !== '') {
       const dk = String(data.documentKind).toUpperCase();
       if (dk === 'PROFORMA' || dk === 'QUOTE') patch.documentKind = dk;
@@ -280,6 +316,7 @@ export class QuotesService {
       contactCompany: c.company || undefined,
       contactPhone: c.phone,
       contactEmail: c.email || undefined,
+      contactAddress: c.address || undefined,
       items: quote.items.map((i) => ({
         name: i.name,
         description: i.description || undefined,
@@ -298,6 +335,8 @@ export class QuotesService {
       vatTotal: quote.vatTotal,
       grandTotal: quote.grandTotal,
       notes: quote.notes || undefined,
+      termsOverride: quote.termsOverride || undefined,
+      footerNoteOverride: quote.footerNoteOverride || undefined,
     });
 
     await this.prisma.quote.update({ where: { id }, data: { pdfUrl } });
@@ -378,6 +417,7 @@ export class QuotesService {
         vatTotal: quote.vatTotal,
         grandTotal: quote.grandTotal,
         notes: mergedNotes,
+        shippingAddress: quote.contact?.address ?? undefined,
         depositBalanceReminderSent: false,
         expectedDeliveryDate: quote.deliveryDate ?? undefined,
         items: {
@@ -393,7 +433,7 @@ export class QuotesService {
       },
       include: {
         items: true,
-        contact: { select: { id: true, name: true, surname: true, phone: true, email: true, company: true } },
+        contact: { select: { id: true, name: true, surname: true, phone: true, email: true, company: true, address: true } },
         createdBy: { select: { id: true, name: true } },
         quote: { select: { id: true, quoteNumber: true } },
       },
@@ -432,6 +472,7 @@ export class QuotesService {
           contactCompany: orderFull.contact.company || undefined,
           contactPhone: orderFull.contact.phone,
           contactEmail: orderFull.contact.email || undefined,
+          shippingAddress: orderFull.contact.address || undefined,
           expectedDelivery: orderFull.expectedDeliveryDate
             ? new Date(orderFull.expectedDeliveryDate).toLocaleDateString('tr-TR')
             : undefined,

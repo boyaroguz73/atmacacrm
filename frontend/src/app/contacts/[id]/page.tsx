@@ -48,6 +48,7 @@ type ContactDetail = {
   email: string | null;
   company: string | null;
   city: string | null;
+  address: string | null;
   source: string | null;
   notes: string | null;
   tags: string[];
@@ -75,6 +76,7 @@ export default function ContactDetailPage() {
     email: '',
     company: '',
     city: '',
+    address: '',
     source: '',
     notes: '',
   });
@@ -93,6 +95,7 @@ export default function ContactDetailPage() {
         email: data.email || '',
         company: data.company || '',
         city: data.city || '',
+        address: data.address || '',
         source: data.source || '',
         notes: data.notes || '',
       });
@@ -345,6 +348,17 @@ export default function ContactDetailPage() {
                   </div>
                   <label className="block">
                     <span className="text-xs text-gray-500 flex items-center gap-1">
+                      <MapPin className="w-3 h-3" /> Açık adres
+                    </span>
+                    <textarea
+                      rows={3}
+                      className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-lg resize-y"
+                      value={editData.address}
+                      onChange={(e) => setEditData((d) => ({ ...d, address: e.target.value }))}
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="text-xs text-gray-500 flex items-center gap-1">
                       <Globe className="w-3 h-3" /> Kaynak
                     </span>
                     <select
@@ -381,6 +395,7 @@ export default function ContactDetailPage() {
                         email: contact.email || '',
                         company: contact.company || '',
                         city: contact.city || '',
+                        address: contact.address || '',
                         source: contact.source || '',
                         notes: contact.notes || '',
                       });
@@ -406,6 +421,12 @@ export default function ContactDetailPage() {
                     <div className="flex items-center gap-2 text-gray-600">
                       <User className="w-4 h-4 text-gray-400" />
                       {[contact.company, contact.city].filter(Boolean).join(' · ')}
+                    </div>
+                  )}
+                  {contact.address && (
+                    <div className="flex items-start gap-2 text-gray-600">
+                      <MapPin className="w-4 h-4 text-gray-400 mt-0.5 shrink-0" />
+                      <span className="whitespace-pre-wrap">{contact.address}</span>
                     </div>
                   )}
                   {contact.source && (

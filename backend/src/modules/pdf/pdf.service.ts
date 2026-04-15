@@ -58,6 +58,8 @@ export interface PdfData {
   vatTotal: number;
   grandTotal: number;
   notes?: string;
+  termsOverride?: string;
+  footerNoteOverride?: string;
   /** order_form: kalem satırları çizgisiz yumuşak bloklar */
   layout?: 'default' | 'order_form';
 }
@@ -266,18 +268,26 @@ export class PdfService {
         doc.rect(0, 0, doc.page.width, 8).fill(primary);
 
         let logoW = 0;
+        let logoBottom = 18;
         if (logoBuffer) {
           try {
-            doc.image(logoBuffer, ML, 18, { height: 48, fit: [150, 48] });
-            logoW = 160;
+            doc.image(logoBuffer, ML, 16, { fit: [250, 56] });
+            logoW = 250;
+            logoBottom = 72;
           } catch { /* skip */ }
         }
 
         // Company info (right of logo)
-        const firmX = ML + logoW + (logoW ? 10 : 0);
-        const titleBoxX = doc.page.width - MR - 170;
+        const titleBoxW = 190;
+        const titleBoxX = doc.page.width - MR - titleBoxW;
+        let firmX = ML + logoW + (logoW ? 10 : 0);
+        let companyInfoW = Math.max(120, titleBoxX - firmX - 12);
         let cy = 15;
-        const companyInfoW = Math.max(120, titleBoxX - firmX - 12);
+        if (companyInfoW < 150) {
+          firmX = ML;
+          companyInfoW = titleBoxX - ML - 12;
+          cy = logoBottom + 4;
+        }
         cy += txt(this.t(settings.companyName), firmX, cy, { size: 12, bold: true, color: primary, width: companyInfoW, lineBreak: true }) + 3;
         if (settings.companyAddress) { cy += txt(this.t(settings.companyAddress), firmX, cy, { size: 7.5, color: '#555', width: companyInfoW, lineBreak: true }) + 2; }
         if (settings.companyPhone)   { cy += txt(`Tel: ${settings.companyPhone}`, firmX, cy, { size: 7.5, color: '#555', width: companyInfoW, lineBreak: true }) + 2; }
@@ -289,17 +299,17 @@ export class PdfService {
         if (settings.companyMersisNo) { cy += txt(`Mersis: ${settings.companyMersisNo}`, firmX, cy, { size: 7.5, color: '#555', width: companyInfoW, lineBreak: true }) + 2; }
 
         // Document title box (right side)
-        doc.rect(titleBoxX, 12, 170, 60).fill('#f5f5f5');
-        txt(this.t(data.title), titleBoxX + 8, 18, { size: 14, bold: true, color: primary, width: 154 });
+        doc.rect(titleBoxX, 12, titleBoxW, 68).fill('#f5f5f5');
+        txt(this.t(data.title), titleBoxX + 8, 18, { size: 14, bold: true, color: primary, width: titleBoxW - 16 });
         let ry2 = 38;
-        txt(`No: ${data.documentNumber}`, titleBoxX + 8, ry2, { size: 8, color: '#444', width: 154 }); ry2 += 11;
-        txt(`Tarih: ${data.date}`, titleBoxX + 8, ry2, { size: 8, color: '#444', width: 154 }); ry2 += 11;
-        if (data.validUntil)   { txt(`Gecerlilik: ${data.validUntil}`, titleBoxX + 8, ry2, { size: 8, color: '#444', width: 154 }); ry2 += 11; }
-        if (data.deliveryDate) { txt(`Teslim: ${data.deliveryDate}`, titleBoxX + 8, ry2, { size: 8, color: '#444', width: 154 }); ry2 += 11; }
-        if (data.dueDate)      { txt(`Vade: ${data.dueDate}`, titleBoxX + 8, ry2, { size: 8, color: '#444', width: 154 }); }
+        txt(`No: ${data.documentNumber}`, titleBoxX + 8, ry2, { size: 8, color: '#444', width: titleBoxW - 16 }); ry2 += 11;
+        txt(`Tarih: ${data.date}`, titleBoxX + 8, ry2, { size: 8, color: '#444', width: titleBoxW - 16 }); ry2 += 11;
+        if (data.validUntil)   { txt(`Gecerlilik: ${data.validUntil}`, titleBoxX + 8, ry2, { size: 8, color: '#444', width: titleBoxW - 16 }); ry2 += 11; }
+        if (data.deliveryDate) { txt(`Teslim: ${data.deliveryDate}`, titleBoxX + 8, ry2, { size: 8, color: '#444', width: titleBoxW - 16 }); ry2 += 11; }
+        if (data.dueDate)      { txt(`Vade: ${data.dueDate}`, titleBoxX + 8, ry2, { size: 8, color: '#444', width: titleBoxW - 16 }); }
 
         // ── DIVIDER ─────────────────────────────────────────────────────
-        const headerBottom = Math.max(cy, 80) + 8;
+        const headerBottom = Math.max(cy, logoBottom, 82) + 8;
         doc.moveTo(ML, headerBottom).lineTo(ML + PW, headerBottom).lineWidth(1).strokeColor(primary).stroke();
 
         // ── CUSTOMER INFO ────────────────────────────────────────────────
@@ -309,6 +319,7 @@ export class PdfService {
         if (data.contactCompany) { startY += txt(this.t(data.contactCompany), ML, startY, { size: 8, width: PW, lineBreak: true }) + 2; }
         if (data.contactPhone)   { startY += txt(`Tel: ${data.contactPhone}`, ML, startY, { size: 8, width: PW, lineBreak: true }) + 2; }
         if (data.contactEmail)   { startY += txt(`E: ${data.contactEmail}`, ML, startY, { size: 8, width: PW, lineBreak: true }) + 2; }
+        if (data.contactAddress) { startY += txt(this.t(data.contactAddress), ML, startY, { size: 8, width: PW, lineBreak: true }) + 2; }
         if (data.contactTaxOffice || data.contactTaxNumber) {
           startY += txt(`VD: ${this.t(data.contactTaxOffice || '')}  VN: ${data.contactTaxNumber || ''}`, ML, startY, { size: 8, width: PW, lineBreak: true }) + 2;
         }
@@ -437,19 +448,34 @@ export class PdfService {
 
         // ── NOTES / TERMS / BANK ─────────────────────────────────────────
         rowY += 6;
+        const termsText = data.termsOverride?.trim() || settings.terms;
+        const footerNoteText = data.footerNoteOverride?.trim() || settings.footerNote;
+        const ensureSpace = (neededHeight: number) => {
+          if (rowY + neededHeight <= PAGE_H - 95) return;
+          doc.addPage({ margin: 0 });
+          doc.rect(0, 0, doc.page.width, 8).fill(primary);
+          rowY = 28;
+        };
         if (data.notes) {
-          rowY += txt(this.t('Notlar:'), ML, rowY, { size: 8.5, bold: true, width: PW, lineBreak: true }) + 2;
           R(); doc.fontSize(8).fillColor('#444');
-          const h = doc.heightOfString(this.t(data.notes), { width: PW });
+          const h = doc.heightOfString(this.t(data.notes), { width: PW }) + 8;
+          ensureSpace(h);
           doc.text(this.t(data.notes), ML, rowY, { width: PW, lineBreak: true });
-          rowY += h + 10;
+          rowY += h + 6;
         }
-        if (settings.terms) {
-          rowY += txt(this.t('Odeme Kosullari:'), ML, rowY, { size: 8.5, bold: true, width: PW, lineBreak: true }) + 2;
+        if (termsText) {
           R(); doc.fontSize(8).fillColor('#444');
-          const h = doc.heightOfString(this.t(settings.terms), { width: PW });
-          doc.text(this.t(settings.terms), ML, rowY, { width: PW, lineBreak: true });
-          rowY += h + 10;
+          const h = doc.heightOfString(this.t(termsText), { width: PW }) + 8;
+          ensureSpace(h);
+          doc.text(this.t(termsText), ML, rowY, { width: PW, lineBreak: true });
+          rowY += h + 6;
+        }
+        if (footerNoteText) {
+          R(); doc.fontSize(8).fillColor('#444');
+          const h = doc.heightOfString(this.t(footerNoteText), { width: PW }) + 8;
+          ensureSpace(h);
+          doc.text(this.t(footerNoteText), ML, rowY, { width: PW, lineBreak: true });
+          rowY += h + 8;
         }
         if (settings.bankInfo || settings.bank2Info) {
           rowY += txt(this.t('Banka Bilgileri:'), ML, rowY, { size: 8.5, bold: true, width: PW, lineBreak: true }) + 2;
@@ -485,9 +511,6 @@ export class PdfService {
         if (rowY > PAGE_H - sigBottomPad) rowY = PAGE_H - sigBottomPad;
         doc.moveTo(ML, footerY - 8).lineTo(ML + PW, footerY - 8).lineWidth(0.3).strokeColor('#dddddd').stroke();
         R(); doc.fontSize(7).fillColor('#aaaaaa');
-        if (settings.footerNote) {
-          doc.text(this.t(settings.footerNote), ML, footerY - 4, { width: PW - 60, align: 'left', lineBreak: false });
-        }
         doc.text(`Sayfa 1`, ML, footerY - 4, { width: PW, align: 'right', lineBreak: false });
 
         doc.end();

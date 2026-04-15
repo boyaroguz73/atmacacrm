@@ -69,6 +69,8 @@ export class QuotesController {
       validUntil?: string | null;
       deliveryDate?: string | null;
       notes?: string | null;
+      termsOverride?: string | null;
+      footerNoteOverride?: string | null;
       documentKind?: string | null;
     },
   ) {

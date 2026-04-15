@@ -80,14 +80,18 @@ export class OrdersService {
   }) {
     if (!data.items?.length) throw new BadRequestException('En az bir kalem gerekli');
 
-    let subtotal = 0;
+    let subtotal = 0; // KDV hariç toplam
     let vatTotal = 0;
+    let grossTotal = 0;
     const items = data.items.map((item) => {
-      const base = item.quantity * item.unitPrice;
-      const vat = base * (item.vatRate / 100);
+      const lineGross = item.quantity * item.unitPrice;
+      const divider = 1 + (item.vatRate / 100);
+      const base = divider > 0 ? lineGross / divider : lineGross;
+      const vat = lineGross - base;
       subtotal += base;
       vatTotal += vat;
-      return { ...item, lineTotal: Math.round((base + vat) * 100) / 100 };
+      grossTotal += lineGross;
+      return { ...item, lineTotal: Math.round(lineGross * 100) / 100 };
     });
 
     return this.prisma.salesOrder.create({
@@ -97,7 +101,7 @@ export class OrdersService {
         currency: data.currency || 'TRY',
         subtotal: Math.round(subtotal * 100) / 100,
         vatTotal: Math.round(vatTotal * 100) / 100,
-        grandTotal: Math.round((subtotal + vatTotal) * 100) / 100,
+        grandTotal: Math.round(grossTotal * 100) / 100,
         shippingAddress: data.shippingAddress,
         notes: data.notes,
         expectedDeliveryDate:

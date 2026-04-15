@@ -61,6 +61,7 @@ export default function ContactsPage() {
     surname: '',
     email: '',
     notes: '',
+    address: '',
     source: '',
     openChat: true,
     sessionId: '',
@@ -98,6 +99,7 @@ export default function ContactsPage() {
       surname: '',
       email: '',
       notes: '',
+      address: '',
       source: '',
       openChat: true,
       sessionId: '',
@@ -125,6 +127,7 @@ export default function ContactsPage() {
         surname: form.surname.trim() || undefined,
         email: form.email.trim() || undefined,
         notes: form.notes.trim() || undefined,
+        address: form.address.trim() || undefined,
         source: form.source.trim() || undefined,
         openChat,
         sessionId: form.sessionId || undefined,
@@ -312,6 +315,15 @@ export default function ContactsPage() {
                   className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl text-sm"
                   value={form.email}
                   onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+                />
+              </label>
+              <label className="block text-sm">
+                <span className="text-gray-600 font-medium">Açık adres</span>
+                <textarea
+                  rows={2}
+                  className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl text-sm resize-y"
+                  value={form.address}
+                  onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))}
                 />
               </label>
               <label className="block text-sm">
