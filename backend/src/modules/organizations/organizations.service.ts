@@ -1,5 +1,12 @@
 import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import {
+  MENU_KEYS,
+  MenuVisibilityOverrides,
+  effectiveMenuKeys,
+  sanitizeMenuKeys,
+} from '../../common/menu-visibility';
 
 @Injectable()
 export class OrganizationsService {
@@ -143,6 +150,83 @@ export class OrganizationsService {
       where: { id: sessionId },
       data: { organizationId },
     });
+  }
+
+  private parseSettings(settings: Prisma.JsonValue | null): Record<string, unknown> {
+    if (settings && typeof settings === 'object' && !Array.isArray(settings)) {
+      return settings as Record<string, unknown>;
+    }
+    return {};
+  }
+
+  getMenuOverridesFromOrg(settings: Prisma.JsonValue | null): MenuVisibilityOverrides | null {
+    const s = this.parseSettings(settings);
+    const raw = s.menuVisibility;
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+    const o = raw as Record<string, unknown>;
+    const out: MenuVisibilityOverrides = {};
+    for (const role of ['AGENT', 'ACCOUNTANT', 'ADMIN', 'SUPERADMIN'] as const) {
+      const v = o[role];
+      if (Array.isArray(v)) {
+        const arr = v.filter((x): x is string => typeof x === 'string');
+        if (arr.length) out[role] = sanitizeMenuKeys(arr);
+      }
+    }
+    return Object.keys(out).length ? out : null;
+  }
+
+  getMenuVisibilityPayload(organizationId: string, role: string | undefined) {
+    return this.prisma.organization
+      .findUnique({
+        where: { id: organizationId },
+        select: { settings: true },
+      })
+      .then((org) => {
+        const overrides = this.getMenuOverridesFromOrg(org?.settings ?? null);
+        return {
+          allowedKeys: effectiveMenuKeys(role, overrides),
+          allKeys: [...MENU_KEYS],
+          overrides: overrides ?? undefined,
+          preview: {
+            AGENT: effectiveMenuKeys('AGENT', overrides),
+            ACCOUNTANT: effectiveMenuKeys('ACCOUNTANT', overrides),
+            ADMIN: effectiveMenuKeys('ADMIN', overrides),
+            SUPERADMIN: effectiveMenuKeys('SUPERADMIN', overrides),
+          },
+        };
+      });
+  }
+
+  async patchMenuVisibility(organizationId: string, body: MenuVisibilityOverrides) {
+    const org = await this.prisma.organization.findUnique({
+      where: { id: organizationId },
+      select: { settings: true },
+    });
+    if (!org) throw new NotFoundException('Organizasyon bulunamadı');
+    const prev = this.parseSettings(org.settings);
+    const mergedOverrides: Record<string, string[]> = {};
+    for (const role of ['AGENT', 'ACCOUNTANT', 'ADMIN', 'SUPERADMIN'] as const) {
+      if (body[role] !== undefined) {
+        mergedOverrides[role] = sanitizeMenuKeys(body[role] ?? []);
+      }
+    }
+    const prevMv = (prev.menuVisibility as Record<string, unknown> | undefined) ?? {};
+    const nextMv = { ...prevMv, ...mergedOverrides };
+    const nextSettings = { ...prev, menuVisibility: nextMv };
+    await this.prisma.organization.update({
+      where: { id: organizationId },
+      data: { settings: nextSettings as Prisma.InputJsonValue },
+    });
+    const overrides = this.getMenuOverridesFromOrg(nextSettings as Prisma.JsonValue);
+    return {
+      overrides: overrides ?? undefined,
+      preview: {
+        AGENT: effectiveMenuKeys('AGENT', overrides),
+        ACCOUNTANT: effectiveMenuKeys('ACCOUNTANT', overrides),
+        ADMIN: effectiveMenuKeys('ADMIN', overrides),
+        SUPERADMIN: effectiveMenuKeys('SUPERADMIN', overrides),
+      },
+    };
   }
 
   async getOrganizationDashboard(organizationId: string) {

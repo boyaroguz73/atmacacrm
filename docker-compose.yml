@@ -84,6 +84,8 @@ services:
       IYZICO_SECRET_KEY: ${IYZICO_SECRET_KEY:-}
       IYZICO_BASE_URL: ${IYZICO_BASE_URL:-https://sandbox-api.iyzipay.com}
       WAHA_WEBHOOK_SECRET: ${WAHA_WEBHOOK_SECRET:-}
+      # Google Shopping ürün XML (boşsa varsayılan atmacaofis TR akışı kullanılır)
+      PRODUCT_XML_FEED_URL: ${PRODUCT_XML_FEED_URL:-}
     volumes:
       - backend_uploads:/app/uploads
     depends_on:

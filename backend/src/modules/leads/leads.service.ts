@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/commo
 import { PrismaService } from '../prisma/prisma.service';
 import { LeadStatus } from '@prisma/client';
 import { TasksService } from '../tasks/tasks.service';
+import { assertLeadStatusTransition } from '../../common/lead-status-transitions';
 
 @Injectable()
 export class LeadsService {
@@ -9,6 +10,134 @@ export class LeadsService {
     private prisma: PrismaService,
     private tasksService: TasksService,
   ) {}
+
+  private readonly statusLabels: Record<string, string> = {
+    NEW: 'Yeni',
+    CONTACTED: 'İletişim Kuruldu',
+    INTERESTED: 'İlgileniyor',
+    OFFER_SENT: 'Teklif Gönderildi',
+    WON: 'Kazanıldı',
+    LOST: 'Kaybedildi',
+  };
+
+  /** Otomasyon kayıtları için: org’da ilk aktif yönetici (aktivite atanı) */
+  async resolveAutomationActingUserId(organizationId: string | null | undefined): Promise<string | null> {
+    if (!organizationId) return null;
+    const admin = await this.prisma.user.findFirst({
+      where: { organizationId, role: 'ADMIN', isActive: true },
+      select: { id: true },
+      orderBy: { createdAt: 'asc' },
+    });
+    if (admin) return admin.id;
+    const anyUser = await this.prisma.user.findFirst({
+      where: { organizationId, isActive: true },
+      select: { id: true },
+      orderBy: { createdAt: 'asc' },
+    });
+    return anyUser?.id ?? null;
+  }
+
+  /**
+   * Tek giriş noktası: durum güncelleme + aktivite + hatırlatma görevi.
+   * Otomatik yanıt ve HTTP PATCH aynı mantığı kullanır.
+   */
+  async applyLeadStatusChange(params: {
+    leadId: string;
+    to: LeadStatus;
+    userId: string | null;
+    lossReason?: string | null;
+    /** Otomasyonda LOST için neden zorunlu tutulmaz */
+    requireLossReason?: boolean;
+  }) {
+    const lead = await this.prisma.lead.findUnique({
+      where: { id: params.leadId },
+      include: { contact: true },
+    });
+    if (!lead) throw new NotFoundException('Lead bulunamadı');
+
+    assertLeadStatusTransition(lead.status, params.to, {
+      lossReason: params.lossReason,
+      requireLossReason: params.requireLossReason,
+    });
+
+    const actingUserId =
+      params.userId ??
+      (await this.resolveAutomationActingUserId(lead.contact.organizationId));
+
+    const patch: {
+      status: LeadStatus;
+      closedAt: Date | null;
+      lossReason?: string | null;
+    } = {
+      status: params.to,
+      closedAt:
+        params.to === LeadStatus.WON || params.to === LeadStatus.LOST ? new Date() : null,
+    };
+    if (params.to === LeadStatus.LOST) {
+      patch.lossReason = params.lossReason?.trim() || null;
+    } else {
+      patch.lossReason = null;
+    }
+
+    const updated = await this.prisma.lead.update({
+      where: { id: params.leadId },
+      data: patch,
+      include: { contact: true },
+    });
+
+    if (actingUserId) {
+      let desc = `Lead durumu "${this.statusLabels[params.to] || params.to}" olarak değiştirildi`;
+      if (params.to === LeadStatus.LOST && patch.lossReason) {
+        desc += ` (Neden: ${patch.lossReason})`;
+      }
+      await this.prisma.activity.create({
+        data: {
+          leadId: params.leadId,
+          userId: actingUserId,
+          type: 'STATUS_CHANGE',
+          description: desc,
+        },
+      });
+
+      const followUpStatuses: LeadStatus[] = [
+        LeadStatus.CONTACTED,
+        LeadStatus.INTERESTED,
+        LeadStatus.OFFER_SENT,
+      ];
+      if (followUpStatuses.includes(params.to)) {
+        await this.tasksService.createFollowUpReminder({
+          userId: actingUserId,
+          contactId: updated.contactId,
+          contactName: updated.contact.name || updated.contact.phone,
+          trigger: params.to,
+          delayHours: 24,
+        });
+      }
+    }
+
+    return updated;
+  }
+
+  /** Otomatik yanıt akışı: contactId üzerinden lead bul/oluştur ve durumu uygula */
+  async setLeadStatusForContact(params: {
+    contactId: string;
+    status: LeadStatus;
+    lossReason?: string | null;
+  }) {
+    let lead = await this.prisma.lead.findUnique({ where: { contactId: params.contactId } });
+    if (!lead) {
+      lead = await this.prisma.lead.create({
+        data: { contactId: params.contactId, status: LeadStatus.NEW },
+      });
+    }
+    return this.applyLeadStatusChange({
+      leadId: lead.id,
+      to: params.status,
+      userId: null,
+      lossReason: params.lossReason,
+      requireLossReason: false,
+    });
+  }
 
   async create(
     data: {
@@ -52,17 +181,17 @@ export class LeadsService {
     organizationId?: string;
   }) {
     const { status, search, from, to, page = 1, limit = 50, organizationId } = params;
-    const where: any = {};
+    const where: Record<string, unknown> = {};
 
     if (status) where.status = status;
 
     if (from || to) {
       where.createdAt = {};
-      if (from) where.createdAt.gte = new Date(from);
-      if (to) where.createdAt.lte = new Date(to);
+      if (from) (where.createdAt as Record<string, Date>).gte = new Date(from);
+      if (to) (where.createdAt as Record<string, Date>).lte = new Date(to);
     }
 
-    const contactFilter: any = {};
+    const contactFilter: Record<string, unknown> = {};
     if (organizationId) contactFilter.organizationId = organizationId;
     if (search) {
       contactFilter.OR = [
@@ -103,54 +232,19 @@ export class LeadsService {
     return lead;
   }
 
-  async updateStatus(id: string, status: LeadStatus, userId: string) {
-    const lead = await this.prisma.lead.update({
-      where: { id },
-      data: {
-        status,
-        closedAt:
-          status === LeadStatus.WON || status === LeadStatus.LOST
-            ? new Date()
-            : null,
-      },
-      include: { contact: true },
+  async updateStatus(
+    id: string,
+    status: LeadStatus,
+    userId: string,
+    lossReason?: string | null,
+  ) {
+    return this.applyLeadStatusChange({
+      leadId: id,
+      to: status,
+      userId,
+      lossReason,
+      requireLossReason: true,
     });
-
-    const statusLabels: Record<string, string> = {
-      NEW: 'Yeni',
-      CONTACTED: 'İletişim Kuruldu',
-      INTERESTED: 'İlgileniyor',
-      OFFER_SENT: 'Teklif Gönderildi',
-      WON: 'Kazanıldı',
-      LOST: 'Kaybedildi',
-    };
-
-    await this.prisma.activity.create({
-      data: {
-        leadId: id,
-        userId,
-        type: 'STATUS_CHANGE',
-        description: `Lead durumu "${statusLabels[status] || status}" olarak değiştirildi`,
-      },
-    });
-
-    const followUpStatuses: LeadStatus[] = [
-      LeadStatus.CONTACTED,
-      LeadStatus.INTERESTED,
-      LeadStatus.OFFER_SENT,
-    ];
-
-    if (followUpStatuses.includes(status)) {
-      await this.tasksService.createFollowUpReminder({
-        userId,
-        contactId: lead.contactId,
-        contactName: lead.contact.name || lead.contact.phone,
-        trigger: status,
-        delayHours: 24,
-      });
-    }
-
-    return lead;
   }
 
   async update(

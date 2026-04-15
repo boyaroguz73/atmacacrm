@@ -2,17 +2,20 @@ import { Controller, Get, Post, Patch, Param, Body, Query, UseGuards } from '@ne
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { OrdersService } from './orders.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { RolesGuard } from '../../common/guards/roles.guard';
+import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { OrderStatus } from '@prisma/client';
 
 @ApiTags('Orders')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('orders')
 export class OrdersController {
   constructor(private ordersService: OrdersService) {}
 
   @Get()
+  @Roles('AGENT')
   findAll(
     @Query('status') status?: OrderStatus,
     @Query('contactId') contactId?: string,
@@ -27,21 +30,25 @@ export class OrdersController {
   }
 
   @Get(':id')
+  @Roles('AGENT')
   findById(@Param('id') id: string) {
     return this.ordersService.findById(id);
   }
 
   @Post()
+  @Roles('AGENT')
   create(@CurrentUser('id') userId: string, @Body() body: any) {
     return this.ordersService.create(userId, body);
   }
 
   @Patch(':id/status')
+  @Roles('AGENT')
   updateStatus(@Param('id') id: string, @Body('status') status: OrderStatus) {
     return this.ordersService.updateStatus(id, status);
   }
 
   @Patch(':id')
+  @Roles('AGENT')
   updateMeta(
     @Param('id') id: string,
     @Body()

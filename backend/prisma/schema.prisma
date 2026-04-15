@@ -30,6 +30,21 @@ enum OrderStatus {
   CANCELLED
 }
 
+enum QuotePaymentMode {
+  FULL
+  DEPOSIT_50
+}
+
+enum CashDirection {
+  INCOME
+  EXPENSE
+}
+
+enum LedgerKind {
+  RECEIVABLE
+  PAYABLE
+}
+
 enum AccInvoiceStatus {
   PENDING
   SENT
@@ -41,6 +56,11 @@ enum AccInvoiceStatus {
 enum DiscountType {
   PERCENT
   AMOUNT
+}
+
+enum ProductFeedSource {
+  MANUAL
+  XML
 }
 
 enum LeadStatus {
@@ -219,6 +239,9 @@ model User {
   createdQuotes          Quote[]             @relation("QuoteCreator")
   createdOrders          SalesOrder[]        @relation("OrderCreator")
   createdAccInvoices     AccountingInvoice[] @relation("AccInvoiceCreator")
+  cashBookEntries        CashBookEntry[]
+  ledgerEntries          LedgerEntry[]
+  deliveryNotes          DeliveryNote[]
 
   @@index([organizationId])
   @@map("users")
@@ -266,6 +289,7 @@ model Contact {
   quotes             Quote[]
   orders             SalesOrder[]
   accountingInvoices AccountingInvoice[]
+  ledgerEntries      LedgerEntry[]
 
   @@index([phone])
   @@index([organizationId])
@@ -333,6 +357,8 @@ model Lead {
   value       Float?
   source      String?
   notes       String?
+  /// LOST durumunda kayıp nedeni (serbest metin)
+  lossReason  String?
   closedAt    DateTime?
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
@@ -582,10 +608,35 @@ model Product {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
+  /// Elle mi yoksa Google Shopping XML akışından mı geldi
+  productFeedSource ProductFeedSource @default(MANUAL)
+
+  // Google Merchant / Shopping RSS alanları
+  productUrl              String?
+  imageUrl                String?
+  googleCondition         String?
+  googleAvailability      String?
+  googleIdentifierExists  String?
+  /// g:price (liste fiyatı)
+  listPrice               Float?
+  /// g:sale_price
+  salePriceAmount         Float?
+  /// g:sale_price_effective_date ham metin (örn. ISO aralığı)
+  salePriceEffectiveRange String?
+  brand                   String?
+  googleProductCategory   String?
+  googleProductType       String?
+  googleCustomLabel0      String?
+  gtin                    String?
+  /// g:additional_image_link URL listesi (JSON dizi)
+  additionalImages        Json?
+  xmlSyncedAt             DateTime?
+
   quoteItems QuoteItem[]
   orderItems OrderItem[]
 
   @@index([sku])
+  @@index([productFeedSource])
   @@map("products")
 }
 
@@ -608,6 +659,11 @@ model Quote {
   deliveryDate  DateTime?
   notes         String?
   pdfUrl        String?
+  /// Kabul sonrası ödeme modeli
+  paymentMode   QuotePaymentMode @default(FULL)
+  acceptedAt    DateTime?
+  /// PDF başlığı: PROFORMA | QUOTE
+  documentKind  String       @default("PROFORMA")
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
 
@@ -660,14 +716,18 @@ model SalesOrder {
   notes                 String?
   /// Planlanan teslim tarihi; teklifteki teslim tarihinden siparişe kopyalanabilir
   expectedDeliveryDate  DateTime?
+  /// %50 ön ödemede teslim öncesi kalan tahsilat hatırlatması oluşturuldu mu
+  depositBalanceReminderSent Boolean @default(false)
   createdAt             DateTime    @default(now())
   updatedAt             DateTime    @updatedAt
 
   quote     Quote?             @relation(fields: [quoteId], references: [id], onDelete: SetNull)
   contact   Contact            @relation(fields: [contactId], references: [id], onDelete: Cascade)
   createdBy User               @relation("OrderCreator", fields: [createdById], references: [id])
-  items     OrderItem[]
-  invoice   AccountingInvoice?
+  items             OrderItem[]
+  invoice           AccountingInvoice?
+  cashBookEntries   CashBookEntry[]
+  deliveryNotes     DeliveryNote[]
 
   @@index([contactId])
   @@index([status])
@@ -718,9 +778,73 @@ model AccountingInvoice {
   quote     Quote?      @relation(fields: [quoteId], references: [id], onDelete: SetNull)
   contact   Contact     @relation(fields: [contactId], references: [id], onDelete: Cascade)
   createdBy User        @relation("AccInvoiceCreator", fields: [createdById], references: [id])
+  cashBookEntries CashBookEntry[]
 
   @@index([contactId])
   @@index([status])
   @@index([createdAt(sort: Desc)])
   @@map("accounting_invoices")
+}
+
+// ─── Manuel muhasebe (PDF / elle kayıt) ───
+
+model CashBookEntry {
+  id          String        @id @default(uuid())
+  userId      String
+  amount      Float
+  direction   CashDirection
+  description String
+  occurredAt  DateTime      @default(now())
+  orderId     String?
+  invoiceId   String?
+  pdfUrl      String?
+  createdAt   DateTime      @default(now())
+
+  user    User                 @relation(fields: [userId], references: [id])
+  order   SalesOrder?          @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  invoice AccountingInvoice? @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([occurredAt(sort: Desc)])
+  @@map("cash_book_entries")
+}
+
+model LedgerEntry {
+  id          String     @id @default(uuid())
+  userId      String
+  contactId   String?
+  kind        LedgerKind
+  title       String
+  amount      Float
+  currency    String     @default("TRY")
+  dueDate     DateTime?
+  notes       String?
+  pdfUrl      String?
+  createdAt   DateTime   @default(now())
+
+  user    User     @relation(fields: [userId], references: [id])
+  contact Contact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([contactId])
+  @@map("ledger_entries")
+}
+
+model DeliveryNote {
+  id            String   @id @default(uuid())
+  orderId       String
+  userId        String
+  noteNumber    Int      @unique @default(autoincrement())
+  shippedAt     DateTime @default(now())
+  pdfUrl        String?
+  notes         String?
+  /// Sipariş kalemlerinin anlık görüntüsü (JSON)
+  itemsSnapshot Json?
+  createdAt     DateTime @default(now())
+
+  order SalesOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  user  User       @relation(fields: [userId], references: [id])
+
+  @@index([orderId])
+  @@map("delivery_notes")
 }

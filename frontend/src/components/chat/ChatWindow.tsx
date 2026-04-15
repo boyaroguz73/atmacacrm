@@ -28,6 +28,7 @@ import {
   BookTemplate,
   Pencil,
   ListFilter,
+  ListTodo,
 } from 'lucide-react';
 import ContactPanel from './ContactPanel';
 import api, { getApiErrorMessage } from '@/lib/api';
@@ -407,6 +408,36 @@ export default function ChatWindow() {
               </span>
             )}
             <button
+              type="button"
+              onClick={async () => {
+                if (!currentUserId) {
+                  toast.error('Oturum bilgisi yok');
+                  return;
+                }
+                const due = new Date();
+                due.setHours(due.getHours() + 24);
+                const label =
+                  [contact.name, contact.surname].filter(Boolean).join(' ') ||
+                  formatPhone(contact.phone);
+                try {
+                  await api.post('/tasks', {
+                    contactId: activeConversation.contactId,
+                    title: `${label} — dönüş`,
+                    description: 'Gelen kutusundan hızlı görev (24 saat)',
+                    dueAt: due.toISOString(),
+                  });
+                  toast.success('Görev oluşturuldu');
+                } catch (err) {
+                  toast.error(getApiErrorMessage(err, 'Görev oluşturulamadı'));
+                }
+              }}
+              className="p-2 text-gray-400 hover:text-whatsapp hover:bg-green-50 rounded-lg transition-colors"
+              title="24 saat sonra dönüş görevi"
+            >
+              <ListTodo className="w-4 h-4" />
+            </button>
+            <button
+              type="button"
               onClick={async () => {
                 if (!confirm('Bu sohbeti arşivlemek istediğinize emin misiniz?')) return;
                 try {

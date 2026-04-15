@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import api from '@/lib/api';
+import Link from 'next/link';
 import {
   MessageSquare,
   Users,
@@ -38,11 +39,17 @@ interface DashboardData {
 const statusLabels = LEAD_STATUS_LABELS;
 const statusColors = LEAD_STATUS_COLORS;
 
+interface AccWidgetState {
+  tasks: { id: string; title: string; dueAt: string; contact?: { name?: string | null; phone?: string } }[];
+  invoices: { id: string; invoiceNumber: number; dueDate?: string | null; status: string; grandTotal: number }[];
+}
+
 export default function DashboardPage() {
   const router = useRouter();
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+  const [accWidgets, setAccWidgets] = useState<AccWidgetState | null>(null);
 
   useEffect(() => {
     try {
@@ -62,6 +69,48 @@ export default function DashboardPage() {
       .catch(() => setError(true))
       .finally(() => setLoading(false));
   }, [router]);
+
+  useEffect(() => {
+    if (!data) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const raw = typeof window !== 'undefined' ? localStorage.getItem('user') : null;
+        if (!raw) return;
+        const role = JSON.parse(raw).role as string;
+        if (role !== 'ACCOUNTANT') return;
+        const [tRes, iRes] = await Promise.all([
+          api.get('/tasks/my', { params: { status: 'PENDING', limit: 15 } }),
+          api.get('/accounting/invoices', { params: { limit: 100 } }),
+        ]);
+        if (cancelled) return;
+        const tasks = (tRes.data.tasks || []) as AccWidgetState['tasks'];
+        const now = Date.now();
+        const week = 7 * 86400000;
+        const invoices = (iRes.data.invoices || []).filter((inv: any) => {
+          if (!inv.dueDate) return false;
+          if (inv.status === 'PAID' || inv.status === 'CANCELLED') return false;
+          const t = new Date(inv.dueDate).getTime();
+          return t >= now && t <= now + week;
+        }) as AccWidgetState['invoices'];
+        setAccWidgets({ tasks, invoices: invoices.slice(0, 12) });
+      } catch {
+        if (!cancelled) {
+          try {
+            const raw = typeof window !== 'undefined' ? localStorage.getItem('user') : null;
+            if (raw && JSON.parse(raw).role === 'ACCOUNTANT') {
+              setAccWidgets({ tasks: [], invoices: [] });
+            }
+          } catch {
+            /* ignore */
+          }
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [data]);
 
   if (loading) {
     return (
@@ -123,6 +172,61 @@ export default function DashboardPage() {
           WhatsApp CRM genel görünüm
         </p>
       </div>
+
+      {accWidgets != null && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+          <div className="bg-white rounded-xl border border-gray-100 p-5 shadow-sm">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                <Clock className="w-5 h-5 text-whatsapp" />
+                Bekleyen görevlerim
+              </h2>
+              <Link href="/tasks" className="text-xs font-medium text-whatsapp hover:underline">
+                Tümü
+              </Link>
+            </div>
+            <ul className="space-y-2 text-sm">
+              {accWidgets.tasks.length === 0 ? (
+                <li className="text-gray-400">Bekleyen görev yok</li>
+              ) : (
+                accWidgets.tasks.map((t) => (
+                  <li key={t.id} className="flex justify-between gap-2 border-b border-gray-50 pb-2 last:border-0">
+                    <span className="text-gray-800 truncate">{t.title}</span>
+                    <span className="text-xs text-gray-400 shrink-0">
+                      {new Date(t.dueAt).toLocaleDateString('tr-TR')}
+                    </span>
+                  </li>
+                ))
+              )}
+            </ul>
+          </div>
+          <div className="bg-white rounded-xl border border-gray-100 p-5 shadow-sm">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                <TrendingUp className="w-5 h-5 text-amber-600" />
+                Vadesi yaklaşan faturalar
+              </h2>
+              <Link href="/accounting/invoices" className="text-xs font-medium text-whatsapp hover:underline">
+                Muhasebe
+              </Link>
+            </div>
+            <ul className="space-y-2 text-sm">
+              {accWidgets.invoices.length === 0 ? (
+                <li className="text-gray-400">Önümüzdeki 7 günde vadesi gelen fatura yok</li>
+              ) : (
+                accWidgets.invoices.map((inv) => (
+                  <li key={inv.id} className="flex justify-between gap-2 border-b border-gray-50 pb-2 last:border-0">
+                    <span className="font-mono text-gray-700">FTR-{String(inv.invoiceNumber).padStart(5, '0')}</span>
+                    <span className="text-xs text-gray-500">
+                      {inv.dueDate ? new Date(inv.dueDate).toLocaleDateString('tr-TR') : '—'}
+                    </span>
+                  </li>
+                ))
+              )}
+            </ul>
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
         {statCards.map((card) => (

@@ -2,6 +2,7 @@
 
 import { useChatStore } from '@/store/chat';
 import { cn, formatDate, truncate, formatPhone } from '@/lib/utils';
+import { LEAD_STATUS_LABELS, LEAD_STATUS_COLORS } from '@/lib/constants';
 import { Search, Inbox } from 'lucide-react';
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
@@ -228,8 +229,14 @@ export default function ConversationList() {
                     </span>
                   )}
                   {(conv.contact as any)?.lead && (
-                    <span className="text-[10px] bg-green-50 text-green-600 px-1.5 py-0.5 rounded">
-                      Potansiyel Müşteri
+                    <span
+                      className={cn(
+                        'text-[10px] px-1.5 py-0.5 rounded font-medium',
+                        LEAD_STATUS_COLORS[(conv.contact as any).lead.status] ||
+                          'bg-green-50 text-green-700',
+                      )}
+                    >
+                      {LEAD_STATUS_LABELS[(conv.contact as any).lead.status] || 'Potansiyel'}
                     </span>
                   )}
                 </div>

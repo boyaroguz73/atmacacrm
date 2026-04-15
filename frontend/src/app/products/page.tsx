@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import api, { getApiErrorMessage } from '@/lib/api';
 import toast from 'react-hot-toast';
 import { useAuthStore } from '@/store/auth';
@@ -14,7 +14,7 @@ import {
   ChevronLeft,
   ChevronRight,
   X,
-  FileSpreadsheet,
+  RefreshCw,
 } from 'lucide-react';
 
 const PAGE_SIZE = 20;
@@ -32,6 +32,22 @@ interface Product {
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
+  productFeedSource?: 'MANUAL' | 'XML';
+  productUrl?: string | null;
+  imageUrl?: string | null;
+  listPrice?: number | null;
+  salePriceAmount?: number | null;
+  salePriceEffectiveRange?: string | null;
+  brand?: string | null;
+  googleProductCategory?: string | null;
+  googleProductType?: string | null;
+  googleCustomLabel0?: string | null;
+  googleCondition?: string | null;
+  googleAvailability?: string | null;
+  googleIdentifierExists?: string | null;
+  gtin?: string | null;
+  additionalImages?: string[] | null;
+  xmlSyncedAt?: string | null;
 }
 
 type FormState = {
@@ -84,8 +100,7 @@ export default function ProductsPage() {
   const [form, setForm] = useState<FormState>(emptyForm);
   const [saving, setSaving] = useState(false);
   const [togglingId, setTogglingId] = useState<string | null>(null);
-  const [importing, setImporting] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [syncingXml, setSyncingXml] = useState(false);
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(searchQuery.trim()), 300);
@@ -215,27 +230,20 @@ export default function ProductsPage() {
     }
   };
 
-  const onExcelSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = '';
-    if (!file) return;
-    if (!file.name.toLowerCase().endsWith('.xlsx')) {
-      toast.error('Yalnızca .xlsx dosyası yükleyin');
-      return;
-    }
-    const fd = new FormData();
-    fd.append('file', file);
-    setImporting(true);
+  const syncXmlFeed = async () => {
+    setSyncingXml(true);
     try {
-      const { data } = await api.post<{ imported: number; updated: number; errors: string[] }>(
-        '/products/import-excel',
-        fd,
-      );
+      const { data } = await api.post<{
+        imported: number;
+        updated: number;
+        deactivated: number;
+        errors: string[];
+      }>('/products/sync-feed', {});
       const errCount = data.errors?.length ?? 0;
       toast.success(
-        `İçe aktarma tamamlandı: ${data.imported ?? 0} yeni, ${data.updated ?? 0} güncellendi${
-          errCount ? `, ${errCount} satır hatası` : ''
-        }`,
+        `XML senkron: ${data.imported ?? 0} yeni, ${data.updated ?? 0} güncellendi, ${
+          data.deactivated ?? 0
+        } akışta olmayan XML ürünü pasifleştirildi${errCount ? `, ${errCount} hata` : ''}`,
       );
       if (errCount && data.errors?.length) {
         const preview = data.errors.slice(0, 5).join(' · ');
@@ -243,9 +251,9 @@ export default function ProductsPage() {
       }
       fetchProducts();
     } catch (err: unknown) {
-      toast.error(getApiErrorMessage(err, 'Excel yüklenemedi'));
+      toast.error(getApiErrorMessage(err, 'XML senkron başarısız'));
     } finally {
-      setImporting(false);
+      setSyncingXml(false);
     }
   };
 
@@ -265,25 +273,24 @@ export default function ProductsPage() {
               <Package className="w-8 h-8 text-whatsapp" />
               Ürünler
             </h1>
-            <p className="text-sm text-gray-500 mt-1">SKU, fiyat ve stok yönetimi</p>
+            <p className="text-sm text-gray-500 mt-1">
+              SKU, fiyat ve stok; ürünler Google Shopping XML ile saatlik senkronlanır (elle eklenenler korunur).
+            </p>
           </div>
           {isAdmin ? (
             <div className="flex flex-wrap items-center gap-2">
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                className="hidden"
-                onChange={onExcelSelected}
-              />
               <button
                 type="button"
-                disabled={importing}
-                onClick={() => fileInputRef.current?.click()}
+                disabled={syncingXml}
+                onClick={() => void syncXmlFeed()}
                 className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-gray-200 bg-white text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 disabled:opacity-50 transition-colors"
               >
-                {importing ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileSpreadsheet className="w-4 h-4 text-whatsapp" />}
-                Excel içe aktar
+                {syncingXml ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="w-4 h-4 text-whatsapp" />
+                )}
+                XML senkron
               </button>
               <button
                 type="button"
@@ -322,6 +329,7 @@ export default function ProductsPage() {
                 <thead>
                   <tr className="border-b border-gray-100 bg-gray-50/80 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
                     <th className="px-4 py-3 whitespace-nowrap">SKU</th>
+                    <th className="px-4 py-3 whitespace-nowrap">Kaynak</th>
                     <th className="px-4 py-3">Ad</th>
                     <th className="px-4 py-3 whitespace-nowrap">Birim Fiyat</th>
                     <th className="px-4 py-3 whitespace-nowrap">Para Birimi</th>
@@ -334,7 +342,7 @@ export default function ProductsPage() {
                 <tbody>
                   {products.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="px-4 py-16 text-center text-gray-400">
+                      <td colSpan={9} className="px-4 py-16 text-center text-gray-400">
                         Ürün bulunamadı
                       </td>
                     </tr>
@@ -342,6 +350,17 @@ export default function ProductsPage() {
                     products.map((p) => (
                       <tr key={p.id} className="border-b border-gray-50 hover:bg-gray-50/60 transition-colors">
                         <td className="px-4 py-3 font-mono text-xs text-gray-800">{p.sku}</td>
+                        <td className="px-4 py-3">
+                          <span
+                            className={`inline-flex px-2 py-0.5 rounded-md text-[10px] font-semibold uppercase tracking-wide ${
+                              p.productFeedSource === 'XML'
+                                ? 'bg-blue-100 text-blue-800'
+                                : 'bg-gray-100 text-gray-600'
+                            }`}
+                          >
+                            {p.productFeedSource === 'XML' ? 'XML' : 'El'}
+                          </span>
+                        </td>
                         <td className="px-4 py-3 font-medium text-gray-900 max-w-[200px] truncate" title={p.name}>
                           {p.name}
                         </td>
@@ -486,6 +505,119 @@ export default function ProductsPage() {
                   className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:border-whatsapp focus:ring-1 focus:ring-whatsapp/20 resize-y"
                 />
               </div>
+              {editingProduct?.productFeedSource === 'XML' ? (
+                <div className="rounded-xl border border-blue-100 bg-blue-50/60 p-3 text-xs text-gray-700 space-y-2">
+                  <p className="font-semibold text-blue-900">XML akış alanları (salt okunur)</p>
+                  <dl className="grid grid-cols-1 gap-1.5">
+                    {editingProduct.productUrl ? (
+                      <div>
+                        <dt className="text-gray-500">g:link</dt>
+                        <dd>
+                          <a
+                            href={editingProduct.productUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-whatsapp hover:underline break-all"
+                          >
+                            {editingProduct.productUrl}
+                          </a>
+                        </dd>
+                      </div>
+                    ) : null}
+                    {editingProduct.imageUrl ? (
+                      <div>
+                        <dt className="text-gray-500">g:image_link</dt>
+                        <dd className="break-all">{editingProduct.imageUrl}</dd>
+                      </div>
+                    ) : null}
+                    {editingProduct.listPrice != null ? (
+                      <div>
+                        <dt className="text-gray-500">g:price (liste)</dt>
+                        <dd>
+                          {formatMoney(editingProduct.listPrice, editingProduct.currency)}
+                        </dd>
+                      </div>
+                    ) : null}
+                    {editingProduct.salePriceAmount != null ? (
+                      <div>
+                        <dt className="text-gray-500">g:sale_price</dt>
+                        <dd>
+                          {formatMoney(editingProduct.salePriceAmount, editingProduct.currency)}
+                        </dd>
+                      </div>
+                    ) : null}
+                    {editingProduct.salePriceEffectiveRange ? (
+                      <div>
+                        <dt className="text-gray-500">g:sale_price_effective_date</dt>
+                        <dd className="break-all">{editingProduct.salePriceEffectiveRange}</dd>
+                      </div>
+                    ) : null}
+                    {editingProduct.googleCondition ? (
+                      <div>
+                        <dt className="text-gray-500">g:condition</dt>
+                        <dd>{editingProduct.googleCondition}</dd>
+                      </div>
+                    ) : null}
+                    {editingProduct.googleAvailability ? (
+                      <div>
+                        <dt className="text-gray-500">g:availability</dt>
+                        <dd>{editingProduct.googleAvailability}</dd>
+                      </div>
+                    ) : null}
+                    {editingProduct.googleIdentifierExists ? (
+                      <div>
+                        <dt className="text-gray-500">g:identifier_exists</dt>
+                        <dd>{editingProduct.googleIdentifierExists}</dd>
+                      </div>
+                    ) : null}
+                    {editingProduct.brand ? (
+                      <div>
+                        <dt className="text-gray-500">g:brand</dt>
+                        <dd>{editingProduct.brand}</dd>
+                      </div>
+                    ) : null}
+                    {editingProduct.googleProductCategory ? (
+                      <div>
+                        <dt className="text-gray-500">g:google_product_category</dt>
+                        <dd>{editingProduct.googleProductCategory}</dd>
+                      </div>
+                    ) : null}
+                    {editingProduct.googleProductType ? (
+                      <div>
+                        <dt className="text-gray-500">g:product_type</dt>
+                        <dd>{editingProduct.googleProductType}</dd>
+                      </div>
+                    ) : null}
+                    {editingProduct.googleCustomLabel0 ? (
+                      <div>
+                        <dt className="text-gray-500">g:custom_label_0</dt>
+                        <dd>{editingProduct.googleCustomLabel0}</dd>
+                      </div>
+                    ) : null}
+                    {editingProduct.gtin ? (
+                      <div>
+                        <dt className="text-gray-500">g:gtin</dt>
+                        <dd>{editingProduct.gtin}</dd>
+                      </div>
+                    ) : null}
+                    {Array.isArray(editingProduct.additionalImages) &&
+                    editingProduct.additionalImages.length > 0 ? (
+                      <div>
+                        <dt className="text-gray-500">g:additional_image_link</dt>
+                        <dd className="text-gray-600">
+                          {editingProduct.additionalImages.length} ek görsel URL
+                        </dd>
+                      </div>
+                    ) : null}
+                    {editingProduct.xmlSyncedAt ? (
+                      <div>
+                        <dt className="text-gray-500">Son XML senkron</dt>
+                        <dd>{new Date(editingProduct.xmlSyncedAt).toLocaleString('tr-TR')}</dd>
+                      </div>
+                    ) : null}
+                  </dl>
+                </div>
+              ) : null}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-medium text-gray-500 mb-1">Birim</label>

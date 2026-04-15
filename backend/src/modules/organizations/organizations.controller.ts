@@ -92,6 +92,22 @@ export class OrganizationsController {
     return { logo: logoUrl };
   }
 
+  /** Geçerli kullanıcı rolü için menüde gösterilecek üst seviye anahtarlar */
+  @Get('my/menu-visibility')
+  @Roles('AGENT')
+  async getMyMenuVisibility(@Req() req: any) {
+    const orgId = await this.resolveMyOrgId(req);
+    return this.orgService.getMenuVisibilityPayload(orgId, req.user?.role);
+  }
+
+  /** Menü görünürlüğü (rol başına izin verilen anahtar listesi); boş dizi = varsayılan */
+  @Patch('my/menu-visibility')
+  @Roles('ADMIN')
+  async patchMyMenuVisibility(@Req() req: any, @Body() body: Record<string, string[] | undefined>) {
+    const orgId = await this.resolveMyOrgId(req);
+    return this.orgService.patchMenuVisibility(orgId, body as any);
+  }
+
   // ===== SUPERADMIN endpoints (tüm organizasyonlar) =====
 
   @Get()

@@ -233,8 +233,18 @@ export default function ContactPanel({
 
   const updateLeadStatus = async (status: string) => {
     if (!lead) return;
+    let lossReason: string | undefined;
+    if (status === 'LOST') {
+      const r = window.prompt('Kayıp nedeni (zorunlu, en az 2 karakter):');
+      if (r === null) return;
+      if (r.trim().length < 2) {
+        toast.error('Kayıp nedeni en az 2 karakter olmalı');
+        return;
+      }
+      lossReason = r.trim();
+    }
     try {
-      await api.patch(`/leads/${lead.id}/status`, { status });
+      await api.patch(`/leads/${lead.id}/status`, { status, lossReason });
       toast.success('Durum güncellendi');
       fetchContact();
     } catch {

@@ -1,20 +1,31 @@
 import {
-  Controller, Get, Post, Patch, Delete, Param, Body, Query,
-  UseGuards, UseInterceptors, UploadedFile, BadRequestException,
+  Controller,
+  Get,
+  Post,
+  Patch,
+  Delete,
+  Param,
+  Body,
+  Query,
+  UseGuards,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
+import { ConfigService } from '@nestjs/config';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { ProductsService } from './products.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { DEFAULT_PRODUCT_XML_FEED_URL } from './product-feed.constants';
 
 @ApiTags('Products')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard)
 @Controller('products')
 export class ProductsController {
-  constructor(private productsService: ProductsService) {}
+  constructor(
+    private productsService: ProductsService,
+    private config: ConfigService,
+  ) {}
 
   @Get()
   findAll(
@@ -39,10 +50,19 @@ export class ProductsController {
   @Post()
   @UseGuards(RolesGuard)
   @Roles('ADMIN')
-  create(@Body() body: {
-    sku: string; name: string; description?: string; unit?: string;
-    unitPrice: number; currency?: string; vatRate?: number; stock?: number;
-  }) {
+  create(
+    @Body()
+    body: {
+      sku: string;
+      name: string;
+      description?: string;
+      unit?: string;
+      unitPrice: number;
+      currency?: string;
+      vatRate?: number;
+      stock?: number;
+    },
+  ) {
     return this.productsService.create(body);
   }
 
@@ -60,13 +80,13 @@ export class ProductsController {
     return this.productsService.remove(id);
   }
 
-  @Post('import-excel')
+  /** Google Shopping XML akışını hemen çek ve ürünleri güncelle (cron ile aynı mantık) */
+  @Post('sync-feed')
   @UseGuards(RolesGuard)
   @Roles('ADMIN')
-  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 10 * 1024 * 1024 } }))
-  async importExcel(@UploadedFile() file: Express.Multer.File) {
-    if (!file) throw new BadRequestException('Dosya yüklenmedi');
-    if (!file.originalname.match(/\.xlsx?$/i)) throw new BadRequestException('Sadece .xlsx dosyaları kabul edilir');
-    return this.productsService.importExcel(file.buffer);
+  syncFeed(@Body() body?: { url?: string }) {
+    const fromEnv = this.config.get<string>('PRODUCT_XML_FEED_URL')?.trim();
+    const url = (body?.url && body.url.trim()) || fromEnv || DEFAULT_PRODUCT_XML_FEED_URL;
+    return this.productsService.syncFromGoogleShoppingXml(url);
   }
 }

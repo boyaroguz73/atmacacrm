@@ -3,7 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { PdfService } from '../pdf/pdf.service';
 import { WahaService } from '../waha/waha.service';
 import { MailService } from '../mail/mail.service';
-import { QuoteStatus, DiscountType } from '@prisma/client';
+import { Prisma, QuoteStatus, DiscountType, QuotePaymentMode } from '@prisma/client';
 import { join } from 'path';
 import { readFileSync, existsSync } from 'fs';
 import { normalizeWhatsappChatId } from '../../common/whatsapp-chat-id';
@@ -166,11 +166,25 @@ export class QuotesService {
     return quote;
   }
 
-  async updateStatus(id: string, status: QuoteStatus) {
-    await this.findById(id);
+  async updateStatus(
+    id: string,
+    dto: { status: QuoteStatus; paymentMode?: QuotePaymentMode; documentKind?: string },
+  ) {
+    const q = await this.findById(id);
+    const prevStatus = q.status;
+    const data: Prisma.QuoteUpdateInput = { status: dto.status };
+    if (dto.documentKind === 'PROFORMA' || dto.documentKind === 'QUOTE') {
+      data.documentKind = dto.documentKind;
+    }
+    if (dto.status === QuoteStatus.ACCEPTED) {
+      data.acceptedAt = new Date();
+      if (dto.paymentMode) data.paymentMode = dto.paymentMode;
+    } else if (prevStatus === QuoteStatus.ACCEPTED) {
+      data.acceptedAt = null;
+    }
     return this.prisma.quote.update({
       where: { id },
-      data: { status },
+      data,
       include: this.includeRelations,
     });
   }
@@ -178,13 +192,19 @@ export class QuotesService {
   /** Geçerlilik, teslim ve notlar — kalemleri değiştirmez; PDF varsa yeniden üretilmelidir. */
   async updateMeta(
     id: string,
-    data: { validUntil?: string | null; deliveryDate?: string | null; notes?: string | null },
+    data: {
+      validUntil?: string | null;
+      deliveryDate?: string | null;
+      notes?: string | null;
+      documentKind?: string | null;
+    },
   ) {
     await this.findById(id);
     const patch: {
       validUntil?: Date | null;
       deliveryDate?: Date | null;
       notes?: string | null;
+      documentKind?: string;
     } = {};
     if ('validUntil' in data) {
       const v = data.validUntil;
@@ -197,6 +217,10 @@ export class QuotesService {
         v == null || String(v).trim() === '' ? null : new Date(String(v));
     }
     if ('notes' in data) patch.notes = data.notes == null ? null : String(data.notes);
+    if ('documentKind' in data && data.documentKind != null && data.documentKind !== '') {
+      const dk = String(data.documentKind).toUpperCase();
+      if (dk === 'PROFORMA' || dk === 'QUOTE') patch.documentKind = dk;
+    }
 
     return this.prisma.quote.update({
       where: { id },
@@ -210,8 +234,12 @@ export class QuotesService {
     const c = quote.contact;
     const fmt = (d: Date | null) => d ? new Date(d).toLocaleDateString('tr-TR') : undefined;
 
+    const docKind =
+      quote.documentKind === 'QUOTE' ? 'QUOTE' : 'PROFORMA';
+    const title = docKind === 'QUOTE' ? 'SATIŞ TEKLİFİ' : 'PROFORMA TEKLİF';
+
     const pdfUrl = await this.pdfService.generateQuotePdf({
-      title: 'PROFORMA TEKLİF',
+      title,
       documentNumber: `TKL-${String(quote.quoteNumber).padStart(5, '0')}`,
       date: new Date(quote.createdAt).toLocaleDateString('tr-TR'),
       validUntil: fmt(quote.validUntil),
@@ -289,7 +317,7 @@ export class QuotesService {
       }
     }
 
-    await this.updateStatus(id, QuoteStatus.SENT);
+    await this.updateStatus(id, { status: QuoteStatus.SENT });
     return { message: 'Teklif gönderildi', pdfUrl };
   }
 
@@ -300,6 +328,13 @@ export class QuotesService {
     const existing = await this.prisma.salesOrder.findUnique({ where: { quoteId: id } });
     if (existing) throw new BadRequestException('Bu teklif zaten siparişe dönüştürülmüş');
 
+    const noteParts: string[] = [];
+    if (quote.paymentMode === QuotePaymentMode.DEPOSIT_50) {
+      noteParts.push('Ödeme planı: %50 ön ödeme (kalan tutar teslim öncesi tahsil edilecek).');
+    }
+    if (quote.notes) noteParts.push(String(quote.notes));
+    const mergedNotes = noteParts.length ? noteParts.join('\n\n') : undefined;
+
     const order = await this.prisma.salesOrder.create({
       data: {
         quoteId: id,
@@ -309,6 +344,8 @@ export class QuotesService {
         subtotal: quote.subtotal,
         vatTotal: quote.vatTotal,
         grandTotal: quote.grandTotal,
+        notes: mergedNotes,
+        depositBalanceReminderSent: false,
         expectedDeliveryDate: quote.deliveryDate ?? undefined,
         items: {
           create: quote.items.map((item) => ({

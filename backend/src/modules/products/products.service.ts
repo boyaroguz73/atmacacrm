@@ -1,6 +1,89 @@
 import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import * as XLSX from 'xlsx';
+import { Prisma, ProductFeedSource } from '@prisma/client';
+import { XMLParser } from 'fast-xml-parser';
+import axios from 'axios';
+
+function normalizeText(v: unknown): string {
+  if (v == null) return '';
+  if (typeof v === 'string') return v.trim();
+  if (typeof v === 'number' || typeof v === 'boolean') return String(v).trim();
+  if (Array.isArray(v)) return normalizeText(v[0]);
+  if (typeof v === 'object') {
+    const o = v as Record<string, unknown>;
+    if (typeof o['#text'] === 'string') return o['#text'].trim();
+    if (typeof o['__text'] === 'string') return o['__text'].trim();
+  }
+  return '';
+}
+
+/** Önek alanı: namespace kaldırılmış veya g: önekli anahtarlar */
+function field(item: Record<string, unknown>, ...keys: string[]): string {
+  for (const k of keys) {
+    const t = normalizeText(item[k]);
+    if (t !== '') return t;
+  }
+  return '';
+}
+
+function parseGoogleMoney(raw: string): { amount: number; currency: string } {
+  const s = (raw || '').trim();
+  if (!s) return { amount: 0, currency: 'TRY' };
+  const parts = s.split(/\s+/).filter(Boolean);
+  const currency = parts.length > 1 ? parts[parts.length - 1].toUpperCase() : 'TRY';
+  const numPart = parts.length > 1 ? parts.slice(0, -1).join(' ') : parts[0];
+  const amount = parseFloat(String(numPart).replace(',', '.'));
+  return { amount: Number.isFinite(amount) ? amount : 0, currency };
+}
+
+function saleWindowActive(rangeRaw: string | null | undefined, now: Date): boolean {
+  const s = (rangeRaw ?? '').trim();
+  if (!s) return true;
+  const parts = s.split('/');
+  if (parts.length < 2) return true;
+  const start = new Date(parts[0].trim());
+  const end = new Date(parts[1].trim());
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return true;
+  return now >= start && now <= end;
+}
+
+function collectAdditionalImages(item: Record<string, unknown>): string[] {
+  const urls: string[] = [];
+  for (const [k, v] of Object.entries(item)) {
+    if (!k.includes('additional_image_link')) continue;
+    if (Array.isArray(v)) {
+      for (const x of v) {
+        const u = normalizeText(x);
+        if (u) urls.push(u);
+      }
+    } else {
+      const u = normalizeText(v);
+      if (u) urls.push(u);
+    }
+  }
+  return urls;
+}
+
+function extractItems(parsed: unknown): Record<string, unknown>[] {
+  const p = parsed as Record<string, unknown>;
+  const rss = (p.rss ?? p) as Record<string, unknown>;
+  const channel = (rss.channel ?? rss) as Record<string, unknown>;
+  const items = channel.item;
+  if (items == null) return [];
+  return Array.isArray(items) ? (items as Record<string, unknown>[]) : [items as Record<string, unknown>];
+}
+
+function stockFromAvailability(av: string): number | null {
+  const a = av.toLowerCase();
+  if (a.includes('out of stock')) return 0;
+  return null;
+}
+
+function activeFromAvailability(av: string): boolean {
+  const a = av.toLowerCase();
+  if (a.includes('out of stock')) return false;
+  return true;
+}
 
 @Injectable()
 export class ProductsService {
@@ -10,13 +93,18 @@ export class ProductsService {
 
   async findAll(params: { search?: string; page?: number; limit?: number; isActive?: boolean }) {
     const { search, page = 1, limit = 50, isActive } = params;
-    const where: any = {};
+    const where: Prisma.ProductWhereInput = {};
     if (isActive !== undefined) where.isActive = isActive;
     if (search) {
       where.OR = [
         { name: { contains: search, mode: 'insensitive' } },
         { sku: { contains: search, mode: 'insensitive' } },
         { description: { contains: search, mode: 'insensitive' } },
+        { brand: { contains: search, mode: 'insensitive' } },
+        { googleProductCategory: { contains: search, mode: 'insensitive' } },
+        { googleProductType: { contains: search, mode: 'insensitive' } },
+        { productUrl: { contains: search, mode: 'insensitive' } },
+        { gtin: { contains: search, mode: 'insensitive' } },
       ];
     }
 
@@ -49,20 +137,12 @@ export class ProductsService {
     vatRate?: number;
     stock?: number;
   }) {
-    return this.prisma.product.create({ data });
+    return this.prisma.product.create({
+      data: { ...data, productFeedSource: ProductFeedSource.MANUAL },
+    });
   }
 
-  async update(id: string, data: Partial<{
-    sku: string;
-    name: string;
-    description: string;
-    unit: string;
-    unitPrice: number;
-    currency: string;
-    vatRate: number;
-    stock: number;
-    isActive: boolean;
-  }>) {
+  async update(id: string, data: Prisma.ProductUpdateInput) {
     await this.findById(id);
     return this.prisma.product.update({ where: { id }, data });
   }
@@ -72,57 +152,198 @@ export class ProductsService {
     return this.prisma.product.delete({ where: { id } });
   }
 
-  async importExcel(buffer: Buffer): Promise<{ imported: number; updated: number; errors: string[] }> {
-    const workbook = XLSX.read(buffer, { type: 'buffer' });
-    const sheet = workbook.Sheets[workbook.SheetNames[0]];
-    if (!sheet) throw new BadRequestException('Excel dosyasında sayfa bulunamadı');
+  /**
+   * Google Shopping RSS 2.0 (g: namespace) ürün akışını çeker; SKU = g:id ile upsert.
+   * Akışta artık bulunmayan XML kaynaklı ürünler pasifleştirilir (MANUAL ürünlere dokunulmaz).
+   */
+  async syncFromGoogleShoppingXml(feedUrl: string): Promise<{
+    imported: number;
+    updated: number;
+    deactivated: number;
+    errors: string[];
+  }> {
+    if (!feedUrl?.trim()) throw new BadRequestException('XML feed URL gerekli');
 
-    const rows = XLSX.utils.sheet_to_json<Record<string, any>>(sheet);
+    let xml: string;
+    try {
+      const res = await axios.get<string>(feedUrl.trim(), {
+        responseType: 'text',
+        timeout: 180_000,
+        maxContentLength: 50 * 1024 * 1024,
+        headers: {
+          Accept: 'application/xml, text/xml, */*',
+          'User-Agent': 'AtmacaCRM-ProductSync/1.0',
+        },
+        validateStatus: (s) => s >= 200 && s < 400,
+      });
+      xml = typeof res.data === 'string' ? res.data : String(res.data);
+    } catch (e: unknown) {
+      const msg = axios.isAxiosError(e)
+        ? `${e.message}${e.response ? ` (HTTP ${e.response.status})` : ''}`
+        : e instanceof Error
+          ? e.message
+          : String(e);
+      throw new BadRequestException(`XML indirilemedi: ${msg}`);
+    }
+
+    const parser = new XMLParser({
+      ignoreAttributes: true,
+      removeNSPrefix: true,
+      trimValues: false,
+      isArray: (tagName) => ['item', 'additional_image_link'].includes(String(tagName)),
+    });
+
+    let parsed: unknown;
+    try {
+      parsed = parser.parse(xml);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      throw new BadRequestException(`XML ayrıştırılamadı: ${msg}`);
+    }
+
+    const items = extractItems(parsed);
+    const now = new Date();
+    const seenSkus = new Set<string>();
     let imported = 0;
     let updated = 0;
     const errors: string[] = [];
 
-    for (let i = 0; i < rows.length; i++) {
-      const row = rows[i];
-      const sku = String(row.SKU || row.sku || row['Stok Kodu'] || '').trim();
-      const name = String(row.Name || row.name || row['Ürün Adı'] || row['Ad'] || '').trim();
-      const unitPrice = parseFloat(row.Price || row.price || row['Fiyat'] || row.unitPrice || '0');
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      const sku = field(item, 'id', 'g:id');
+      const name = field(item, 'title', 'g:title');
+      const description = field(item, 'description', 'g:description') || null;
+      const productUrl = field(item, 'link', 'g:link') || null;
+      const imageUrl = field(item, 'image_link', 'g:image_link') || null;
+      const googleCondition = field(item, 'condition', 'g:condition') || null;
+      const googleAvailability = field(item, 'availability', 'g:availability') || null;
+      const googleIdentifierExists = field(item, 'identifier_exists', 'g:identifier_exists') || null;
+      const brand = field(item, 'brand', 'g:brand') || null;
+      const googleProductCategory =
+        field(item, 'google_product_category', 'g:google_product_category') || null;
+      const googleProductType = field(item, 'product_type', 'g:product_type') || null;
+      const googleCustomLabel0 = field(item, 'custom_label_0', 'g:custom_label_0') || null;
+      const gtin = field(item, 'gtin', 'g:gtin') || null;
+      const salePriceEffectiveRange =
+        field(item, 'sale_price_effective_date', 'g:sale_price_effective_date') || null;
+
+      const listParsed = parseGoogleMoney(field(item, 'price', 'g:price'));
+      const saleParsed = parseGoogleMoney(field(item, 'sale_price', 'g:sale_price'));
+
+      const listPrice = listParsed.amount > 0 ? listParsed.amount : null;
+      const salePriceAmount = saleParsed.amount > 0 ? saleParsed.amount : null;
+      const currency = listParsed.currency || saleParsed.currency || 'TRY';
+
+      const useSale =
+        salePriceAmount != null &&
+        salePriceAmount > 0 &&
+        saleWindowActive(salePriceEffectiveRange, now);
+      const unitPrice = useSale && salePriceAmount != null ? salePriceAmount : listParsed.amount || saleParsed.amount || 0;
+
+      const stock = googleAvailability ? stockFromAvailability(googleAvailability) : null;
+      const isActive = googleAvailability ? activeFromAvailability(googleAvailability) : true;
+
+      const additionalImages = collectAdditionalImages(item);
+      const additionalImagesJson = additionalImages as Prisma.InputJsonValue;
 
       if (!sku || !name) {
-        errors.push(`Satır ${i + 2}: SKU veya ad eksik`);
+        errors.push(`Öğe ${i + 1}: id veya title eksik`);
+        continue;
+      }
+
+      seenSkus.add(sku);
+
+      const existingFull = await this.prisma.product.findUnique({ where: { sku } });
+      if (existingFull?.productFeedSource === ProductFeedSource.MANUAL) {
+        this.logger.debug(`XML sync: SKU ${sku} elle oluşturulmuş, akış satırı atlandı`);
         continue;
       }
 
       try {
-        const result = await this.prisma.product.upsert({
+        const existing = await this.prisma.product.findUnique({
+          where: { sku },
+          select: { id: true },
+        });
+
+        await this.prisma.product.upsert({
           where: { sku },
           create: {
             sku,
             name,
-            description: row.Description || row.description || row['Açıklama'] || undefined,
-            unit: row.Unit || row.unit || row['Birim'] || 'Adet',
-            unitPrice: isNaN(unitPrice) ? 0 : unitPrice,
-            currency: row.Currency || row.currency || row['Para Birimi'] || 'TRY',
-            vatRate: parseInt(row.VAT || row.vat || row['KDV'] || '20') || 20,
-            stock: row.Stock != null ? parseInt(row.Stock || row.stock || row['Stok'] || '0') : undefined,
+            description,
+            unit: 'Adet',
+            unitPrice,
+            currency,
+            vatRate: 20,
+            stock,
+            isActive,
+            productFeedSource: ProductFeedSource.XML,
+            productUrl,
+            imageUrl,
+            googleCondition,
+            googleAvailability,
+            googleIdentifierExists,
+            listPrice,
+            salePriceAmount,
+            salePriceEffectiveRange,
+            brand,
+            googleProductCategory,
+            googleProductType,
+            googleCustomLabel0,
+            gtin,
+            additionalImages: additionalImagesJson,
+            xmlSyncedAt: now,
           },
           update: {
             name,
-            description: row.Description || row.description || row['Açıklama'] || undefined,
-            unitPrice: isNaN(unitPrice) ? undefined : unitPrice,
-            currency: row.Currency || row.currency || row['Para Birimi'] || undefined,
-            vatRate: row.VAT != null ? parseInt(row.VAT || row.vat || row['KDV'] || '20') : undefined,
-            stock: row.Stock != null ? parseInt(row.Stock || row.stock || row['Stok'] || '0') : undefined,
+            description,
+            unitPrice,
+            currency,
+            stock,
+            isActive,
+            productFeedSource: ProductFeedSource.XML,
+            productUrl,
+            imageUrl,
+            googleCondition,
+            googleAvailability,
+            googleIdentifierExists,
+            listPrice,
+            salePriceAmount,
+            salePriceEffectiveRange,
+            brand,
+            googleProductCategory,
+            googleProductType,
+            googleCustomLabel0,
+            gtin,
+            additionalImages: additionalImagesJson,
+            xmlSyncedAt: now,
           },
         });
-        if (result.createdAt.getTime() === result.updatedAt.getTime()) imported++;
+
+        if (!existing) imported++;
         else updated++;
-      } catch (err: any) {
-        errors.push(`Satır ${i + 2} (${sku}): ${err.message}`);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        errors.push(`SKU ${sku}: ${msg}`);
       }
     }
 
-    this.logger.log(`Excel import: ${imported} yeni, ${updated} güncellendi, ${errors.length} hata`);
-    return { imported, updated, errors };
+    let deactivated = 0;
+    if (seenSkus.size > 0) {
+      const res = await this.prisma.product.updateMany({
+        where: {
+          productFeedSource: ProductFeedSource.XML,
+          sku: { notIn: [...seenSkus] },
+        },
+        data: { isActive: false },
+      });
+      deactivated = res.count;
+    }
+
+    this.logger.log(
+      `XML senkron: ${imported} yeni, ${updated} güncellendi, ${deactivated} pasif, ${errors.length} hata, URL=${feedUrl.slice(0, 80)}…`,
+    );
+
+    return { imported, updated, deactivated, errors };
   }
 }

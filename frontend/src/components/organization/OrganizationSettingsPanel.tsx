@@ -15,7 +15,9 @@ import {
   ImageIcon,
   Loader2,
   ChevronLeft,
+  LayoutGrid,
 } from 'lucide-react';
+import { MENU_KEYS, MENU_KEY_LABELS } from '@/lib/menu-keys';
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL?.replace('/api', '') || 'http://localhost:3002';
 
@@ -31,11 +33,14 @@ export type OrganizationSettingsPanelProps = {
   backLabel?: string;
 };
 
+type MenuTab = 'AGENT' | 'ACCOUNTANT' | 'ADMIN';
+
 export default function OrganizationSettingsPanel({
   backHref,
   backLabel = 'Geri',
 }: OrganizationSettingsPanelProps) {
-  const { updateOrganization } = useAuthStore();
+  const { user, updateOrganization } = useAuthStore();
+  const isTenantAdmin = user?.role === 'ADMIN';
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploadingLogo, setUploadingLogo] = useState(false);
@@ -53,9 +58,43 @@ export default function OrganizationSettingsPanel({
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const [menuTab, setMenuTab] = useState<MenuTab>('AGENT');
+  const [menuSelections, setMenuSelections] = useState<Record<MenuTab, string[]>>({
+    AGENT: [],
+    ACCOUNTANT: [],
+    ADMIN: [],
+  });
+  const [menuCfgLoading, setMenuCfgLoading] = useState(false);
+  const [menuSaving, setMenuSaving] = useState(false);
+
   useEffect(() => {
     fetchOrg();
   }, []);
+
+  useEffect(() => {
+    if (!isTenantAdmin) return;
+    let cancelled = false;
+    setMenuCfgLoading(true);
+    api
+      .get<{
+        preview?: Record<string, string[]>;
+      }>('/organizations/my/menu-visibility')
+      .then(({ data }) => {
+        if (cancelled || !data?.preview) return;
+        setMenuSelections({
+          AGENT: data.preview.AGENT ?? [],
+          ACCOUNTANT: data.preview.ACCOUNTANT ?? [],
+          ADMIN: data.preview.ADMIN ?? [],
+        });
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setMenuCfgLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isTenantAdmin]);
 
   const fetchOrg = async () => {
     try {
@@ -138,6 +177,32 @@ export default function OrganizationSettingsPanel({
     } finally {
       setUploadingLogo(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const toggleMenuKey = (key: string) => {
+    setMenuSelections((prev) => {
+      const cur = new Set(prev[menuTab]);
+      if (cur.has(key)) cur.delete(key);
+      else cur.add(key);
+      return { ...prev, [menuTab]: Array.from(cur) };
+    });
+  };
+
+  const saveMenuVisibility = async () => {
+    setMenuSaving(true);
+    try {
+      await api.patch('/organizations/my/menu-visibility', {
+        AGENT: menuSelections.AGENT,
+        ACCOUNTANT: menuSelections.ACCOUNTANT,
+        ADMIN: menuSelections.ADMIN,
+      });
+      window.dispatchEvent(new Event('crm-menu-visibility-changed'));
+      toast.success('Menü görünürlüğü kaydedildi');
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'Menü ayarları kaydedilemedi');
+    } finally {
+      setMenuSaving(false);
     }
   };
 
@@ -352,6 +417,70 @@ export default function OrganizationSettingsPanel({
           </div>
         </div>
       </div>
+
+      {isTenantAdmin ? (
+        <div className="bg-white border rounded-xl p-5 space-y-4">
+          <div className="flex items-center gap-2">
+            <LayoutGrid className="w-5 h-5 text-gray-400" />
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">Menü görünürlüğü</h2>
+              <p className="text-xs text-gray-500 mt-0.5">
+                Rol başına hangi ana menü modüllerinin görüneceğini seçin. Boş liste göndermek varsayılanlara döner.
+              </p>
+            </div>
+          </div>
+          {menuCfgLoading ? (
+            <div className="flex justify-center py-6">
+              <Loader2 className="w-6 h-6 animate-spin text-whatsapp" />
+            </div>
+          ) : (
+            <>
+              <div className="flex flex-wrap gap-2">
+                {(['AGENT', 'ACCOUNTANT', 'ADMIN'] as MenuTab[]).map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => setMenuTab(t)}
+                    className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                      menuTab === t ? 'bg-whatsapp text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    {t === 'AGENT' ? 'Temsilci' : t === 'ACCOUNTANT' ? 'Muhasebe' : 'Yönetici'}
+                  </button>
+                ))}
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-64 overflow-y-auto border border-gray-100 rounded-lg p-3">
+                {MENU_KEYS.filter((k) => k !== 'superadmin').map((key) => {
+                  const checked = menuSelections[menuTab].includes(key);
+                  return (
+                    <label
+                      key={`${menuTab}-${key}`}
+                      className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => toggleMenuKey(key)}
+                        className="rounded border-gray-300 text-whatsapp focus:ring-whatsapp"
+                      />
+                      <span>{MENU_KEY_LABELS[key] || key}</span>
+                    </label>
+                  );
+                })}
+              </div>
+              <button
+                type="button"
+                onClick={() => void saveMenuVisibility()}
+                disabled={menuSaving}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-gray-900 text-white text-sm font-medium hover:bg-gray-800 disabled:opacity-50"
+              >
+                {menuSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                Menü ayarlarını kaydet
+              </button>
+            </>
+          )}
+        </div>
+      ) : null}
 
       <div className="flex justify-end">
         <button

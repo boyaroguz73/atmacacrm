@@ -280,23 +280,23 @@ export default function NewQuotePage() {
     n.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   return (
-    <div className="p-4 md:p-6 max-w-6xl mx-auto pb-24">
-      <div className="flex items-center gap-3 mb-6">
+    <div className="p-4 md:p-8 max-w-6xl mx-auto pb-28">
+      <div className="flex items-center gap-4 mb-8 rounded-2xl border border-gray-100 bg-white/90 shadow-sm px-4 py-4 md:px-6">
         <button
           type="button"
           onClick={() => router.push('/quotes')}
-          className="p-2 rounded-xl border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors"
+          className="p-2.5 rounded-xl border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors shrink-0"
           aria-label="Geri"
         >
           <ArrowLeft className="w-5 h-5" />
         </button>
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Yeni Teklif</h1>
-          <p className="text-sm text-gray-500 mt-0.5">Kişi, ürün kalemleri ve koşullar</p>
+        <div className="min-w-0">
+          <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Yeni Teklif</h1>
+          <p className="text-sm text-gray-500 mt-1">Kişi, ürün kalemleri ve koşullar — mobilde tablo yatay kayar.</p>
         </div>
       </div>
 
-      <form onSubmit={handleSubmit} className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+      <form onSubmit={handleSubmit} className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:gap-8 items-start">
         <div className="lg:col-span-2 space-y-6">
           {/* Kişi */}
           <section className="bg-white rounded-xl border border-gray-100 shadow-sm p-5 space-y-3">

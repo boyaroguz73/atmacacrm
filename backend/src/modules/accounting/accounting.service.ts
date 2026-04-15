@@ -3,7 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { PdfService } from '../pdf/pdf.service';
 import { WahaService } from '../waha/waha.service';
 import { MailService } from '../mail/mail.service';
-import { AccInvoiceStatus } from '@prisma/client';
+import { AccInvoiceStatus, CashDirection, LedgerKind, Prisma } from '@prisma/client';
 import { join } from 'path';
 import { readFileSync, existsSync } from 'fs';
 import { normalizeWhatsappChatId } from '../../common/whatsapp-chat-id';
@@ -223,5 +223,209 @@ export class AccountingService {
 
     await this.updateStatus(id, AccInvoiceStatus.SENT);
     return { message: 'Fatura gönderildi' };
+  }
+
+  // ─── Kasa defteri ───
+
+  async listCashBookEntries(params: { page?: number; limit?: number }) {
+    const page = params.page ?? 1;
+    const limit = Math.min(params.limit ?? 50, 200);
+    const [items, total] = await Promise.all([
+      this.prisma.cashBookEntry.findMany({
+        orderBy: { occurredAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+        include: {
+          user: { select: { id: true, name: true } },
+          order: { select: { id: true, orderNumber: true } },
+          invoice: { select: { id: true, invoiceNumber: true } },
+        },
+      }),
+      this.prisma.cashBookEntry.count(),
+    ]);
+    return { items, total, page, totalPages: Math.ceil(total / limit) };
+  }
+
+  async createCashBookEntry(
+    userId: string,
+    body: {
+      amount: number;
+      direction: CashDirection;
+      description: string;
+      occurredAt?: string;
+      orderId?: string;
+      invoiceId?: string;
+      pdfUrl?: string;
+    },
+  ) {
+    if (!body.description?.trim()) throw new BadRequestException('Açıklama gerekli');
+    if (body.amount == null || Number.isNaN(Number(body.amount))) {
+      throw new BadRequestException('Geçerli tutar girin');
+    }
+    return this.prisma.cashBookEntry.create({
+      data: {
+        userId,
+        amount: Number(body.amount),
+        direction: body.direction,
+        description: String(body.description).trim(),
+        occurredAt: body.occurredAt ? new Date(body.occurredAt) : new Date(),
+        orderId: body.orderId || null,
+        invoiceId: body.invoiceId || null,
+        pdfUrl: body.pdfUrl?.trim() || null,
+      },
+      include: {
+        user: { select: { id: true, name: true } },
+        order: { select: { id: true, orderNumber: true } },
+        invoice: { select: { id: true, invoiceNumber: true } },
+      },
+    });
+  }
+
+  // ─── Gelen / giden cari ───
+
+  async listLedgerEntries(params: { page?: number; limit?: number; contactId?: string }) {
+    const page = params.page ?? 1;
+    const limit = Math.min(params.limit ?? 50, 200);
+    const where: Prisma.LedgerEntryWhereInput = {};
+    if (params.contactId) where.contactId = params.contactId;
+    const [items, total] = await Promise.all([
+      this.prisma.ledgerEntry.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+        include: {
+          user: { select: { id: true, name: true } },
+          contact: { select: { id: true, name: true, phone: true, company: true } },
+        },
+      }),
+      this.prisma.ledgerEntry.count({ where }),
+    ]);
+    return { items, total, page, totalPages: Math.ceil(total / limit) };
+  }
+
+  async createLedgerEntry(
+    userId: string,
+    body: {
+      kind: LedgerKind;
+      title: string;
+      amount: number;
+      currency?: string;
+      dueDate?: string | null;
+      notes?: string | null;
+      contactId?: string | null;
+      pdfUrl?: string | null;
+    },
+  ) {
+    if (!body.title?.trim()) throw new BadRequestException('Başlık gerekli');
+    if (body.amount == null || Number.isNaN(Number(body.amount))) {
+      throw new BadRequestException('Geçerli tutar girin');
+    }
+    return this.prisma.ledgerEntry.create({
+      data: {
+        userId,
+        kind: body.kind,
+        title: String(body.title).trim(),
+        amount: Number(body.amount),
+        currency: body.currency?.trim() || 'TRY',
+        dueDate:
+          body.dueDate == null || String(body.dueDate).trim() === ''
+            ? null
+            : new Date(String(body.dueDate)),
+        notes: body.notes == null ? null : String(body.notes),
+        contactId: body.contactId || null,
+        pdfUrl: body.pdfUrl?.trim() || null,
+      },
+      include: {
+        user: { select: { id: true, name: true } },
+        contact: { select: { id: true, name: true, phone: true } },
+      },
+    });
+  }
+
+  // ─── İrsaliye ───
+
+  async listDeliveryNotes(params: { page?: number; limit?: number; orderId?: string }) {
+    const page = params.page ?? 1;
+    const limit = Math.min(params.limit ?? 50, 200);
+    const where: Prisma.DeliveryNoteWhereInput = {};
+    if (params.orderId) where.orderId = params.orderId;
+    const [items, total] = await Promise.all([
+      this.prisma.deliveryNote.findMany({
+        where,
+        orderBy: { shippedAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+        include: {
+          user: { select: { id: true, name: true } },
+          order: {
+            select: {
+              id: true,
+              orderNumber: true,
+              shippingAddress: true,
+              contact: { select: { id: true, name: true, phone: true, company: true } },
+            },
+          },
+        },
+      }),
+      this.prisma.deliveryNote.count({ where }),
+    ]);
+    return { items, total, page, totalPages: Math.ceil(total / limit) };
+  }
+
+  async createDeliveryNote(
+    userId: string,
+    body: { orderId: string; notes?: string | null; shippedAt?: string | null },
+  ) {
+    const order = await this.prisma.salesOrder.findUnique({
+      where: { id: body.orderId },
+      include: { items: true },
+    });
+    if (!order) throw new NotFoundException('Sipariş bulunamadı');
+
+    const itemsSnapshot = order.items.map((i) => ({
+      name: i.name,
+      quantity: i.quantity,
+      unitPrice: i.unitPrice,
+      vatRate: i.vatRate,
+      lineTotal: i.lineTotal,
+    }));
+
+    return this.prisma.deliveryNote.create({
+      data: {
+        orderId: order.id,
+        userId,
+        notes: body.notes == null ? null : String(body.notes),
+        shippedAt:
+          body.shippedAt == null || String(body.shippedAt).trim() === ''
+            ? new Date()
+            : new Date(String(body.shippedAt)),
+        itemsSnapshot: itemsSnapshot as object,
+      },
+      include: {
+        user: { select: { id: true, name: true } },
+        order: {
+          select: {
+            id: true,
+            orderNumber: true,
+            shippingAddress: true,
+            contact: { select: { id: true, name: true, phone: true } },
+          },
+        },
+      },
+    });
+  }
+
+  async uploadDeliveryNotePdf(id: string, pdfUrl: string) {
+    const row = await this.prisma.deliveryNote.findUnique({ where: { id } });
+    if (!row) throw new NotFoundException('İrsaliye bulunamadı');
+    return this.prisma.deliveryNote.update({
+      where: { id },
+      data: { pdfUrl },
+      include: {
+        user: { select: { id: true, name: true } },
+        order: { select: { id: true, orderNumber: true } },
+      },
+    });
   }
 }

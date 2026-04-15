@@ -11,18 +11,21 @@ import {
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { LeadsService } from './leads.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { RolesGuard } from '../../common/guards/roles.guard';
+import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { LeadStatus } from '@prisma/client';
 import { requireOrgId, assertBelongsToOrg } from '../../common/org-session-scope';
 
 @ApiTags('Leads')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('leads')
 export class LeadsController {
   constructor(private leadsService: LeadsService) {}
 
   @Get()
+  @Roles('AGENT')
   findAll(
     @CurrentUser() user: { role: string; organizationId?: string },
     @Query('status') status?: LeadStatus,
@@ -44,11 +47,13 @@ export class LeadsController {
   }
 
   @Get('pipeline')
+  @Roles('AGENT')
   getPipelineStats(@CurrentUser() user: { role: string; organizationId?: string }) {
     return this.leadsService.getPipelineStats(requireOrgId(user));
   }
 
   @Get(':id')
+  @Roles('AGENT')
   async findOne(
     @Param('id') id: string,
     @CurrentUser() user: { role: string; organizationId?: string },
@@ -59,6 +64,7 @@ export class LeadsController {
   }
 
   @Post()
+  @Roles('AGENT')
   create(
     @CurrentUser() user: { role: string; organizationId?: string },
     @Body()
@@ -74,17 +80,19 @@ export class LeadsController {
   }
 
   @Patch(':id/status')
+  @Roles('AGENT')
   async updateStatus(
     @Param('id') id: string,
-    @Body('status') status: LeadStatus,
+    @Body() body: { status: LeadStatus; lossReason?: string | null },
     @CurrentUser() user: { id: string; role: string; organizationId?: string },
   ) {
     const lead = await this.leadsService.findById(id);
     this.assertLeadOrg(user, lead);
-    return this.leadsService.updateStatus(id, status, user.id);
+    return this.leadsService.updateStatus(id, body.status, user.id, body.lossReason);
   }
 
   @Patch(':id')
+  @Roles('AGENT')
   async update(
     @Param('id') id: string,
     @Body() body: { value?: number; source?: string; notes?: string },

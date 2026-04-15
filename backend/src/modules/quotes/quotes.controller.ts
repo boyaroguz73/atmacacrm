@@ -8,17 +8,18 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { QuoteStatus } from '@prisma/client';
+import { QuoteStatus, QuotePaymentMode } from '@prisma/client';
 
 @ApiTags('Quotes')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('quotes')
 export class QuotesController {
   private readonly logger = new Logger(QuotesController.name);
   constructor(private quotesService: QuotesService) {}
 
   @Get()
+  @Roles('AGENT')
   findAll(
     @Query('status') status?: QuoteStatus,
     @Query('contactId') contactId?: string,
@@ -34,34 +35,48 @@ export class QuotesController {
   }
 
   @Get(':id')
+  @Roles('AGENT')
   findById(@Param('id') id: string) {
     return this.quotesService.findById(id);
   }
 
   @Post()
+  @Roles('ADMIN')
   create(@CurrentUser('id') userId: string, @Body() body: any) {
     return this.quotesService.create(userId, body);
   }
 
   @Patch(':id/status')
-  updateStatus(@Param('id') id: string, @Body('status') status: QuoteStatus) {
-    return this.quotesService.updateStatus(id, status);
+  @Roles('AGENT')
+  updateStatus(
+    @Param('id') id: string,
+    @Body() body: { status: QuoteStatus; paymentMode?: QuotePaymentMode; documentKind?: string },
+  ) {
+    return this.quotesService.updateStatus(id, body);
   }
 
   @Patch(':id')
+  @Roles('AGENT')
   updateMeta(
     @Param('id') id: string,
-    @Body() body: { validUntil?: string | null; deliveryDate?: string | null; notes?: string | null },
+    @Body() body: {
+      validUntil?: string | null;
+      deliveryDate?: string | null;
+      notes?: string | null;
+      documentKind?: string | null;
+    },
   ) {
     return this.quotesService.updateMeta(id, body);
   }
 
   @Post(':id/generate-pdf')
+  @Roles('AGENT')
   generatePdf(@Param('id') id: string) {
     return this.quotesService.generatePdf(id).then((pdfUrl) => ({ pdfUrl }));
   }
 
   @Post(':id/send')
+  @Roles('AGENT')
   async send(@Param('id') id: string, @Body('sessionName') sessionName?: string) {
     try {
       return await this.quotesService.send(id, sessionName);
@@ -74,6 +89,7 @@ export class QuotesController {
   }
 
   @Post(':id/convert-to-order')
+  @Roles('ACCOUNTANT', 'ADMIN')
   convertToOrder(@Param('id') id: string, @CurrentUser('id') userId: string) {
     return this.quotesService.convertToOrder(id, userId);
   }

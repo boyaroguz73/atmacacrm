@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import api from '@/lib/api';
+import api, { getApiErrorMessage } from '@/lib/api';
 import { formatPhone } from '@/lib/utils';
 import { Search, DollarSign } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -14,6 +14,7 @@ interface Lead {
   value: number | null;
   source: string | null;
   notes: string | null;
+  lossReason?: string | null;
   contact: { id: string; name: string | null; phone: string };
   updatedAt: string;
 }
@@ -63,12 +64,27 @@ export default function LeadsPage() {
   }, [search]);
 
   const updateStatus = async (leadId: string, newStatus: string) => {
+    let lossReason: string | undefined;
+    if (newStatus === 'LOST') {
+      const r = window.prompt('Kayıp nedeni (zorunlu, en az 2 karakter):');
+      if (r === null) {
+        fetchLeads();
+        return;
+      }
+      if (r.trim().length < 2) {
+        toast.error('Kayıp nedeni en az 2 karakter olmalı');
+        fetchLeads();
+        return;
+      }
+      lossReason = r.trim();
+    }
     try {
-      await api.patch(`/leads/${leadId}/status`, { status: newStatus });
+      await api.patch(`/leads/${leadId}/status`, { status: newStatus, lossReason });
       toast.success('Durum güncellendi');
       fetchLeads();
-    } catch {
-      toast.error('Güncellenemedi');
+    } catch (err: unknown) {
+      toast.error(getApiErrorMessage(err, 'Güncellenemedi'));
+      fetchLeads();
     }
   };
 

@@ -2,7 +2,8 @@ import { Injectable, Logger } from '@nestjs/common';
 import { AutoReplyService, FlowStep } from './auto-reply.service';
 import { WahaService } from '../waha/waha.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { MessageDirection, MessageStatus } from '@prisma/client';
+import { MessageDirection, MessageStatus, LeadStatus } from '@prisma/client';
+import { LeadsService } from '../leads/leads.service';
 
 @Injectable()
 export class AutoReplyEngineService {
@@ -12,6 +13,7 @@ export class AutoReplyEngineService {
     private autoReplyService: AutoReplyService,
     private wahaService: WahaService,
     private prisma: PrismaService,
+    private leadsService: LeadsService,
   ) {}
 
   async processIncomingMessage(params: {
@@ -179,14 +181,20 @@ export class AutoReplyEngineService {
     step: FlowStep,
     params: { contactId: string },
   ) {
-    const status = step.data?.status;
+    const status = step.data?.status as LeadStatus | undefined;
     if (!status) return;
-
-    await this.prisma.lead.upsert({
-      where: { contactId: params.contactId },
-      update: { status },
-      create: { contactId: params.contactId, status },
-    });
+    const lossReason =
+      typeof step.data?.lossReason === 'string' ? step.data.lossReason : undefined;
+    try {
+      await this.leadsService.setLeadStatusForContact({
+        contactId: params.contactId,
+        status,
+        lossReason,
+      });
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      this.logger.warn(`set_lead_status atlandı: ${msg}`);
+    }
   }
 
   private async executeAssignAgent(
