@@ -144,7 +144,7 @@ export default function ReportsOverviewPage() {
                 </Link>
               </div>
               <div className="h-64">
-                <ResponsiveContainer width="100%" height="100%">
+                <ResponsiveContainer width="100%" height="100%" minWidth={280} minHeight={220}>
                   <LineChart data={msgData}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
                     <XAxis dataKey="day" tick={{ fontSize: 10 }} />
@@ -166,7 +166,7 @@ export default function ReportsOverviewPage() {
                 </Link>
               </div>
               <div className="h-64">
-                <ResponsiveContainer width="100%" height="100%">
+                <ResponsiveContainer width="100%" height="100%" minWidth={280} minHeight={220}>
                   <BarChart data={catData}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
                     <XAxis dataKey="name" tick={{ fontSize: 9 }} interval={0} angle={-25} textAnchor="end" height={70} />
@@ -187,7 +187,7 @@ export default function ReportsOverviewPage() {
               </Link>
             </div>
             <div className="h-56">
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height="100%" minWidth={280} minHeight={220}>
                 <BarChart data={dash.charts?.cash || []}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
                   <XAxis dataKey="day" tick={{ fontSize: 10 }} />

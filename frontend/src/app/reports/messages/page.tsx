@@ -60,7 +60,7 @@ export default function ReportMessagesPage() {
         <Loader2 className="w-8 h-8 animate-spin text-whatsapp mx-auto" />
       ) : (
         <div className="h-96 bg-white rounded-xl border p-4">
-          <ResponsiveContainer width="100%" height="100%">
+          <ResponsiveContainer width="100%" height="100%" minWidth={280} minHeight={220}>
             <LineChart data={data}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="day" tick={{ fontSize: 10 }} />
