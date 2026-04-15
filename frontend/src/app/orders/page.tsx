@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import api, { getApiErrorMessage } from '@/lib/api';
-import { formatPhone } from '@/lib/utils';
+import { formatPhone, rewriteMediaUrlForClient, backendPublicUrl } from '@/lib/utils';
 import toast from 'react-hot-toast';
+import { useAuthStore } from '@/store/auth';
 import {
   Package,
   Loader2,
@@ -16,7 +17,10 @@ import {
   RefreshCw,
   User,
   Calendar,
+  ExternalLink,
+  Trash2,
 } from 'lucide-react';
+import PanelEditedBadge from '@/components/ui/PanelEditedBadge';
 
 function toDateInputValue(iso: string | null | undefined): string {
   if (!iso) return '';
@@ -34,7 +38,7 @@ interface OrderItemRow {
   unitPrice: number;
   vatRate: number;
   lineTotal: number;
-  product?: { id: string; sku: string; name: string } | null;
+  product?: { id: string; sku: string; name: string; imageUrl?: string | null } | null;
 }
 
 interface SalesOrder {
@@ -51,6 +55,8 @@ interface SalesOrder {
   expectedDeliveryDate?: string | null;
   createdAt: string;
   updatedAt: string;
+  panelEditedAt?: string | null;
+  invoice?: { id: string } | null;
   createdBy?: { id: string; name: string | null } | null;
   contact: {
     id: string;
@@ -62,6 +68,7 @@ interface SalesOrder {
   };
   quote: { id: string; quoteNumber: number } | null;
   items: OrderItemRow[];
+  confirmationPdfUrl?: string | null;
 }
 
 const LIMIT = 20;
@@ -129,6 +136,11 @@ function lineVatAmount(item: OrderItemRow) {
 }
 
 export default function OrdersPage() {
+  const { user, loadFromStorage } = useAuthStore();
+  const canRegenerateOrderPdf =
+    user?.role === 'ADMIN' || user?.role === 'SUPERADMIN' || user?.role === 'ACCOUNTANT';
+  const canDeleteOrder =
+    user?.role === 'ADMIN' || user?.role === 'SUPERADMIN' || user?.role === 'ACCOUNTANT';
   const [orders, setOrders] = useState<SalesOrder[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -143,6 +155,7 @@ export default function OrdersPage() {
   const [notesDraft, setNotesDraft] = useState('');
   const [shippingDraft, setShippingDraft] = useState('');
   const [invoiceDueDraft, setInvoiceDueDraft] = useState('');
+  const [pdfRegenLoading, setPdfRegenLoading] = useState(false);
 
   const totalPages = useMemo(() => Math.max(1, Math.ceil(total / LIMIT)), [total]);
 
@@ -166,6 +179,10 @@ export default function OrdersPage() {
       if (!background) setLoading(false);
     }
   }, [page, statusFilter]);
+
+  useEffect(() => {
+    loadFromStorage();
+  }, [loadFromStorage]);
 
   useEffect(() => {
     fetchOrders();
@@ -254,6 +271,37 @@ export default function OrdersPage() {
     }
   };
 
+  const regenerateOrderPdf = async () => {
+    if (!selectedOrder) return;
+    setPdfRegenLoading(true);
+    try {
+      const { data } = await api.post<SalesOrder>(
+        `/orders/${selectedOrder.id}/regenerate-confirmation-pdf`,
+      );
+      setSelectedOrder(data);
+      toast.success('Sipariş onay PDF’i güncellendi');
+      void fetchOrders(true);
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, 'PDF oluşturulamadı'));
+    } finally {
+      setPdfRegenLoading(false);
+    }
+  };
+
+  const removeOrder = async (order: SalesOrder, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    if (!canDeleteOrder) return;
+    if (!confirm(`Sipariş ${formatOrderNo(order.orderNumber)} silinsin mi?`)) return;
+    try {
+      await api.delete(`/orders/${order.id}`);
+      toast.success('Sipariş silindi');
+      if (selectedOrder?.id === order.id) closeDetail();
+      void fetchOrders(true);
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, 'Silinemedi'));
+    }
+  };
+
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -310,12 +358,13 @@ export default function OrdersPage() {
                 <th className="px-5 py-3 text-right">Toplam</th>
                 <th className="px-5 py-3">Plan. teslim</th>
                 <th className="px-5 py-3">Sipariş tarihi</th>
+                {canDeleteOrder ? <th className="px-5 py-3 w-12" /> : null}
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={8} className="text-center py-16 text-gray-400">
+                  <td colSpan={canDeleteOrder ? 9 : 8} className="text-center py-16 text-gray-400">
                     <div className="flex flex-col items-center gap-2">
                       <Loader2 className="w-8 h-8 animate-spin text-whatsapp" />
                       <span className="text-sm">Yükleniyor…</span>
@@ -324,7 +373,7 @@ export default function OrdersPage() {
                 </tr>
               ) : orders.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="text-center py-16 text-gray-400 text-sm">
+                  <td colSpan={canDeleteOrder ? 9 : 8} className="text-center py-16 text-gray-400 text-sm">
                     Sipariş bulunamadı
                   </td>
                 </tr>
@@ -345,6 +394,7 @@ export default function OrdersPage() {
                   >
                     <td className="px-5 py-3 font-mono text-xs font-semibold text-gray-900">
                       {formatOrderNo(order.orderNumber)}
+                      <PanelEditedBadge at={order.panelEditedAt} />
                     </td>
                     <td className="px-5 py-3">
                       <div className="font-medium text-gray-900">{contactDisplayName(order.contact)}</div>
@@ -380,6 +430,20 @@ export default function OrdersPage() {
                         minute: '2-digit',
                       })}
                     </td>
+                    {canDeleteOrder ? (
+                      <td className="px-5 py-3 text-right">
+                        {order.status === 'PENDING' && !order.invoice ? (
+                          <button
+                            type="button"
+                            onClick={(e) => void removeOrder(order, e)}
+                            className="p-2 rounded-lg text-red-600 hover:bg-red-50"
+                            aria-label="Sil"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        ) : null}
+                      </td>
+                    ) : null}
                   </tr>
                 ))
               )}
@@ -457,9 +521,10 @@ export default function OrdersPage() {
           >
             <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-gray-100 bg-gray-50/50">
               <div>
-                <h2 id="order-detail-title" className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                <h2 id="order-detail-title" className="text-lg font-bold text-gray-900 flex items-center gap-2 flex-wrap">
                   <Package className="w-5 h-5 text-whatsapp" />
                   {formatOrderNo(selectedOrder.orderNumber)}
+                  <PanelEditedBadge at={selectedOrder.panelEditedAt} />
                 </h2>
                 <p className="text-sm text-gray-500 mt-0.5">
                   {contactDisplayName(selectedOrder.contact)} · {formatPhone(selectedOrder.contact.phone)}
@@ -601,12 +666,50 @@ export default function OrdersPage() {
                     <p className="text-xs text-red-600 font-medium">İptal edilmiş siparişten fatura oluşturulamaz.</p>
                   ) : null}
 
+                  <div className="rounded-xl border border-gray-100 bg-white p-4 space-y-2">
+                    <h3 className="text-sm font-semibold text-gray-800">Sipariş onay PDF’i</h3>
+                    <p className="text-[11px] text-gray-500">
+                      Tekliften dönüşümde oluşturulur; logo, banka ve şartlar PDF ayarlarından gelir.
+                    </p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {selectedOrder.confirmationPdfUrl ? (
+                        <a
+                          href={`${backendPublicUrl()}${selectedOrder.confirmationPdfUrl}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1.5 text-sm font-medium text-whatsapp hover:underline"
+                        >
+                          <ExternalLink className="w-4 h-4" />
+                          PDF’yi aç
+                        </a>
+                      ) : (
+                        <span className="text-xs text-amber-700">Henüz PDF yok — muhasebe yeniden üretebilir.</span>
+                      )}
+                      {canRegenerateOrderPdf ? (
+                        <button
+                          type="button"
+                          disabled={pdfRegenLoading || detailLoading}
+                          onClick={() => void regenerateOrderPdf()}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                        >
+                          {pdfRegenLoading ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <FileText className="w-3.5 h-3.5" />
+                          )}
+                          PDF yenile
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+
                   <div>
                     <h3 className="text-sm font-semibold text-gray-800 mb-2">Kalemler</h3>
                     <div className="rounded-xl border border-gray-100 shadow-sm overflow-hidden">
                       <table className="w-full text-sm">
                         <thead>
                           <tr className="bg-gray-50/80 text-left text-xs font-semibold text-gray-500 uppercase">
+                            <th className="px-3 py-2.5 w-14">Görsel</th>
                             <th className="px-3 py-2.5">Ürün</th>
                             <th className="px-3 py-2.5 text-right">Miktar</th>
                             <th className="px-3 py-2.5 text-right">Birim fiyat</th>
@@ -620,6 +723,22 @@ export default function OrdersPage() {
                               const vatAmt = lineVatAmount(item);
                               return (
                                 <tr key={item.id} className="border-t border-gray-50">
+                                  <td className="px-3 py-2.5 align-middle w-14">
+                                    <div className="w-11 h-11 rounded-lg border border-gray-100 bg-gray-50 overflow-hidden">
+                                      {item.product?.imageUrl ? (
+                                        // eslint-disable-next-line @next/next/no-img-element
+                                        <img
+                                          src={rewriteMediaUrlForClient(item.product.imageUrl)}
+                                          alt=""
+                                          className="w-full h-full object-cover"
+                                        />
+                                      ) : (
+                                        <span className="flex w-full h-full items-center justify-center text-[10px] text-gray-300">
+                                          —
+                                        </span>
+                                      )}
+                                    </div>
+                                  </td>
                                   <td className="px-3 py-2.5">
                                     <div className="font-medium text-gray-900">{item.name}</div>
                                     {item.product?.sku ? (
@@ -644,7 +763,7 @@ export default function OrdersPage() {
                             })
                           ) : (
                             <tr>
-                              <td colSpan={5} className="px-3 py-8 text-center text-gray-400 text-sm">
+                              <td colSpan={6} className="px-3 py-8 text-center text-gray-400 text-sm">
                                 Kalem yok
                               </td>
                             </tr>
@@ -658,6 +777,17 @@ export default function OrdersPage() {
             </div>
 
             <div className="px-5 py-4 border-t border-gray-100 bg-gray-50/40 flex flex-col sm:flex-row gap-2 sm:justify-end">
+              {canDeleteOrder &&
+              selectedOrder.status === 'PENDING' &&
+              !selectedOrder.invoice ? (
+                <button
+                  type="button"
+                  onClick={() => void removeOrder(selectedOrder)}
+                  className="px-4 py-2.5 rounded-xl border border-red-200 bg-red-50 text-sm font-medium text-red-700 shadow-sm hover:bg-red-100 sm:mr-auto"
+                >
+                  Siparişi sil
+                </button>
+              ) : null}
               <button
                 type="button"
                 onClick={closeDetail}

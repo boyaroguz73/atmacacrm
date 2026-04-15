@@ -1,5 +1,5 @@
 import {
-  Controller, Get, Post, Patch, Param, Body, Query,
+  Controller, Get, Post, Patch, Delete, Param, Body, Query,
   UseGuards, Logger, InternalServerErrorException,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
@@ -44,6 +44,12 @@ export class QuotesController {
   @Roles('ADMIN')
   create(@CurrentUser('id') userId: string, @Body() body: any) {
     return this.quotesService.create(userId, body);
+  }
+
+  @Delete(':id')
+  @Roles('ADMIN', 'SUPERADMIN')
+  remove(@Param('id') id: string) {
+    return this.quotesService.remove(id);
   }
 
   @Patch(':id/status')

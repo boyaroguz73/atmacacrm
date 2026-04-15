@@ -8,6 +8,8 @@ import {
   Body,
   Query,
   UseGuards,
+  Req,
+  BadRequestException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
@@ -16,6 +18,7 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { DEFAULT_PRODUCT_XML_FEED_URL } from './product-feed.constants';
+import { OrganizationsService } from '../organizations/organizations.service';
 
 @ApiTags('Products')
 @ApiBearerAuth()
@@ -25,6 +28,7 @@ export class ProductsController {
   constructor(
     private productsService: ProductsService,
     private config: ConfigService,
+    private orgService: OrganizationsService,
   ) {}
 
   @Get()
@@ -61,6 +65,7 @@ export class ProductsController {
       currency?: string;
       vatRate?: number;
       stock?: number;
+      category?: string;
     },
   ) {
     return this.productsService.create(body);
@@ -75,7 +80,7 @@ export class ProductsController {
 
   @Delete(':id')
   @UseGuards(RolesGuard)
-  @Roles('ADMIN')
+  @Roles('ADMIN', 'SUPERADMIN')
   remove(@Param('id') id: string) {
     return this.productsService.remove(id);
   }
@@ -83,10 +88,23 @@ export class ProductsController {
   /** Google Shopping XML akışını hemen çek ve ürünleri güncelle (cron ile aynı mantık) */
   @Post('sync-feed')
   @UseGuards(RolesGuard)
-  @Roles('ADMIN')
-  syncFeed(@Body() body?: { url?: string }) {
+  @Roles('ADMIN', 'SUPERADMIN')
+  async syncFeed(@Req() req: any, @Body() body?: { url?: string }) {
+    let orgId = req.user?.organizationId as string | undefined;
+    if (!orgId) orgId = (await this.orgService.getFirstOrganizationId()) ?? undefined;
+    if (!orgId) throw new BadRequestException('Organizasyon bulunamadı');
+    const feed = await this.orgService.getProductFeedSettings(orgId);
     const fromEnv = this.config.get<string>('PRODUCT_XML_FEED_URL')?.trim();
-    const url = (body?.url && body.url.trim()) || fromEnv || DEFAULT_PRODUCT_XML_FEED_URL;
-    return this.productsService.syncFromGoogleShoppingXml(url);
+    const url =
+      (body?.url && body.url.trim()) ||
+      (feed.xmlUrl && feed.xmlUrl.trim()) ||
+      fromEnv ||
+      DEFAULT_PRODUCT_XML_FEED_URL;
+    return this.productsService.syncFromGoogleShoppingXml(url, {
+      defaultVatRate: feed.defaultVatRate,
+      importDescription: feed.importDescription,
+      importImages: feed.importImages,
+      importMerchantMeta: feed.importMerchantMeta,
+    });
   }
 }

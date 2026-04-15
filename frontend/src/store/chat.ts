@@ -88,6 +88,8 @@ interface ChatState {
     mediaUrl: string;
     caption?: string;
   }) => Promise<void>;
+  /** Ürün görseli + açıklama (sohbetten paylaşım) */
+  sendProductShare: (params: { conversationId: string; productId: string }) => Promise<void>;
   addMessage: (message: Message) => void;
   updateConversation: (conversation: Conversation) => void;
   updateMessageStatus: (messageId: string, status: string) => void;
@@ -251,6 +253,63 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const preview =
         (data.body as string | null) ||
         (data.mediaType === 'IMAGE' ? '📷 Görsel' : '📎 Medya');
+      const ts = (data.timestamp as string) || new Date().toISOString();
+      set((state) => {
+        const idx = state.conversations.findIndex((c) => c.id === params.conversationId);
+        if (idx < 0) return {};
+        const prevConv = state.conversations[idx];
+        const bumped: Conversation = {
+          ...prevConv,
+          lastMessageAt: ts,
+          lastMessageText: preview || prevConv.lastMessageText,
+        };
+        const others = state.conversations.filter((c) => c.id !== params.conversationId);
+        const conversations = [...others, bumped].sort(
+          (a, b) =>
+            new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime(),
+        );
+        let activeConversation = state.activeConversation;
+        if (activeConversation?.id === bumped.id) {
+          activeConversation = {
+            ...activeConversation,
+            lastMessageAt: bumped.lastMessageAt,
+            lastMessageText: bumped.lastMessageText,
+          };
+        }
+        return { conversations, activeConversation };
+      });
+    } catch (error) {
+      set((state) => ({
+        messages: state.messages.filter((m) => m.id !== tempId),
+      }));
+      throw error;
+    }
+  },
+
+  sendProductShare: async (params) => {
+    const tempId = `temp-product-${Date.now()}`;
+    const optimisticMsg: Message = {
+      id: tempId,
+      conversationId: params.conversationId,
+      direction: 'OUTGOING',
+      body: 'Ürün gönderiliyor…',
+      mediaType: 'IMAGE',
+      mediaUrl: null,
+      status: 'PENDING',
+      timestamp: new Date().toISOString(),
+      sentBy: null,
+    };
+    set((state) => ({ messages: [...state.messages, optimisticMsg] }));
+
+    try {
+      const { data } = await api.post('/messages/send-product', params);
+      set((state) => ({
+        messages: state.messages.map((m) =>
+          m.id === tempId ? { ...data } : m,
+        ),
+      }));
+
+      const preview = (data.body as string | null) || '📷 Ürün';
       const ts = (data.timestamp as string) || new Date().toISOString();
       set((state) => {
         const idx = state.conversations.findIndex((c) => c.id === params.conversationId);

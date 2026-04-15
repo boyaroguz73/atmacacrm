@@ -47,6 +47,14 @@ function saleWindowActive(rangeRaw: string | null | undefined, now: Date): boole
   return now >= start && now <= end;
 }
 
+/** Ana görsel: image_link / g:image_link; yoksa ilk additional_image_link */
+function resolvePrimaryImageUrl(item: Record<string, unknown>): string | null {
+  let main = field(item, 'image_link', 'g:image_link') || null;
+  if (main && main.trim()) return main.trim();
+  const add = collectAdditionalImages(item);
+  return add[0]?.trim() || null;
+}
+
 function collectAdditionalImages(item: Record<string, unknown>): string[] {
   const urls: string[] = [];
   for (const [k, v] of Object.entries(item)) {
@@ -85,6 +93,13 @@ function activeFromAvailability(av: string): boolean {
   return true;
 }
 
+export type XmlSyncOptions = {
+  defaultVatRate?: number;
+  importDescription?: boolean;
+  importImages?: boolean;
+  importMerchantMeta?: boolean;
+};
+
 @Injectable()
 export class ProductsService {
   private readonly logger = new Logger(ProductsService.name);
@@ -101,6 +116,7 @@ export class ProductsService {
         { sku: { contains: search, mode: 'insensitive' } },
         { description: { contains: search, mode: 'insensitive' } },
         { brand: { contains: search, mode: 'insensitive' } },
+        { category: { contains: search, mode: 'insensitive' } },
         { googleProductCategory: { contains: search, mode: 'insensitive' } },
         { googleProductType: { contains: search, mode: 'insensitive' } },
         { productUrl: { contains: search, mode: 'insensitive' } },
@@ -136,6 +152,7 @@ export class ProductsService {
     currency?: string;
     vatRate?: number;
     stock?: number;
+    category?: string;
   }) {
     return this.prisma.product.create({
       data: { ...data, productFeedSource: ProductFeedSource.MANUAL },
@@ -156,13 +173,21 @@ export class ProductsService {
    * Google Shopping RSS 2.0 (g: namespace) ürün akışını çeker; SKU = g:id ile upsert.
    * Akışta artık bulunmayan XML kaynaklı ürünler pasifleştirilir (MANUAL ürünlere dokunulmaz).
    */
-  async syncFromGoogleShoppingXml(feedUrl: string): Promise<{
+  async syncFromGoogleShoppingXml(
+    feedUrl: string,
+    options?: XmlSyncOptions,
+  ): Promise<{
     imported: number;
     updated: number;
     deactivated: number;
     errors: string[];
   }> {
     if (!feedUrl?.trim()) throw new BadRequestException('XML feed URL gerekli');
+
+    const vatDefault = options?.defaultVatRate ?? 20;
+    const impDesc = options?.importDescription !== false;
+    const impImg = options?.importImages !== false;
+    const impMerch = options?.importMerchantMeta !== false;
 
     let xml: string;
     try {
@@ -212,18 +237,25 @@ export class ProductsService {
       const item = items[i];
       const sku = field(item, 'id', 'g:id');
       const name = field(item, 'title', 'g:title');
-      const description = field(item, 'description', 'g:description') || null;
+      const descriptionRaw = field(item, 'description', 'g:description') || null;
+      const description = impDesc ? descriptionRaw : null;
       const productUrl = field(item, 'link', 'g:link') || null;
-      const imageUrl = field(item, 'image_link', 'g:image_link') || null;
-      const googleCondition = field(item, 'condition', 'g:condition') || null;
+      const imageUrlFromFeed = impImg ? resolvePrimaryImageUrl(item) : null;
+      const googleCondition = impMerch ? field(item, 'condition', 'g:condition') || null : null;
       const googleAvailability = field(item, 'availability', 'g:availability') || null;
-      const googleIdentifierExists = field(item, 'identifier_exists', 'g:identifier_exists') || null;
-      const brand = field(item, 'brand', 'g:brand') || null;
-      const googleProductCategory =
-        field(item, 'google_product_category', 'g:google_product_category') || null;
+      const googleIdentifierExists = impMerch
+        ? field(item, 'identifier_exists', 'g:identifier_exists') || null
+        : null;
+      const brand = impMerch ? field(item, 'brand', 'g:brand') || null : null;
+      const googleProductCategory = impMerch
+        ? field(item, 'google_product_category', 'g:google_product_category') || null
+        : null;
       const googleProductType = field(item, 'product_type', 'g:product_type') || null;
-      const googleCustomLabel0 = field(item, 'custom_label_0', 'g:custom_label_0') || null;
-      const gtin = field(item, 'gtin', 'g:gtin') || null;
+      const category = googleProductType?.trim() || null;
+      const googleCustomLabel0 = impMerch
+        ? field(item, 'custom_label_0', 'g:custom_label_0') || null
+        : null;
+      const gtin = impMerch ? field(item, 'gtin', 'g:gtin') || null : null;
       const salePriceEffectiveRange =
         field(item, 'sale_price_effective_date', 'g:sale_price_effective_date') || null;
 
@@ -243,12 +275,16 @@ export class ProductsService {
       const stock = googleAvailability ? stockFromAvailability(googleAvailability) : null;
       const isActive = googleAvailability ? activeFromAvailability(googleAvailability) : true;
 
-      const additionalImages = collectAdditionalImages(item);
-      const additionalImagesJson = additionalImages as Prisma.InputJsonValue;
+      const additionalImages = impImg ? collectAdditionalImages(item) : [];
+      const additionalImagesJson = (impImg ? additionalImages : []) as Prisma.InputJsonValue;
 
       if (!sku || !name) {
         errors.push(`Öğe ${i + 1}: id veya title eksik`);
         continue;
+      }
+
+      if (impImg && !imageUrlFromFeed) {
+        errors.push(`SKU ${sku}: görsel yok (image_link / additional_image_link)`);
       }
 
       seenSkus.add(sku);
@@ -262,62 +298,75 @@ export class ProductsService {
       try {
         const existing = await this.prisma.product.findUnique({
           where: { sku },
-          select: { id: true },
+          select: { id: true, imageUrl: true },
         });
+        const imageUrl =
+          imageUrlFromFeed ||
+          (existing?.imageUrl && String(existing.imageUrl).trim() ? String(existing.imageUrl).trim() : null);
+
+        const createData: Prisma.ProductCreateInput = {
+          sku,
+          name,
+          description: impDesc ? description : null,
+          unit: 'Adet',
+          unitPrice,
+          currency,
+          vatRate: vatDefault,
+          stock,
+          isActive,
+          productFeedSource: ProductFeedSource.XML,
+          category,
+          productUrl,
+          imageUrl: impImg ? imageUrl : null,
+          googleCondition,
+          googleAvailability,
+          googleIdentifierExists,
+          listPrice,
+          salePriceAmount,
+          salePriceEffectiveRange,
+          brand,
+          googleProductCategory,
+          googleProductType: googleProductType || null,
+          googleCustomLabel0,
+          gtin,
+          additionalImages: additionalImagesJson,
+          xmlSyncedAt: now,
+        };
+
+        const updateData: Prisma.ProductUpdateInput = {
+          name,
+          unitPrice,
+          currency,
+          stock,
+          isActive,
+          productFeedSource: ProductFeedSource.XML,
+          category: category ?? undefined,
+          productUrl,
+          listPrice,
+          salePriceAmount,
+          salePriceEffectiveRange,
+          googleAvailability,
+          googleProductType: googleProductType || undefined,
+          xmlSyncedAt: now,
+          vatRate: vatDefault,
+        };
+        if (impDesc) updateData.description = description;
+        if (impImg) updateData.imageUrl = imageUrl ?? undefined;
+        if (impMerch) {
+          updateData.googleCondition = googleCondition;
+          updateData.googleIdentifierExists = googleIdentifierExists;
+          updateData.brand = brand;
+          updateData.googleProductCategory = googleProductCategory;
+          updateData.googleProductType = googleProductType;
+          updateData.googleCustomLabel0 = googleCustomLabel0;
+          updateData.gtin = gtin;
+          updateData.additionalImages = additionalImagesJson;
+        }
 
         await this.prisma.product.upsert({
           where: { sku },
-          create: {
-            sku,
-            name,
-            description,
-            unit: 'Adet',
-            unitPrice,
-            currency,
-            vatRate: 20,
-            stock,
-            isActive,
-            productFeedSource: ProductFeedSource.XML,
-            productUrl,
-            imageUrl,
-            googleCondition,
-            googleAvailability,
-            googleIdentifierExists,
-            listPrice,
-            salePriceAmount,
-            salePriceEffectiveRange,
-            brand,
-            googleProductCategory,
-            googleProductType,
-            googleCustomLabel0,
-            gtin,
-            additionalImages: additionalImagesJson,
-            xmlSyncedAt: now,
-          },
-          update: {
-            name,
-            description,
-            unitPrice,
-            currency,
-            stock,
-            isActive,
-            productFeedSource: ProductFeedSource.XML,
-            productUrl,
-            imageUrl,
-            googleCondition,
-            googleAvailability,
-            googleIdentifierExists,
-            listPrice,
-            salePriceAmount,
-            salePriceEffectiveRange,
-            brand,
-            googleProductCategory,
-            googleProductType,
-            googleCustomLabel0,
-            gtin,
-            additionalImages: additionalImagesJson,
-            xmlSyncedAt: now,
-          },
+          create: createData,
+          update: updateData,
         });
 
         if (!existing) imported++;

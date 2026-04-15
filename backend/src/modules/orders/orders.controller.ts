@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Param, Body, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Param, Body, Query, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { OrdersService } from './orders.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
@@ -27,6 +27,12 @@ export class OrdersController {
       page: page ? parseInt(page) : 1,
       limit: limit ? parseInt(limit) : 50,
     });
+  }
+
+  @Post(':id/regenerate-confirmation-pdf')
+  @Roles('ACCOUNTANT', 'ADMIN', 'SUPERADMIN')
+  regenerateConfirmationPdf(@Param('id') id: string) {
+    return this.ordersService.regenerateConfirmationPdf(id);
   }
 
   @Get(':id')
@@ -59,5 +65,11 @@ export class OrdersController {
     },
   ) {
     return this.ordersService.updateMeta(id, body);
+  }
+
+  @Delete(':id')
+  @Roles('ADMIN', 'SUPERADMIN', 'ACCOUNTANT')
+  remove(@Param('id') id: string) {
+    return this.ordersService.remove(id);
   }
 }

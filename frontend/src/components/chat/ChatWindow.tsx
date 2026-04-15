@@ -29,6 +29,8 @@ import {
   Pencil,
   ListFilter,
   ListTodo,
+  Package,
+  Search,
 } from 'lucide-react';
 import ContactPanel from './ContactPanel';
 import api, { getApiErrorMessage } from '@/lib/api';
@@ -78,6 +80,7 @@ export default function ChatWindow() {
     fetchMessages,
     sendMessage,
     sendMediaMessage,
+    sendProductShare,
   } = useChatStore();
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
@@ -107,6 +110,13 @@ export default function ChatWindow() {
   const [editingMessage, setEditingMessage] = useState<{ id: string; body: string } | null>(null);
   const [editText, setEditText] = useState('');
 
+  const [productPickerOpen, setProductPickerOpen] = useState(false);
+  const [productSearch, setProductSearch] = useState('');
+  const [productHits, setProductHits] = useState<
+    { id: string; name: string; sku: string; imageUrl?: string | null; unitPrice: number; currency: string }[]
+  >([]);
+  const [productSearchLoading, setProductSearchLoading] = useState(false);
+
   useEffect(() => {
     setMounted(true);
     api
@@ -114,6 +124,20 @@ export default function ChatWindow() {
       .then(({ data }) => setTemplates(data))
       .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (!productPickerOpen) return;
+    const q = productSearch.trim();
+    const t = setTimeout(() => {
+      setProductSearchLoading(true);
+      api
+        .get('/products', { params: { search: q || undefined, limit: 24, page: 1 } })
+        .then(({ data }) => setProductHits(data.products || []))
+        .catch(() => setProductHits([]))
+        .finally(() => setProductSearchLoading(false));
+    }, 280);
+    return () => clearTimeout(t);
+  }, [productSearch, productPickerOpen]);
 
   useEffect(() => {
     api
@@ -139,6 +163,9 @@ export default function ChatWindow() {
     setText('');
     setShowTemplates(false);
     setTemplateSearch('');
+    setProductPickerOpen(false);
+    setProductSearch('');
+    setProductHits([]);
   }, [activeConversation?.id]);
 
   useEffect(() => {
@@ -742,7 +769,91 @@ export default function ChatWindow() {
                 <BookTemplate className="w-5 h-5" />
               </button>
             )}
+            <button
+              type="button"
+              onClick={() => {
+                setProductPickerOpen((o) => !o);
+                setShowTemplates(false);
+              }}
+              className={`p-2 rounded-lg transition-colors ${
+                productPickerOpen
+                  ? 'text-whatsapp bg-green-50'
+                  : 'text-gray-400 hover:text-whatsapp hover:bg-green-50'
+              }`}
+              title="Ürün gönder (katalog)"
+            >
+              <Package className="w-5 h-5" />
+            </button>
             <div className="flex-1 relative">
+              {productPickerOpen && (
+                <div className="absolute bottom-full mb-2 left-0 right-0 bg-white border border-gray-200 rounded-xl shadow-lg z-20 overflow-hidden flex flex-col max-h-72">
+                  <div className="p-2 border-b border-gray-100 flex items-center gap-2">
+                    <Search className="w-4 h-4 text-gray-400 shrink-0" />
+                    <input
+                      type="search"
+                      autoComplete="off"
+                      placeholder="Ürün adı veya SKU…"
+                      value={productSearch}
+                      onChange={(e) => setProductSearch(e.target.value)}
+                      className="flex-1 min-w-0 text-sm py-1.5 px-1 border-0 focus:ring-0 focus:outline-none bg-transparent"
+                    />
+                  </div>
+                  <div className="overflow-y-auto flex-1">
+                    {productSearchLoading ? (
+                      <div className="flex justify-center py-6">
+                        <Loader2 className="w-6 h-6 text-whatsapp animate-spin" />
+                      </div>
+                    ) : productHits.length === 0 ? (
+                      <p className="text-xs text-gray-400 text-center py-6 px-3">
+                        {productSearch.trim() ? 'Sonuç yok' : 'Aramaya başlayın veya boş aramada liste gelir'}
+                      </p>
+                    ) : (
+                      productHits.map((p) => (
+                        <button
+                          key={p.id}
+                          type="button"
+                          disabled={sending}
+                          onClick={() => {
+                            setSending(true);
+                            sendProductShare({
+                              conversationId: activeConversation.id,
+                              productId: p.id,
+                            })
+                              .then(() => {
+                                setProductPickerOpen(false);
+                                setProductSearch('');
+                              })
+                              .catch((err) => {
+                                toast.error(getApiErrorMessage(err, 'Ürün gönderilemedi'));
+                              })
+                              .finally(() => setSending(false));
+                          }}
+                          className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-gray-50 border-b border-gray-50 last:border-b-0 text-left disabled:opacity-50"
+                        >
+                          <div className="w-11 h-11 rounded-lg bg-gray-100 overflow-hidden shrink-0 border border-gray-100">
+                            {p.imageUrl ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img
+                                src={rewriteMediaUrlForClient(p.imageUrl)}
+                                alt=""
+                                className="w-full h-full object-cover"
+                              />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center text-[10px] text-gray-400">
+                                —
+                              </div>
+                            )}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-medium text-gray-900 truncate">{p.name}</p>
+                            <p className="text-[11px] text-gray-500 font-mono truncate">{p.sku}</p>
+                          </div>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
               {showTemplates && (
                 <div className="absolute bottom-full mb-2 left-0 right-0 bg-white border rounded-xl shadow-lg max-h-64 overflow-y-auto z-20">
                   <div className="p-2 border-b">

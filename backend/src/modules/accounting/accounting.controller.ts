@@ -1,5 +1,5 @@
 import {
-  Controller, Get, Post, Patch, Param, Body, Query,
+  Controller, Get, Post, Patch, Delete, Param, Body, Query,
   UseGuards, UseInterceptors, UploadedFile, BadRequestException,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
@@ -45,6 +45,11 @@ const deliveryPdfStorage = diskStorage({
 @Controller('accounting')
 export class AccountingController {
   constructor(private accountingService: AccountingService) {}
+
+  @Get('summary')
+  dashboardSummary() {
+    return this.accountingService.getDashboardSummary();
+  }
 
   @Get('cash-entries')
   listCashEntries(
@@ -167,6 +172,11 @@ export class AccountingController {
       page ? parseInt(page, 10) : 1,
       limit ? parseInt(limit, 10) : 50,
     );
+  }
+
+  @Delete('invoices/:id')
+  removeInvoice(@Param('id') id: string) {
+    return this.accountingService.removeInvoice(id);
   }
 
   @Get('invoices/:id')

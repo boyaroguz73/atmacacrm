@@ -104,23 +104,23 @@ export class WahaWebhookHandler {
         else if (msg.type === 'audio' || msg.type === 'ptt') mediaType = 'AUDIO';
         else if (msg.hasMedia || msg.type === 'document') mediaType = 'DOCUMENT';
 
-        const base64Data = msg.media?.data || msg._data?.body || msg.body;
-        const looksB64 =
-          typeof base64Data === 'string' &&
-          base64Data.length > 80 &&
-          /^[A-Za-z0-9+/=\s]+$/.test(base64Data.replace(/\s/g, ''));
-        if (base64Data && looksB64) {
-          mediaUrl = await this.saveBase64Media(
-            base64Data.replace(/\s/g, ''),
-            mediaMimeType,
-          );
+        // Önce WAHA’nın indirdiği tam dosya URL’si (genelde tam çözünürlük); thumbnail base64’ü en sona bırak
+        const wahaStoredUrl = msg.media?.url || msg.mediaUrl || msg._data?.mediaUrl;
+        if (wahaStoredUrl) {
+          mediaUrl = await this.downloadAndSaveMedia(String(wahaStoredUrl), mediaMimeType);
         }
 
         if (!mediaUrl) {
-          const remoteUrl =
-            msg.mediaUrl || msg._data?.mediaUrl || msg.media?.url;
-          if (remoteUrl) {
-            mediaUrl = await this.downloadAndSaveMedia(remoteUrl, mediaMimeType);
+          const base64Data = msg.media?.data || msg._data?.body || msg.body;
+          const looksB64 =
+            typeof base64Data === 'string' &&
+            base64Data.length > 80 &&
+            /^[A-Za-z0-9+/=\s]+$/.test(base64Data.replace(/\s/g, ''));
+          if (base64Data && looksB64) {
+            mediaUrl = await this.saveBase64Media(
+              base64Data.replace(/\s/g, ''),
+              mediaMimeType,
+            );
           }
         }
 

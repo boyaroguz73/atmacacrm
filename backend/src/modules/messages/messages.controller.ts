@@ -24,6 +24,7 @@ import { extname } from 'path';
 import { v4 as uuid } from 'uuid';
 import { SendTextMessageDto } from './dto/send-text.dto';
 import { SendMediaMessageDto } from './dto/send-media.dto';
+import { SendProductShareDto } from './dto/send-product-share.dto';
 import { EditMessageDto } from './dto/edit-message.dto';
 
 const imageStorage = diskStorage({
@@ -72,6 +73,20 @@ export class MessagesController {
     @CurrentUser() user: { id: string },
   ) {
     return this.messagesService.sendMedia({ ...body, sentById: user.id });
+  }
+
+  @Post('send-product')
+  sendProduct(
+    @Body() body: SendProductShareDto,
+    @CurrentUser() user: { id: string },
+  ) {
+    return this.messagesService.sendProductShare({
+      conversationId: body.conversationId,
+      productId: body.productId,
+      sentById: user.id,
+      sessionName: body.sessionName,
+      chatId: body.chatId,
+    });
   }
 
   @Patch(':messageId/edit')

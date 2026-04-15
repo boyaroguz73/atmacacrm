@@ -556,14 +556,19 @@ export class WahaService implements OnModuleInit {
   async sendImage(
     sessionName: string,
     chatId: string,
-    file: { mimetype: string; data: string; filename: string },
+    file: { mimetype: string; data: string; filename: string; width?: number; height?: number },
     caption?: string,
   ) {
     try {
       const response = await this.http.post('/api/sendImage', {
         session: sessionName,
         chatId,
-        file,
+        file: {
+          mimetype: file.mimetype,
+          data: file.data,
+          filename: file.filename,
+          ...(file.width && file.height ? { width: file.width, height: file.height } : {}),
+        },
         caption: caption || '',
       });
       return response.data;
@@ -651,7 +656,7 @@ export class WahaService implements OnModuleInit {
       const fullChatId = chatId.includes('@') ? chatId : `${chatId}@c.us`;
       const response = await this.http.get(
         `/api/${sessionName}/chats/${fullChatId}/messages`,
-        { params: { limit: effectiveLimit, downloadMedia: false }, timeout: this.syncTimeoutMs },
+        { params: { limit: effectiveLimit, downloadMedia: true }, timeout: this.syncTimeoutMs },
       );
       return response.data || [];
     } catch (error: any) {

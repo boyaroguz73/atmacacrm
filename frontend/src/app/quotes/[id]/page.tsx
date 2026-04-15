@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import api, { getApiErrorMessage } from '@/lib/api';
-import { formatPhone, backendPublicUrl } from '@/lib/utils';
+import { formatPhone, backendPublicUrl, rewriteMediaUrlForClient } from '@/lib/utils';
 import {
   ArrowLeft,
   FileText,
@@ -268,6 +268,7 @@ export default function QuoteDetailPage() {
               <table className="w-full text-sm min-w-[640px]">
                 <thead className="bg-gray-50 text-xs text-gray-500">
                   <tr>
+                    <th className="text-left px-4 py-3 w-16">Görsel</th>
                     <th className="text-left px-4 py-3">#</th>
                     <th className="text-left px-4 py-3">Ürün / Hizmet</th>
                     <th className="text-right px-4 py-3">Miktar</th>
@@ -280,6 +281,22 @@ export default function QuoteDetailPage() {
                 <tbody>
                   {(quote.items || []).map((item: any, i: number) => (
                     <tr key={item.id} className="border-t border-gray-50">
+                      <td className="px-4 py-2.5 w-16 align-middle">
+                        <div className="w-12 h-12 rounded-lg border border-gray-100 bg-gray-50 overflow-hidden shrink-0">
+                          {item.product?.imageUrl ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={rewriteMediaUrlForClient(item.product.imageUrl)}
+                              alt=""
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            <span className="flex w-full h-full items-center justify-center text-[10px] text-gray-300">
+                              —
+                            </span>
+                          )}
+                        </div>
+                      </td>
                       <td className="px-4 py-2.5 text-gray-400">{i + 1}</td>
                       <td className="px-4 py-2.5">
                         <p className="font-medium text-gray-900">{item.name}</p>

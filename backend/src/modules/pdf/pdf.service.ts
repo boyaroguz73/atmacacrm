@@ -33,6 +33,8 @@ interface LineItem {
   vatRate: number;
   discountText?: string;
   lineTotal: number;
+  /** Uzak ürün görseli; PDF oluşturulurken küçük önizleme için indirilir */
+  imageUrl?: string;
 }
 
 export interface PdfData {
@@ -56,6 +58,29 @@ export interface PdfData {
   vatTotal: number;
   grandTotal: number;
   notes?: string;
+  /** order_form: kalem satırları çizgisiz yumuşak bloklar */
+  layout?: 'default' | 'order_form';
+}
+
+/** Teklif → sipariş onay formu (tablo çizgileri yumuşak, kurumsal düzen) */
+export interface OrderConfirmationPdfData {
+  documentNumber: string;
+  date: string;
+  contactName: string;
+  contactCompany?: string;
+  contactPhone?: string;
+  contactEmail?: string;
+  shippingAddress?: string;
+  expectedDelivery?: string;
+  quoteRef?: string;
+  items: LineItem[];
+  currency: string;
+  subtotal: number;
+  discountTotal: number;
+  discountLabel?: string;
+  vatTotal: number;
+  grandTotal: number;
+  orderNotes?: string;
 }
 
 const CURRENCY_SYMBOLS: Record<string, string> = { TRY: 'TL', USD: 'USD', EUR: 'EUR' };
@@ -124,6 +149,24 @@ export class PdfService {
     };
   }
 
+  private async fetchItemImageBuffer(url?: string | null): Promise<Buffer | null> {
+    const u = (url || '').trim();
+    if (!u) return null;
+    try {
+      const resp = await axios.get(u, {
+        responseType: 'arraybuffer',
+        timeout: 12_000,
+        maxContentLength: 2 * 1024 * 1024,
+        validateStatus: (s) => s >= 200 && s < 400,
+        headers: { 'User-Agent': 'AtmacaCRM-PDF/1.0' },
+      });
+      return Buffer.from(resp.data);
+    } catch (err: any) {
+      this.logger.warn(`Kalem gorseli yuklenemedi: ${err.message}`);
+    }
+    return null;
+  }
+
   private async fetchLogoBuffer(logoUrl: string): Promise<Buffer | null> {
     if (!logoUrl) return null;
     try {
@@ -150,6 +193,9 @@ export class PdfService {
   private async generateDocument(data: PdfData): Promise<string> {
     const settings = await this.getSettings();
     const logoBuffer = await this.fetchLogoBuffer(settings.logoUrl);
+    const itemImageBuffers = await Promise.all(
+      data.items.map((it) => this.fetchItemImageBuffer((it as LineItem).imageUrl)),
+    );
     const filename = `${uuid()}.pdf`;
     const filePath = join(this.outDir, filename);
     const cs = CURRENCY_SYMBOLS[data.currency] || data.currency;
@@ -283,32 +329,76 @@ export class PdfService {
 
         // Data rows
         let rowY = tableY + HEADER_H;
+        const softLayout = data.layout === 'order_form';
         data.items.forEach((item, idx) => {
+          const imgBuf = itemImageBuffers[idx];
+          const hasDesc = !!(item.description);
+          const itemH = Math.max(hasDesc ? 40 : 32, imgBuf ? 36 : 0);
           // Sayfa taşması
-          if (rowY + ROW_H > PAGE_H - 120) {
+          if (rowY + itemH + 8 > PAGE_H - 120) {
             doc.addPage({ margin: 0 });
             doc.rect(0, 0, doc.page.width, 8).fill(primary);
             rowY = 30;
           }
-          // Zebra
-          if (idx % 2 === 1) {
-            doc.rect(ML, rowY, PW, ROW_H).fill('#f9f9f9');
+          if (softLayout) {
+            doc.roundedRect(ML, rowY, PW, itemH, 3).fill(idx % 2 === 0 ? '#f4f6f9' : '#eef1f6');
+            let rx = ML + 8;
+            B(); doc.fontSize(8).fillColor(primary);
+            doc.text(String(idx + 1), rx, rowY + 8, { width: cols[0].w - 4, align: 'center', lineBreak: false });
+            rx += cols[0].w;
+            const nameColLeft = rx;
+            const thumb = 26;
+            const namePad = imgBuf ? thumb + 8 : 4;
+            if (imgBuf) {
+              try {
+                doc.image(imgBuf, nameColLeft + 2, rowY + 5, { width: thumb, height: thumb, fit: [thumb, thumb] });
+              } catch { /* gecersiz goruntu */ }
+            }
+            R(); doc.fontSize(9).fillColor('#222');
+            doc.text(this.t(item.name), nameColLeft + namePad, rowY + 6, { width: cols[1].w - namePad - 4, lineBreak: false });
+            if (hasDesc) {
+              doc.fontSize(7).fillColor('#666');
+              doc.text(this.t(item.description!), nameColLeft + namePad, rowY + 18, { width: cols[1].w - namePad - 4, lineBreak: false });
+            }
+            rx += cols[1].w;
+            doc.fontSize(8).fillColor('#333');
+            doc.text(String(item.quantity), rx, rowY + 10, { width: cols[2].w - 6, align: 'right', lineBreak: false });
+            rx += cols[2].w;
+            doc.text(item.unitPrice.toFixed(2), rx, rowY + 10, { width: cols[3].w - 6, align: 'right', lineBreak: false });
+            rx += cols[3].w;
+            doc.text(`%${item.vatRate}`, rx, rowY + 10, { width: cols[4].w - 6, align: 'right', lineBreak: false });
+            rx += cols[4].w;
+            doc.text(item.discountText ? this.t(item.discountText) : '-', rx, rowY + 10, { width: cols[5].w - 6, align: 'right', lineBreak: false });
+            rx += cols[5].w;
+            B(); doc.fillColor(primary);
+            doc.text(item.lineTotal.toFixed(2), rx, rowY + 10, { width: cols[6].w - 6, align: 'right', lineBreak: false });
+            rowY += itemH + 6;
+          } else {
+            if (idx % 2 === 1) {
+              doc.rect(ML, rowY, PW, ROW_H).fill('#f9f9f9');
+            }
+            let rx = ML;
+            R(); doc.fontSize(8).fillColor('#333');
+            doc.text(String(idx + 1), rx + 3, rowY + 6, { width: cols[0].w - 6, align: 'center', lineBreak: false }); rx += cols[0].w;
+            const nameColX = rx;
+            const t = 22;
+            const pad = imgBuf ? t + 8 : 6;
+            if (imgBuf) {
+              try {
+                doc.image(imgBuf, nameColX + 3, rowY + 4, { width: t, height: t, fit: [t, t] });
+              } catch { /* */ }
+            }
+            txt(this.t(item.name), nameColX + pad, rowY + (hasDesc ? 3 : 6), { size: 8, width: cols[1].w - pad - 3 });
+            if (hasDesc) txt(this.t(item.description!), nameColX + pad, rowY + 13, { size: 7, color: '#777', width: cols[1].w - pad - 3 });
+            rx += cols[1].w;
+            const rowH = Math.max(hasDesc ? 28 : ROW_H, imgBuf ? 30 : 0);
+            txt(String(item.quantity), rx + 3, rowY + 6, { size: 8, width: cols[2].w - 6, align: 'right' }); rx += cols[2].w;
+            txt(item.unitPrice.toFixed(2), rx + 3, rowY + 6, { size: 8, width: cols[3].w - 6, align: 'right' }); rx += cols[3].w;
+            txt(`%${item.vatRate}`, rx + 3, rowY + 6, { size: 8, width: cols[4].w - 6, align: 'right' }); rx += cols[4].w;
+            txt(item.discountText ? this.t(item.discountText) : '-', rx + 3, rowY + 6, { size: 8, width: cols[5].w - 6, align: 'right' }); rx += cols[5].w;
+            txt(item.lineTotal.toFixed(2), rx + 3, rowY + 6, { size: 8, width: cols[6].w - 6, align: 'right' });
+            rowY += rowH;
           }
-          let rx = ML;
-          R(); doc.fontSize(8).fillColor('#333');
-          doc.text(String(idx + 1), rx + 3, rowY + 6, { width: cols[0].w - 6, align: 'center', lineBreak: false }); rx += cols[0].w;
-          // Ürün adı + açıklama
-          const hasDesc = !!(item.description);
-          txt(this.t(item.name), rx + 3, rowY + (hasDesc ? 3 : 6), { size: 8, width: cols[1].w - 6 });
-          if (hasDesc) txt(this.t(item.description!), rx + 3, rowY + 13, { size: 7, color: '#777', width: cols[1].w - 6 });
-          rx += cols[1].w;
-          const itemH = hasDesc ? 24 : ROW_H;
-          txt(String(item.quantity), rx + 3, rowY + 6, { size: 8, width: cols[2].w - 6, align: 'right' }); rx += cols[2].w;
-          txt(item.unitPrice.toFixed(2), rx + 3, rowY + 6, { size: 8, width: cols[3].w - 6, align: 'right' }); rx += cols[3].w;
-          txt(`%${item.vatRate}`, rx + 3, rowY + 6, { size: 8, width: cols[4].w - 6, align: 'right' }); rx += cols[4].w;
-          txt(item.discountText ? this.t(item.discountText) : '-', rx + 3, rowY + 6, { size: 8, width: cols[5].w - 6, align: 'right' }); rx += cols[5].w;
-          txt(item.lineTotal.toFixed(2), rx + 3, rowY + 6, { size: 8, width: cols[6].w - 6, align: 'right' });
-          rowY += itemH;
         });
 
         // Table bottom line
@@ -382,6 +472,40 @@ export class PdfService {
         this.logger.error(`PDF olusturma hatasi: ${err.message}`, err.stack);
         done(err);
       }
+    });
+  }
+
+  /** Tekliften oluşan sipariş için onay PDF’i (logo, banka, şartlar, imza alanları — yumuşak kalem blokları) */
+  async generateOrderConfirmationPdf(data: OrderConfirmationPdfData): Promise<string> {
+    const discountLine =
+      data.discountTotal > 0 && data.discountLabel
+        ? `${data.discountLabel} (-${data.discountTotal.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ${data.currency})`
+        : data.discountTotal > 0
+          ? `Iskonto (-${data.discountTotal.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ${data.currency})`
+          : '';
+    const noteParts = [
+      data.quoteRef ? `Teklif referansi: ${data.quoteRef}` : '',
+      discountLine,
+      data.orderNotes || '',
+    ].filter(Boolean);
+    return this.generateDocument({
+      title: this.t('SIPARIS ONAY FORMU'),
+      documentNumber: data.documentNumber,
+      date: data.date,
+      deliveryDate: data.expectedDelivery,
+      contactName: data.contactName,
+      contactCompany: data.contactCompany,
+      contactPhone: data.contactPhone,
+      contactEmail: data.contactEmail,
+      contactAddress: data.shippingAddress,
+      items: data.items,
+      currency: data.currency,
+      subtotal: data.subtotal,
+      discountTotal: data.discountTotal,
+      vatTotal: data.vatTotal,
+      grandTotal: data.grandTotal,
+      notes: noteParts.join('\n\n') || undefined,
+      layout: 'order_form',
     });
   }
 }

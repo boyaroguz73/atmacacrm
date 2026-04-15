@@ -84,7 +84,22 @@ export class QuotesService {
   private readonly includeRelations = {
     contact: { select: { id: true, name: true, surname: true, phone: true, email: true, company: true, city: true } },
     createdBy: { select: { id: true, name: true } },
-    items: { include: { product: { select: { id: true, sku: true, name: true } } }, orderBy: { id: 'asc' as const } },
+    items: {
+      include: {
+        product: {
+          select: {
+            id: true,
+            sku: true,
+            name: true,
+            imageUrl: true,
+            category: true,
+            googleProductType: true,
+          },
+        },
+      },
+      orderBy: { id: 'asc' as const },
+    },
+    order: { select: { id: true } },
   };
 
   async findAll(params: { status?: QuoteStatus; contactId?: string; page?: number; limit?: number }) {
@@ -184,7 +199,7 @@ export class QuotesService {
     }
     return this.prisma.quote.update({
       where: { id },
-      data,
+      data: { ...data, panelEditedAt: new Date() },
       include: this.includeRelations,
     });
   }
@@ -224,9 +239,26 @@ export class QuotesService {
 
     return this.prisma.quote.update({
       where: { id },
-      data: patch,
+      data: { ...patch, panelEditedAt: new Date() },
       include: this.includeRelations,
     });
+  }
+
+  /** Sadece taslak teklif silinebilir */
+  async remove(id: string) {
+    const q = await this.prisma.quote.findUnique({
+      where: { id },
+      include: { order: { select: { id: true } } },
+    });
+    if (!q) throw new NotFoundException('Teklif bulunamadı');
+    if (q.status !== 'DRAFT') {
+      throw new BadRequestException('Sadece taslak teklifler silinebilir');
+    }
+    if (q.order) {
+      throw new BadRequestException('Siparişe dönüşmüş teklif silinemez');
+    }
+    await this.prisma.quote.delete({ where: { id } });
+    return { deleted: true };
   }
 
   async generatePdf(id: string): Promise<string> {
@@ -258,6 +290,7 @@ export class QuotesService {
           ? (i.discountType === 'AMOUNT' ? `${i.discountValue} ${quote.currency}` : `%${i.discountValue}`)
           : undefined,
         lineTotal: i.lineTotal,
+        imageUrl: i.product?.imageUrl || undefined,
       })),
       currency: quote.currency,
       subtotal: quote.subtotal,
@@ -365,6 +398,70 @@ export class QuotesService {
         quote: { select: { id: true, quoteNumber: true } },
       },
     });
+
+    const orderFull = await this.prisma.salesOrder.findUnique({
+      where: { id: order.id },
+      include: {
+        items: { include: { product: { select: { imageUrl: true } } } },
+        contact: true,
+        quote: {
+          select: {
+            quoteNumber: true,
+            discountTotal: true,
+            discountType: true,
+            discountValue: true,
+            currency: true,
+          },
+        },
+      },
+    });
+    if (orderFull) {
+      const discLabel =
+        quote.discountTotal > 0
+          ? quote.discountType === DiscountType.PERCENT
+            ? `İskonto (%${quote.discountValue})`
+            : `İskonto (${quote.discountValue} ${quote.currency})`
+          : undefined;
+      try {
+        const pdfUrl = await this.pdfService.generateOrderConfirmationPdf({
+          documentNumber: `SIP-${String(orderFull.orderNumber).padStart(5, '0')}`,
+          date: new Date().toLocaleDateString('tr-TR'),
+          contactName:
+            [orderFull.contact.name, orderFull.contact.surname].filter(Boolean).join(' ') ||
+            orderFull.contact.phone,
+          contactCompany: orderFull.contact.company || undefined,
+          contactPhone: orderFull.contact.phone,
+          contactEmail: orderFull.contact.email || undefined,
+          expectedDelivery: orderFull.expectedDeliveryDate
+            ? new Date(orderFull.expectedDeliveryDate).toLocaleDateString('tr-TR')
+            : undefined,
+          quoteRef:
+            quote.quoteNumber != null ? `TKL-${String(quote.quoteNumber).padStart(5, '0')}` : undefined,
+          items: orderFull.items.map((i) => ({
+            name: i.name,
+            quantity: i.quantity,
+            unitPrice: i.unitPrice,
+            vatRate: i.vatRate,
+            lineTotal: i.lineTotal,
+            imageUrl: i.product?.imageUrl || undefined,
+          })),
+          currency: orderFull.currency,
+          subtotal: orderFull.subtotal,
+          discountTotal: quote.discountTotal,
+          discountLabel: discLabel,
+          vatTotal: orderFull.vatTotal,
+          grandTotal: orderFull.grandTotal,
+          orderNotes: orderFull.notes || undefined,
+        });
+        await this.prisma.salesOrder.update({
+          where: { id: order.id },
+          data: { confirmationPdfUrl: pdfUrl },
+        });
+        return { ...order, confirmationPdfUrl: pdfUrl };
+      } catch (e: any) {
+        this.logger.warn(`Sipariş onay PDF oluşturulamadı: ${e?.message}`);
+      }
+    }
     return order;
   }
 }

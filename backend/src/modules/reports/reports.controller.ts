@@ -9,10 +9,126 @@ import { requireOrgId } from '../../common/org-session-scope';
 @ApiTags('Reports')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles('ADMIN')
+@Roles('ADMIN', 'SUPERADMIN')
 @Controller('reports')
 export class ReportsController {
   constructor(private reportsService: ReportsService) {}
+
+  @Get('dashboard')
+  getDashboard(
+    @Req() req: any,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    return this.reportsService.getExecutiveDashboard(
+      from ? new Date(from) : undefined,
+      to ? new Date(to) : undefined,
+      requireOrgId(req.user),
+    );
+  }
+
+  @Get('messages/timeseries')
+  getMessageTimeseries(
+    @Req() req: any,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    return this.reportsService.getMessageTimeseries(
+      from ? new Date(from) : undefined,
+      to ? new Date(to) : undefined,
+      requireOrgId(req.user),
+    );
+  }
+
+  @Get('cash/timeseries')
+  getCashTimeseries(
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    return this.reportsService.getCashTimeseries(
+      from ? new Date(from) : undefined,
+      to ? new Date(to) : undefined,
+    );
+  }
+
+  @Get('leads/funnel')
+  getLeadFunnel(
+    @Req() req: any,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    return this.reportsService.getLeadFunnel(
+      from ? new Date(from) : undefined,
+      to ? new Date(to) : undefined,
+      requireOrgId(req.user),
+    );
+  }
+
+  @Get('sales/top-categories')
+  getTopCategories(
+    @Req() req: any,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.reportsService.getTopProductCategories(
+      from ? new Date(from) : undefined,
+      to ? new Date(to) : undefined,
+      requireOrgId(req.user),
+      limit ? parseInt(limit, 10) : 12,
+    );
+  }
+
+  @Get('sales/products')
+  getSoldProducts(
+    @Req() req: any,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.reportsService.getSoldProducts(
+      from ? new Date(from) : undefined,
+      to ? new Date(to) : undefined,
+      requireOrgId(req.user),
+      page ? parseInt(page, 10) : 1,
+      limit ? parseInt(limit, 10) : 30,
+    );
+  }
+
+  @Get('invoices')
+  getInvoicesReport(
+    @Req() req: any,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.reportsService.getInvoicesReport(
+      from ? new Date(from) : undefined,
+      to ? new Date(to) : undefined,
+      requireOrgId(req.user),
+      page ? parseInt(page, 10) : 1,
+      limit ? parseInt(limit, 10) : 40,
+    );
+  }
+
+  @Get('contacts/engaged')
+  getEngagedContacts(
+    @Req() req: any,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.reportsService.getEngagedContacts(
+      from ? new Date(from) : undefined,
+      to ? new Date(to) : undefined,
+      requireOrgId(req.user),
+      page ? parseInt(page, 10) : 1,
+      limit ? parseInt(limit, 10) : 40,
+    );
+  }
 
   @Get('agents')
   getAgentReport(

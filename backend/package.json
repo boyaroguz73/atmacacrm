@@ -49,6 +49,7 @@
     "pdfkit": "^0.18.0",
     "reflect-metadata": "^0.2.1",
     "rxjs": "^7.8.1",
+    "sharp": "^0.34.5",
     "socket.io": "^4.7.4",
     "uuid": "^9.0.0"
   },

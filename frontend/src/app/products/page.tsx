@@ -102,6 +102,36 @@ export default function ProductsPage() {
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [syncingXml, setSyncingXml] = useState(false);
 
+  type ProductFeedSettings = {
+    xmlUrl: string;
+    defaultVatRate: number;
+    importDescription: boolean;
+    importImages: boolean;
+    importMerchantMeta: boolean;
+  };
+  const [productFeed, setProductFeed] = useState<ProductFeedSettings | null>(null);
+  const [feedLoading, setFeedLoading] = useState(false);
+  const [feedSaving, setFeedSaving] = useState(false);
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    let cancelled = false;
+    setFeedLoading(true);
+    void (async () => {
+      try {
+        const { data } = await api.get<ProductFeedSettings>('/organizations/my/product-feed');
+        if (!cancelled) setProductFeed(data);
+      } catch (err: unknown) {
+        if (!cancelled) toast.error(getApiErrorMessage(err, 'XML ayarları yüklenemedi'));
+      } finally {
+        if (!cancelled) setFeedLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isAdmin]);
+
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(searchQuery.trim()), 300);
     return () => clearTimeout(t);
@@ -230,6 +260,27 @@ export default function ProductsPage() {
     }
   };
 
+  const saveProductFeed = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!productFeed) return;
+    setFeedSaving(true);
+    try {
+      const { data } = await api.patch<ProductFeedSettings>('/organizations/my/product-feed', {
+        xmlUrl: productFeed.xmlUrl.trim(),
+        defaultVatRate: Math.min(100, Math.max(0, Math.round(Number(productFeed.defaultVatRate) || 0))),
+        importDescription: productFeed.importDescription,
+        importImages: productFeed.importImages,
+        importMerchantMeta: productFeed.importMerchantMeta,
+      });
+      setProductFeed(data);
+      toast.success('Ürün XML ayarları kaydedildi');
+    } catch (err: unknown) {
+      toast.error(getApiErrorMessage(err, 'Kaydedilemedi'));
+    } finally {
+      setFeedSaving(false);
+    }
+  };
+
   const syncXmlFeed = async () => {
     setSyncingXml(true);
     try {
@@ -265,7 +316,7 @@ export default function ProductsPage() {
     }).format(n);
 
   return (
-    <div className="min-h-screen bg-gray-50 p-4 sm:p-6">
+    <div className="p-4 sm:p-6 pt-0">
       <div className="max-w-7xl mx-auto space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
@@ -274,7 +325,8 @@ export default function ProductsPage() {
               Ürünler
             </h1>
             <p className="text-sm text-gray-500 mt-1">
-              SKU, fiyat ve stok; ürünler Google Shopping XML ile saatlik senkronlanır (elle eklenenler korunur).
+              SKU, fiyat ve stok. XML adresi ve içe aktarma seçenekleri aşağıda kayıtlıdır; senkron organizasyon ayarından veya
+              zamanlayıcıdan çalışır.
             </p>
           </div>
           {isAdmin ? (
@@ -303,6 +355,98 @@ export default function ProductsPage() {
             </div>
           ) : null}
         </div>
+
+        {isAdmin ? (
+          <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5 space-y-4">
+            <div>
+              <h2 className="text-sm font-semibold text-gray-900">Google Shopping XML</h2>
+              <p className="text-xs text-gray-500 mt-1">
+                Akış URL’si ve varsayılan KDV burada saklanır. &quot;XML senkron&quot; bu ayarları kullanır; ortam değişkeni yalnızca URL
+                boşsa yedek olarak devreye girer.
+              </p>
+            </div>
+            {feedLoading || !productFeed ? (
+              <div className="flex items-center gap-2 text-sm text-gray-500 py-4">
+                <Loader2 className="w-5 h-5 animate-spin text-whatsapp" />
+                Ayarlar yükleniyor…
+              </div>
+            ) : (
+              <form onSubmit={saveProductFeed} className="space-y-4 max-w-2xl">
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">XML feed URL</label>
+                  <input
+                    type="url"
+                    value={productFeed.xmlUrl}
+                    onChange={(e) => setProductFeed((f) => (f ? { ...f, xmlUrl: e.target.value } : f))}
+                    placeholder="https://…/products.xml"
+                    className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-1 focus:ring-whatsapp/30 focus:border-whatsapp"
+                  />
+                </div>
+                <div className="flex flex-wrap gap-6">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Varsayılan KDV %</label>
+                    <input
+                      type="number"
+                      min={0}
+                      max={100}
+                      value={productFeed.defaultVatRate}
+                      onChange={(e) =>
+                        setProductFeed((f) =>
+                          f ? { ...f, defaultVatRate: parseInt(e.target.value, 10) || 0 } : f,
+                        )
+                      }
+                      className="w-28 px-3 py-2 rounded-xl border border-gray-200 text-sm"
+                    />
+                  </div>
+                </div>
+                <fieldset className="space-y-2">
+                  <legend className="text-xs font-semibold text-gray-700 mb-2">İçe aktarılacak alanlar</legend>
+                  <label className="flex items-center gap-2 text-sm text-gray-700">
+                    <input
+                      type="checkbox"
+                      checked={productFeed.importDescription}
+                      onChange={(e) =>
+                        setProductFeed((f) => (f ? { ...f, importDescription: e.target.checked } : f))
+                      }
+                      className="rounded border-gray-300 text-whatsapp focus:ring-whatsapp"
+                    />
+                    Açıklama
+                  </label>
+                  <label className="flex items-center gap-2 text-sm text-gray-700">
+                    <input
+                      type="checkbox"
+                      checked={productFeed.importImages}
+                      onChange={(e) =>
+                        setProductFeed((f) => (f ? { ...f, importImages: e.target.checked } : f))
+                      }
+                      className="rounded border-gray-300 text-whatsapp focus:ring-whatsapp"
+                    />
+                    Görseller
+                  </label>
+                  <label className="flex items-center gap-2 text-sm text-gray-700">
+                    <input
+                      type="checkbox"
+                      checked={productFeed.importMerchantMeta}
+                      onChange={(e) =>
+                        setProductFeed((f) => (f ? { ...f, importMerchantMeta: e.target.checked } : f))
+                      }
+                      className="rounded border-gray-300 text-whatsapp focus:ring-whatsapp"
+                    />
+                    Google / tüccar meta (marka, gtin, ek etiketler vb.)
+                  </label>
+                </fieldset>
+                <button
+                  type="submit"
+                  disabled={feedSaving}
+                  className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gray-900 text-white text-sm font-medium disabled:opacity-50"
+                >
+                  {feedSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                  Ayarları kaydet
+                </button>
+              </form>
+            )}
+          </div>
+        ) : null}
 
         <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
           <div className="relative max-w-md">

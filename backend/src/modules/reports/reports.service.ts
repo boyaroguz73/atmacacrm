@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
@@ -238,6 +239,302 @@ export class ReportsService {
       totalConversations,
       unansweredTotal,
       leadConversions,
+    };
+  }
+
+  /** Gelen / giden mesaj — günlük seri (timestamp) */
+  async getMessageTimeseries(dateFrom?: Date, dateTo?: Date, organizationId?: string) {
+    const from = dateFrom || new Date(new Date().setHours(0, 0, 0, 0));
+    const to = dateTo || new Date();
+    const orgClause = organizationId
+      ? Prisma.sql`AND ws."organizationId" = ${organizationId}::uuid`
+      : Prisma.empty;
+    const rows = await this.prisma.$queryRaw<{ day: Date; incoming: bigint; outgoing: bigint }[]>`
+      SELECT date_trunc('day', m."timestamp")::date AS day,
+        SUM(CASE WHEN m.direction = 'INCOMING'::"MessageDirection" THEN 1 ELSE 0 END)::bigint AS incoming,
+        SUM(CASE WHEN m.direction = 'OUTGOING'::"MessageDirection" THEN 1 ELSE 0 END)::bigint AS outgoing
+      FROM messages m
+      INNER JOIN conversations conv ON conv.id = m."conversationId"
+      INNER JOIN whatsapp_sessions ws ON ws.id = conv."sessionId"
+      WHERE m."timestamp" >= ${from} AND m."timestamp" <= ${to}
+      ${orgClause}
+      GROUP BY 1
+      ORDER BY 1 ASC
+    `;
+    return rows.map((r) => ({
+      day: r.day.toISOString().slice(0, 10),
+      incoming: Number(r.incoming),
+      outgoing: Number(r.outgoing),
+    }));
+  }
+
+  /** Kasa hareketleri — günlük (elle girilen) */
+  async getCashTimeseries(dateFrom?: Date, dateTo?: Date) {
+    const from = dateFrom || new Date(new Date().setHours(0, 0, 0, 0));
+    const to = dateTo || new Date();
+    const rows = await this.prisma.$queryRaw<{ day: Date; income: number; expense: number }[]>`
+      SELECT date_trunc('day', c."occurredAt")::date AS day,
+        COALESCE(SUM(CASE WHEN c.direction = 'INCOME'::"CashDirection" THEN c.amount ELSE 0 END), 0)::float AS income,
+        COALESCE(SUM(CASE WHEN c.direction = 'EXPENSE'::"CashDirection" THEN c.amount ELSE 0 END), 0)::float AS expense
+      FROM cash_book_entries c
+      WHERE c."occurredAt" >= ${from} AND c."occurredAt" <= ${to}
+      GROUP BY 1
+      ORDER BY 1 ASC
+    `;
+    return rows.map((r) => ({
+      day: r.day.toISOString().slice(0, 10),
+      income: r.income,
+      expense: r.expense,
+    }));
+  }
+
+  async getLeadFunnel(dateFrom?: Date, dateTo?: Date, organizationId?: string) {
+    const from = dateFrom || new Date(new Date().setHours(0, 0, 0, 0));
+    const to = dateTo || new Date();
+    const orgLeadWhere = organizationId ? { contact: { organizationId } } : {};
+    const [byStatus, lostInPeriod, wonInPeriod, newInPeriod] = await Promise.all([
+      this.prisma.lead.groupBy({
+        by: ['status'],
+        where: { ...orgLeadWhere },
+        _count: { id: true },
+      }),
+      this.prisma.lead.count({
+        where: {
+          status: 'LOST',
+          updatedAt: { gte: from, lte: to },
+          ...orgLeadWhere,
+        },
+      }),
+      this.prisma.lead.count({
+        where: {
+          status: 'WON',
+          updatedAt: { gte: from, lte: to },
+          ...orgLeadWhere,
+        },
+      }),
+      this.prisma.lead.count({
+        where: {
+          createdAt: { gte: from, lte: to },
+          ...orgLeadWhere,
+        },
+      }),
+    ]);
+    const statusMap = Object.fromEntries(byStatus.map((s) => [s.status, s._count.id]));
+    const totalPipeline = Object.values(statusMap).reduce((a, b) => a + b, 0);
+    const interestedPlus = (statusMap['INTERESTED'] || 0) + (statusMap['OFFER_SENT'] || 0) + (statusMap['WON'] || 0) + (statusMap['LOST'] || 0);
+    const conversionOfferToWon =
+      (statusMap['OFFER_SENT'] || 0) > 0
+        ? Math.round(((statusMap['WON'] || 0) / (statusMap['OFFER_SENT'] || 1)) * 1000) / 10
+        : null;
+    const conversionNewToWon =
+      newInPeriod > 0 ? Math.round(((wonInPeriod / newInPeriod) * 1000)) / 10 : null;
+
+    return {
+      byStatus: statusMap,
+      lostInPeriod,
+      wonInPeriod,
+      newLeadsInPeriod: newInPeriod,
+      totalPipeline,
+      conversionOfferToWonPercent: conversionOfferToWon,
+      conversionNewToWonInPeriodPercent: conversionNewToWon,
+      interestedPlus,
+    };
+  }
+
+  /** Sipariş satırlarından kategori geliri (ürün.category) */
+  async getTopProductCategories(dateFrom?: Date, dateTo?: Date, organizationId?: string, limit = 12) {
+    const from = dateFrom || new Date(new Date().setHours(0, 0, 0, 0));
+    const to = dateTo || new Date();
+    const orgClause = organizationId
+      ? Prisma.sql`AND c."organizationId" = ${organizationId}::uuid`
+      : Prisma.empty;
+    const rows = await this.prisma.$queryRaw<{ cat: string | null; qty: number; revenue: number }[]>`
+      SELECT COALESCE(NULLIF(TRIM(p.category), ''), '(Kategorisiz)') AS cat,
+        SUM(oi.quantity)::float AS qty,
+        SUM(oi."lineTotal")::float AS revenue
+      FROM order_items oi
+      INNER JOIN sales_orders o ON oi."orderId" = o.id
+      INNER JOIN contacts c ON o."contactId" = c.id
+      LEFT JOIN products p ON oi."productId" = p.id
+      WHERE o."createdAt" >= ${from} AND o."createdAt" <= ${to}
+        AND o.status <> 'CANCELLED'::"OrderStatus"
+      ${orgClause}
+      GROUP BY 1
+      ORDER BY revenue DESC NULLS LAST
+      LIMIT ${limit}
+    `;
+    return rows.map((r) => ({
+      category: r.cat,
+      quantity: r.qty,
+      revenue: r.revenue,
+    }));
+  }
+
+  async getSoldProducts(
+    dateFrom?: Date,
+    dateTo?: Date,
+    organizationId?: string,
+    page = 1,
+    limit = 30,
+  ) {
+    const from = dateFrom || new Date(new Date().setHours(0, 0, 0, 0));
+    const to = dateTo || new Date();
+    const skip = (page - 1) * limit;
+    const orderWhere: Prisma.SalesOrderWhereInput = {
+      createdAt: { gte: from, lte: to },
+      status: { not: 'CANCELLED' },
+    };
+    if (organizationId) orderWhere.contact = { organizationId };
+    const where: Prisma.OrderItemWhereInput = { order: orderWhere };
+    const [items, totalAgg] = await Promise.all([
+      this.prisma.orderItem.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { lineTotal: 'desc' },
+        include: {
+          product: { select: { id: true, sku: true, name: true, category: true, imageUrl: true } },
+          order: { select: { id: true, orderNumber: true, createdAt: true } },
+        },
+      }),
+      this.prisma.orderItem.count({ where }),
+    ]);
+    return { items, total: totalAgg, page, totalPages: Math.ceil(totalAgg / limit) };
+  }
+
+  async getInvoicesReport(dateFrom?: Date, dateTo?: Date, organizationId?: string, page = 1, limit = 40) {
+    const from = dateFrom || new Date(new Date().setHours(0, 0, 0, 0));
+    const to = dateTo || new Date();
+    const skip = (page - 1) * limit;
+    const where: Prisma.AccountingInvoiceWhereInput = {
+      createdAt: { gte: from, lte: to },
+      ...(organizationId ? { contact: { organizationId } } : {}),
+    };
+    const [invoices, total, sumGrand] = await Promise.all([
+      this.prisma.accountingInvoice.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          contact: { select: { id: true, name: true, phone: true, company: true } },
+          order: { select: { id: true, orderNumber: true } },
+        },
+      }),
+      this.prisma.accountingInvoice.count({ where }),
+      this.prisma.accountingInvoice.aggregate({
+        where,
+        _sum: { grandTotal: true },
+      }),
+    ]);
+    return {
+      invoices,
+      total,
+      page,
+      totalPages: Math.ceil(total / limit),
+      sumGrandTotal: sumGrand._sum.grandTotal ?? 0,
+    };
+  }
+
+  /** Dönemde en az bir mesajı olan benzersiz kişi sayısı + sayfalı liste */
+  async getEngagedContacts(dateFrom?: Date, dateTo?: Date, organizationId?: string, page = 1, limit = 40) {
+    const from = dateFrom || new Date(new Date().setHours(0, 0, 0, 0));
+    const to = dateTo || new Date();
+    const orgClause = organizationId
+      ? Prisma.sql`AND c."organizationId" = ${organizationId}::uuid`
+      : Prisma.empty;
+    const countRows = await this.prisma.$queryRaw<{ n: bigint }[]>`
+      SELECT COUNT(DISTINCT conv."contactId")::bigint AS n
+      FROM messages m
+      INNER JOIN conversations conv ON conv.id = m."conversationId"
+      INNER JOIN contacts c ON c.id = conv."contactId"
+      WHERE m."timestamp" >= ${from} AND m."timestamp" <= ${to}
+      ${orgClause}
+    `;
+    const total = Number(countRows[0]?.n ?? 0);
+    const skip = (page - 1) * limit;
+    const rows = await this.prisma.$queryRaw<
+      { contactId: string; name: string | null; phone: string; msgCount: bigint }[]
+    >`
+      SELECT c.id AS "contactId", c.name, c.phone, COUNT(m.id)::bigint AS "msgCount"
+      FROM messages m
+      INNER JOIN conversations conv ON conv.id = m."conversationId"
+      INNER JOIN contacts c ON c.id = conv."contactId"
+      WHERE m."timestamp" >= ${from} AND m."timestamp" <= ${to}
+      ${orgClause}
+      GROUP BY c.id, c.name, c.phone
+      ORDER BY "msgCount" DESC
+      LIMIT ${limit} OFFSET ${skip}
+    `;
+    return {
+      totalDistinctContacts: total,
+      page,
+      totalPages: Math.ceil(total / limit),
+      rows: rows.map((r) => ({
+        contactId: r.contactId,
+        name: r.name,
+        phone: r.phone,
+        messageCount: Number(r.msgCount),
+      })),
+    };
+  }
+
+  /** Tek ekranda özet (rapor ana sayfası) */
+  async getExecutiveDashboard(dateFrom?: Date, dateTo?: Date, organizationId?: string) {
+    const from = dateFrom || new Date(new Date().setHours(0, 0, 0, 0));
+    const to = dateTo || new Date();
+    const [
+      summary,
+      agents,
+      msgSeries,
+      cashSeries,
+      funnel,
+      topCategories,
+      invoiceAgg,
+      ordersAgg,
+    ] = await Promise.all([
+      this.getSummary(from, to, organizationId),
+      this.getAgentDetailedReport(from, to, organizationId),
+      this.getMessageTimeseries(from, to, organizationId),
+      this.getCashTimeseries(from, to),
+      this.getLeadFunnel(from, to, organizationId),
+      this.getTopProductCategories(from, to, organizationId, 8),
+      this.prisma.accountingInvoice.aggregate({
+        where: {
+          createdAt: { gte: from, lte: to },
+          ...(organizationId ? { contact: { organizationId } } : {}),
+        },
+        _count: { id: true },
+        _sum: { grandTotal: true },
+      }),
+      this.prisma.salesOrder.aggregate({
+        where: {
+          createdAt: { gte: from, lte: to },
+          status: { not: 'CANCELLED' },
+          ...(organizationId ? { contact: { organizationId } } : {}),
+        },
+        _count: { id: true },
+        _sum: { grandTotal: true },
+      }),
+    ]);
+
+    return {
+      summary,
+      agents,
+      charts: {
+        messages: msgSeries,
+        cash: cashSeries,
+        topCategories,
+      },
+      funnel,
+      invoices: {
+        count: invoiceAgg._count.id,
+        sumGrandTotal: invoiceAgg._sum.grandTotal ?? 0,
+      },
+      orders: {
+        count: ordersAgg._count.id,
+        sumGrandTotal: ordersAgg._sum.grandTotal ?? 0,
+      },
     };
   }
 }

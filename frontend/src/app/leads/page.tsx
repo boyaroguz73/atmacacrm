@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import api, { getApiErrorMessage } from '@/lib/api';
 import { formatPhone } from '@/lib/utils';
-import { Search, DollarSign } from 'lucide-react';
+import { Search, DollarSign, LayoutGrid, List, Table2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import DateRangePicker from '@/components/ui/DateRangePicker';
 
@@ -28,9 +28,12 @@ const STAGES = [
   { key: 'LOST', label: 'Kaybedildi', color: 'border-red-400 bg-red-50' },
 ];
 
+type PipelineView = 'board' | 'list' | 'table';
+
 export default function LeadsPage() {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
+  const [viewMode, setViewMode] = useState<PipelineView>('board');
   const [statusFilter, setStatusFilter] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [dateFrom, setDateFrom] = useState('');
@@ -40,7 +43,7 @@ export default function LeadsPage() {
     setLoading(true);
     try {
       const params: any = {};
-      if (statusFilter) params.status = statusFilter;
+      if (viewMode === 'table' && statusFilter) params.status = statusFilter;
       if (search) params.search = search;
       if (dateFrom) params.from = dateFrom + 'T00:00:00';
       if (dateTo) params.to = dateTo + 'T23:59:59';
@@ -56,7 +59,7 @@ export default function LeadsPage() {
 
   useEffect(() => {
     fetchLeads();
-  }, [statusFilter, dateFrom, dateTo]);
+  }, [statusFilter, dateFrom, dateTo, viewMode]);
 
   useEffect(() => {
     const timer = setTimeout(fetchLeads, 300);
@@ -121,11 +124,43 @@ export default function LeadsPage() {
             className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-whatsapp focus:ring-1 focus:ring-whatsapp/20"
           />
         </div>
-        <div className="flex gap-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex rounded-lg border border-gray-200 bg-white p-0.5 shrink-0">
+            {(
+              [
+                { key: 'board' as const, icon: LayoutGrid, label: 'Kart' },
+                { key: 'list' as const, icon: List, label: 'Liste' },
+                { key: 'table' as const, icon: Table2, label: 'Tablo' },
+              ] as const
+            ).map(({ key, icon: Icon, label }) => (
+              <button
+                key={key}
+                type="button"
+                title={label}
+                onClick={() => {
+                  setViewMode(key);
+                  if (key !== 'table') setStatusFilter(null);
+                }}
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                  viewMode === key
+                    ? 'bg-whatsapp text-white shadow-sm'
+                    : 'text-gray-600 hover:bg-gray-50'
+                }`}
+              >
+                <Icon className="w-3.5 h-3.5" />
+                {label}
+              </button>
+            ))}
+          </div>
+          <div className="flex gap-1 flex-wrap">
           <button
-            onClick={() => setStatusFilter(null)}
+            type="button"
+            onClick={() => {
+              setViewMode('table');
+              setStatusFilter(null);
+            }}
             className={`px-3 py-2 rounded-lg text-xs font-medium transition-colors ${
-              !statusFilter
+              viewMode === 'table' && !statusFilter
                 ? 'bg-whatsapp text-white'
                 : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
             }`}
@@ -134,10 +169,14 @@ export default function LeadsPage() {
           </button>
           {STAGES.map((stage) => (
             <button
+              type="button"
               key={stage.key}
-              onClick={() => setStatusFilter(stage.key)}
+              onClick={() => {
+                setViewMode('table');
+                setStatusFilter(stage.key);
+              }}
               className={`px-3 py-2 rounded-lg text-xs font-medium transition-colors ${
-                statusFilter === stage.key
+                viewMode === 'table' && statusFilter === stage.key
                   ? 'bg-whatsapp text-white'
                   : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
               }`}
@@ -145,6 +184,7 @@ export default function LeadsPage() {
               {stage.label}
             </button>
           ))}
+          </div>
         </div>
       </div>
 
@@ -152,7 +192,7 @@ export default function LeadsPage() {
         <div className="flex items-center justify-center py-12">
           <div className="w-8 h-8 border-4 border-whatsapp border-t-transparent rounded-full animate-spin" />
         </div>
-      ) : statusFilter ? (
+      ) : viewMode === 'table' ? (
         <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
           <table className="w-full">
             <thead>
@@ -208,6 +248,54 @@ export default function LeadsPage() {
               ))}
             </tbody>
           </table>
+        </div>
+      ) : viewMode === 'list' ? (
+        <div className="space-y-6">
+          {groupedLeads.map((stage) => (
+            <div key={stage.key} className="rounded-xl border border-gray-100 bg-white shadow-sm overflow-hidden">
+              <div className={`px-4 py-2.5 border-l-4 ${stage.color} bg-gray-50/80 flex items-center justify-between`}>
+                <h3 className="font-semibold text-sm text-gray-800">{stage.label}</h3>
+                <span className="text-xs font-bold text-gray-500 tabular-nums">{stage.leads.length}</span>
+              </div>
+              <ul className="divide-y divide-gray-50">
+                {stage.leads.length === 0 ? (
+                  <li className="px-4 py-6 text-center text-xs text-gray-400">Kayıt yok</li>
+                ) : (
+                  stage.leads.map((lead) => (
+                    <li key={lead.id} className="px-4 py-3 flex flex-wrap items-center justify-between gap-3 hover:bg-gray-50/60">
+                      <div>
+                        <Link
+                          href={`/contacts/${lead.contact.id}`}
+                          className="font-medium text-sm text-whatsapp hover:underline"
+                        >
+                          {lead.contact.name || formatPhone(lead.contact.phone)}
+                        </Link>
+                        <p className="text-xs text-gray-400 mt-0.5">{formatPhone(lead.contact.phone)}</p>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        {lead.value != null && lead.value > 0 ? (
+                          <span className="text-xs font-semibold text-green-600 tabular-nums">
+                            {lead.value.toLocaleString('tr-TR')} TL
+                          </span>
+                        ) : null}
+                        <select
+                          value={lead.status}
+                          onChange={(e) => updateStatus(lead.id, e.target.value)}
+                          className="text-xs border border-gray-200 rounded-lg px-2 py-1 focus:outline-none focus:border-whatsapp"
+                        >
+                          {STAGES.map((s) => (
+                            <option key={s.key} value={s.key}>
+                              {s.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </li>
+                  ))
+                )}
+              </ul>
+            </div>
+          ))}
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">

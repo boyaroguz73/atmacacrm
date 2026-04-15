@@ -27,7 +27,7 @@ import {
     ClipboardList,
   } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { LEAD_STATUSES, SOURCES } from '@/lib/constants';
+import { LEAD_STATUSES, LEAD_STATUS_LABELS, LEAD_STATUS_COLORS, SOURCES } from '@/lib/constants';
 import ContactAvatar from '@/components/ui/ContactAvatar';
 import EcommerceCustomerBadge from '@/components/ui/EcommerceCustomerBadge';
 import { getEcommerceCustomerLabel } from '@/lib/ecommerceBadge';
@@ -347,6 +347,23 @@ export default function ContactPanel({
                   <div className="mt-1.5">
                     <EcommerceCustomerBadge metadata={contact.metadata} />
                   </div>
+                  {lead ? (
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <span
+                        className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
+                          LEAD_STATUS_COLORS[lead.status] || 'bg-gray-100 text-gray-600'
+                        }`}
+                      >
+                        Huní: {LEAD_STATUS_LABELS[lead.status] || lead.status}
+                      </span>
+                      <Link
+                        href="/leads"
+                        className="text-[10px] font-medium text-whatsapp hover:underline"
+                      >
+                        Huniyi aç →
+                      </Link>
+                    </div>
+                  ) : null}
                 </div>
                 {!editing ? (
                   <button

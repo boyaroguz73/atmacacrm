@@ -14,7 +14,9 @@ import {
   Upload,
   User,
   X,
+  Trash2,
 } from 'lucide-react';
+import PanelEditedBadge from '@/components/ui/PanelEditedBadge';
 
 const LIMIT = 15;
 
@@ -49,6 +51,7 @@ interface InvoiceRow {
   createdAt?: string | null;
   notes?: string | null;
   createdBy?: { id?: string; name?: string | null } | null;
+  panelEditedAt?: string | null;
 }
 
 interface PendingBillingRow {
@@ -302,6 +305,8 @@ function normalizeInvoiceRow(raw: unknown): InvoiceRow | null {
       o.createdBy && typeof o.createdBy === 'object'
         ? (o.createdBy as InvoiceRow['createdBy'])
         : undefined,
+    panelEditedAt:
+      o.panelEditedAt != null && o.panelEditedAt !== '' ? String(o.panelEditedAt) : null,
   };
 }
 
@@ -518,6 +523,25 @@ export default function AccountingInvoicesPage() {
     }
   };
 
+  const deleteInvoice = async (inv: InvoiceRow) => {
+    if (String(inv.status).toUpperCase() !== 'PENDING') {
+      toast.error('Sadece beklemedeki faturalar silinebilir');
+      return;
+    }
+    if (!confirm(`${formatInvoiceNo(inv)} silinsin mi?`)) return;
+    setDetailBusy(true);
+    try {
+      await api.delete(`/accounting/invoices/${inv.id}`);
+      toast.success('Fatura silindi');
+      setDetail((d) => (d?.id === inv.id ? null : d));
+      void fetchInvoices();
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, 'Silinemedi'));
+    } finally {
+      setDetailBusy(false);
+    }
+  };
+
   const createFromOrder = async (orderId: string, dueDateIso?: string) => {
     try {
       await api.post('/accounting/invoices/from-order', {
@@ -615,6 +639,7 @@ export default function AccountingInvoicesPage() {
                       <th className="px-5 py-3">Toplam</th>
                       <th className="px-5 py-3">Vade</th>
                       <th className="px-5 py-3">Oluşturan</th>
+                      <th className="px-5 py-3 w-12" />
                     </tr>
                   </thead>
                   <tbody>
@@ -632,7 +657,12 @@ export default function AccountingInvoicesPage() {
                         }}
                         className="border-b border-gray-50 hover:bg-whatsapp/5 cursor-pointer transition-colors"
                       >
-                        <td className="px-5 py-3 font-mono font-medium text-gray-900">{formatInvoiceNo(inv)}</td>
+                        <td className="px-5 py-3 font-mono font-medium text-gray-900">
+                          <span className="inline-flex items-center flex-wrap gap-x-0">
+                            {formatInvoiceNo(inv)}
+                            <PanelEditedBadge at={inv.panelEditedAt} />
+                          </span>
+                        </td>
                         <td className="px-5 py-3">
                           <div className="font-medium text-gray-900">{personLabel(inv)}</div>
                           {personPhone(inv) ? (
@@ -656,6 +686,21 @@ export default function AccountingInvoicesPage() {
                         <td className="px-5 py-3 text-gray-600">{formatDate(inv.dueDate)}</td>
                         <td className="px-5 py-3 text-gray-600 text-xs max-w-[100px] truncate" title={inv.createdBy?.name || ''}>
                           {inv.createdBy?.name || '—'}
+                        </td>
+                        <td className="px-5 py-3 text-right">
+                          {String(inv.status).toUpperCase() === 'PENDING' ? (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                void deleteInvoice(inv);
+                              }}
+                              className="p-2 rounded-lg text-red-600 hover:bg-red-50"
+                              aria-label="Sil"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          ) : null}
                         </td>
                       </tr>
                     ))}
@@ -795,7 +840,10 @@ export default function AccountingInvoicesPage() {
           >
             <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
               <div>
-                <h2 className="text-lg font-bold text-gray-900">{formatInvoiceNo(detail)}</h2>
+                <h2 className="text-lg font-bold text-gray-900 flex flex-wrap items-center gap-x-1">
+                  {formatInvoiceNo(detail)}
+                  <PanelEditedBadge at={detail.panelEditedAt} />
+                </h2>
                 <p className="text-xs text-gray-500 mt-0.5">Fatura detayı</p>
                 {detail.createdAt ? (
                   <p className="text-[11px] text-gray-400 mt-1">
@@ -910,6 +958,17 @@ export default function AccountingInvoicesPage() {
               </div>
 
               <div className="flex flex-wrap gap-2">
+                {String(detail.status).toUpperCase() === 'PENDING' ? (
+                  <button
+                    type="button"
+                    disabled={detailBusy}
+                    onClick={() => void deleteInvoice(detail)}
+                    className="inline-flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 disabled:opacity-50"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    Sil
+                  </button>
+                ) : null}
                 <input
                   ref={pdfInputRef}
                   type="file"

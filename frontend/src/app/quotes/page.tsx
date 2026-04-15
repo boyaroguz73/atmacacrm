@@ -2,7 +2,9 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import api from '@/lib/api';
+import api, { getApiErrorMessage } from '@/lib/api';
+import PanelEditedBadge from '@/components/ui/PanelEditedBadge';
+import { useAuthStore } from '@/store/auth';
 import { formatPhone } from '@/lib/utils';
 import toast from 'react-hot-toast';
 import {
@@ -11,6 +13,7 @@ import {
   FileText,
   Loader2,
   Plus,
+  Trash2,
 } from 'lucide-react';
 
 type QuoteStatus = 'DRAFT' | 'SENT' | 'ACCEPTED' | 'REJECTED' | 'EXPIRED';
@@ -22,6 +25,8 @@ interface QuoteRow {
   currency: string;
   grandTotal: number;
   createdAt: string;
+  panelEditedAt?: string | null;
+  order?: { id: string } | null;
   validUntil?: string | null;
   deliveryDate?: string | null;
   createdBy?: { id: string; name: string | null } | null;
@@ -100,6 +105,8 @@ function formatMoney(amount: number, currency: string): string {
 
 export default function QuotesPage() {
   const router = useRouter();
+  const { user } = useAuthStore();
+  const canDeleteQuote = user?.role === 'ADMIN' || user?.role === 'SUPERADMIN';
   const [quotes, setQuotes] = useState<QuoteRow[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -135,6 +142,19 @@ export default function QuotesPage() {
 
   const goPage = (p: number) => {
     setPage(Math.min(Math.max(1, p), totalPages));
+  };
+
+  const deleteQuote = async (q: QuoteRow, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!canDeleteQuote) return;
+    if (!confirm(`Teklif ${formatQuoteNo(q.quoteNumber)} silinsin mi?`)) return;
+    try {
+      await api.delete(`/quotes/${q.id}`);
+      toast.success('Teklif silindi');
+      void fetchQuotes();
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, 'Silinemedi'));
+    }
   };
 
   if (loading && quotes.length === 0) {
@@ -195,12 +215,13 @@ export default function QuotesPage() {
                 <th className="px-4 py-3">Geçerlilik</th>
                 <th className="px-4 py-3">Oluşturan</th>
                 <th className="px-4 py-3">Tarih</th>
+                {canDeleteQuote ? <th className="px-4 py-3 w-12" /> : null}
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {quotes.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-4 py-16 text-center text-gray-400">
+                  <td colSpan={canDeleteQuote ? 9 : 8} className="px-4 py-16 text-center text-gray-400">
                     {loading ? (
                       <span className="inline-flex items-center gap-2">
                         <Loader2 className="w-5 h-5 animate-spin text-whatsapp" />
@@ -228,6 +249,7 @@ export default function QuotesPage() {
                   >
                     <td className="px-4 py-3 font-mono font-medium text-gray-900">
                       {formatQuoteNo(q.quoteNumber)}
+                      <PanelEditedBadge at={q.panelEditedAt} />
                     </td>
                     <td className="px-4 py-3">
                       <div className="font-medium text-gray-900">{contactDisplayName(q)}</div>
@@ -257,6 +279,20 @@ export default function QuotesPage() {
                         year: 'numeric',
                       })}
                     </td>
+                    {canDeleteQuote ? (
+                      <td className="px-4 py-3 text-right">
+                        {q.status === 'DRAFT' && !q.order ? (
+                          <button
+                            type="button"
+                            onClick={(e) => void deleteQuote(q, e)}
+                            className="p-2 rounded-lg text-red-600 hover:bg-red-50"
+                            aria-label="Sil"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        ) : null}
+                      </td>
+                    ) : null}
                   </tr>
                 ))
               )}

@@ -1,16 +1,45 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { OrderStatus } from '@prisma/client';
+import { PdfService } from '../pdf/pdf.service';
+import { OrderStatus, DiscountType } from '@prisma/client';
 
 @Injectable()
 export class OrdersService {
-  constructor(private prisma: PrismaService) {}
+  private readonly logger = new Logger(OrdersService.name);
+
+  constructor(
+    private prisma: PrismaService,
+    private pdfService: PdfService,
+  ) {}
 
   private readonly includeRelations = {
     contact: { select: { id: true, name: true, surname: true, phone: true, email: true, company: true } },
     createdBy: { select: { id: true, name: true } },
-    items: { include: { product: { select: { id: true, sku: true, name: true } } } },
-    quote: { select: { id: true, quoteNumber: true } },
+    items: {
+      include: {
+        product: {
+          select: {
+            id: true,
+            sku: true,
+            name: true,
+            imageUrl: true,
+            category: true,
+            googleProductType: true,
+          },
+        },
+      },
+    },
+    quote: {
+      select: {
+        id: true,
+        quoteNumber: true,
+        discountTotal: true,
+        discountType: true,
+        discountValue: true,
+        currency: true,
+      },
+    },
+    invoice: { select: { id: true } },
   };
 
   async findAll(params: { status?: OrderStatus; contactId?: string; page?: number; limit?: number }) {
@@ -94,7 +123,7 @@ export class OrdersService {
     await this.findById(id);
     return this.prisma.salesOrder.update({
       where: { id },
-      data: { status },
+      data: { status, panelEditedAt: new Date() },
       include: this.includeRelations,
     });
   }
@@ -125,8 +154,88 @@ export class OrdersService {
     }
     return this.prisma.salesOrder.update({
       where: { id },
-      data: patch,
+      data: { ...patch, panelEditedAt: new Date() },
       include: this.includeRelations,
     });
+  }
+
+  /** Bekleyen ve faturası olmayan sipariş silinebilir */
+  async remove(id: string) {
+    const o = await this.prisma.salesOrder.findUnique({
+      where: { id },
+      include: { invoice: { select: { id: true } } },
+    });
+    if (!o) throw new NotFoundException('Sipariş bulunamadı');
+    if (o.status !== 'PENDING') {
+      throw new BadRequestException('Sadece beklemedeki siparişler silinebilir');
+    }
+    if (o.invoice) {
+      throw new BadRequestException('Faturası oluşturulmuş sipariş silinemez');
+    }
+    await this.prisma.salesOrder.delete({ where: { id } });
+    return { deleted: true };
+  }
+
+  /** Sipariş onay PDF’ini (logo, banka, şartlar) yeniden üretir */
+  async regenerateConfirmationPdf(orderId: string) {
+    const orderFull = await this.prisma.salesOrder.findUnique({
+      where: { id: orderId },
+      include: {
+        items: { include: { product: { select: { imageUrl: true } } } },
+        contact: true,
+        quote: true,
+      },
+    });
+    if (!orderFull) throw new NotFoundException('Sipariş bulunamadı');
+
+    const quote = orderFull.quote;
+    const discLabel =
+      quote && quote.discountTotal > 0
+        ? quote.discountType === DiscountType.PERCENT
+          ? `İskonto (%${quote.discountValue})`
+          : `İskonto (${quote.discountValue} ${quote.currency})`
+        : undefined;
+
+    try {
+      const pdfUrl = await this.pdfService.generateOrderConfirmationPdf({
+        documentNumber: `SIP-${String(orderFull.orderNumber).padStart(5, '0')}`,
+        date: new Date().toLocaleDateString('tr-TR'),
+        contactName:
+          [orderFull.contact.name, orderFull.contact.surname].filter(Boolean).join(' ') ||
+          orderFull.contact.phone,
+        contactCompany: orderFull.contact.company || undefined,
+        contactPhone: orderFull.contact.phone,
+        contactEmail: orderFull.contact.email || undefined,
+        shippingAddress: orderFull.shippingAddress || undefined,
+        expectedDelivery: orderFull.expectedDeliveryDate
+          ? new Date(orderFull.expectedDeliveryDate).toLocaleDateString('tr-TR')
+          : undefined,
+        quoteRef:
+          quote?.quoteNumber != null ? `TKL-${String(quote.quoteNumber).padStart(5, '0')}` : undefined,
+        items: orderFull.items.map((i) => ({
+          name: i.name,
+          quantity: i.quantity,
+          unitPrice: i.unitPrice,
+          vatRate: i.vatRate,
+          lineTotal: i.lineTotal,
+          imageUrl: i.product?.imageUrl || undefined,
+        })),
+        currency: orderFull.currency,
+        subtotal: orderFull.subtotal,
+        discountTotal: quote?.discountTotal ?? 0,
+        discountLabel: discLabel,
+        vatTotal: orderFull.vatTotal,
+        grandTotal: orderFull.grandTotal,
+        orderNotes: orderFull.notes || undefined,
+      });
+      return this.prisma.salesOrder.update({
+        where: { id: orderId },
+        data: { confirmationPdfUrl: pdfUrl },
+        include: this.includeRelations,
+      });
+    } catch (e: any) {
+      this.logger.error(`Sipariş PDF: ${e?.message}`);
+      throw new BadRequestException(e?.message || 'PDF oluşturulamadı');
+    }
   }
 }

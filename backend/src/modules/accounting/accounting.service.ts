@@ -140,7 +140,7 @@ export class AccountingService {
 
   async updateStatus(id: string, status: AccInvoiceStatus) {
     await this.findById(id);
-    const data: any = { status };
+    const data: any = { status, panelEditedAt: new Date() };
     if (status === 'PAID') data.paidAt = new Date();
     return this.prisma.accountingInvoice.update({
       where: { id },
@@ -151,7 +151,9 @@ export class AccountingService {
 
   async updateMeta(id: string, data: { dueDate?: string | null; notes?: string | null }) {
     await this.findById(id);
-    const patch: { dueDate?: Date | null; notes?: string | null } = {};
+    const patch: { dueDate?: Date | null; notes?: string | null; panelEditedAt: Date } = {
+      panelEditedAt: new Date(),
+    };
     if ('dueDate' in data) {
       const v = data.dueDate;
       patch.dueDate = v == null || String(v).trim() === '' ? null : new Date(String(v));
@@ -168,9 +170,23 @@ export class AccountingService {
     await this.findById(id);
     return this.prisma.accountingInvoice.update({
       where: { id },
-      data: { uploadedPdfUrl: pdfUrl },
+      data: { uploadedPdfUrl: pdfUrl, panelEditedAt: new Date() },
       include: this.includeRelations,
     });
+  }
+
+  async removeInvoice(id: string) {
+    const inv = await this.prisma.accountingInvoice.findUnique({ where: { id } });
+    if (!inv) throw new NotFoundException('Fatura bulunamadı');
+    if (inv.status !== 'PENDING') {
+      throw new BadRequestException('Sadece bekleyen (taslak) faturalar silinebilir');
+    }
+    const cashN = await this.prisma.cashBookEntry.count({ where: { invoiceId: id } });
+    if (cashN > 0) {
+      throw new BadRequestException('Kasa hareketine bağlı fatura silinemez');
+    }
+    await this.prisma.accountingInvoice.delete({ where: { id } });
+    return { deleted: true };
   }
 
   async send(id: string, sessionName?: string, templateBody?: string) {
@@ -427,5 +443,79 @@ export class AccountingService {
         order: { select: { id: true, orderNumber: true } },
       },
     });
+  }
+
+  /** Muhasebe hub: özet sayılar ve hızlı durum */
+  async getDashboardSummary() {
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+    const [
+      invoiceTotal,
+      invoicesByStatus,
+      pendingOrdersToBill,
+      cashIn30,
+      cashOut30,
+      ledgerOverdue,
+      deliveryNotesRecent,
+      invoicesMissingPdf,
+    ] = await Promise.all([
+      this.prisma.accountingInvoice.count(),
+      this.prisma.accountingInvoice.groupBy({
+        by: ['status'],
+        _count: { id: true },
+      }),
+      this.prisma.salesOrder.count({
+        where: {
+          status: { in: ['DELIVERED' as any, 'PROCESSING' as any] },
+          invoice: null,
+        },
+      }),
+      this.prisma.cashBookEntry.aggregate({
+        where: {
+          direction: 'INCOME' as any,
+          occurredAt: { gte: thirtyDaysAgo },
+        },
+        _sum: { amount: true },
+      }),
+      this.prisma.cashBookEntry.aggregate({
+        where: {
+          direction: 'EXPENSE' as any,
+          occurredAt: { gte: thirtyDaysAgo },
+        },
+        _sum: { amount: true },
+      }),
+      this.prisma.ledgerEntry.count({
+        where: { dueDate: { lt: new Date() } },
+      }),
+      this.prisma.deliveryNote.count({
+        where: { shippedAt: { gte: thirtyDaysAgo } },
+      }),
+      this.prisma.accountingInvoice.count({
+        where: {
+          status: { not: 'CANCELLED' as any },
+          pdfUrl: null,
+          uploadedPdfUrl: null,
+        },
+      }),
+    ]);
+
+    const statusMap = Object.fromEntries(
+      invoicesByStatus.map((r) => [r.status, r._count.id]),
+    );
+
+    return {
+      invoiceTotal,
+      invoicesByStatus: statusMap,
+      pendingOrdersToBill,
+      cashLast30Days: {
+        in: cashIn30._sum.amount ?? 0,
+        out: cashOut30._sum.amount ?? 0,
+        net: (cashIn30._sum.amount ?? 0) - (cashOut30._sum.amount ?? 0),
+      },
+      ledgerEntriesWithOverdueDueDate: ledgerOverdue,
+      deliveryNotesShippedLast30Days: deliveryNotesRecent,
+      invoicesWithoutPdf: invoicesMissingPdf,
+    };
   }
 }

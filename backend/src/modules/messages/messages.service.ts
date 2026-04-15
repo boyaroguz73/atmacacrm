@@ -5,10 +5,13 @@ import { ConversationsService } from '../conversations/conversations.service';
 import { ChatGateway } from '../websocket/chat.gateway';
 import { ConfigService } from '@nestjs/config';
 import { MessageDirection, MessageStatus } from '@prisma/client';
-import { readFileSync, existsSync } from 'fs';
+import { readFileSync, existsSync, writeFileSync, mkdirSync } from 'fs';
 import { join, extname } from 'path';
+import axios from 'axios';
+import { v4 as uuid } from 'uuid';
 import { lookup } from 'mime-types';
 import { normalizeWhatsappChatId } from '../../common/whatsapp-chat-id';
+import { optimizeImageBufferForWhatsapp } from '../../common/whatsapp-image';
 
 @Injectable()
 export class MessagesService {
@@ -178,7 +181,6 @@ export class MessagesService {
     }
 
     const fileBuffer = readFileSync(localPath);
-    const base64Data = fileBuffer.toString('base64');
     const ext = extname(localPath);
     const mimetype = (lookup(ext) as string) || 'application/octet-stream';
     const originalFilename = localPath.split(/[\\/]/).pop() || `file${ext}`;
@@ -186,10 +188,29 @@ export class MessagesService {
 
     let waResponse: any;
     try {
-      waResponse =
-        mediaType === 'IMAGE'
-          ? await this.wahaService.sendImage(sessionName, jid, { mimetype, data: base64Data, filename: originalFilename }, caption)
-          : await this.wahaService.sendFile(sessionName, jid, { mimetype, data: base64Data, filename: originalFilename }, caption);
+      if (mediaType === 'IMAGE') {
+        const opt = await optimizeImageBufferForWhatsapp(fileBuffer);
+        waResponse = await this.wahaService.sendImage(
+          sessionName,
+          jid,
+          {
+            mimetype: opt.mimetype,
+            data: opt.base64,
+            filename: opt.filename,
+            width: opt.width,
+            height: opt.height,
+          },
+          caption,
+        );
+      } else {
+        const base64Data = fileBuffer.toString('base64');
+        waResponse = await this.wahaService.sendFile(
+          sessionName,
+          jid,
+          { mimetype, data: base64Data, filename: originalFilename },
+          caption,
+        );
+      }
     } catch (err: any) {
       const errMsg = err.response?.data?.message || err.message || '';
       if (errMsg.includes('Plus version'))
@@ -213,6 +234,76 @@ export class MessagesService {
 
     this.emitAndUpdateList(conversationId, message, caption || preview);
     return message;
+  }
+
+  /** Ürün ana görselini indirip WhatsApp’ta gönderir (sohbet ürün paylaşımı) */
+  async sendProductShare(params: {
+    conversationId: string;
+    productId: string;
+    sentById: string;
+    sessionName?: string;
+    chatId?: string;
+  }) {
+    const { conversationId, productId, sentById } = params;
+    const conv = await this.prisma.conversation.findUnique({
+      where: { id: conversationId },
+      include: { session: true, contact: true },
+    });
+    if (!conv) throw new NotFoundException('Görüşme bulunamadı');
+    const sessionName = (params.sessionName || '').trim() || conv.session.name;
+    const chatId =
+      (params.chatId || '').trim() ||
+      normalizeWhatsappChatId(`${conv.contact.phone.replace(/\D/g, '')}@c.us`);
+    const product = await this.prisma.product.findUnique({ where: { id: productId } });
+    if (!product) throw new NotFoundException('Ürün bulunamadı');
+    const url = (product.imageUrl || '').trim();
+    if (!url) {
+      throw new BadRequestException(
+        'Bu üründe görsel URL yok. XML akışında image_link veya additional_image_link olmalı.',
+      );
+    }
+
+    const dir = join(process.cwd(), 'uploads', 'product-shares');
+    mkdirSync(dir, { recursive: true });
+    const lower = url.toLowerCase();
+    const ext =
+      lower.includes('.png') ? '.png' : lower.includes('.webp') ? '.webp' : lower.includes('.gif') ? '.gif' : '.jpg';
+    const filename = `${uuid()}${ext}`;
+    const fullPath = join(dir, filename);
+
+    try {
+      const res = await axios.get<ArrayBuffer>(url, {
+        responseType: 'arraybuffer',
+        timeout: 90_000,
+        maxContentLength: 12 * 1024 * 1024,
+        validateStatus: (s) => s >= 200 && s < 400,
+        headers: { 'User-Agent': 'AtmacaCRM-ProductShare/1.0' },
+      });
+      writeFileSync(fullPath, Buffer.from(res.data));
+    } catch (e: any) {
+      const msg = axios.isAxiosError(e)
+        ? `${e.message}${e.response ? ` (HTTP ${e.response.status})` : ''}`
+        : e?.message || String(e);
+      throw new BadRequestException(`Ürün görseli indirilemedi: ${msg}`);
+    }
+
+    const mediaUrl = `/uploads/product-shares/${filename}`;
+    const price = `${product.unitPrice.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ${product.currency}`;
+    const cat = (product.category || product.googleProductType || '').trim();
+    const caption =
+      `${product.name}\nSKU: ${product.sku}` +
+      (cat ? `\nKategori: ${cat}` : '') +
+      `\nFiyat: ${price}` +
+      (product.productUrl ? `\n${product.productUrl}` : '');
+
+    return this.sendMedia({
+      conversationId,
+      sessionName,
+      chatId,
+      mediaUrl,
+      caption,
+      sentById,
+    });
   }
 
   private resolveLocalPath(mediaUrl: string): string | null {

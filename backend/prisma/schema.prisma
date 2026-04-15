@@ -592,6 +592,19 @@ model OrgIntegration {
   @@map("org_integrations")
 }
 
+// ─── Product categories (CRM; ürün.category metni ile eşleştirilebilir) ───
+
+model ProductCategory {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  description String?
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("product_categories")
+}
+
 // ─── Products ───
 
 model Product {
@@ -610,6 +623,9 @@ model Product {
 
   /// Elle mi yoksa Google Shopping XML akışından mı geldi
   productFeedSource ProductFeedSource @default(MANUAL)
+
+  /// g:product_type ile doldurulur (ürün kategorisi); elle düzenlenebilir
+  category                String?
 
   // Google Merchant / Shopping RSS alanları
   productUrl              String?
@@ -637,6 +653,7 @@ model Product {
 
   @@index([sku])
   @@index([productFeedSource])
+  @@index([category])
   @@map("products")
 }
 
@@ -664,6 +681,8 @@ model Quote {
   acceptedAt    DateTime?
   /// PDF başlığı: PROFORMA | QUOTE
   documentKind  String       @default("PROFORMA")
+  /// Yönetim panelinde kayıt elle güncellendi (müşteri PDF’lerinde gösterilmez)
+  panelEditedAt DateTime?
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
 
@@ -716,8 +735,12 @@ model SalesOrder {
   notes                 String?
   /// Planlanan teslim tarihi; teklifteki teslim tarihinden siparişe kopyalanabilir
   expectedDeliveryDate  DateTime?
+  /// Tekliften dönüşüm sonrası sipariş onay formu (PDF)
+  confirmationPdfUrl    String?
   /// %50 ön ödemede teslim öncesi kalan tahsilat hatırlatması oluşturuldu mu
   depositBalanceReminderSent Boolean @default(false)
+  /// Yönetim panelinde kayıt elle güncellendi
+  panelEditedAt         DateTime?
   createdAt             DateTime    @default(now())
   updatedAt             DateTime    @updatedAt
 
@@ -771,6 +794,8 @@ model AccountingInvoice {
   pdfUrl          String?
   uploadedPdfUrl  String?
   notes           String?
+  /// Yönetim panelinde kayıt elle güncellendi
+  panelEditedAt   DateTime?
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
 
