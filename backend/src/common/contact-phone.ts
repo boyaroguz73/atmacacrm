@@ -1,7 +1,14 @@
 /**
  * WhatsApp JID tipleri
  */
-export type WhatsAppJidType = 'individual' | 'group' | 'broadcast' | 'newsletter' | 'status' | 'unknown';
+export type WhatsAppJidType =
+  | 'individual'
+  | 'group'
+  | 'lid'
+  | 'broadcast'
+  | 'newsletter'
+  | 'status'
+  | 'unknown';
 
 /**
  * WhatsApp JID'sinin tipini belirle
@@ -12,6 +19,7 @@ export function getWhatsAppJidType(jid: string): WhatsAppJidType {
   
   if (lower.endsWith('@c.us')) return 'individual';
   if (lower.endsWith('@g.us')) return 'group';
+  if (lower.endsWith('@lid')) return 'lid';
   if (lower.includes('@broadcast')) return 'broadcast';
   if (lower.includes('@newsletter')) return 'newsletter';
   if (lower.startsWith('status@') || lower === 'status@broadcast') return 'status';
@@ -39,7 +47,19 @@ export function isGroupChat(jid: string): boolean {
  */
 export function isProcessableChat(jid: string): boolean {
   const type = getWhatsAppJidType(jid);
-  return type === 'individual' || type === 'group';
+  return type === 'individual' || type === 'group' || type === 'lid';
+}
+
+/** WhatsApp LID (@lid) sohbeti — kişi anahtarı `lid:<rakamlar>` */
+export function isLidChat(jid: string): boolean {
+  return getWhatsAppJidType(jid) === 'lid';
+}
+
+/** 123456789012345@lid → lid:123456789012345 (contact.phone için) */
+export function lidJidToContactPhone(jid: string): string | null {
+  if (!isLidChat(jid)) return null;
+  const m = String(jid).trim().match(/^(\d+)@lid$/i);
+  return m ? `lid:${m[1]}` : null;
 }
 
 /**
@@ -94,15 +114,22 @@ export function extractGroupIdFromJid(jid: string): string | null {
  */
 export function extractPhoneFromParticipant(participant: string | undefined | null): string | null {
   if (!participant) return null;
-  
+
+  const raw = String(participant).trim();
+  // Yeni WhatsApp: gönderen @lid ile gelebilir (telefon yerine iç kimlik)
+  if (/@lid$/i.test(raw)) {
+    const digits = raw.replace(/@lid$/i, '').replace(/\D/g, '');
+    return digits ? `lid:${digits}` : null;
+  }
+
   // Participant genellikle 905551234567@c.us formatında
   // veya sadece 905551234567 olabilir
-  const cleaned = String(participant).replace(/@.*$/, '').replace(/\D/g, '');
+  const cleaned = raw.replace(/@.*$/, '').replace(/\D/g, '');
   if (!cleaned) return null;
-  
+
   const normalized = canonicalContactPhone(cleaned);
   if (!isValidPhoneNumber(normalized)) return null;
-  
+
   return normalized;
 }
 

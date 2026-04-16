@@ -13,6 +13,8 @@ interface CreateQuoteItem {
   productId?: string;
   productVariantId?: string;
   lineImageUrl?: string;
+  colorFabricInfo?: string;
+  measurementInfo?: string;
   name: string;
   description?: string;
   quantity: number;
@@ -95,7 +97,22 @@ export class QuotesService {
   }
 
   private readonly includeRelations = {
-    contact: { select: { id: true, name: true, surname: true, phone: true, email: true, company: true, city: true, address: true } },
+    contact: {
+      select: {
+        id: true,
+        name: true,
+        surname: true,
+        phone: true,
+        email: true,
+        company: true,
+        city: true,
+        address: true,
+        billingAddress: true,
+        taxOffice: true,
+        taxNumber: true,
+        identityNumber: true,
+      },
+    },
     createdBy: { select: { id: true, name: true } },
     items: {
       include: {
@@ -227,8 +244,8 @@ export class QuotesService {
             ? String(data.footerNoteOverride)
             : null,
         agentInfo: data.agentInfo?.trim() || null,
-        colorFabricInfo: data.colorFabricInfo?.trim() || null,
-        measurementInfo: data.measurementInfo?.trim() || null,
+        colorFabricInfo: null,
+        measurementInfo: null,
         grandTotalOverride: typeof data.grandTotalOverride === 'number' && data.grandTotalOverride > 0 
           ? data.grandTotalOverride 
           : null,
@@ -239,6 +256,14 @@ export class QuotesService {
             lineImageUrl:
               item.lineImageUrl != null && String(item.lineImageUrl).trim() !== ''
                 ? String(item.lineImageUrl).trim()
+                : null,
+            colorFabricInfo:
+              item.colorFabricInfo != null && String(item.colorFabricInfo).trim() !== ''
+                ? String(item.colorFabricInfo).trim()
+                : null,
+            measurementInfo:
+              item.measurementInfo != null && String(item.measurementInfo).trim() !== ''
+                ? String(item.measurementInfo).trim()
                 : null,
             name: item.name,
             description: item.description,
@@ -341,6 +366,8 @@ export class QuotesService {
           productId: it.productId || undefined,
           productVariantId: it.productVariantId || undefined,
           lineImageUrl: it.lineImageUrl || undefined,
+          colorFabricInfo: (it as any).colorFabricInfo || undefined,
+          measurementInfo: (it as any).measurementInfo || undefined,
           name: it.name,
           description: it.description || undefined,
           quantity: it.quantity,
@@ -445,6 +472,10 @@ export class QuotesService {
         ? data.grandTotalOverride 
         : null;
     }
+    if (hasItemsPayload) {
+      patch.colorFabricInfo = null;
+      patch.measurementInfo = null;
+    }
 
     return this.prisma.quote.update({
       where: { id },
@@ -461,6 +492,14 @@ export class QuotesService {
                   lineImageUrl:
                     item.lineImageUrl != null && String(item.lineImageUrl).trim() !== ''
                       ? String(item.lineImageUrl).trim()
+                      : null,
+                  colorFabricInfo:
+                    item.colorFabricInfo != null && String(item.colorFabricInfo).trim() !== ''
+                      ? String(item.colorFabricInfo).trim()
+                      : null,
+                  measurementInfo:
+                    item.measurementInfo != null && String(item.measurementInfo).trim() !== ''
+                      ? String(item.measurementInfo).trim()
                       : null,
                   name: item.name,
                   description: item.description,
@@ -508,6 +547,11 @@ export class QuotesService {
       quote.documentKind === 'QUOTE' ? 'QUOTE' : 'PROFORMA';
     const title = docKind === 'QUOTE' ? 'SATIŞ TEKLİFİ' : 'PROFORMA TEKLİF';
 
+    const addr =
+      (c.billingAddress && String(c.billingAddress).trim()) ||
+      (c.address && String(c.address).trim()) ||
+      undefined;
+
     const pdfUrl = await this.pdfService.generateQuotePdf({
       title,
       documentNumber: `TKL-${String(quote.quoteNumber).padStart(5, '0')}`,
@@ -518,22 +562,31 @@ export class QuotesService {
       contactCompany: c.company || undefined,
       contactPhone: c.phone,
       contactEmail: c.email || undefined,
-      contactAddress: c.address || undefined,
-      items: quote.items.map((i) => ({
-        name: i.name,
-        quantity: i.quantity,
-        unitPrice: i.unitPrice,
-        vatRate: i.vatRate,
-        discountText: i.discountValue
-          ? (i.discountType === 'AMOUNT' ? `${i.discountValue} ${quote.currency}` : `%${i.discountValue}`)
-          : undefined,
-        lineTotal: i.lineTotal,
-        imageUrl:
-          i.lineImageUrl ||
-          i.productVariant?.product?.imageUrl ||
-          i.product?.imageUrl ||
-          undefined,
-      })),
+      contactAddress: addr,
+      contactTaxOffice: c.taxOffice?.trim() || undefined,
+      contactTaxNumber: c.taxNumber?.trim() || undefined,
+      contactIdentityNumber: c.identityNumber?.trim() || undefined,
+      items: quote.items.map((i) => {
+        const cf = i.colorFabricInfo;
+        const ms = i.measurementInfo;
+        const lineDetail = [cf, ms].map((x) => (x != null ? String(x).trim() : '')).filter(Boolean).join(' · ');
+        return {
+          name: i.name,
+          lineDetail: lineDetail || undefined,
+          quantity: i.quantity,
+          unitPrice: i.unitPrice,
+          vatRate: i.vatRate,
+          discountText: i.discountValue
+            ? (i.discountType === 'AMOUNT' ? `${i.discountValue} ${quote.currency}` : `%${i.discountValue}`)
+            : undefined,
+          lineTotal: i.lineTotal,
+          imageUrl:
+            i.lineImageUrl ||
+            i.productVariant?.product?.imageUrl ||
+            i.product?.imageUrl ||
+            undefined,
+        };
+      }),
       currency: quote.currency,
       subtotal: quote.subtotal,
       discountTotal: quote.discountTotal,
@@ -641,7 +694,21 @@ export class QuotesService {
       },
       include: {
         items: true,
-        contact: { select: { id: true, name: true, surname: true, phone: true, email: true, company: true, address: true } },
+        contact: {
+          select: {
+            id: true,
+            name: true,
+            surname: true,
+            phone: true,
+            email: true,
+            company: true,
+            address: true,
+            billingAddress: true,
+            taxOffice: true,
+            taxNumber: true,
+            identityNumber: true,
+          },
+        },
         createdBy: { select: { id: true, name: true } },
         quote: { select: { id: true, quoteNumber: true } },
       },

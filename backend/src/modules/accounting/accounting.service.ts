@@ -20,7 +20,21 @@ export class AccountingService {
   ) {}
 
   private readonly includeRelations = {
-    contact: { select: { id: true, name: true, surname: true, phone: true, email: true, company: true } },
+    contact: {
+      select: {
+        id: true,
+        name: true,
+        surname: true,
+        phone: true,
+        email: true,
+        company: true,
+        address: true,
+        billingAddress: true,
+        taxOffice: true,
+        taxNumber: true,
+        identityNumber: true,
+      },
+    },
     createdBy: { select: { id: true, name: true } },
     order: { select: { id: true, orderNumber: true } },
     quote: { select: { id: true, quoteNumber: true } },
@@ -63,7 +77,19 @@ export class AccountingService {
       this.prisma.salesOrder.findMany({
         where,
         include: {
-          contact: { select: { id: true, name: true, phone: true, company: true } },
+          contact: {
+            select: {
+              id: true,
+              name: true,
+              phone: true,
+              company: true,
+              address: true,
+              billingAddress: true,
+              taxOffice: true,
+              taxNumber: true,
+              identityNumber: true,
+            },
+          },
           items: true,
           createdBy: { select: { id: true, name: true } },
         },
@@ -331,7 +357,19 @@ export class AccountingService {
         take: limit,
         include: {
           user: { select: { id: true, name: true } },
-          contact: { select: { id: true, name: true, phone: true, company: true } },
+          contact: {
+            select: {
+              id: true,
+              name: true,
+              phone: true,
+              company: true,
+              address: true,
+              billingAddress: true,
+              taxOffice: true,
+              taxNumber: true,
+              identityNumber: true,
+            },
+          },
         },
       }),
       this.prisma.ledgerEntry.count({ where }),
@@ -373,7 +411,19 @@ export class AccountingService {
       },
       include: {
         user: { select: { id: true, name: true } },
-        contact: { select: { id: true, name: true, phone: true } },
+        contact: {
+          select: {
+            id: true,
+            name: true,
+            phone: true,
+            company: true,
+            billingAddress: true,
+            address: true,
+            taxOffice: true,
+            taxNumber: true,
+            identityNumber: true,
+          },
+        },
       },
     });
   }
@@ -398,7 +448,19 @@ export class AccountingService {
               id: true,
               orderNumber: true,
               shippingAddress: true,
-              contact: { select: { id: true, name: true, phone: true, company: true } },
+              contact: {
+                select: {
+                  id: true,
+                  name: true,
+                  phone: true,
+                  company: true,
+                  address: true,
+                  billingAddress: true,
+                  taxOffice: true,
+                  taxNumber: true,
+                  identityNumber: true,
+                },
+              },
             },
           },
         },
@@ -444,7 +506,19 @@ export class AccountingService {
             id: true,
             orderNumber: true,
             shippingAddress: true,
-            contact: { select: { id: true, name: true, phone: true } },
+            contact: {
+              select: {
+                id: true,
+                name: true,
+                phone: true,
+                company: true,
+                billingAddress: true,
+                address: true,
+                taxOffice: true,
+                taxNumber: true,
+                identityNumber: true,
+              },
+            },
           },
         },
       },

@@ -49,6 +49,10 @@ type ContactDetail = {
   company: string | null;
   city: string | null;
   address: string | null;
+  billingAddress: string | null;
+  taxOffice: string | null;
+  taxNumber: string | null;
+  identityNumber: string | null;
   source: string | null;
   notes: string | null;
   tags: string[];
@@ -77,6 +81,10 @@ export default function ContactDetailPage() {
     company: '',
     city: '',
     address: '',
+    billingAddress: '',
+    taxOffice: '',
+    taxNumber: '',
+    identityNumber: '',
     source: '',
     notes: '',
   });
@@ -96,6 +104,10 @@ export default function ContactDetailPage() {
         company: data.company || '',
         city: data.city || '',
         address: data.address || '',
+        billingAddress: data.billingAddress || '',
+        taxOffice: data.taxOffice || '',
+        taxNumber: data.taxNumber || '',
+        identityNumber: data.identityNumber || '',
         source: data.source || '',
         notes: data.notes || '',
       });
@@ -357,6 +369,43 @@ export default function ContactDetailPage() {
                       onChange={(e) => setEditData((d) => ({ ...d, address: e.target.value }))}
                     />
                   </label>
+                  <p className="text-xs font-semibold text-gray-700 pt-1">Fatura / firma (PDF, muhasebe)</p>
+                  <label className="block">
+                    <span className="text-xs text-gray-500">Fatura adresi</span>
+                    <textarea
+                      rows={3}
+                      className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-lg resize-y"
+                      placeholder="Boşsa açık adres kullanılır"
+                      value={editData.billingAddress}
+                      onChange={(e) => setEditData((d) => ({ ...d, billingAddress: e.target.value }))}
+                    />
+                  </label>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <label className="block">
+                      <span className="text-xs text-gray-500">Vergi dairesi</span>
+                      <input
+                        className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-lg"
+                        value={editData.taxOffice}
+                        onChange={(e) => setEditData((d) => ({ ...d, taxOffice: e.target.value }))}
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="text-xs text-gray-500">VKN</span>
+                      <input
+                        className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-lg"
+                        value={editData.taxNumber}
+                        onChange={(e) => setEditData((d) => ({ ...d, taxNumber: e.target.value }))}
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="text-xs text-gray-500">TC Kimlik No</span>
+                      <input
+                        className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-lg"
+                        value={editData.identityNumber}
+                        onChange={(e) => setEditData((d) => ({ ...d, identityNumber: e.target.value }))}
+                      />
+                    </label>
+                  </div>
                   <label className="block">
                     <span className="text-xs text-gray-500 flex items-center gap-1">
                       <Globe className="w-3 h-3" /> Kaynak
@@ -396,6 +445,10 @@ export default function ContactDetailPage() {
                         company: contact.company || '',
                         city: contact.city || '',
                         address: contact.address || '',
+                        billingAddress: contact.billingAddress || '',
+                        taxOffice: contact.taxOffice || '',
+                        taxNumber: contact.taxNumber || '',
+                        identityNumber: contact.identityNumber || '',
                         source: contact.source || '',
                         notes: contact.notes || '',
                       });
@@ -427,6 +480,38 @@ export default function ContactDetailPage() {
                     <div className="flex items-start gap-2 text-gray-600">
                       <MapPin className="w-4 h-4 text-gray-400 mt-0.5 shrink-0" />
                       <span className="whitespace-pre-wrap">{contact.address}</span>
+                    </div>
+                  )}
+                  {(contact.billingAddress ||
+                    contact.taxOffice ||
+                    contact.taxNumber ||
+                    contact.identityNumber) && (
+                    <div className="rounded-xl border border-amber-100 bg-amber-50/70 p-3 space-y-1.5 text-sm">
+                      <p className="text-xs font-semibold text-amber-900 uppercase">Fatura / firma</p>
+                      {contact.billingAddress && (
+                        <p className="text-gray-700 whitespace-pre-wrap">
+                          <span className="text-gray-500">Fatura adresi: </span>
+                          {contact.billingAddress}
+                        </p>
+                      )}
+                      {contact.taxOffice && (
+                        <p className="text-gray-700">
+                          <span className="text-gray-500">VD: </span>
+                          {contact.taxOffice}
+                        </p>
+                      )}
+                      {contact.taxNumber && (
+                        <p className="text-gray-700">
+                          <span className="text-gray-500">VKN: </span>
+                          {contact.taxNumber}
+                        </p>
+                      )}
+                      {contact.identityNumber && (
+                        <p className="text-gray-700">
+                          <span className="text-gray-500">TC: </span>
+                          {contact.identityNumber}
+                        </p>
+                      )}
                     </div>
                   )}
                   {contact.source && (

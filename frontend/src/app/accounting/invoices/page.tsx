@@ -33,7 +33,18 @@ interface InvoiceRow {
   id: string;
   invoiceNumber?: number | string | null;
   invoiceNo?: string | null;
-  contact?: { id?: string; name?: string | null; phone?: string | null };
+  contact?: {
+    id?: string;
+    name?: string | null;
+    surname?: string | null;
+    phone?: string | null;
+    company?: string | null;
+    address?: string | null;
+    billingAddress?: string | null;
+    taxOffice?: string | null;
+    taxNumber?: string | null;
+    identityNumber?: string | null;
+  };
   contactName?: string | null;
   personName?: string | null;
   order?: { id?: string; orderNumber?: string | null };
@@ -132,7 +143,9 @@ function safeStr(v: unknown): string {
 
 function personLabel(inv: InvoiceRow): string {
   const c = inv.contact;
+  const full = [c?.name, c?.surname].filter(Boolean).join(' ').trim();
   return (
+    full ||
     safeStr(c?.name) ||
     safeStr(inv.contactName) ||
     safeStr(inv.personName) ||
@@ -882,8 +895,51 @@ export default function AccountingInvoicesPage() {
                     {personPhone(detail) ? (
                       <p className="text-gray-600 text-xs">{formatPhone(personPhone(detail))}</p>
                     ) : null}
+                    {detail.contact?.company ? (
+                      <p className="text-gray-600 text-xs mt-1">{detail.contact.company}</p>
+                    ) : null}
                   </div>
                 </div>
+                {detail.contact &&
+                  (detail.contact.billingAddress ||
+                    detail.contact.taxOffice ||
+                    detail.contact.taxNumber ||
+                    detail.contact.identityNumber ||
+                    detail.contact.address) && (
+                  <div className="rounded-lg border border-amber-100 bg-amber-50/60 p-3 text-xs space-y-1">
+                    <p className="font-semibold text-amber-900 uppercase tracking-wide">Fatura / firma</p>
+                    {detail.contact.billingAddress && (
+                      <p className="text-gray-800 whitespace-pre-wrap">
+                        <span className="text-gray-500">Fatura adresi: </span>
+                        {detail.contact.billingAddress}
+                      </p>
+                    )}
+                    {!detail.contact.billingAddress && detail.contact.address && (
+                      <p className="text-gray-800 whitespace-pre-wrap">
+                        <span className="text-gray-500">Adres: </span>
+                        {detail.contact.address}
+                      </p>
+                    )}
+                    {detail.contact.taxOffice && (
+                      <p className="text-gray-800">
+                        <span className="text-gray-500">VD: </span>
+                        {detail.contact.taxOffice}
+                      </p>
+                    )}
+                    {detail.contact.taxNumber && (
+                      <p className="text-gray-800">
+                        <span className="text-gray-500">VKN: </span>
+                        {detail.contact.taxNumber}
+                      </p>
+                    )}
+                    {detail.contact.identityNumber && (
+                      <p className="text-gray-800">
+                        <span className="text-gray-500">TC: </span>
+                        {detail.contact.identityNumber}
+                      </p>
+                    )}
+                  </div>
+                )}
                 <div className="grid grid-cols-2 gap-3 pt-2 border-t border-gray-100">
                   <div>
                     <p className="text-xs text-gray-500">Sipariş No</p>

@@ -774,10 +774,12 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
                             : 'bg-white rounded-tl-md',
                         )}
                       >
-                      {/* Grup mesajlarında gönderen adını göster */}
-                      {!isOutgoing && activeConversation?.isGroup && (msg.participantName || msg.participantPhone) && (
+                      {/* Grup: her mesajda gönderen (giden: Siz / temsilci) */}
+                      {activeConversation?.isGroup && (
                         <div className="text-xs font-semibold text-green-600 mb-1 truncate">
-                          {msg.participantName || formatPhone(msg.participantPhone)}
+                          {isOutgoing
+                            ? (msg.participantName || msg.sentBy?.name || 'Siz')
+                            : (msg.participantName || formatPhone(msg.participantPhone) || '—')}
                         </div>
                       )}
                       {mediaUrlResolved && isImage && (

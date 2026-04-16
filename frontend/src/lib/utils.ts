@@ -62,8 +62,17 @@ export function phoneToWhatsappChatId(phone: string | null | undefined): string 
 
 export function formatPhone(phone: string | null | undefined): string {
   if (phone == null || phone === '') return '—';
+  const raw = String(phone).trim();
+  if (raw.toLowerCase().startsWith('lid:')) {
+    const id = raw.slice(4).replace(/\D/g, '');
+    return id.length ? `WhatsApp · …${id.slice(-4)}` : 'WhatsApp (LID)';
+  }
+  if (raw.toLowerCase().startsWith('group:')) {
+    return 'WhatsApp Grubu';
+  }
+
   const digits = digitsOnlyPhone(phone);
-  if (!digits) return phone.trim().startsWith('+') ? phone.trim() : `+${phone.trim()}`;
+  if (!digits) return raw.startsWith('+') ? raw : `+${raw}`;
 
   let d = digits;
   if (d.startsWith('00')) d = d.slice(2);
@@ -73,6 +82,11 @@ export function formatPhone(phone: string | null | undefined): string {
   if (d.length === 12 && d.startsWith('90')) {
     const rest = d.slice(2);
     return `+90 ${rest.slice(0, 3)} ${rest.slice(3, 6)} ${rest.slice(6, 8)} ${rest.slice(8)}`;
+  }
+
+  // Çok uzun rakam dizileri (yanlışlıkla LID / iç kimlik gibi kayıtlı) okunaklı kısalt
+  if (d.length > 15) {
+    return `Kimlik · …${d.slice(-4)}`;
   }
 
   return `+${d}`;

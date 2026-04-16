@@ -17,12 +17,12 @@ import {
 } from '../../common/whatsapp-system-message';
 import {
   isGroupChat,
-  isIndividualChat,
   isProcessableChat,
   extractPhoneFromIndividualJid,
   extractPhoneFromParticipant,
   isValidPhoneNumber,
-  canonicalContactPhone,
+  isLidChat,
+  lidJidToContactPhone,
 } from '../../common/contact-phone';
 
 @Injectable()
@@ -101,7 +101,11 @@ export class WahaWebhookHandler {
         // Grup için participant bilgisini al (mesajı gönderen kişi)
         const rawParticipant = msg.author || msg.participant || msg._data?.author || msg._data?.participant;
         participantPhone = extractPhoneFromParticipant(rawParticipant);
-        participantName = msg.pushName || msg._data?.notifyName || null;
+        participantName =
+          msg.pushName ||
+          msg._data?.notifyName ||
+          msg._data?.pushName ||
+          (typeof rawParticipant === 'string' && /@lid$/i.test(rawParticipant) ? 'WhatsApp kullanıcısı' : null);
 
         // Grup adını al
         const groupName = msg.chat?.name || msg._data?.chat?.name || msg.notifyName || 'Grup';
@@ -124,21 +128,40 @@ export class WahaWebhookHandler {
         this.logger.debug(
           `Grup mesajı: ${chatId} | Gönderen: ${participantPhone || 'bilinmiyor'} (${participantName || 'adsız'})`,
         );
+      } else if (isLidChat(chatId)) {
+        // ─────────────────────────────────────────────────────────────
+        // LID (@lid) — WhatsApp iç kimliği; numara yerine lid:… anahtarı + pushName
+        // ─────────────────────────────────────────────────────────────
+        const lidKey = lidJidToContactPhone(chatId);
+        if (!lidKey) {
+          this.logger.warn(`LID çıkarılamadı: ${chatId}`);
+          return;
+        }
+        const displayName =
+          msg.pushName || msg._data?.notifyName || msg.notifyName || undefined;
+        contact = await this.contactsService.findOrCreate(
+          lidKey,
+          displayName,
+          waSession.organizationId,
+        );
+        conversation = await this.conversationsService.findOrCreate(
+          contact.id,
+          waSession.id,
+        );
       } else {
         // ─────────────────────────────────────────────────────────────
         // BİREYSEL MESAJ İŞLEME (@c.us)
         // ─────────────────────────────────────────────────────────────
-        
+
         phone = extractPhoneFromIndividualJid(chatId);
-        
+
         if (!phone || !isValidPhoneNumber(phone)) {
           this.logger.warn(`Geçersiz telefon numarası, chatId=${chatId}, çıkarılan=${phone}`);
           return;
         }
 
-        // Kişi oluştur/bul (pushName kullanmıyoruz)
         contact = await this.contactsService.findOrCreate(
-          phone, 
+          phone,
           undefined,
           waSession.organizationId,
         );
@@ -218,10 +241,14 @@ export class WahaWebhookHandler {
         timestamp: msg.timestamp ? new Date(msg.timestamp * 1000) : new Date(),
       };
 
-      // Grup mesajı ise participant bilgisini ekle
-      if (isGroup && !isFromMe) {
-        messageData.participantPhone = participantPhone;
-        messageData.participantName = participantName;
+      // Grup mesajı: gönderen (gelen); giden için oturum tarafı etiketi UI'da "Siz"
+      if (isGroup) {
+        if (!isFromMe) {
+          messageData.participantPhone = participantPhone;
+          messageData.participantName = participantName;
+        } else {
+          messageData.participantName = 'Siz';
+        }
       }
 
       const message = await this.prisma.message.upsert({

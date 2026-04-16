@@ -52,6 +52,8 @@ interface LocalLineItem {
   lineImageUrl?: string;
   name: string;
   description?: string;
+  colorFabricInfo?: string;
+  measurementInfo?: string;
   quantity: number;
   unitPrice: number;
   vatRate: number;
@@ -140,6 +142,8 @@ function emptyLine(): LocalLineItem {
   return {
     key: genKey(),
     name: '',
+    colorFabricInfo: '',
+    measurementInfo: '',
     quantity: 1,
     unitPrice: 0,
     vatRate: 20,
@@ -170,8 +174,6 @@ export default function QuoteDetailPage() {
   const [termsOverride, setTermsOverride] = useState('');
   const [footerNoteOverride, setFooterNoteOverride] = useState('');
   const [documentKind, setDocumentKind] = useState<'PROFORMA' | 'QUOTE'>('PROFORMA');
-  const [colorFabricInfo, setColorFabricInfo] = useState('');
-  const [measurementInfo, setMeasurementInfo] = useState('');
   const [grandTotalOverride, setGrandTotalOverride] = useState<string>('');
   const [saving, setSaving] = useState(false);
 
@@ -225,6 +227,8 @@ export default function QuoteDetailPage() {
         lineImageUrl: it.lineImageUrl || undefined,
         name: String(it.name || ''),
         description: it.description || undefined,
+        colorFabricInfo: it.colorFabricInfo != null ? String(it.colorFabricInfo) : '',
+        measurementInfo: it.measurementInfo != null ? String(it.measurementInfo) : '',
         quantity: Number(it.quantity || 0),
         unitPrice: Number(it.unitPrice || 0),
         vatRate: Number(it.vatRate || 0),
@@ -241,8 +245,6 @@ export default function QuoteDetailPage() {
     setTermsOverride(q.termsOverride != null ? String(q.termsOverride) : '');
     setFooterNoteOverride(q.footerNoteOverride != null ? String(q.footerNoteOverride) : '');
     setDocumentKind(q.documentKind === 'QUOTE' ? 'QUOTE' : 'PROFORMA');
-    setColorFabricInfo(q.colorFabricInfo || '');
-    setMeasurementInfo(q.measurementInfo || '');
     setGrandTotalOverride(q.grandTotalOverride ? String(q.grandTotalOverride) : '');
   };
 
@@ -286,6 +288,8 @@ export default function QuoteDetailPage() {
         lineImageUrl: p.imageUrl || undefined,
         name: variant ? variant.name : String(p.name ?? ''),
         description: p.description || undefined,
+        colorFabricInfo: '',
+        measurementInfo: '',
         quantity: 1,
         unitPrice: variant ? variant.unitPrice : p.unitPrice,
         vatRate: variant ? variant.vatRate : p.vatRate,
@@ -346,8 +350,8 @@ export default function QuoteDetailPage() {
         termsOverride: termsOverride.trim() || null,
         footerNoteOverride: footerNoteOverride.trim() || null,
         documentKind,
-        colorFabricInfo: colorFabricInfo.trim() || null,
-        measurementInfo: measurementInfo.trim() || null,
+        colorFabricInfo: null,
+        measurementInfo: null,
         grandTotalOverride: grandTotalOverride && parseFloat(grandTotalOverride) > 0 
           ? parseFloat(grandTotalOverride) 
           : null,
@@ -362,6 +366,8 @@ export default function QuoteDetailPage() {
           vatRate: Math.round(l.vatRate),
           discountType: l.discountType,
           discountValue: l.discountValue || 0,
+          colorFabricInfo: String(l.colorFabricInfo ?? '').trim() || null,
+          measurementInfo: String(l.measurementInfo ?? '').trim() || null,
         })),
       });
       setQuote(data);
@@ -559,12 +565,14 @@ export default function QuoteDetailPage() {
                 Ürün seçili satırlarda birim fiyat ve KDV, XML'den gelen değer olarak kilitlidir; sadece indirim düzenlenir. Açıklama alanı PDF'e yazdırılmaz.
               </p>
               <div className="overflow-x-auto">
-                <table className="w-full text-xs min-w-[880px]">
+                <table className="w-full text-xs min-w-[1040px]">
                   <thead>
                     <tr className="bg-gray-50/90 text-gray-500 font-semibold uppercase tracking-wide text-[10px]">
                       <th className="text-left px-2 py-2 w-14">Görsel</th>
-                      <th className="text-left px-3 py-2 w-[22%]">Ürün</th>
-                      <th className="text-left px-2 py-2 w-[18%]">Açıklama (sadece form)</th>
+                      <th className="text-left px-3 py-2 w-[18%]">Ürün</th>
+                      <th className="text-left px-2 py-2 w-[12%]">Renk/Kumaş</th>
+                      <th className="text-left px-2 py-2 w-[10%]">Ölçü</th>
+                      <th className="text-left px-2 py-2 w-[14%]">Açıklama (sadece form)</th>
                       <th className="text-left px-2 py-2 w-16">Miktar</th>
                       <th className="text-left px-2 py-2 w-24">Birim Fiyat (KDV Dahil)</th>
                       <th className="text-left px-2 py-2 w-14">KDV %</th>
@@ -605,6 +613,26 @@ export default function QuoteDetailPage() {
                             value={line.name}
                             onChange={(e) => updateLine(line.key, { name: e.target.value })}
                             placeholder="Ürün adı"
+                            className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-whatsapp"
+                          />
+                        </td>
+                        <td className="px-2 py-2">
+                          <input
+                            value={line.colorFabricInfo ?? ''}
+                            onChange={(e) =>
+                              updateLine(line.key, { colorFabricInfo: e.target.value })
+                            }
+                            placeholder="Renk/kumaş"
+                            className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-whatsapp"
+                          />
+                        </td>
+                        <td className="px-2 py-2">
+                          <input
+                            value={line.measurementInfo ?? ''}
+                            onChange={(e) =>
+                              updateLine(line.key, { measurementInfo: e.target.value })
+                            }
+                            placeholder="Ölçü"
                             className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-whatsapp"
                           />
                         </td>
@@ -771,48 +799,6 @@ export default function QuoteDetailPage() {
               </div>
             </section>
 
-            {/* Yeni ek alanlar */}
-            <section className="bg-white rounded-xl border border-gray-100 shadow-sm p-5 space-y-4">
-              <h3 className="text-sm font-semibold text-gray-900">Ek Bilgiler</h3>
-              <div className="grid sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-gray-500 mb-1">Renk/Kumaş Bilgisi</label>
-                  <input
-                    type="text"
-                    value={colorFabricInfo}
-                    onChange={(e) => setColorFabricInfo(e.target.value)}
-                    placeholder="Örn: Krem kumaş, Antrasit deri"
-                    className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-whatsapp"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-gray-500 mb-1">Ölçü Bilgisi</label>
-                  <input
-                    type="text"
-                    value={measurementInfo}
-                    onChange={(e) => setMeasurementInfo(e.target.value)}
-                    placeholder="Örn: 180x200 cm"
-                    className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-whatsapp"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-gray-500 mb-1">
-                    Genel Toplam (Manuel)
-                    <span className="text-[10px] text-gray-400 ml-1">(Doluysa hesaplanan yerine kullanılır)</span>
-                  </label>
-                  <input
-                    type="number"
-                    min={0}
-                    step={0.01}
-                    value={grandTotalOverride}
-                    onChange={(e) => setGrandTotalOverride(e.target.value)}
-                    placeholder="Boş bırakılırsa otomatik hesaplanır"
-                    className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-whatsapp tabular-nums"
-                  />
-                </div>
-              </div>
-            </section>
-
             {/* Notlar */}
             <section className="bg-white rounded-xl border border-gray-100 shadow-sm p-5 space-y-4">
               <div>
@@ -920,6 +906,21 @@ export default function QuoteDetailPage() {
                   </dd>
                 </div>
               </dl>
+              <div className="space-y-1.5">
+                <label className="block text-[11px] font-semibold text-gray-500">
+                  Genel Toplam (Manuel)
+                  <span className="text-[10px] text-gray-400 font-normal ml-1">(Doluysa hesaplanan yerine)</span>
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  step={0.01}
+                  value={grandTotalOverride}
+                  onChange={(e) => setGrandTotalOverride(e.target.value)}
+                  placeholder="Boş bırakılırsa otomatik hesaplanır"
+                  className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-whatsapp tabular-nums bg-white"
+                />
+              </div>
               <p className="text-[11px] text-gray-400 leading-relaxed">
                 Kaydet'e tıkladığınızda değişiklikler veritabanına yazılır. PDF'i yeniden oluşturmak gerekebilir.
               </p>
@@ -1081,12 +1082,14 @@ export default function QuoteDetailPage() {
         <div className="xl:col-span-6 space-y-4 order-1 xl:order-2 min-w-0">
           <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
             <div className="overflow-x-auto">
-              <table className="w-full text-sm min-w-[640px]">
+              <table className="w-full text-sm min-w-[820px]">
                 <thead className="bg-gray-50 text-xs text-gray-500">
                   <tr>
                     <th className="text-left px-4 py-3 w-16">Görsel</th>
                     <th className="text-left px-4 py-3">#</th>
                     <th className="text-left px-4 py-3">Ürün / Hizmet</th>
+                    <th className="text-left px-4 py-3">Renk/Kumaş</th>
+                    <th className="text-left px-4 py-3">Ölçü</th>
                     <th className="text-right px-4 py-3">Miktar</th>
                     <th className="text-right px-4 py-3">Birim Fiyat</th>
                     <th className="text-right px-4 py-3">KDV</th>
@@ -1118,6 +1121,12 @@ export default function QuoteDetailPage() {
                         <p className="font-medium text-gray-900">{item.name}</p>
                         {item.description && <p className="text-xs text-gray-400">{item.description}</p>}
                       </td>
+                      <td className="px-4 py-2.5 text-gray-700 text-sm">
+                        {item.colorFabricInfo || '—'}
+                      </td>
+                      <td className="px-4 py-2.5 text-gray-700 text-sm">
+                        {item.measurementInfo || '—'}
+                      </td>
                       <td className="px-4 py-2.5 text-right">{item.quantity}</td>
                       <td className="px-4 py-2.5 text-right">{fmt(item.unitPrice)}</td>
                       <td className="px-4 py-2.5 text-right">%{item.vatRate}</td>
@@ -1145,27 +1154,6 @@ export default function QuoteDetailPage() {
               </button>
             </div>
           </div>
-
-          {/* Ek bilgiler görünümü */}
-          {(quote.colorFabricInfo || quote.measurementInfo) && (
-            <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4 md:p-5">
-              <h3 className="text-sm font-semibold text-gray-800 mb-3">Ek Bilgiler</h3>
-              <div className="grid sm:grid-cols-3 gap-4 text-sm">
-                {quote.colorFabricInfo && (
-                  <div>
-                    <span className="text-gray-500">Renk/Kumaş:</span>
-                    <span className="ml-2 text-gray-900">{quote.colorFabricInfo}</span>
-                  </div>
-                )}
-                {quote.measurementInfo && (
-                  <div>
-                    <span className="text-gray-500">Ölçü:</span>
-                    <span className="ml-2 text-gray-900">{quote.measurementInfo}</span>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
 
           <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4 md:p-5 space-y-4">
             <div className="flex items-center gap-2 text-sm font-semibold text-gray-800">

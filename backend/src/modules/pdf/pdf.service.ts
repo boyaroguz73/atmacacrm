@@ -28,6 +28,8 @@ interface PdfSettings {
 interface LineItem {
   name: string;
   description?: string;
+  /** Renk/kumaş · ölçü (satır altı) */
+  lineDetail?: string;
   quantity: number;
   unitPrice: number;
   vatRate: number;
@@ -51,6 +53,8 @@ export interface PdfData {
   contactAddress?: string;
   contactTaxOffice?: string;
   contactTaxNumber?: string;
+  /** TC Kimlik No (şahıs / fatura) */
+  contactIdentityNumber?: string;
   items: LineItem[];
   currency: string;
   subtotal: number;
@@ -74,7 +78,12 @@ export interface OrderConfirmationPdfData {
   contactCompany?: string;
   contactPhone?: string;
   contactEmail?: string;
+  /** Fatura / firma adresi (öncelikli) */
+  billingAddress?: string;
   shippingAddress?: string;
+  contactTaxOffice?: string;
+  contactTaxNumber?: string;
+  contactIdentityNumber?: string;
   expectedDelivery?: string;
   quoteRef?: string;
   items: LineItem[];
@@ -327,6 +336,9 @@ export class PdfService {
         if (data.contactTaxOffice || data.contactTaxNumber) {
           startY += txt(`VD: ${this.t(data.contactTaxOffice || '')}  VN: ${data.contactTaxNumber || ''}`, ML, startY, { size: 8, width: PW, lineBreak: true }) + 2;
         }
+        if (data.contactIdentityNumber) {
+          startY += txt(`TC: ${data.contactIdentityNumber}`, ML, startY, { size: 8, width: PW, lineBreak: true }) + 2;
+        }
         // Temsilci bilgisi
         if (data.createdByName) {
           startY += txt(`${this.t('Temsilci')}: ${this.t(data.createdByName)}`, ML, startY, { size: 8, bold: true, color: primary, width: PW, lineBreak: true }) + 2;
@@ -359,7 +371,8 @@ export class PdfService {
         const softLayout = data.layout === 'order_form';
         data.items.forEach((item, idx) => {
           const imgBuf = itemImageBuffers[idx];
-          const itemH = Math.max(32, imgBuf ? 36 : 0);
+          const detailExtra = (item as LineItem).lineDetail ? 16 : 0;
+          const itemH = Math.max(32, imgBuf ? 36 : 0) + detailExtra;
           // Sayfa taşması
           if (rowY + itemH + 8 > PAGE_H - 120) {
             doc.addPage({ margin: 0 });
@@ -382,6 +395,13 @@ export class PdfService {
             }
             R(); doc.fontSize(9).fillColor('#222');
             doc.text(this.t(item.name), nameColLeft + namePad, rowY + 6, { width: cols[1].w - namePad - 4, ellipsis: true, lineBreak: false });
+            if ((item as LineItem).lineDetail) {
+              doc.fontSize(7).fillColor('#666666');
+              doc.text(this.t(String((item as LineItem).lineDetail)), nameColLeft + namePad, rowY + 20, {
+                width: cols[1].w - namePad - 4,
+                lineBreak: true,
+              });
+            }
             rx += cols[1].w;
             doc.fontSize(8).fillColor('#333');
             doc.text(String(item.quantity), rx, rowY + 10, { width: cols[2].w - 6, align: 'right', lineBreak: false });
@@ -409,8 +429,18 @@ export class PdfService {
               } catch { /* */ }
             }
             txt(this.t(item.name), nameColX + pad, rowY + 6, { size: 8, width: cols[1].w - pad - 3 });
+            if ((item as LineItem).lineDetail) {
+              txt(this.t(String((item as LineItem).lineDetail)), nameColX + pad, rowY + 18, {
+                size: 6.5,
+                width: cols[1].w - pad - 3,
+                color: '#666666',
+              });
+            }
             rx += cols[1].w;
-            const rowH = Math.max(ROW_H, imgBuf ? 30 : 0);
+            const rowH = Math.max(
+              ROW_H + ((item as LineItem).lineDetail ? 16 : 0),
+              imgBuf ? 30 : 0,
+            );
             txt(String(item.quantity), rx + 3, rowY + 6, { size: 8, width: cols[2].w - 6, align: 'right' }); rx += cols[2].w;
             txt(item.unitPrice.toFixed(2), rx + 3, rowY + 6, { size: 8, width: cols[3].w - 6, align: 'right' }); rx += cols[3].w;
             txt(item.discountText ? this.t(item.discountText) : '-', rx + 3, rowY + 6, { size: 8, width: cols[4].w - 6, align: 'right' }); rx += cols[4].w;
@@ -531,6 +561,15 @@ export class PdfService {
       discountLine,
       data.orderNotes || '',
     ].filter(Boolean);
+    const bill = data.billingAddress?.trim();
+    const ship = data.shippingAddress?.trim();
+    let mergedAddr: string | undefined;
+    if (bill && ship && bill !== ship) {
+      mergedAddr = `${bill}\n\n${this.t('Teslimat')}: ${ship}`;
+    } else {
+      mergedAddr = bill || ship || undefined;
+    }
+
     return this.generateDocument({
       title: this.t('SIPARIS ONAY FORMU'),
       documentNumber: data.documentNumber,
@@ -540,7 +579,10 @@ export class PdfService {
       contactCompany: data.contactCompany,
       contactPhone: data.contactPhone,
       contactEmail: data.contactEmail,
-      contactAddress: data.shippingAddress,
+      contactAddress: mergedAddr,
+      contactTaxOffice: data.contactTaxOffice,
+      contactTaxNumber: data.contactTaxNumber,
+      contactIdentityNumber: data.contactIdentityNumber,
       items: data.items,
       currency: data.currency,
       subtotal: data.subtotal,

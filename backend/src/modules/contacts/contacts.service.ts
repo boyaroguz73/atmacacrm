@@ -26,6 +26,32 @@ export class ContactsService {
   constructor(private prisma: PrismaService) {}
 
   async findOrCreate(phone: string, name?: string, organizationId?: string | null) {
+    const raw = String(phone ?? '').trim();
+    if (raw.startsWith('lid:') || raw.startsWith('group:')) {
+      const existing = await this.prisma.contact.findFirst({ where: { phone: raw } });
+      if (existing) {
+        const nm = name?.trim();
+        if (nm && !existing.name) {
+          try {
+            return await this.prisma.contact.update({
+              where: { id: existing.id },
+              data: { name: nm },
+            });
+          } catch {
+            return existing;
+          }
+        }
+        return existing;
+      }
+      return this.prisma.contact.create({
+        data: {
+          phone: raw,
+          name: name?.trim() || null,
+          organizationId: organizationId || null,
+        },
+      });
+    }
+
     const keys = contactPhoneLookupKeys(phone).filter(Boolean);
     const primary =
       canonicalContactPhone(phone) || keys[0] || String(phone ?? '').replace(/\D/g, '');
@@ -210,6 +236,7 @@ export class ContactsService {
       city?: string;
       address?: string;
       taxNumber?: string;
+      taxOffice?: string;
       identityNumber?: string;
       billingAddress?: string;
       shippingAddress?: string;
@@ -403,6 +430,10 @@ export class ContactsService {
       company?: string | null;
       city?: string | null;
       address?: string | null;
+      billingAddress?: string | null;
+      taxOffice?: string | null;
+      taxNumber?: string | null;
+      identityNumber?: string | null;
       organizationId?: string | null;
       sessionId?: string | null;
     },
@@ -442,6 +473,10 @@ export class ContactsService {
           company: dto.company?.trim() || null,
           city: dto.city?.trim() || null,
           address: dto.address?.trim() || null,
+          billingAddress: dto.billingAddress?.trim() || null,
+          taxOffice: dto.taxOffice?.trim() || null,
+          taxNumber: dto.taxNumber?.trim() || null,
+          identityNumber: dto.identityNumber?.trim() || null,
           organizationId,
         },
         include: { lead: true },

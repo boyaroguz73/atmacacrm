@@ -14,7 +14,21 @@ export class OrdersService {
   ) {}
 
   private readonly includeRelations = {
-    contact: { select: { id: true, name: true, surname: true, phone: true, email: true, company: true } },
+    contact: {
+      select: {
+        id: true,
+        name: true,
+        surname: true,
+        phone: true,
+        email: true,
+        company: true,
+        address: true,
+        billingAddress: true,
+        taxOffice: true,
+        taxNumber: true,
+        identityNumber: true,
+      },
+    },
     createdBy: { select: { id: true, name: true } },
     items: {
       include: {
@@ -232,16 +246,22 @@ export class OrdersService {
         : undefined;
 
     try {
+      const co = orderFull.contact;
       const pdfUrl = await this.pdfService.generateOrderConfirmationPdf({
         documentNumber: `SIP-${String(orderFull.orderNumber).padStart(5, '0')}`,
         date: new Date().toLocaleDateString('tr-TR'),
         contactName:
-          [orderFull.contact.name, orderFull.contact.surname].filter(Boolean).join(' ') ||
-          orderFull.contact.phone,
-        contactCompany: orderFull.contact.company || undefined,
-        contactPhone: orderFull.contact.phone,
-        contactEmail: orderFull.contact.email || undefined,
+          [co.name, co.surname].filter(Boolean).join(' ') ||
+          co.phone,
+        contactCompany: co.company || undefined,
+        contactPhone: co.phone,
+        contactEmail: co.email || undefined,
+        billingAddress:
+          co.billingAddress?.trim() || co.address?.trim() || undefined,
         shippingAddress: orderFull.shippingAddress || undefined,
+        contactTaxOffice: co.taxOffice?.trim() || undefined,
+        contactTaxNumber: co.taxNumber?.trim() || undefined,
+        contactIdentityNumber: co.identityNumber?.trim() || undefined,
         expectedDelivery: orderFull.expectedDeliveryDate
           ? new Date(orderFull.expectedDeliveryDate).toLocaleDateString('tr-TR')
           : undefined,

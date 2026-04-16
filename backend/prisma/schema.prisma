@@ -279,6 +279,8 @@ model Contact {
   city            String?
   address         String?
   taxNumber       String?  // VKN (Vergi Kimlik Numarası)
+  /// Vergi dairesi
+  taxOffice       String?
   identityNumber  String?  // TC Kimlik Numarası
   billingAddress  String?  // Fatura adresi
   shippingAddress String?  // Teslimat adresi
@@ -789,6 +791,10 @@ model QuoteItem {
   lineTotal     Float         @default(0)
   /// Satır görseli (PDF / ekran)
   lineImageUrl  String?
+  /// Ürün satırına özel renk/kumaş
+  colorFabricInfo String?
+  /// Ürün satırına özel ölçü
+  measurementInfo String?
 
   quote            Quote           @relation(fields: [quoteId], references: [id], onDelete: Cascade)
   product          Product?        @relation(fields: [productId], references: [id], onDelete: SetNull)

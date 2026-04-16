@@ -58,6 +58,11 @@ export default function ContactPanel({
     email: '',
     company: '',
     city: '',
+    address: '',
+    billingAddress: '',
+    taxOffice: '',
+    taxNumber: '',
+    identityNumber: '',
     source: '',
     notes: '',
   });
@@ -194,6 +199,11 @@ export default function ContactPanel({
       email: contact.email || '',
       company: contact.company || '',
       city: contact.city || '',
+      address: contact.address || '',
+      billingAddress: contact.billingAddress || '',
+      taxOffice: contact.taxOffice || '',
+      taxNumber: contact.taxNumber || '',
+      identityNumber: contact.identityNumber || '',
       source: contact.source || '',
       notes: contact.notes || '',
     });
@@ -426,6 +436,62 @@ export default function ContactPanel({
                       />
                     </div>
                     <div className="flex items-start gap-2.5">
+                      <MapPin className="w-3.5 h-3.5 text-gray-400 mt-1" />
+                      <textarea
+                        value={editData.address}
+                        onChange={(e) =>
+                          setEditData((d) => ({ ...d, address: e.target.value }))
+                        }
+                        placeholder="Adres"
+                        rows={2}
+                        className="flex-1 px-2 py-1 border border-gray-200 rounded text-xs focus:outline-none focus:border-blue-500 resize-none"
+                      />
+                    </div>
+                    <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide pt-1">
+                      Fatura / firma (PDF)
+                    </p>
+                    <div className="flex items-start gap-2.5">
+                      <MapPin className="w-3.5 h-3.5 text-gray-400 mt-1" />
+                      <textarea
+                        value={editData.billingAddress}
+                        onChange={(e) =>
+                          setEditData((d) => ({ ...d, billingAddress: e.target.value }))
+                        }
+                        placeholder="Fatura adresi (boşsa genel adres kullanılır)"
+                        rows={2}
+                        className="flex-1 px-2 py-1 border border-gray-200 rounded text-xs focus:outline-none focus:border-blue-500 resize-none"
+                      />
+                    </div>
+                    <div className="grid grid-cols-1 gap-1.5">
+                      <input
+                        type="text"
+                        value={editData.taxOffice}
+                        onChange={(e) =>
+                          setEditData((d) => ({ ...d, taxOffice: e.target.value }))
+                        }
+                        placeholder="Vergi dairesi"
+                        className="w-full px-2 py-1 border border-gray-200 rounded text-xs focus:outline-none focus:border-blue-500"
+                      />
+                      <input
+                        type="text"
+                        value={editData.taxNumber}
+                        onChange={(e) =>
+                          setEditData((d) => ({ ...d, taxNumber: e.target.value }))
+                        }
+                        placeholder="VKN"
+                        className="w-full px-2 py-1 border border-gray-200 rounded text-xs focus:outline-none focus:border-blue-500"
+                      />
+                      <input
+                        type="text"
+                        value={editData.identityNumber}
+                        onChange={(e) =>
+                          setEditData((d) => ({ ...d, identityNumber: e.target.value }))
+                        }
+                        placeholder="TC Kimlik No"
+                        className="w-full px-2 py-1 border border-gray-200 rounded text-xs focus:outline-none focus:border-blue-500"
+                      />
+                    </div>
+                    <div className="flex items-start gap-2.5">
                       <StickyNote className="w-3.5 h-3.5 text-gray-400 mt-1" />
                       <textarea
                         value={editData.notes}
@@ -456,6 +522,46 @@ export default function ContactPanel({
                       <div className="flex items-center gap-2.5 text-gray-600">
                         <MapPin className="w-3.5 h-3.5 text-gray-400" />
                         <span>{contact.city}</span>
+                      </div>
+                    )}
+                    {contact.address && (
+                      <div className="flex items-start gap-2.5 text-gray-600">
+                        <MapPin className="w-3.5 h-3.5 text-gray-400 mt-0.5 shrink-0" />
+                        <span className="text-xs whitespace-pre-wrap">{contact.address}</span>
+                      </div>
+                    )}
+                    {(contact.billingAddress ||
+                      contact.taxOffice ||
+                      contact.taxNumber ||
+                      contact.identityNumber) && (
+                      <div className="rounded-lg border border-amber-100 bg-amber-50/60 px-2.5 py-2 space-y-1">
+                        <p className="text-[10px] font-semibold text-amber-900 uppercase">
+                          Fatura / firma
+                        </p>
+                        {contact.billingAddress && (
+                          <p className="text-xs text-gray-700 whitespace-pre-wrap">
+                            <span className="text-gray-500">Fatura adresi: </span>
+                            {contact.billingAddress}
+                          </p>
+                        )}
+                        {contact.taxOffice && (
+                          <p className="text-xs text-gray-700">
+                            <span className="text-gray-500">VD: </span>
+                            {contact.taxOffice}
+                          </p>
+                        )}
+                        {contact.taxNumber && (
+                          <p className="text-xs text-gray-700">
+                            <span className="text-gray-500">VKN: </span>
+                            {contact.taxNumber}
+                          </p>
+                        )}
+                        {contact.identityNumber && (
+                          <p className="text-xs text-gray-700">
+                            <span className="text-gray-500">TC: </span>
+                            {contact.identityNumber}
+                          </p>
+                        )}
                       </div>
                     )}
                     {contact.notes && (

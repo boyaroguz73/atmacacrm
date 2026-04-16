@@ -76,6 +76,10 @@ export class ContactsController {
       company?: string;
       city?: string;
       address?: string;
+      billingAddress?: string;
+      taxOffice?: string;
+      taxNumber?: string;
+      identityNumber?: string;
       organizationId?: string;
       openChat?: boolean;
       sessionId?: string;
@@ -108,6 +112,10 @@ export class ContactsController {
       company: body.company,
       city: body.city,
       address: body.address,
+      billingAddress: body.billingAddress,
+      taxOffice: body.taxOffice,
+      taxNumber: body.taxNumber,
+      identityNumber: body.identityNumber,
       organizationId: body.organizationId,
       sessionId: sessionId ?? null,
     });
