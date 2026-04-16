@@ -2,19 +2,20 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# Prisma postinstall (npm install) şemayı ister; ayrıca Alpine'da openssl önerilir
-RUN apk add --no-cache openssl libc6-compat
+# Prisma + sharp için gerekli bağımlılıklar (Alpine)
+RUN apk add --no-cache openssl libc6-compat python3 make g++ vips-dev
 
 COPY package.json package-lock.json* ./
 COPY prisma ./prisma
-RUN npm install
+RUN npm install --include=optional
 
 COPY . .
 RUN npm run build
 
 FROM node:20-alpine
 
-RUN apk add --no-cache openssl libc6-compat ttf-dejavu
+# Runtime için gerekli: openssl, libc6-compat, vips (sharp için), fontlar (PDF için)
+RUN apk add --no-cache openssl libc6-compat vips ttf-dejavu
 
 WORKDIR /app
 
