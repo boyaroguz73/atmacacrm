@@ -679,6 +679,47 @@ export class WahaService implements OnModuleInit {
     }
   }
 
+  /** WAHA: grup meta (subject vb.) — webhook’ta eksik başlık için */
+  async getGroupById(sessionName: string, groupJid: string): Promise<any | null> {
+    const id = groupJid.includes('@g.us')
+      ? groupJid
+      : `${String(groupJid).replace(/\D/g, '')}@g.us`;
+    try {
+      const encSession = encodeURIComponent(sessionName);
+      const encId = encodeURIComponent(id);
+      const response = await this.http.get(`/api/${encSession}/groups/${encId}`, {
+        timeout: Math.min(this.syncTimeoutMs, 12000),
+      });
+      return response.data ?? null;
+    } catch (error: any) {
+      this.logger.debug(`Grup meta alınamadı (${id}): ${error.message}`);
+      return null;
+    }
+  }
+
+  /** Üye listesi (motorlar arası tutarlı v2) */
+  async getGroupParticipantsV2(
+    sessionName: string,
+    groupJid: string,
+  ): Promise<{ id: string; role?: string }[]> {
+    const id = groupJid.includes('@g.us')
+      ? groupJid
+      : `${String(groupJid).replace(/\D/g, '')}@g.us`;
+    try {
+      const encSession = encodeURIComponent(sessionName);
+      const encId = encodeURIComponent(id);
+      const response = await this.http.get(
+        `/api/${encSession}/groups/${encId}/participants/v2`,
+        { timeout: Math.min(this.syncTimeoutMs, 15000) },
+      );
+      const data = response.data;
+      return Array.isArray(data) ? data : [];
+    } catch (error: any) {
+      this.logger.debug(`Grup katılımcıları alınamadı (${id}): ${error.message}`);
+      return [];
+    }
+  }
+
   async editMessage(
     sessionName: string,
     chatId: string,

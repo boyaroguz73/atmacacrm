@@ -23,7 +23,24 @@ import {
   isValidPhoneNumber,
   isLidChat,
   lidJidToContactPhone,
+  contactPhoneLookupKeys,
 } from '../../common/contact-phone';
+
+function extractGroupNameFromWahaMessage(msg: any): string {
+  const candidates = [
+    msg?.chat?.name,
+    msg?.chat?.subject,
+    msg?._data?.chat?.name,
+    msg?._data?.chat?.subject,
+    msg?._data?.subject,
+    msg?.chat?.groupMetadata?.subject,
+    msg?.groupMetadata?.subject,
+  ];
+  for (const c of candidates) {
+    if (typeof c === 'string' && c.trim()) return c.trim();
+  }
+  return '';
+}
 
 @Injectable()
 export class WahaWebhookHandler {
@@ -107,8 +124,46 @@ export class WahaWebhookHandler {
           msg._data?.pushName ||
           (typeof rawParticipant === 'string' && /@lid$/i.test(rawParticipant) ? 'WhatsApp kullanıcısı' : null);
 
-        // Grup adını al
-        const groupName = msg.chat?.name || msg._data?.chat?.name || msg.notifyName || 'Grup';
+        let groupName = extractGroupNameFromWahaMessage(msg);
+        if (!groupName) {
+          const meta = await this.wahaService
+            .getGroupById(sessionName, chatId)
+            .catch(() => null);
+          const subject =
+            (typeof meta?.subject === 'string' && meta.subject.trim()) ||
+            (typeof meta?.name === 'string' && meta.name.trim()) ||
+            '';
+          if (subject) groupName = subject;
+        }
+        if (!groupName) {
+          groupName = 'Grup';
+        }
+
+        // Kayıtlı müşteri adı (TR numara) — grup mesajında gönderen satırı
+        if (
+          participantPhone &&
+          !participantPhone.startsWith('lid:') &&
+          !participantName
+        ) {
+          const keys = contactPhoneLookupKeys(participantPhone);
+          const peer = await this.prisma.contact.findFirst({
+            where: { phone: { in: keys } },
+            select: { name: true, surname: true },
+          });
+          if (peer?.name || peer?.surname) {
+            participantName = [peer.name, peer.surname].filter(Boolean).join(' ') || null;
+          }
+        }
+        if (participantPhone?.startsWith('lid:') && !participantName) {
+          const lidPeer = await this.prisma.contact.findFirst({
+            where: { phone: participantPhone },
+            select: { name: true, surname: true },
+          });
+          if (lidPeer?.name || lidPeer?.surname) {
+            participantName =
+              [lidPeer.name, lidPeer.surname].filter(Boolean).join(' ') || null;
+          }
+        }
 
         // Grup için placeholder contact oluştur/bul
         contact = await this.contactsService.findOrCreateForGroup(

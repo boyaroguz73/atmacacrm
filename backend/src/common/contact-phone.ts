@@ -137,6 +137,12 @@ export function extractPhoneFromParticipant(participant: string | undefined | nu
  * Kişi telefonu için tek biçim (WhatsApp/WAHA ile uyumlu, TR 0 → 90).
  * Uluslararası numaralar olduğu gibi kalır.
  */
+/** Kişiler listesi: yalnızca TR cep (E.164: 90 + 5XX…, 12 rakam) */
+export function isTurkishMobileContactPhone(phone: string | null | undefined): boolean {
+  const d = String(phone ?? '').replace(/\D/g, '');
+  return /^90[5]\d{9}$/.test(d);
+}
+
 export function canonicalContactPhone(phone: string): string {
   let d = String(phone ?? '').replace(/\D/g, '');
   if (!d) return '';

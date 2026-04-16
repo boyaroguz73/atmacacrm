@@ -558,7 +558,7 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
                 )}
                 <h3 className="font-semibold text-gray-900">
                   {activeConversation.isGroup
-                    ? (activeConversation.groupName || 'WhatsApp Grubu')
+                    ? (activeConversation.groupName || contact.name || 'WhatsApp Grubu')
                     : ([contact.name, contact.surname].filter(Boolean).join(' ') || formatPhone(contact.phone))
                   }
                 </h3>
@@ -566,7 +566,9 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
               </div>
               <p className="text-xs text-gray-400">
                 {activeConversation.isGroup
-                  ? 'WhatsApp Grup Sohbeti'
+                  ? (typeof activeConversation.groupParticipantCount === 'number'
+                      ? `Grup · ${activeConversation.groupParticipantCount} üye`
+                      : 'WhatsApp Grup Sohbeti')
                   : formatPhone(contact.phone)
                 }
               </p>

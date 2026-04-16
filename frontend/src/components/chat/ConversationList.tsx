@@ -204,7 +204,7 @@ export default function ConversationList() {
                     )}
                     <span className="truncate">
                       {conv.isGroup 
-                        ? (conv.groupName || 'WhatsApp Grubu')
+                        ? (conv.groupName || conv.contact?.name || 'WhatsApp Grubu')
                         : ([conv.contact.name, conv.contact.surname].filter(Boolean).join(' ') || formatPhone(conv.contact.phone))
                       }
                     </span>

@@ -42,6 +42,8 @@ interface Conversation {
   groupName?: string | null;
   /** WhatsApp grup JID */
   waGroupId?: string | null;
+  /** WAHA grup meta (zayıf başlık düzeltildiğinde) */
+  groupParticipantCount?: number;
 }
 
 interface Reaction {
@@ -174,6 +176,28 @@ export const useChatStore = create<ChatState>((set, get) => ({
   fetchMessages: async (conversationId) => {
     set({ isLoadingMessages: true });
     try {
+      const { data: convDetail } = await api
+        .get(`/conversations/${conversationId}`)
+        .catch(() => ({ data: null }));
+      if (convDetail) {
+        set((state) => {
+          const patchActive =
+            state.activeConversation?.id === conversationId
+              ? {
+                  activeConversation: {
+                    ...state.activeConversation,
+                    ...convDetail,
+                    contact:
+                      convDetail.contact ?? state.activeConversation.contact,
+                  },
+                }
+              : {};
+          const conversations = state.conversations.map((c) =>
+            c.id === conversationId ? { ...c, ...convDetail, contact: convDetail.contact ?? c.contact } : c,
+          );
+          return { ...patchActive, conversations };
+        });
+      }
       const { data } = await api.get(`/messages/conversation/${conversationId}`);
       set({ messages: data.messages || [], isLoadingMessages: false });
 

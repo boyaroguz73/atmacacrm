@@ -1,13 +1,25 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Inject, Injectable, NotFoundException, forwardRef } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   OrgSessionScopeUser,
   whereConversationsForOrg,
 } from '../../common/org-session-scope';
+import { WahaService } from '../waha/waha.service';
+
+function isWeakGroupLabel(name: string | null | undefined): boolean {
+  const t = (name ?? '').trim();
+  if (!t) return true;
+  const lower = t.toLowerCase();
+  return lower === 'grup' || lower === 'whatsapp grubu';
+}
 
 @Injectable()
 export class ConversationsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    @Inject(forwardRef(() => WahaService))
+    private readonly wahaService: WahaService,
+  ) {}
 
   async findOrCreate(contactId: string, sessionId: string) {
     return this.prisma.conversation.upsert({
@@ -36,15 +48,47 @@ export class ConversationsService {
     });
 
     if (existing) {
-      // Grup adı değiştiyse güncelle
-      if (groupName && existing.groupName !== groupName) {
-        return this.prisma.conversation.update({
+      const contactRow = await this.prisma.contact.findUnique({
+        where: { id: contactId },
+        select: { name: true },
+      });
+      const fromPayload =
+        groupName && !isWeakGroupLabel(groupName) ? groupName.trim() : null;
+      const fromContact =
+        contactRow?.name && !isWeakGroupLabel(contactRow.name)
+          ? contactRow.name.trim()
+          : null;
+      const resolvedName = fromPayload || fromContact || 'WhatsApp Grubu';
+
+      if (resolvedName && existing.groupName !== resolvedName) {
+        const updated = await this.prisma.conversation.update({
           where: { id: existing.id },
-          data: { groupName },
+          data: { groupName: resolvedName },
         });
+        if (contactRow && contactRow.name !== resolvedName) {
+          await this.prisma.contact
+            .update({
+              where: { id: contactId },
+              data: { name: resolvedName },
+            })
+            .catch(() => {});
+        }
+        return updated;
       }
       return existing;
     }
+
+    const contactRow = await this.prisma.contact.findUnique({
+      where: { id: contactId },
+      select: { name: true },
+    });
+    const fromPayload =
+      groupName && !isWeakGroupLabel(groupName) ? groupName.trim() : null;
+    const fromContact =
+      contactRow?.name && !isWeakGroupLabel(contactRow.name)
+        ? contactRow.name.trim()
+        : null;
+    const initialName = fromPayload || fromContact || 'WhatsApp Grubu';
 
     // Yeni grup conversation oluştur
     return this.prisma.conversation.create({
@@ -53,7 +97,7 @@ export class ConversationsService {
         sessionId,
         isGroup: true,
         waGroupId: waGroupId.toLowerCase(),
-        groupName: groupName || 'WhatsApp Grubu',
+        groupName: initialName,
       },
     });
   }
@@ -193,7 +237,7 @@ export class ConversationsService {
   }
 
   async findById(id: string) {
-    const conversation = await this.prisma.conversation.findUnique({
+    let conversation = await this.prisma.conversation.findUnique({
       where: { id },
       include: {
         contact: { include: { lead: true } },
@@ -207,11 +251,62 @@ export class ConversationsService {
       },
     });
     if (!conversation) throw new NotFoundException('Görüşme bulunamadı');
+
+    let groupMeta: { size?: number } | null = null;
+    if (
+      conversation.isGroup &&
+      conversation.waGroupId &&
+      conversation.session?.name &&
+      isWeakGroupLabel(conversation.groupName)
+    ) {
+      const meta = await this.wahaService.getGroupById(
+        conversation.session.name,
+        conversation.waGroupId,
+      );
+      groupMeta = meta;
+      const subject =
+        (typeof meta?.subject === 'string' && meta.subject.trim()) ||
+        (typeof meta?.name === 'string' && meta.name.trim()) ||
+        '';
+      if (subject) {
+        conversation = await this.prisma.conversation.update({
+          where: { id: conversation.id },
+          data: { groupName: subject },
+          include: {
+            contact: { include: { lead: true } },
+            session: true,
+            assignments: {
+              where: { unassignedAt: null },
+              include: {
+                user: { select: { id: true, name: true, avatar: true } },
+              },
+            },
+          },
+        });
+        await this.prisma.contact
+          .update({
+            where: { id: conversation.contactId },
+            data: { name: subject },
+          })
+          .catch(() => {});
+      }
+    }
+
+    const groupParticipantCount =
+      conversation.isGroup &&
+      typeof groupMeta?.size === 'number' &&
+      groupMeta.size >= 0
+        ? groupMeta.size
+        : undefined;
+
     return {
       ...conversation,
       isGroup: conversation.isGroup ?? false,
       groupName: conversation.groupName,
       waGroupId: conversation.waGroupId,
+      ...(groupParticipantCount !== undefined
+        ? { groupParticipantCount }
+        : {}),
     };
   }
 

@@ -186,15 +186,47 @@ export class ContactsService {
       where.tags = { has: tag };
     }
 
+    /** WhatsApp grupları / LID / +90 dışı kişiler listede görünmez (canonical ve eski format TR cep) */
+    const trMobileOnly: Prisma.ContactWhereInput = {
+      NOT: [
+        { phone: { startsWith: 'group:' } },
+        { phone: { startsWith: 'lid:' } },
+      ],
+      OR: [
+        {
+          phone: {
+            gte: '905000000000',
+            lte: '905999999999',
+          },
+        },
+        {
+          phone: {
+            gte: '05000000000',
+            lte: '05999999999',
+          },
+        },
+        {
+          phone: {
+            gte: '5000000000',
+            lte: '5999999999',
+          },
+        },
+      ],
+    };
+
+    const listWhere: Prisma.ContactWhereInput = {
+      AND: [where, trMobileOnly],
+    };
+
     const [contacts, total] = await Promise.all([
       this.prisma.contact.findMany({
-        where,
+        where: listWhere,
         include: { lead: true },
         orderBy: { updatedAt: 'desc' },
         skip: (page - 1) * limit,
         take: limit,
       }),
-      this.prisma.contact.count({ where }),
+      this.prisma.contact.count({ where: listWhere }),
     ]);
 
     return { contacts, total, page, totalPages: Math.ceil(total / limit) };
