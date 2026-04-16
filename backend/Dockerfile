@@ -35,4 +35,5 @@ RUN mkdir -p /app/fonts && \
 
 EXPOSE 4000
 
-CMD ["sh", "-c", "npx prisma migrate deploy && node dist/main"]
+# Şema ile DB uyumu: container her açılışta bekleyen migration'ları uygular (supplierId vb.)
+CMD ["sh", "-c", "set -e; echo '[backend] prisma migrate deploy...'; npx prisma migrate deploy; echo '[backend] starting NestJS'; exec node dist/main"]
