@@ -24,7 +24,6 @@ import {
   X,
   FileText,
   Loader2,
-  Archive,
   BookTemplate,
   Pencil,
   ListFilter,
@@ -251,9 +250,42 @@ export default function ChatWindow() {
     phoneToWhatsappChatId(contact.phone) ||
     `${String(contact.phone).replace(/\D/g, '')}@c.us`;
 
+  // Mesaj formatı: ilk harf büyük, kdv -> KDV
+  const formatMessage = (msg: string) => {
+    let formatted = msg.trim();
+    if (formatted.length > 0) {
+      formatted = formatted.charAt(0).toUpperCase() + formatted.slice(1);
+    }
+    formatted = formatted.replace(/\bkdv\b/gi, 'KDV');
+    return formatted;
+  };
+
+  // URL'leri tıklanabilir linklere dönüştür
+  const renderMessageBody = (body: string) => {
+    const urlRegex = /(https?:\/\/[^\s]+)/g;
+    const parts = body.split(urlRegex);
+    return parts.map((part, i) =>
+      urlRegex.test(part) ? (
+        <a 
+          key={i} 
+          href={part} 
+          target="_blank" 
+          rel="noopener noreferrer"
+          className="text-blue-600 hover:text-blue-800 underline break-all"
+        >
+          {part}
+        </a>
+      ) : (
+        <span key={i}>{part}</span>
+      )
+    );
+  };
+
   const submitComposer = () => {
     const trimmed = text.trim();
     if (!trimmed || sending) return;
+
+    const formattedMessage = formatMessage(trimmed);
 
     setText('');
     if (composerRef.current) composerRef.current.value = '';
@@ -264,7 +296,7 @@ export default function ChatWindow() {
       conversationId: activeConversation.id,
       sessionName: activeConversation.session.name,
       chatId,
-      body: trimmed,
+      body: formattedMessage,
     })
       .catch((err) => {
         toast.error(getApiErrorMessage(err, 'Mesaj gönderilemedi'));
@@ -491,23 +523,6 @@ export default function ChatWindow() {
               <ListTodo className="w-4 h-4" />
             </button>
             <button
-              type="button"
-              onClick={async () => {
-                if (!confirm('Bu sohbeti arşivlemek istediğinize emin misiniz?')) return;
-                try {
-                  await api.patch(`/conversations/${activeConversation.id}/archive`);
-                  useChatStore.getState().fetchConversations(true);
-                  toast.success('Sohbet arşivlendi');
-                } catch {
-                  toast.error('Arşivleme başarısız');
-                }
-              }}
-              className="p-2 text-gray-400 hover:text-orange-600 hover:bg-orange-50 rounded-lg transition-colors"
-              title="Sohbeti Arşivle"
-            >
-              <Archive className="w-4 h-4" />
-            </button>
-            <button
               onClick={() => setShowPanel(!showPanel)}
               className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-50 rounded-lg transition-colors ml-1"
               title={showPanel ? 'Paneli Kapat' : 'Kişi Detayı'}
@@ -628,7 +643,7 @@ export default function ChatWindow() {
                       )}
                       {msg.body && (
                         <p className="text-sm text-gray-800 whitespace-pre-wrap break-words">
-                          {msg.body}
+                          {renderMessageBody(msg.body)}
                         </p>
                       )}
                       {(msg as any).reactions?.length > 0 && (

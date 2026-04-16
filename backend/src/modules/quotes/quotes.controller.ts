@@ -23,12 +23,18 @@ export class QuotesController {
   findAll(
     @Query('status') status?: QuoteStatus,
     @Query('contactId') contactId?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('search') search?: string,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
   ) {
     return this.quotesService.findAll({
       status,
       contactId,
+      from,
+      to,
+      search,
       page: page ? parseInt(page) : 1,
       limit: limit ? parseInt(limit) : 50,
     });
@@ -56,7 +62,12 @@ export class QuotesController {
   @Roles('AGENT')
   updateStatus(
     @Param('id') id: string,
-    @Body() body: { status: QuoteStatus; paymentMode?: QuotePaymentMode; documentKind?: string },
+    @Body() body: { 
+      status: QuoteStatus; 
+      paymentMode?: QuotePaymentMode; 
+      partialPaymentAmount?: number;
+      documentKind?: string;
+    },
   ) {
     return this.quotesService.updateStatus(id, body);
   }
@@ -117,5 +128,26 @@ export class QuotesController {
     @Body() body?: { manual?: boolean },
   ) {
     return this.quotesService.convertToOrder(id, userId, { manual: body?.manual === true });
+  }
+
+  /** Teklif versiyonu oluştur */
+  @Post(':id/versions')
+  @Roles('AGENT')
+  createVersion(@Param('id') id: string) {
+    return this.quotesService.createVersion(id);
+  }
+
+  /** Teklif versiyonlarını getir */
+  @Get(':id/versions')
+  @Roles('AGENT')
+  getVersions(@Param('id') id: string) {
+    return this.quotesService.getVersions(id);
+  }
+
+  /** Belirli bir versiyonu getir */
+  @Get('versions/:versionId')
+  @Roles('AGENT')
+  getVersion(@Param('versionId') versionId: string) {
+    return this.quotesService.getVersion(versionId);
   }
 }

@@ -33,12 +33,39 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   server: Server;
 
   private readonly logger = new Logger(ChatGateway.name);
+  
+  /** Event deduplication cache - waMessageId -> timestamp */
+  private readonly emittedMessages = new Map<string, number>();
+  private readonly DEDUP_TTL_MS = 10000; // 10 saniye
 
   constructor(
     private jwtService: JwtService,
     private configService: ConfigService,
     private prisma: PrismaService,
-  ) {}
+  ) {
+    // Her dakika eski cache entry'lerini temizle
+    setInterval(() => this.cleanupDedupCache(), 60000);
+  }
+
+  private cleanupDedupCache() {
+    const now = Date.now();
+    for (const [key, ts] of this.emittedMessages.entries()) {
+      if (now - ts > this.DEDUP_TTL_MS * 2) {
+        this.emittedMessages.delete(key);
+      }
+    }
+  }
+
+  private isDuplicateEmit(waMessageId: string | null | undefined): boolean {
+    if (!waMessageId) return false;
+    const now = Date.now();
+    const lastEmit = this.emittedMessages.get(waMessageId);
+    if (lastEmit && now - lastEmit < this.DEDUP_TTL_MS) {
+      return true;
+    }
+    this.emittedMessages.set(waMessageId, now);
+    return false;
+  }
 
   async handleConnection(client: Socket) {
     try {
@@ -122,6 +149,13 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   emitNewMessage(conversationId: string, data: any) {
+    // Duplicate event kontrolü
+    const waMessageId = data?.waMessageId || data?.message?.waMessageId;
+    if (this.isDuplicateEmit(waMessageId)) {
+      this.logger.debug(`Duplicate emit atlandı: waMessageId=${waMessageId}`);
+      return;
+    }
+
     this.server
       .to(`conversation:${conversationId}`)
       .emit('message:new', data);

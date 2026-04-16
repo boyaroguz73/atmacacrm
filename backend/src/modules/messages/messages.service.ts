@@ -259,12 +259,8 @@ export class MessagesService {
     const url = (product.imageUrl || '').trim();
     const unitPrice = Number(product.unitPrice ?? 0);
     const price = `${unitPrice.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ${product.currency}`;
-    const cat = (product.category || product.googleProductType || '').trim();
-    const caption =
-      `${product.name}\nSKU: ${product.sku}` +
-      (cat ? `\nKategori: ${cat}` : '') +
-      `\nFiyat: ${price}` +
-      (product.productUrl ? `\n${product.productUrl}` : '');
+    // Sadece ürün adı ve fiyat gönder (SKU, kategori, URL gönderilmiyor)
+    const caption = `${product.name}\nFiyat: ${price}`;
     if (!url) {
       this.logger.warn(`Ürün görseli yok, metin olarak gönderiliyor: productId=${productId}`);
       return this.sendText({
@@ -418,5 +414,143 @@ export class MessagesService {
       where: { waMessageId },
       data: { status },
     });
+  }
+
+  /** WAHA Plus - Mesaja yanıt gönder */
+  async sendReply(params: {
+    conversationId: string;
+    sessionName: string;
+    chatId: string;
+    body: string;
+    quotedMessageId: string;
+    sentById?: string;
+  }) {
+    const { conversationId, sessionName, chatId, body, quotedMessageId, sentById } = params;
+    
+    const quotedMessage = await this.prisma.message.findUnique({ where: { id: quotedMessageId } });
+    if (!quotedMessage || !quotedMessage.waMessageId) {
+      throw new BadRequestException('Yanıt verilecek mesaj bulunamadı veya WAHA ID eksik');
+    }
+
+    const waResponse = await this.wahaService.sendReply(
+      sessionName,
+      chatId,
+      body,
+      quotedMessage.waMessageId,
+    );
+
+    const waMessageId = this.extractWaMessageId(waResponse);
+    const msg = await this.saveMessage({
+      conversationId,
+      sessionName,
+      chatId,
+      body,
+      waMessageId,
+      direction: 'OUTGOING',
+      status: 'SENT',
+      sentById,
+    });
+
+    return msg;
+  }
+
+  /** WAHA Plus - Mesaj silme */
+  async deleteMessage(params: {
+    messageId: string;
+    sessionName: string;
+    chatId: string;
+    forEveryone?: boolean;
+  }) {
+    const { messageId, sessionName, chatId, forEveryone = true } = params;
+    
+    const message = await this.prisma.message.findUnique({ where: { id: messageId } });
+    if (!message) throw new NotFoundException('Mesaj bulunamadı');
+    if (!message.waMessageId) throw new BadRequestException('WAHA mesaj ID bulunamadı');
+
+    try {
+      await this.wahaService.deleteMessage(sessionName, chatId, message.waMessageId, forEveryone);
+    } catch (err: any) {
+      const errMsg = err.response?.data?.message || err.message || '';
+      if (errMsg.includes('Plus version') || errMsg.includes('not support')) {
+        throw new BadRequestException('Mesaj silme WAHA Plus gerektirir.');
+      }
+      throw new BadRequestException(errMsg || 'Mesaj silinemedi');
+    }
+
+    // Mesajı veritabanından sil
+    await this.prisma.message.delete({ where: { id: messageId } });
+
+    // Socket ile bildir
+    this.chatGateway.server
+      .to(`conversation:${message.conversationId}`)
+      .emit('message:deleted', { messageId });
+
+    return { deleted: true };
+  }
+
+  /** WAHA Plus - Emoji tepki gönder */
+  async sendReaction(params: {
+    messageId: string;
+    sessionName: string;
+    chatId: string;
+    emoji: string;
+  }) {
+    const { messageId, sessionName, chatId, emoji } = params;
+    
+    const message = await this.prisma.message.findUnique({ where: { id: messageId } });
+    if (!message) throw new NotFoundException('Mesaj bulunamadı');
+    if (!message.waMessageId) throw new BadRequestException('WAHA mesaj ID bulunamadı');
+
+    try {
+      await this.wahaService.sendReaction(sessionName, chatId, message.waMessageId, emoji);
+    } catch (err: any) {
+      const errMsg = err.response?.data?.message || err.message || '';
+      if (errMsg.includes('Plus version') || errMsg.includes('not support')) {
+        throw new BadRequestException('Tepki gönderme WAHA Plus gerektirir.');
+      }
+      throw new BadRequestException(errMsg || 'Tepki gönderilemedi');
+    }
+
+    return { success: true };
+  }
+
+  /** WAHA Plus - Konum gönder */
+  async sendLocation(params: {
+    conversationId: string;
+    sessionName: string;
+    chatId: string;
+    latitude: number;
+    longitude: number;
+    title?: string;
+    address?: string;
+    sentById?: string;
+  }) {
+    const { conversationId, sessionName, chatId, latitude, longitude, title, address, sentById } = params;
+
+    const waResponse = await this.wahaService.sendLocation(
+      sessionName,
+      chatId,
+      latitude,
+      longitude,
+      title,
+      address,
+    );
+
+    const waMessageId = this.extractWaMessageId(waResponse);
+    const locationText = title || address || `📍 ${latitude}, ${longitude}`;
+    
+    const msg = await this.saveMessage({
+      conversationId,
+      sessionName,
+      chatId,
+      body: locationText,
+      waMessageId,
+      direction: 'OUTGOING',
+      status: 'SENT',
+      sentById,
+      mediaType: 'DOCUMENT', // LOCATION tipi yoksa DOCUMENT kullanabiliriz
+    });
+
+    return msg;
   }
 }

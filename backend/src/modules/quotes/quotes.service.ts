@@ -112,11 +112,35 @@ export class QuotesService {
     order: { select: { id: true } },
   };
 
-  async findAll(params: { status?: QuoteStatus; contactId?: string; page?: number; limit?: number }) {
-    const { status, contactId, page = 1, limit = 50 } = params;
+  async findAll(params: { 
+    status?: QuoteStatus; 
+    contactId?: string; 
+    from?: string;
+    to?: string;
+    search?: string;
+    page?: number; 
+    limit?: number;
+  }) {
+    const { status, contactId, from, to, search, page = 1, limit = 50 } = params;
     const where: any = {};
     if (status) where.status = status;
     if (contactId) where.contactId = contactId;
+
+    // Tarih filtresi
+    if (from || to) {
+      where.createdAt = {};
+      if (from) where.createdAt.gte = new Date(from);
+      if (to) where.createdAt.lte = new Date(to);
+    }
+
+    // Arama (kişi adı veya teklif numarası)
+    if (search) {
+      where.OR = [
+        { quoteNumber: parseInt(search, 10) || -1 },
+        { contact: { name: { contains: search, mode: 'insensitive' } } },
+        { contact: { phone: { contains: search } } },
+      ];
+    }
 
     const [quotes, total] = await Promise.all([
       this.prisma.quote.findMany({
@@ -203,7 +227,12 @@ export class QuotesService {
 
   async updateStatus(
     id: string,
-    dto: { status: QuoteStatus; paymentMode?: QuotePaymentMode; documentKind?: string },
+    dto: { 
+      status: QuoteStatus; 
+      paymentMode?: QuotePaymentMode; 
+      partialPaymentAmount?: number;
+      documentKind?: string;
+    },
   ) {
     const q = await this.findById(id);
     const prevStatus = q.status;
@@ -214,6 +243,10 @@ export class QuotesService {
     if (dto.status === QuoteStatus.ACCEPTED) {
       data.acceptedAt = new Date();
       if (dto.paymentMode) data.paymentMode = dto.paymentMode;
+      // Kısmi ödeme tutarı
+      if (dto.partialPaymentAmount != null && dto.partialPaymentAmount > 0) {
+        data.partialPaymentAmount = dto.partialPaymentAmount;
+      }
     } else if (prevStatus === QuoteStatus.ACCEPTED) {
       data.acceptedAt = null;
     }
@@ -591,5 +624,79 @@ export class QuotesService {
       }
     }
     return order;
+  }
+
+  /** Teklif versiyonu oluştur (mevcut durumu kaydet) */
+  async createVersion(quoteId: string) {
+    const quote = await this.prisma.quote.findUnique({
+      where: { id: quoteId },
+      include: { items: true },
+    });
+    if (!quote) throw new NotFoundException('Teklif bulunamadı');
+
+    // Mevcut durumu JSON olarak kaydet
+    const snapshot = {
+      quoteNumber: quote.quoteNumber,
+      status: quote.status,
+      currency: quote.currency,
+      subtotal: quote.subtotal,
+      discountType: quote.discountType,
+      discountValue: quote.discountValue,
+      discountTotal: quote.discountTotal,
+      vatTotal: quote.vatTotal,
+      grandTotal: quote.grandTotal,
+      validUntil: quote.validUntil,
+      deliveryDate: quote.deliveryDate,
+      notes: quote.notes,
+      termsOverride: quote.termsOverride,
+      footerNoteOverride: quote.footerNoteOverride,
+      paymentMode: quote.paymentMode,
+      documentKind: quote.documentKind,
+      items: quote.items.map((i) => ({
+        name: i.name,
+        description: i.description,
+        quantity: i.quantity,
+        unitPrice: i.unitPrice,
+        vatRate: i.vatRate,
+        discountType: i.discountType,
+        discountValue: i.discountValue,
+        lineTotal: i.lineTotal,
+      })),
+      createdAt: quote.createdAt,
+    };
+
+    const version = await this.prisma.quoteVersion.create({
+      data: {
+        quoteId,
+        version: quote.currentVersion,
+        snapshot: snapshot as any,
+        pdfUrl: quote.pdfUrl,
+      },
+    });
+
+    // Versiyon numarasını artır
+    await this.prisma.quote.update({
+      where: { id: quoteId },
+      data: { currentVersion: quote.currentVersion + 1 },
+    });
+
+    return version;
+  }
+
+  /** Teklif versiyonlarını getir */
+  async getVersions(quoteId: string) {
+    return this.prisma.quoteVersion.findMany({
+      where: { quoteId },
+      orderBy: { version: 'desc' },
+    });
+  }
+
+  /** Belirli bir versiyonu getir */
+  async getVersion(versionId: string) {
+    const version = await this.prisma.quoteVersion.findUnique({
+      where: { id: versionId },
+    });
+    if (!version) throw new NotFoundException('Versiyon bulunamadı');
+    return version;
   }
 }

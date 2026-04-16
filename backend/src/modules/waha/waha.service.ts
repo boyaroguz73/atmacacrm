@@ -702,6 +702,108 @@ export class WahaService implements OnModuleInit {
     }
   }
 
+  /** WAHA Plus - Mesaja yanıt gönder */
+  async sendReply(
+    sessionName: string,
+    chatId: string,
+    text: string,
+    quotedMessageId: string,
+  ): Promise<any> {
+    try {
+      const response = await this.http.post('/api/sendText', {
+        session: sessionName,
+        chatId,
+        text,
+        reply_to: quotedMessageId,
+      });
+      return response.data;
+    } catch (error: any) {
+      const detail = error.response?.data
+        ? JSON.stringify(error.response.data)
+        : error.message;
+      this.logger.error(`Yanıt gönderilemedi: ${chatId} - ${detail}`);
+      throw error;
+    }
+  }
+
+  /** WAHA Plus - Mesaj silme */
+  async deleteMessage(
+    sessionName: string,
+    chatId: string,
+    messageId: string,
+    forEveryone: boolean = true,
+  ): Promise<any> {
+    try {
+      const encodedChatId = encodeURIComponent(chatId);
+      const encodedMsgId = encodeURIComponent(messageId);
+      const response = await this.http.delete(
+        `/api/${sessionName}/chats/${encodedChatId}/messages/${encodedMsgId}`,
+        { data: { forEveryone } },
+      );
+      return response.data;
+    } catch (error: any) {
+      const detail = error.response?.data
+        ? JSON.stringify(error.response.data)
+        : error.message;
+      this.logger.error(`Mesaj silinemedi: ${messageId} - ${detail}`);
+      throw error;
+    }
+  }
+
+  /** WAHA Plus - Emoji tepki gönder */
+  async sendReaction(
+    sessionName: string,
+    chatId: string,
+    messageId: string,
+    emoji: string,
+  ): Promise<any> {
+    try {
+      const encodedChatId = encodeURIComponent(chatId);
+      const encodedMsgId = encodeURIComponent(messageId);
+      const response = await this.http.put(
+        `/api/${sessionName}/chats/${encodedChatId}/messages/${encodedMsgId}/reaction`,
+        { reaction: emoji },
+      );
+      return response.data;
+    } catch (error: any) {
+      const detail = error.response?.data
+        ? JSON.stringify(error.response.data)
+        : error.message;
+      this.logger.error(`Tepki gönderilemedi: ${messageId} - ${detail}`);
+      throw error;
+    }
+  }
+
+  /** WAHA Plus - Konum gönder */
+  async sendLocation(
+    sessionName: string,
+    chatId: string,
+    latitude: number,
+    longitude: number,
+    title?: string,
+    address?: string,
+  ): Promise<any> {
+    try {
+      const response = await this.http.post('/api/sendLocation', {
+        session: sessionName,
+        chatId,
+        location: {
+          latitude,
+          longitude,
+          name: title || undefined,
+          address: address || undefined,
+        },
+      });
+      return response.data;
+    } catch (error: any) {
+      const detail = error.response?.data
+        ? JSON.stringify(error.response.data)
+        : error.message;
+      this.logger.error(`Konum gönderilemedi: ${chatId} - ${detail}`);
+      throw error;
+    }
+  }
+
   async downloadFile(
     sessionName: string,
     fileId: string,

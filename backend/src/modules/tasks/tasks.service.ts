@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { TaskStatus } from '@prisma/client';
 
@@ -14,6 +14,25 @@ export class TasksService {
     dueAt: Date;
     trigger?: string;
   }) {
+    // Aynı gün aynı kişi için görev kontrolü
+    if (data.contactId) {
+      const startOfDay = new Date(data.dueAt);
+      startOfDay.setHours(0, 0, 0, 0);
+      const endOfDay = new Date(data.dueAt);
+      endOfDay.setHours(23, 59, 59, 999);
+
+      const existing = await this.prisma.task.findFirst({
+        where: {
+          contactId: data.contactId,
+          dueAt: { gte: startOfDay, lte: endOfDay },
+          status: { not: TaskStatus.CANCELLED },
+        },
+      });
+      if (existing) {
+        throw new BadRequestException('Bu kişi için bu günde zaten bir görev var');
+      }
+    }
+
     return this.prisma.task.create({
       data,
       include: {

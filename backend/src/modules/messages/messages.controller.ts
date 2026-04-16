@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Patch,
+  Delete,
   Param,
   Body,
   Query,
@@ -125,5 +126,65 @@ export class MessagesController {
   uploadFile(@UploadedFile() file: Express.Multer.File) {
     if (!file) throw new BadRequestException('Dosya yüklenemedi');
     return { url: `/uploads/${file.filename}`, filename: file.originalname, size: file.size };
+  }
+
+  /** WAHA Plus - Mesaja yanıt gönder */
+  @Post('send-reply')
+  sendReply(
+    @Body() body: {
+      conversationId: string;
+      sessionName: string;
+      chatId: string;
+      body: string;
+      quotedMessageId: string;
+    },
+    @CurrentUser() user: { id: string },
+  ) {
+    return this.messagesService.sendReply({ ...body, sentById: user.id });
+  }
+
+  /** WAHA Plus - Mesaj silme */
+  @Delete(':messageId')
+  deleteMessage(
+    @Param('messageId') messageId: string,
+    @Body() body: { sessionName: string; chatId: string; forEveryone?: boolean },
+  ) {
+    return this.messagesService.deleteMessage({
+      messageId,
+      sessionName: body.sessionName,
+      chatId: body.chatId,
+      forEveryone: body.forEveryone,
+    });
+  }
+
+  /** WAHA Plus - Emoji tepki gönder */
+  @Post(':messageId/reaction')
+  sendReaction(
+    @Param('messageId') messageId: string,
+    @Body() body: { sessionName: string; chatId: string; emoji: string },
+  ) {
+    return this.messagesService.sendReaction({
+      messageId,
+      sessionName: body.sessionName,
+      chatId: body.chatId,
+      emoji: body.emoji,
+    });
+  }
+
+  /** WAHA Plus - Konum gönder */
+  @Post('send-location')
+  sendLocation(
+    @Body() body: {
+      conversationId: string;
+      sessionName: string;
+      chatId: string;
+      latitude: number;
+      longitude: number;
+      title?: string;
+      address?: string;
+    },
+    @CurrentUser() user: { id: string },
+  ) {
+    return this.messagesService.sendLocation({ ...body, sentById: user.id });
   }
 }

@@ -47,10 +47,12 @@ interface Reaction {
 export interface Message {
   id: string;
   conversationId: string;
+  waMessageId?: string | null;
   direction: 'INCOMING' | 'OUTGOING';
   body: string | null;
   mediaType: string | null;
   mediaUrl: string | null;
+  mediaMimeType?: string | null;
   status: string;
   timestamp: string;
   reactions?: Reaction[] | null;
@@ -352,7 +354,19 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const { activeConversation } = get();
     if (activeConversation?.id === message.conversationId) {
       set((state) => {
-        // Aynı ID'li mesaj varsa güncelle (duplicate kontrolü)
+        // 1. waMessageId bazlı duplicate kontrolü (en güvenilir)
+        if (message.waMessageId) {
+          const waIdx = state.messages.findIndex(
+            (m) => m.waMessageId && m.waMessageId === message.waMessageId
+          );
+          if (waIdx >= 0) {
+            const updated = [...state.messages];
+            updated[waIdx] = message;
+            return { messages: updated };
+          }
+        }
+        
+        // 2. Aynı DB ID'li mesaj varsa güncelle
         const existingIdx = state.messages.findIndex((m) => m.id === message.id);
         if (existingIdx >= 0) {
           const updated = [...state.messages];
@@ -360,7 +374,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           return { messages: updated };
         }
         
-        // Temp mesaj ara (optimistic update için)
+        // 3. Temp mesaj ara (optimistic update için)
         const tempIdx = state.messages.findIndex(
           (m) =>
             m.id.startsWith('temp-') &&
@@ -376,14 +390,30 @@ export const useChatStore = create<ChatState>((set, get) => ({
           return { messages: updated };
         }
         
-        // Aynı içerikli ve yakın zamanlı giden mesaj varsa (socket duplicate) atla
+        // 4. waMessageId ile temp eşleştir (optimistic -> real)
+        if (message.waMessageId && message.direction === 'OUTGOING') {
+          const pendingIdx = state.messages.findIndex(
+            (m) =>
+              m.id.startsWith('temp-') &&
+              m.direction === 'OUTGOING' &&
+              m.status === 'PENDING' &&
+              Math.abs(new Date(m.timestamp).getTime() - new Date(message.timestamp).getTime()) < 30000
+          );
+          if (pendingIdx >= 0) {
+            const updated = [...state.messages];
+            updated[pendingIdx] = message;
+            return { messages: updated };
+          }
+        }
+        
+        // 5. Aynı içerikli ve yakın zamanlı giden mesaj varsa (socket duplicate) atla
         const recentDuplicate = state.messages.some((m) => {
           if (m.direction !== message.direction) return false;
           if (m.id.startsWith('temp-')) return false;
           const timeDiff = Math.abs(
             new Date(m.timestamp).getTime() - new Date(message.timestamp).getTime()
           );
-          if (timeDiff > 5000) return false; // 5 saniye içinde aynı mesaj mı?
+          if (timeDiff > 5000) return false;
           return m.body === message.body && m.mediaUrl === message.mediaUrl;
         });
         if (recentDuplicate) return state;

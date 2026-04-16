@@ -43,8 +43,9 @@ export class ContactsService {
         updates.phone = primary;
       }
       
-      const displayName = (name && name.trim()) || existing.name || primary;
-      if (displayName !== existing.name && name?.trim()) {
+      // SADECE mevcut name boşsa pushName kullan
+      // Kayıtlı kişi adını WhatsApp pushName ile EZMİYORUZ
+      if (!existing.name && name?.trim()) {
         updates.name = name.trim();
       }
       
@@ -160,6 +161,10 @@ export class ContactsService {
       company?: string;
       city?: string;
       address?: string;
+      taxNumber?: string;
+      identityNumber?: string;
+      billingAddress?: string;
+      shippingAddress?: string;
       metadata?: object;
     },
   ) {

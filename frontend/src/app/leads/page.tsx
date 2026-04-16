@@ -1,12 +1,30 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import Link from 'next/link';
 import api, { getApiErrorMessage } from '@/lib/api';
 import { formatPhone } from '@/lib/utils';
-import { Search, DollarSign, LayoutGrid, List, Table2 } from 'lucide-react';
+import { Search, DollarSign, LayoutGrid, List, Table2, GripVertical } from 'lucide-react';
 import toast from 'react-hot-toast';
 import DateRangePicker from '@/components/ui/DateRangePicker';
+import {
+  DndContext,
+  DragOverlay,
+  closestCorners,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragStartEvent,
+  DragEndEvent,
+  DragOverEvent,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  verticalListSortingStrategy,
+  useSortable,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 
 interface Lead {
   id: string;
@@ -29,15 +47,116 @@ const STAGES = [
 ];
 
 type PipelineView = 'board' | 'list' | 'table';
+const STORAGE_KEY = 'leads_view_mode';
+
+function DraggableLeadCard({ lead }: { lead: Lead }) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: lead.id, data: { lead } });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className="bg-white rounded-lg p-3 shadow-sm border border-gray-100 cursor-grab active:cursor-grabbing"
+    >
+      <div className="flex items-start gap-2">
+        <div {...attributes} {...listeners} className="mt-1 text-gray-300 hover:text-gray-500">
+          <GripVertical className="w-4 h-4" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <Link
+            href={`/contacts/${lead.contact.id}`}
+            className="font-medium text-sm text-whatsapp hover:underline truncate block"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {lead.contact.name || formatPhone(lead.contact.phone)}
+          </Link>
+          <p className="text-xs text-gray-400 mt-0.5">{formatPhone(lead.contact.phone)}</p>
+          {lead.value && (
+            <div className="flex items-center gap-1 mt-2">
+              <DollarSign className="w-3 h-3 text-green-500" />
+              <span className="text-xs font-semibold text-green-600">
+                {lead.value.toLocaleString()} TL
+              </span>
+            </div>
+          )}
+          <Link
+            href={`/contacts/${lead.contact.id}`}
+            className="mt-2 inline-block text-[11px] font-medium text-gray-500 hover:text-whatsapp"
+            onClick={(e) => e.stopPropagation()}
+          >
+            Detay →
+          </Link>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function LeadCardPreview({ lead }: { lead: Lead }) {
+  return (
+    <div className="bg-white rounded-lg p-3 shadow-lg border-2 border-whatsapp/50 w-64">
+      <div className="flex items-start gap-2">
+        <GripVertical className="w-4 h-4 mt-1 text-gray-300" />
+        <div className="flex-1 min-w-0">
+          <span className="font-medium text-sm text-whatsapp truncate block">
+            {lead.contact.name || formatPhone(lead.contact.phone)}
+          </span>
+          <p className="text-xs text-gray-400 mt-0.5">{formatPhone(lead.contact.phone)}</p>
+          {lead.value && (
+            <div className="flex items-center gap-1 mt-2">
+              <DollarSign className="w-3 h-3 text-green-500" />
+              <span className="text-xs font-semibold text-green-600">
+                {lead.value.toLocaleString()} TL
+              </span>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function LeadsPage() {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
-  const [viewMode, setViewMode] = useState<PipelineView>('board');
+  const [viewMode, setViewMode] = useState<PipelineView>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved === 'board' || saved === 'list' || saved === 'table') {
+        return saved;
+      }
+    }
+    return 'board';
+  });
   const [statusFilter, setStatusFilter] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+  const [activeId, setActiveId] = useState<string | null>(null);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(KeyboardSensor)
+  );
+
+  const handleViewModeChange = (mode: PipelineView) => {
+    setViewMode(mode);
+    localStorage.setItem(STORAGE_KEY, mode);
+    if (mode !== 'table') setStatusFilter(null);
+  };
 
   const fetchLeads = async () => {
     setLoading(true);
@@ -91,10 +210,52 @@ export default function LeadsPage() {
     }
   };
 
-  const groupedLeads = STAGES.map((stage) => ({
+  const groupedLeads = useMemo(() => STAGES.map((stage) => ({
     ...stage,
     leads: leads.filter((l) => l.status === stage.key),
-  }));
+  })), [leads]);
+
+  const activeLead = useMemo(() => {
+    if (!activeId) return null;
+    return leads.find((l) => l.id === activeId) || null;
+  }, [activeId, leads]);
+
+  const handleDragStart = (event: DragStartEvent) => {
+    setActiveId(event.active.id as string);
+  };
+
+  const handleDragEnd = async (event: DragEndEvent) => {
+    const { active, over } = event;
+    setActiveId(null);
+    
+    if (!over) return;
+    
+    const leadId = active.id as string;
+    const lead = leads.find((l) => l.id === leadId);
+    if (!lead) return;
+    
+    // over.id bir stage key mi yoksa başka bir lead id mi kontrol et
+    let newStatus: string | null = null;
+    
+    // over.id direkt stage key ise
+    if (STAGES.some((s) => s.key === over.id)) {
+      newStatus = over.id as string;
+    } else {
+      // over.id bir lead ise, o lead'in stage'ini bul
+      const overLead = leads.find((l) => l.id === over.id);
+      if (overLead) {
+        newStatus = overLead.status;
+      }
+    }
+    
+    if (newStatus && newStatus !== lead.status) {
+      await updateStatus(leadId, newStatus);
+    }
+  };
+
+  const handleDragOver = (event: DragOverEvent) => {
+    // Sadece visual feedback için, gerçek güncelleme dragEnd'de
+  };
 
   return (
     <div className="p-6 space-y-6">
@@ -137,10 +298,7 @@ export default function LeadsPage() {
                 key={key}
                 type="button"
                 title={label}
-                onClick={() => {
-                  setViewMode(key);
-                  if (key !== 'table') setStatusFilter(null);
-                }}
+                onClick={() => handleViewModeChange(key)}
                 className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors ${
                   viewMode === key
                     ? 'bg-whatsapp text-white shadow-sm'
@@ -156,7 +314,7 @@ export default function LeadsPage() {
           <button
             type="button"
             onClick={() => {
-              setViewMode('table');
+              handleViewModeChange('table');
               setStatusFilter(null);
             }}
             className={`px-3 py-2 rounded-lg text-xs font-medium transition-colors ${
@@ -172,7 +330,7 @@ export default function LeadsPage() {
               type="button"
               key={stage.key}
               onClick={() => {
-                setViewMode('table');
+                handleViewModeChange('table');
                 setStatusFilter(stage.key);
               }}
               className={`px-3 py-2 rounded-lg text-xs font-medium transition-colors ${
@@ -298,45 +456,43 @@ export default function LeadsPage() {
           ))}
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
-          {groupedLeads.map((stage) => (
-            <div key={stage.key} className={`rounded-xl border-t-4 ${stage.color} p-4 min-h-[200px]`}>
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="font-semibold text-sm text-gray-700">{stage.label}</h3>
-                <span className="text-xs bg-white rounded-full px-2 py-0.5 font-bold text-gray-600 shadow-sm">
-                  {stage.leads.length}
-                </span>
-              </div>
-              <div className="space-y-2">
-                {stage.leads.map((lead) => (
-                  <div key={lead.id} className="bg-white rounded-lg p-3 shadow-sm border border-gray-100">
-                    <Link
-                      href={`/contacts/${lead.contact.id}`}
-                      className="font-medium text-sm text-whatsapp hover:underline truncate block"
-                    >
-                      {lead.contact.name || formatPhone(lead.contact.phone)}
-                    </Link>
-                    <p className="text-xs text-gray-400 mt-0.5">{formatPhone(lead.contact.phone)}</p>
-                    {lead.value && (
-                      <div className="flex items-center gap-1 mt-2">
-                        <DollarSign className="w-3 h-3 text-green-500" />
-                        <span className="text-xs font-semibold text-green-600">
-                          {lead.value.toLocaleString()} TL
-                        </span>
-                      </div>
-                    )}
-                    <Link
-                      href={`/contacts/${lead.contact.id}`}
-                      className="mt-2 inline-block text-[11px] font-medium text-gray-500 hover:text-whatsapp"
-                    >
-                      Detay →
-                    </Link>
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCorners}
+          onDragStart={handleDragStart}
+          onDragOver={handleDragOver}
+          onDragEnd={handleDragEnd}
+        >
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+            {groupedLeads.map((stage) => (
+              <div 
+                key={stage.key} 
+                id={stage.key}
+                className={`rounded-xl border-t-4 ${stage.color} p-4 min-h-[200px]`}
+              >
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="font-semibold text-sm text-gray-700">{stage.label}</h3>
+                  <span className="text-xs bg-white rounded-full px-2 py-0.5 font-bold text-gray-600 shadow-sm">
+                    {stage.leads.length}
+                  </span>
+                </div>
+                <SortableContext 
+                  items={stage.leads.map(l => l.id)} 
+                  strategy={verticalListSortingStrategy}
+                >
+                  <div className="space-y-2 min-h-[100px]">
+                    {stage.leads.map((lead) => (
+                      <DraggableLeadCard key={lead.id} lead={lead} />
+                    ))}
                   </div>
-                ))}
+                </SortableContext>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+          <DragOverlay>
+            {activeLead ? <LeadCardPreview lead={activeLead} /> : null}
+          </DragOverlay>
+        </DndContext>
       )}
     </div>
   );

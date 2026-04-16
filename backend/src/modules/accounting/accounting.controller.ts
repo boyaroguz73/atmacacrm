@@ -1,7 +1,8 @@
 import {
-  Controller, Get, Post, Patch, Delete, Param, Body, Query,
-  UseGuards, UseInterceptors, UploadedFile, BadRequestException,
+  Controller, Get, Post, Patch, Delete, Param, Body, Query, Res,
+  UseGuards, UseInterceptors, UploadedFile, BadRequestException, NotFoundException,
 } from '@nestjs/common';
+import { Response } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { AccountingService } from './accounting.service';
@@ -182,6 +183,16 @@ export class AccountingController {
   @Get('invoices/:id')
   findById(@Param('id') id: string) {
     return this.accountingService.findById(id);
+  }
+
+  @Get('invoices/:id/pdf')
+  async servePdf(@Param('id') id: string, @Res() res: Response) {
+    const inv = await this.accountingService.findById(id);
+    const pdfPath = inv.uploadedPdfUrl || (inv as any).pdfUrl;
+    if (!pdfPath) throw new NotFoundException('PDF bulunamadı');
+    const fullPath = join(process.cwd(), pdfPath.replace(/^\//, ''));
+    if (!existsSync(fullPath)) throw new NotFoundException('PDF dosyası bulunamadı');
+    res.sendFile(fullPath);
   }
 
   @Post('invoices/from-order')

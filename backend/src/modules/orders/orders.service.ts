@@ -42,11 +42,35 @@ export class OrdersService {
     invoice: { select: { id: true } },
   };
 
-  async findAll(params: { status?: OrderStatus; contactId?: string; page?: number; limit?: number }) {
-    const { status, contactId, page = 1, limit = 50 } = params;
+  async findAll(params: { 
+    status?: OrderStatus; 
+    contactId?: string; 
+    from?: string;
+    to?: string;
+    search?: string;
+    page?: number; 
+    limit?: number;
+  }) {
+    const { status, contactId, from, to, search, page = 1, limit = 50 } = params;
     const where: any = {};
     if (status) where.status = status;
     if (contactId) where.contactId = contactId;
+    
+    // Tarih filtresi
+    if (from || to) {
+      where.createdAt = {};
+      if (from) where.createdAt.gte = new Date(from);
+      if (to) where.createdAt.lte = new Date(to);
+    }
+
+    // Arama (kişi adı veya sipariş numarası)
+    if (search) {
+      where.OR = [
+        { orderNumber: parseInt(search, 10) || -1 },
+        { contact: { name: { contains: search, mode: 'insensitive' } } },
+        { contact: { phone: { contains: search } } },
+      ];
+    }
 
     const [orders, total] = await Promise.all([
       this.prisma.salesOrder.findMany({

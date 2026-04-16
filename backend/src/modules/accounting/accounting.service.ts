@@ -139,9 +139,28 @@ export class AccountingService {
   }
 
   async updateStatus(id: string, status: AccInvoiceStatus) {
-    await this.findById(id);
+    const inv = await this.findById(id);
     const data: any = { status, panelEditedAt: new Date() };
-    if (status === 'PAID') data.paidAt = new Date();
+    if (status === 'PAID') {
+      data.paidAt = new Date();
+      // Otomatik kasa kaydı oluştur
+      const existingCash = await this.prisma.cashBookEntry.findFirst({
+        where: { invoiceId: id },
+      });
+      if (!existingCash) {
+        await this.prisma.cashBookEntry.create({
+          data: {
+            userId: inv.createdById,
+            amount: inv.grandTotal,
+            direction: 'INCOME',
+            description: `Fatura #FTR-${String(inv.invoiceNumber).padStart(5, '0')} ödeme`,
+            invoiceId: id,
+            occurredAt: new Date(),
+          },
+        });
+        this.logger.log(`Fatura ödeme kasa kaydı oluşturuldu: ${id}`);
+      }
+    }
     return this.prisma.accountingInvoice.update({
       where: { id },
       data,

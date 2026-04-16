@@ -266,22 +266,26 @@ model WhatsappSession {
 }
 
 model Contact {
-  id             String   @id @default(uuid())
-  phone          String   @unique
-  name           String?
-  surname        String?
-  email          String?
-  avatarUrl      String?
-  tags           String[] @default([])
-  notes          String?
-  source         String?
-  company        String?
-  city           String?
-  address        String?
-  metadata       Json?
-  organizationId String?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  id              String   @id @default(uuid())
+  phone           String   @unique
+  name            String?
+  surname         String?
+  email           String?
+  avatarUrl       String?
+  tags            String[] @default([])
+  notes           String?
+  source          String?
+  company         String?
+  city            String?
+  address         String?
+  taxNumber       String?  // VKN (Vergi Kimlik Numarası)
+  identityNumber  String?  // TC Kimlik Numarası
+  billingAddress  String?  // Fatura adresi
+  shippingAddress String?  // Teslimat adresi
+  metadata        Json?
+  organizationId  String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   organization  Organization?  @relation(fields: [organizationId], references: [id])
   conversations Conversation[]
@@ -683,7 +687,11 @@ model Quote {
   pdfUrl        String?
   /// Kabul sonrası ödeme modeli
   paymentMode   QuotePaymentMode @default(FULL)
+  /// Kısmi ödeme tutarı (TL)
+  partialPaymentAmount Float?
   acceptedAt    DateTime?
+  /// Versiyon numarası (her güncelleme öncesi artırılır)
+  currentVersion Int @default(1)
   /// PDF başlığı: PROFORMA | QUOTE
   documentKind  String       @default("PROFORMA")
   /// Yönetim panelinde kayıt elle güncellendi (müşteri PDF’lerinde gösterilmez)
@@ -691,9 +699,10 @@ model Quote {
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
 
-  contact   Contact      @relation(fields: [contactId], references: [id], onDelete: Cascade)
-  createdBy User         @relation("QuoteCreator", fields: [createdById], references: [id])
+  contact   Contact        @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  createdBy User           @relation("QuoteCreator", fields: [createdById], references: [id])
   items     QuoteItem[]
+  versions  QuoteVersion[]
   order     SalesOrder?
   invoice   AccountingInvoice?
 
@@ -701,6 +710,20 @@ model Quote {
   @@index([status])
   @@index([createdAt(sort: Desc)])
   @@map("quotes")
+}
+
+model QuoteVersion {
+  id        String   @id @default(uuid())
+  quoteId   String
+  version   Int
+  snapshot  Json
+  pdfUrl    String?
+  createdAt DateTime @default(now())
+
+  quote Quote @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+
+  @@index([quoteId])
+  @@map("quote_versions")
 }
 
 model QuoteItem {
