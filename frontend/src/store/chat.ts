@@ -36,6 +36,12 @@ interface Conversation {
   contact: Contact;
   session: { id: string; name: string; phone: string | null; organizationId?: string | null };
   assignments: Assignment[];
+  /** WhatsApp grup sohbeti mi? */
+  isGroup?: boolean;
+  /** Grup adı */
+  groupName?: string | null;
+  /** WhatsApp grup JID */
+  waGroupId?: string | null;
 }
 
 interface Reaction {
@@ -58,6 +64,10 @@ export interface Message {
   reactions?: Reaction[] | null;
   isEdited?: boolean;
   sentBy: { id: string; name: string } | null;
+  /** Grup mesajlarında gönderenin telefon numarası */
+  participantPhone?: string | null;
+  /** Grup mesajlarında gönderenin adı */
+  participantName?: string | null;
 }
 
 interface ChatState {

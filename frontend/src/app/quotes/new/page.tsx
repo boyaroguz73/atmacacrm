@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import api from '@/lib/api';
-import { formatPhone } from '@/lib/utils';
+import { formatPhone, rewriteMediaUrlForClient } from '@/lib/utils';
+import { QuoteEmbeddedChat } from '@/components/quotes/QuoteEmbeddedChat';
 import toast from 'react-hot-toast';
 import {
   ArrowLeft,
@@ -19,6 +20,8 @@ type DiscountType = 'PERCENT' | 'AMOUNT';
 interface LocalLineItem {
   key: string;
   productId?: string;
+  productVariantId?: string;
+  lineImageUrl?: string;
   name: string;
   description?: string;
   quantity: number;
@@ -36,6 +39,7 @@ interface ProductHit {
   unitPrice: number;
   vatRate: number;
   currency?: string;
+  imageUrl?: string | null;
 }
 
 function currencySymbol(c: string): string {
@@ -160,11 +164,15 @@ export default function NewQuotePage() {
   const [notes, setNotes] = useState('');
   const [termsOverride, setTermsOverride] = useState('');
   const [footerNoteOverride, setFooterNoteOverride] = useState('');
-  const [agentInfo, setAgentInfo] = useState('');
   const [colorFabricInfo, setColorFabricInfo] = useState('');
   const [measurementInfo, setMeasurementInfo] = useState('');
   const [grandTotalOverride, setGrandTotalOverride] = useState<string>('');
   const [submitting, setSubmitting] = useState(false);
+
+  const [variantPick, setVariantPick] = useState<{
+    product: ProductHit;
+    variants: { id: string; name: string; unitPrice: number; vatRate: number }[];
+  } | null>(null);
 
   const sym = currencySymbol(currency);
 
@@ -228,25 +236,50 @@ export default function NewQuotePage() {
     productDebounceRef.current = setTimeout(() => searchProducts(val), 300);
   };
 
-  const addProductLine = (p: ProductHit) => {
+  const finalizeProductLine = (
+    p: ProductHit,
+    variant?: { id: string; name: string; unitPrice: number; vatRate: number },
+  ) => {
     setLines((prev) => [
       ...prev,
       {
         key: genKey(),
         productId: p.id,
-        name: String(p.name ?? ''),
+        productVariantId: variant?.id,
+        lineImageUrl: p.imageUrl || undefined,
+        name: variant ? variant.name : String(p.name ?? ''),
         description: p.description || undefined,
         quantity: 1,
-        unitPrice: p.unitPrice,
-        vatRate: p.vatRate,
+        unitPrice: variant ? variant.unitPrice : p.unitPrice,
+        vatRate: variant ? variant.vatRate : p.vatRate,
         discountType: 'PERCENT',
         discountValue: 0,
       },
     ]);
-    setProductQuery('');
-    setProductResults([]);
-    setProductDropdownOpen(false);
     toast.success('Ürün satıra eklendi');
+  };
+
+  const onPickProductFromSearch = async (p: ProductHit) => {
+    try {
+      const { data } = await api.get(`/products/${p.id}/variants`);
+      const vars = Array.isArray(data) ? data : [];
+      if (vars.length === 0) {
+        finalizeProductLine(p);
+        setProductQuery('');
+        setProductResults([]);
+        setProductDropdownOpen(false);
+        return;
+      }
+      setVariantPick({ product: p, variants: vars });
+      setProductQuery('');
+      setProductResults([]);
+      setProductDropdownOpen(false);
+    } catch {
+      finalizeProductLine(p);
+      setProductQuery('');
+      setProductResults([]);
+      setProductDropdownOpen(false);
+    }
   };
 
   const updateLine = (key: string, patch: Partial<LocalLineItem>) => {
@@ -301,7 +334,6 @@ export default function NewQuotePage() {
         notes: String(notes ?? '').trim() || undefined,
         termsOverride: String(termsOverride ?? '').trim() || undefined,
         footerNoteOverride: String(footerNoteOverride ?? '').trim() || undefined,
-        agentInfo: agentInfo.trim() || undefined,
         colorFabricInfo: colorFabricInfo.trim() || undefined,
         measurementInfo: measurementInfo.trim() || undefined,
         grandTotalOverride: grandTotalOverride && parseFloat(grandTotalOverride) > 0 
@@ -309,6 +341,8 @@ export default function NewQuotePage() {
           : undefined,
         items: validLines.map((l) => ({
           productId: l.productId || undefined,
+          productVariantId: l.productVariantId || undefined,
+          lineImageUrl: l.lineImageUrl?.trim() || undefined,
           name: String(l.name ?? '').trim(),
           description: l.description || undefined,
           quantity: l.quantity,
@@ -331,7 +365,41 @@ export default function NewQuotePage() {
     n.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   return (
-    <div className="p-4 md:p-8 max-w-6xl mx-auto pb-28">
+    <div className="p-4 md:p-8 max-w-[1920px] mx-auto pb-28">
+      {variantPick && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
+          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-5 space-y-3">
+            <h3 className="text-sm font-bold text-gray-900">Varyant seçin</h3>
+            <p className="text-xs text-gray-500 line-clamp-2">{variantPick.product.name}</p>
+            <div className="max-h-56 overflow-y-auto space-y-1">
+              {variantPick.variants.map((v) => (
+                <button
+                  key={v.id}
+                  type="button"
+                  onClick={() => {
+                    finalizeProductLine(variantPick.product, v);
+                    setVariantPick(null);
+                  }}
+                  className="w-full text-left px-3 py-2 rounded-lg border border-gray-100 hover:bg-green-50 text-sm"
+                >
+                  <span className="font-medium text-gray-900">{v.name}</span>
+                  <span className="text-xs text-gray-500 ml-2 tabular-nums">
+                    {sym}
+                    {v.unitPrice.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
+                  </span>
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={() => setVariantPick(null)}
+              className="w-full py-2 text-sm text-gray-600 border border-gray-200 rounded-xl hover:bg-gray-50"
+            >
+              Vazgeç
+            </button>
+          </div>
+        </div>
+      )}
       <div className="flex items-center gap-4 mb-8 rounded-2xl border border-gray-100 bg-white/90 shadow-sm px-4 py-4 md:px-6">
         <button
           type="button"
@@ -347,8 +415,18 @@ export default function NewQuotePage() {
         </div>
       </div>
 
-      <form onSubmit={handleSubmit} className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:gap-8 items-start">
-        <div className="lg:col-span-2 space-y-6">
+      <form onSubmit={handleSubmit} className="grid grid-cols-1 xl:grid-cols-12 gap-6 xl:gap-6 items-start">
+        <aside className="xl:col-span-3 space-y-2 order-2 xl:order-1">
+          <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Sohbet</h3>
+          {selectedContact ? (
+            <QuoteEmbeddedChat contactId={selectedContact.id} contactPhone={selectedContact.phone} />
+          ) : (
+            <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50/50 p-4 text-xs text-gray-500 text-center">
+              Müşteri seçildiğinde WhatsApp sohbeti burada görünür.
+            </div>
+          )}
+        </aside>
+        <div className="xl:col-span-6 space-y-6 order-1 xl:order-2 min-w-0">
           {/* Kişi */}
           <section className="bg-white rounded-xl border border-gray-100 shadow-sm p-5 space-y-3">
             <h2 className="text-sm font-semibold text-gray-900">Müşteri</h2>
@@ -433,11 +511,10 @@ export default function NewQuotePage() {
                     <button
                       key={p.id}
                       type="button"
-                      onMouseDown={() => addProductLine(p)}
+                      onMouseDown={() => void onPickProductFromSearch(p)}
                       className="w-full text-left px-4 py-2.5 hover:bg-green-50/60 border-b border-gray-50 last:border-0"
                     >
                       <p className="text-sm font-medium text-gray-900">{p.name}</p>
-                      <p className="text-[11px] text-gray-500 font-mono">{p.sku}</p>
                     </button>
                   ))}
                 </div>
@@ -461,10 +538,11 @@ export default function NewQuotePage() {
               Ürün seçili satırlarda birim fiyat ve KDV, XML’den gelen değer olarak kilitlidir; sadece indirim düzenlenir.
             </p>
             <div className="overflow-x-auto">
-              <table className="w-full text-xs min-w-[720px]">
+              <table className="w-full text-xs min-w-[800px]">
                 <thead>
                   <tr className="bg-gray-50/90 text-gray-500 font-semibold uppercase tracking-wide text-[10px]">
-                    <th className="text-left px-3 py-2 w-[28%]">Ürün</th>
+                    <th className="text-left px-2 py-2 w-14">Görsel</th>
+                    <th className="text-left px-3 py-2 w-[24%]">Ürün</th>
                     <th className="text-left px-2 py-2 w-16">Miktar</th>
                     <th className="text-left px-2 py-2 w-24">Birim Fiyat (KDV Dahil)</th>
                     <th className="text-left px-2 py-2 w-14">KDV %</th>
@@ -477,6 +555,31 @@ export default function NewQuotePage() {
                 <tbody className="divide-y divide-gray-100">
                   {lines.map((line, idx) => (
                     <tr key={line.key} className="align-top">
+                      <td className="px-2 py-2 w-14">
+                        <div className="w-11 h-11 rounded-lg border border-gray-100 bg-gray-50 overflow-hidden shrink-0">
+                          {line.lineImageUrl ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={rewriteMediaUrlForClient(line.lineImageUrl)}
+                              alt=""
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            <span className="flex w-full h-full items-center justify-center text-[9px] text-gray-300">
+                              —
+                            </span>
+                          )}
+                        </div>
+                        <input
+                          type="url"
+                          value={line.lineImageUrl || ''}
+                          onChange={(e) =>
+                            updateLine(line.key, { lineImageUrl: e.target.value || undefined })
+                          }
+                          placeholder="Görsel URL"
+                          className="mt-1 w-full px-1 py-0.5 border border-gray-100 rounded text-[10px] text-gray-600"
+                        />
+                      </td>
                       <td className="px-3 py-2">
                         <input
                           value={line.name}
@@ -626,17 +729,6 @@ export default function NewQuotePage() {
                 className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-whatsapp"
               />
             </div>
-            {/* Ek Bilgiler */}
-            <div>
-              <label className="block text-xs font-semibold text-gray-500 mb-1">Temsilci Bilgisi</label>
-              <input
-                type="text"
-                value={agentInfo}
-                onChange={(e) => setAgentInfo(e.target.value)}
-                placeholder="Satış temsilcisi adı veya kodu"
-                className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-whatsapp"
-              />
-            </div>
             <div>
               <label className="block text-xs font-semibold text-gray-500 mb-1">Renk/Kumaş Bilgisi</label>
               <input
@@ -728,7 +820,7 @@ export default function NewQuotePage() {
         </div>
 
         {/* Özet paneli */}
-        <aside className="lg:col-span-1">
+        <aside className="xl:col-span-3 order-3">
           <div className="sticky top-6 bg-gradient-to-b from-green-50/80 to-white rounded-2xl border border-green-100 shadow-md p-6 space-y-4">
             <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wide text-whatsapp">
               Özet

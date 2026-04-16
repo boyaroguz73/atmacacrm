@@ -53,6 +53,11 @@ export class ProductsController {
     return this.productsService.getCategoriesSummary();
   }
 
+  @Get(':id/variants')
+  listVariants(@Param('id') id: string) {
+    return this.productsService.findVariantsByProductId(id);
+  }
+
   @Get(':id')
   findById(@Param('id') id: string) {
     return this.productsService.findById(id);

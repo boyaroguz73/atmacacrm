@@ -15,6 +15,15 @@ import {
   collectWhatsappMessageText,
   isWhatsappE2eOrSecuritySystemText,
 } from '../../common/whatsapp-system-message';
+import {
+  isGroupChat,
+  isIndividualChat,
+  isProcessableChat,
+  extractPhoneFromIndividualJid,
+  extractPhoneFromParticipant,
+  isValidPhoneNumber,
+  canonicalContactPhone,
+} from '../../common/contact-phone';
 
 @Injectable()
 export class WahaWebhookHandler {
@@ -46,10 +55,9 @@ export class WahaWebhookHandler {
       const chatId = isFromMe ? (msg.to || msg.from) : msg.from;
       if (!chatId) return;
 
-      // Kanal mesajlarını filtrele (newsletter ve broadcast kanalları)
-      // Gruplar (@g.us) ve bireysel sohbetler (@c.us) geçer
-      if (chatId.includes('@newsletter') || chatId.includes('@broadcast')) {
-        this.logger.debug(`Kanal mesajı atlandı: ${chatId}`);
+      // İşlenebilir sohbet tipi mi kontrol et (bireysel @c.us veya grup @g.us)
+      if (!isProcessableChat(chatId)) {
+        this.logger.debug(`İşlenemeyen sohbet tipi atlandı: ${chatId}`);
         return;
       }
 
@@ -69,9 +77,6 @@ export class WahaWebhookHandler {
         return;
       }
 
-      const phone = this.wahaService.extractPhoneFromChatId(chatId);
-      const contactName = msg.pushName || msg._data?.notifyName || phone;
-
       const waSession = await this.prisma.whatsappSession.findUnique({
         where: { name: sessionName },
       });
@@ -80,21 +85,77 @@ export class WahaWebhookHandler {
         return;
       }
 
-      const contact = await this.contactsService.findOrCreate(
-        phone, 
-        contactName,
-        waSession.organizationId,
-      );
+      // Grup mu bireysel mi belirleme
+      const isGroup = isGroupChat(chatId);
+      let contact: any;
+      let conversation: any;
+      let participantPhone: string | null = null;
+      let participantName: string | null = null;
+      let phone: string | null = null;
 
-      if (!contact.avatarUrl) {
-        this.fetchAndSaveAvatar(sessionName, phone, contact.id).catch(() => {});
+      if (isGroup) {
+        // ─────────────────────────────────────────────────────────────
+        // GRUP MESAJI İŞLEME
+        // ─────────────────────────────────────────────────────────────
+        
+        // Grup için participant bilgisini al (mesajı gönderen kişi)
+        const rawParticipant = msg.author || msg.participant || msg._data?.author || msg._data?.participant;
+        participantPhone = extractPhoneFromParticipant(rawParticipant);
+        participantName = msg.pushName || msg._data?.notifyName || null;
+
+        // Grup adını al
+        const groupName = msg.chat?.name || msg._data?.chat?.name || msg.notifyName || 'Grup';
+
+        // Grup için placeholder contact oluştur/bul
+        contact = await this.contactsService.findOrCreateForGroup(
+          chatId,
+          groupName,
+          waSession.organizationId,
+        );
+
+        // Grup conversation bul/oluştur
+        conversation = await this.conversationsService.findOrCreateGroup(
+          contact.id,
+          waSession.id,
+          chatId,
+          groupName,
+        );
+
+        this.logger.debug(
+          `Grup mesajı: ${chatId} | Gönderen: ${participantPhone || 'bilinmiyor'} (${participantName || 'adsız'})`,
+        );
+      } else {
+        // ─────────────────────────────────────────────────────────────
+        // BİREYSEL MESAJ İŞLEME (@c.us)
+        // ─────────────────────────────────────────────────────────────
+        
+        phone = extractPhoneFromIndividualJid(chatId);
+        
+        if (!phone || !isValidPhoneNumber(phone)) {
+          this.logger.warn(`Geçersiz telefon numarası, chatId=${chatId}, çıkarılan=${phone}`);
+          return;
+        }
+
+        // Kişi oluştur/bul (pushName kullanmıyoruz)
+        contact = await this.contactsService.findOrCreate(
+          phone, 
+          undefined,
+          waSession.organizationId,
+        );
+
+        if (!contact.avatarUrl) {
+          this.fetchAndSaveAvatar(sessionName, phone, contact.id).catch(() => {});
+        }
+
+        conversation = await this.conversationsService.findOrCreate(
+          contact.id,
+          waSession.id,
+        );
       }
 
-      const conversation = await this.conversationsService.findOrCreate(
-        contact.id,
-        waSession.id,
-      );
-
+      // ─────────────────────────────────────────────────────────────
+      // MEDYA İŞLEME (her iki tip için ortak)
+      // ─────────────────────────────────────────────────────────────
       let mediaUrl: string | undefined;
       let mediaType: string | undefined;
       let mediaMimeType: string | undefined;
@@ -113,7 +174,6 @@ export class WahaWebhookHandler {
         else if (msg.type === 'audio' || msg.type === 'ptt') mediaType = 'AUDIO';
         else if (msg.hasMedia || msg.type === 'document') mediaType = 'DOCUMENT';
 
-        // Önce WAHA’nın indirdiği tam dosya URL’si (genelde tam çözünürlük); thumbnail base64’ü en sona bırak
         const wahaStoredUrl = msg.media?.url || msg.mediaUrl || msg._data?.mediaUrl;
         if (wahaStoredUrl) {
           mediaUrl = await this.downloadAndSaveMedia(String(wahaStoredUrl), mediaMimeType);
@@ -138,10 +198,14 @@ export class WahaWebhookHandler {
         );
       }
 
+      // ─────────────────────────────────────────────────────────────
+      // MESAJ KAYDI
+      // ─────────────────────────────────────────────────────────────
       const rawId = msg.id?._serialized || msg.id?.id || msg.id;
       const waMessageId = typeof rawId === 'string' ? rawId : String(rawId ?? '');
       const direction = isFromMe ? MessageDirection.OUTGOING : MessageDirection.INCOMING;
-      const messageData = {
+      
+      const messageData: any = {
         conversationId: conversation.id,
         sessionId: waSession.id,
         waMessageId,
@@ -154,6 +218,12 @@ export class WahaWebhookHandler {
         timestamp: msg.timestamp ? new Date(msg.timestamp * 1000) : new Date(),
       };
 
+      // Grup mesajı ise participant bilgisini ekle
+      if (isGroup && !isFromMe) {
+        messageData.participantPhone = participantPhone;
+        messageData.participantName = participantName;
+      }
+
       const message = await this.prisma.message.upsert({
         where: { waMessageId },
         create: messageData,
@@ -163,6 +233,9 @@ export class WahaWebhookHandler {
         },
       });
 
+      // ─────────────────────────────────────────────────────────────
+      // CONVERSATION GÜNCELLEME
+      // ─────────────────────────────────────────────────────────────
       const bodyPreview = msg.body || (mediaType ? `📎 ${mediaType}` : '');
       const msgTimestamp = msg.timestamp ? new Date(msg.timestamp * 1000) : new Date();
       await this.conversationsService.updateLastMessage(
@@ -179,12 +252,16 @@ export class WahaWebhookHandler {
         conversation.id,
       );
 
+      // WebSocket emit
       this.chatGateway.emitNewMessage(conversation.id, {
         message,
         conversation: fullConversation,
       });
 
-      if (!isFromMe) {
+      // ─────────────────────────────────────────────────────────────
+      // OTOMATİK YANITLAR (sadece bireysel için, gruplar için değil)
+      // ─────────────────────────────────────────────────────────────
+      if (!isFromMe && !isGroup) {
         if (!fullConversation.assignments?.length) {
           await this.conversationsService.autoAssignRoundRobin(conversation.id);
         }
@@ -206,8 +283,11 @@ export class WahaWebhookHandler {
           );
       }
 
+      const logIdentifier = isGroup 
+        ? `grup ${chatId.split('@')[0]}` 
+        : (phone || contact.phone || chatId);
       this.logger.log(
-        `${isFromMe ? 'Outgoing' : 'Incoming'} message ${isFromMe ? 'to' : 'from'} ${phone} on session ${sessionName}` +
+        `${isFromMe ? 'Outgoing' : 'Incoming'} ${isGroup ? 'grup ' : ''}message ${isFromMe ? 'to' : 'from'} ${logIdentifier} on session ${sessionName}` +
           (mediaType ? ` [${mediaType}]` : ''),
       );
     } catch (error: any) {

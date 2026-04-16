@@ -62,6 +62,8 @@ export interface PdfData {
   footerNoteOverride?: string;
   /** order_form: kalem satırları çizgisiz yumuşak bloklar */
   layout?: 'default' | 'order_form';
+  /** Belgeyi oluşturan temsilci adı */
+  createdByName?: string;
 }
 
 /** Teklif → sipariş onay formu (tablo çizgileri yumuşak, kurumsal düzen) */
@@ -83,6 +85,8 @@ export interface OrderConfirmationPdfData {
   vatTotal: number;
   grandTotal: number;
   orderNotes?: string;
+  /** Belgeyi oluşturan temsilci adı */
+  createdByName?: string;
 }
 
 const CURRENCY_SYMBOLS: Record<string, string> = { TRY: 'TL', USD: 'USD', EUR: 'EUR' };
@@ -323,6 +327,10 @@ export class PdfService {
         if (data.contactTaxOffice || data.contactTaxNumber) {
           startY += txt(`VD: ${this.t(data.contactTaxOffice || '')}  VN: ${data.contactTaxNumber || ''}`, ML, startY, { size: 8, width: PW, lineBreak: true }) + 2;
         }
+        // Temsilci bilgisi
+        if (data.createdByName) {
+          startY += txt(`${this.t('Temsilci')}: ${this.t(data.createdByName)}`, ML, startY, { size: 8, bold: true, color: primary, width: PW, lineBreak: true }) + 2;
+        }
 
         // ── TABLE ────────────────────────────────────────────────────────
         const tableY = startY + 10;
@@ -331,12 +339,11 @@ export class PdfService {
 
         const cols = [
           { label: '#',                          w: 26  },
-          { label: this.t('Urun / Hizmet'),      w: 200 },
-          { label: this.t('Miktar'),             w: 55  },
-          { label: `${this.t('B.Fiyat')} (${cs})`, w: 85 },
-          { label: 'KDV%',                       w: 45  },
+          { label: this.t('Urun / Hizmet'),      w: 230 },
+          { label: this.t('Miktar'),             w: 60  },
+          { label: `${this.t('B.Fiyat')} (${cs})`, w: 90 },
           { label: this.t('Indirim'),            w: 55  },
-          { label: `${this.t('Toplam')} (${cs})`, w: PW - 466 },
+          { label: `${this.t('Toplam')} (${cs})`, w: PW - 461 },
         ];
 
         // Header row
@@ -381,12 +388,10 @@ export class PdfService {
             rx += cols[2].w;
             doc.text(item.unitPrice.toFixed(2), rx, rowY + 10, { width: cols[3].w - 6, align: 'right', lineBreak: false });
             rx += cols[3].w;
-            doc.text(`%${item.vatRate}`, rx, rowY + 10, { width: cols[4].w - 6, align: 'right', lineBreak: false });
+            doc.text(item.discountText ? this.t(item.discountText) : '-', rx, rowY + 10, { width: cols[4].w - 6, align: 'right', lineBreak: false });
             rx += cols[4].w;
-            doc.text(item.discountText ? this.t(item.discountText) : '-', rx, rowY + 10, { width: cols[5].w - 6, align: 'right', lineBreak: false });
-            rx += cols[5].w;
             B(); doc.fillColor(primary);
-            doc.text(item.lineTotal.toFixed(2), rx, rowY + 10, { width: cols[6].w - 6, align: 'right', lineBreak: false });
+            doc.text(item.lineTotal.toFixed(2), rx, rowY + 10, { width: cols[5].w - 6, align: 'right', lineBreak: false });
             rowY += itemH + 6;
           } else {
             if (idx % 2 === 1) {
@@ -408,9 +413,8 @@ export class PdfService {
             const rowH = Math.max(ROW_H, imgBuf ? 30 : 0);
             txt(String(item.quantity), rx + 3, rowY + 6, { size: 8, width: cols[2].w - 6, align: 'right' }); rx += cols[2].w;
             txt(item.unitPrice.toFixed(2), rx + 3, rowY + 6, { size: 8, width: cols[3].w - 6, align: 'right' }); rx += cols[3].w;
-            txt(`%${item.vatRate}`, rx + 3, rowY + 6, { size: 8, width: cols[4].w - 6, align: 'right' }); rx += cols[4].w;
-            txt(item.discountText ? this.t(item.discountText) : '-', rx + 3, rowY + 6, { size: 8, width: cols[5].w - 6, align: 'right' }); rx += cols[5].w;
-            txt(item.lineTotal.toFixed(2), rx + 3, rowY + 6, { size: 8, width: cols[6].w - 6, align: 'right' });
+            txt(item.discountText ? this.t(item.discountText) : '-', rx + 3, rowY + 6, { size: 8, width: cols[4].w - 6, align: 'right' }); rx += cols[4].w;
+            txt(item.lineTotal.toFixed(2), rx + 3, rowY + 6, { size: 8, width: cols[5].w - 6, align: 'right' });
             rowY += rowH;
           }
         });
@@ -433,7 +437,6 @@ export class PdfService {
         if (data.discountTotal > 0) {
           sumRow(this.t('Indirim:'), `-${fmtMoney(data.discountTotal)}`, rowY, false, '#cc0000'); rowY += 14;
         }
-        sumRow(this.t('KDV Toplam:'), fmtMoney(data.vatTotal), rowY); rowY += 14;
 
         // Grand total box
         doc.rect(sumX - 4, rowY - 2, lblW + valW + 8, 22).fill(primary);
@@ -546,6 +549,7 @@ export class PdfService {
       grandTotal: data.grandTotal,
       notes: noteParts.join('\n\n') || undefined,
       layout: 'order_form',
+      createdByName: data.createdByName,
     });
   }
 }

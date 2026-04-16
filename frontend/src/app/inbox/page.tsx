@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useChatStore } from '@/store/chat';
 import { connectSocket, getSocket } from '@/lib/socket';
@@ -10,6 +10,7 @@ import ChatWindow from '@/components/chat/ChatWindow';
 export default function InboxPage() {
   const searchParams = useSearchParams();
   const filter = searchParams.get('filter') || undefined;
+  const [mobileShowChat, setMobileShowChat] = useState(false);
 
   const {
     activeConversation,
@@ -34,6 +35,12 @@ export default function InboxPage() {
       setActiveConversation(conversations[0]);
     }
   }, [conversations, activeConversation, isLoadingConversations, setActiveConversation]);
+
+  useEffect(() => {
+    if (activeConversation) {
+      setMobileShowChat(true);
+    }
+  }, [activeConversation]);
 
   useEffect(() => {
     setListFilter(filter);
@@ -78,11 +85,18 @@ export default function InboxPage() {
 
   return (
     <div className="flex h-full">
-      <ConversationList />
+      {/* Conversation List - mobilde chat açıksa gizle */}
+      <div className={`${mobileShowChat ? 'hidden md:flex' : 'flex'} md:flex`}>
+        <ConversationList />
+      </div>
+      
+      {/* Chat Window - mobilde liste açıksa gizle */}
       {activeConversation ? (
-        <ChatWindow />
+        <div className={`${mobileShowChat ? 'flex' : 'hidden md:flex'} flex-1`}>
+          <ChatWindow onMobileBack={() => setMobileShowChat(false)} />
+        </div>
       ) : (
-        <div className="flex-1 flex items-center justify-center bg-gray-50">
+        <div className="hidden md:flex flex-1 items-center justify-center bg-gray-50">
           <div className="text-center">
             <div className="w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
               <svg

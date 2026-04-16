@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import api, { getApiErrorMessage } from '@/lib/api';
-import { formatPhone } from '@/lib/utils';
+import { formatPhone, backendPublicUrl } from '@/lib/utils';
 import toast from 'react-hot-toast';
 import {
   ChevronLeft,
@@ -331,6 +331,7 @@ export default function AccountingInvoicesPage() {
   const [detailBusy, setDetailBusy] = useState(false);
   const [showSendForm, setShowSendForm] = useState(false);
   const [sendTemplateBody, setSendTemplateBody] = useState('');
+  const [showSendConfirm, setShowSendConfirm] = useState(false);
   const pdfInputRef = useRef<HTMLInputElement>(null);
   const [dueEdit, setDueEdit] = useState('');
   const [notesEdit, setNotesEdit] = useState('');
@@ -486,9 +487,7 @@ export default function AccountingInvoicesPage() {
     try {
       const fd = new FormData();
       fd.append('file', file);
-      const { data } = await api.post(`/accounting/invoices/${inv.id}/upload-pdf`, fd, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
+      const { data } = await api.post(`/accounting/invoices/${inv.id}/upload-pdf`, fd);
       const merged = normalizeInvoiceRow({
         ...inv,
         ...(data && typeof data === 'object' ? data : {}),
@@ -915,7 +914,7 @@ export default function AccountingInvoicesPage() {
                   <p className="text-xs text-whatsapp pt-1 break-all">
                     PDF:{' '}
                     <a
-                      href={detail.uploadedPdfUrl || detail.pdfUrl || '#'}
+                      href={`${backendPublicUrl()}${detail.uploadedPdfUrl || detail.pdfUrl}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="underline"
@@ -995,7 +994,7 @@ export default function AccountingInvoicesPage() {
                   className="inline-flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold bg-whatsapp text-white shadow-sm hover:opacity-95 disabled:opacity-50"
                 >
                   <Send className="w-4 h-4" />
-                  Gönder
+                  WhatsApp ile Gönder
                 </button>
                 <button
                   type="button"
@@ -1009,7 +1008,7 @@ export default function AccountingInvoicesPage() {
 
               {showSendForm ? (
                 <div className="rounded-xl border border-whatsapp/25 bg-whatsapp/5 p-4 space-y-3">
-                  <p className="text-xs font-semibold text-gray-700">WhatsApp ile gönder</p>
+                  <p className="text-xs font-semibold text-gray-700">WhatsApp ile Gönder</p>
                   <p className="text-xs text-gray-500">Sistem aktif WhatsApp oturumunu otomatik seçer.</p>
                   <div>
                     <label className="text-xs text-gray-500 block mb-1">Özel mesaj (isteğe bağlı)</label>
@@ -1024,13 +1023,51 @@ export default function AccountingInvoicesPage() {
                   <button
                     type="button"
                     disabled={detailBusy}
-                    onClick={() => sendInvoice(detail)}
+                    onClick={() => setShowSendConfirm(true)}
                     className="w-full py-2.5 rounded-xl text-sm font-semibold bg-whatsapp text-white shadow-sm disabled:opacity-50"
                   >
-                    {detailBusy ? 'Gönderiliyor…' : 'Gönder'}
+                    {detailBusy ? 'Gönderiliyor…' : 'WhatsApp ile Gönder'}
                   </button>
                 </div>
               ) : null}
+
+              {/* WhatsApp Gönderim Onay Modalı */}
+              {showSendConfirm && (
+                <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/40">
+                  <div className="bg-white rounded-2xl shadow-xl max-w-sm w-full p-6 space-y-4">
+                    <div className="text-center">
+                      <div className="w-14 h-14 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                        <Send className="w-7 h-7 text-green-600" />
+                      </div>
+                      <h2 className="text-lg font-bold text-gray-900">WhatsApp ile Gönder</h2>
+                      <p className="text-sm text-gray-600 mt-2">
+                        Bu faturayı müşteriye WhatsApp üzerinden göndermek istediğinize emin misiniz?
+                      </p>
+                    </div>
+                    <div className="flex gap-3 pt-2">
+                      <button
+                        type="button"
+                        onClick={() => setShowSendConfirm(false)}
+                        className="flex-1 px-4 py-2.5 rounded-xl text-sm font-medium bg-red-50 text-red-600 hover:bg-red-100 transition-colors"
+                      >
+                        Hayır
+                      </button>
+                      <button
+                        type="button"
+                        disabled={detailBusy}
+                        onClick={() => {
+                          setShowSendConfirm(false);
+                          sendInvoice(detail);
+                        }}
+                        className="flex-1 px-4 py-2.5 rounded-xl text-sm font-medium bg-green-500 text-white hover:bg-green-600 disabled:opacity-50 transition-colors inline-flex items-center justify-center gap-2"
+                      >
+                        {detailBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                        Evet, Gönder
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               <div>
                 <label className="text-xs font-semibold text-gray-600 block mb-1.5">Durum değiştir</label>

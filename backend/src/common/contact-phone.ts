@@ -1,25 +1,184 @@
 /**
+ * WhatsApp JID tipleri
+ */
+export type WhatsAppJidType = 'individual' | 'group' | 'broadcast' | 'newsletter' | 'status' | 'unknown';
+
+/**
+ * WhatsApp JID'sinin tipini belirle
+ */
+export function getWhatsAppJidType(jid: string): WhatsAppJidType {
+  if (!jid) return 'unknown';
+  const lower = jid.toLowerCase();
+  
+  if (lower.endsWith('@c.us')) return 'individual';
+  if (lower.endsWith('@g.us')) return 'group';
+  if (lower.includes('@broadcast')) return 'broadcast';
+  if (lower.includes('@newsletter')) return 'newsletter';
+  if (lower.startsWith('status@') || lower === 'status@broadcast') return 'status';
+  
+  return 'unknown';
+}
+
+/**
+ * Bir JID'nin bireysel sohbet (DM) olup olmadığını kontrol et
+ */
+export function isIndividualChat(jid: string): boolean {
+  return getWhatsAppJidType(jid) === 'individual';
+}
+
+/**
+ * Bir JID'nin grup sohbeti olup olmadığını kontrol et
+ */
+export function isGroupChat(jid: string): boolean {
+  return getWhatsAppJidType(jid) === 'group';
+}
+
+/**
+ * Bir JID'nin işlenmesi gereken sohbet tipi olup olmadığını kontrol et
+ * (bireysel veya grup - broadcast, newsletter, status hariç)
+ */
+export function isProcessableChat(jid: string): boolean {
+  const type = getWhatsAppJidType(jid);
+  return type === 'individual' || type === 'group';
+}
+
+/**
+ * Telefon numarasının geçerli E.164 formatına yakın olup olmadığını kontrol et
+ * (7-15 rakam, genellikle ülke kodu ile başlar)
+ */
+export function isValidPhoneNumber(phone: string): boolean {
+  const digits = String(phone ?? '').replace(/\D/g, '');
+  if (!digits) return false;
+  
+  // E.164: 7-15 rakam (ülke kodu dahil)
+  if (digits.length < 7 || digits.length > 15) return false;
+  
+  // Grup JID'leri genellikle 18+ haneli olur
+  if (digits.length > 15) return false;
+  
+  return true;
+}
+
+/**
+ * Bireysel sohbet JID'sinden (@c.us) telefon numarası çıkar
+ * Sadece @c.us için çalışır, grup için null döner
+ */
+export function extractPhoneFromIndividualJid(jid: string): string | null {
+  if (!isIndividualChat(jid)) return null;
+  
+  // @c.us'u kaldır ve sadece rakamları al
+  const digits = jid.replace(/@c\.us$/i, '').replace(/\D/g, '');
+  if (!digits) return null;
+  
+  // Normalize et
+  const normalized = canonicalContactPhone(digits);
+  
+  // Geçerli telefon numarası mı kontrol et
+  if (!isValidPhoneNumber(normalized)) return null;
+  
+  return normalized;
+}
+
+/**
+ * Grup JID'sinden grup kimliğini çıkar
+ * Sadece @g.us için çalışır
+ */
+export function extractGroupIdFromJid(jid: string): string | null {
+  if (!isGroupChat(jid)) return null;
+  return jid.toLowerCase(); // Tam JID'yi döndür
+}
+
+/**
+ * Participant JID'sinden telefon numarası çıkar
+ * Grup mesajlarında gönderenin numarasını almak için
+ */
+export function extractPhoneFromParticipant(participant: string | undefined | null): string | null {
+  if (!participant) return null;
+  
+  // Participant genellikle 905551234567@c.us formatında
+  // veya sadece 905551234567 olabilir
+  const cleaned = String(participant).replace(/@.*$/, '').replace(/\D/g, '');
+  if (!cleaned) return null;
+  
+  const normalized = canonicalContactPhone(cleaned);
+  if (!isValidPhoneNumber(normalized)) return null;
+  
+  return normalized;
+}
+
+/**
  * Kişi telefonu için tek biçim (WhatsApp/WAHA ile uyumlu, TR 0 → 90).
+ * Uluslararası numaralar olduğu gibi kalır.
  */
 export function canonicalContactPhone(phone: string): string {
   let d = String(phone ?? '').replace(/\D/g, '');
   if (!d) return '';
+  
+  // 00 ile başlayan uluslararası format
   if (d.startsWith('00')) d = d.slice(2);
-  if (d.length === 11 && d.startsWith('0') && d[1] === '5') d = `90${d.slice(1)}`;
-  if (d.length === 10 && d.startsWith('5')) d = `90${d}`;
+  
+  // Türkiye yerel formatları
+  // 05551234567 (11 hane, 0 ile başlayan)
+  if (d.length === 11 && d.startsWith('0') && d[1] === '5') {
+    d = `90${d.slice(1)}`;
+  }
+  // 5551234567 (10 hane, 5 ile başlayan - TR mobil)
+  else if (d.length === 10 && d.startsWith('5')) {
+    d = `90${d}`;
+  }
+  
   return d;
 }
 
-/** Veritabanında eşleşme için olası anahtarlar (eski 0555 / 555 kayıtları) */
+/**
+ * Veritabanında eşleşme için olası anahtarlar (eski 0555 / 555 kayıtları)
+ */
 export function contactPhoneLookupKeys(phone: string): string[] {
   const canonical = canonicalContactPhone(phone);
   const raw = String(phone ?? '').replace(/\D/g, '');
   const keys = new Set<string>();
+  
   if (canonical) keys.add(canonical);
-  if (raw) keys.add(raw);
+  if (raw && raw !== canonical) keys.add(raw);
+  
+  // TR numarası ise alternatif formatları ekle
   if (canonical.startsWith('90') && canonical.length === 12) {
-    keys.add(`0${canonical.slice(2)}`);
-    keys.add(canonical.slice(2));
+    keys.add(`0${canonical.slice(2)}`); // 05551234567
+    keys.add(canonical.slice(2)); // 5551234567
   }
+  
   return [...keys];
+}
+
+/**
+ * Telefon numarasını WhatsApp JID formatına çevir
+ */
+export function phoneToWhatsAppJid(phone: string): string {
+  const canonical = canonicalContactPhone(phone);
+  if (!canonical) return '';
+  return `${canonical}@c.us`;
+}
+
+/**
+ * Telefon numarasını görüntüleme formatına çevir
+ */
+export function formatPhoneDisplay(phone: string | null | undefined): string {
+  if (!phone) return '—';
+  
+  const digits = String(phone).replace(/\D/g, '');
+  if (!digits) return '—';
+  
+  // TR numarası (12 hane, 90 ile başlar)
+  if (digits.length === 12 && digits.startsWith('90')) {
+    const rest = digits.slice(2);
+    return `+90 ${rest.slice(0, 3)} ${rest.slice(3, 6)} ${rest.slice(6, 8)} ${rest.slice(8)}`;
+  }
+  
+  // Diğer uluslararası numaralar
+  if (digits.length >= 10 && digits.length <= 15) {
+    return `+${digits}`;
+  }
+  
+  // Geçersiz uzunluk - olduğu gibi göster
+  return phone;
 }

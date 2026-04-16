@@ -99,6 +99,12 @@ export class ConversationsController {
     });
   }
 
+  /** Teklif sayfası: kişiye göre son görüşme (gömülü chat) */
+  @Get('for-contact/:contactId')
+  async findForContact(@Param('contactId') contactId: string) {
+    return this.conversationsService.findLatestByContactId(contactId);
+  }
+
   @Get('history')
   @UseGuards(RolesGuard)
   @Roles('ADMIN')

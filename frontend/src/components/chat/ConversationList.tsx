@@ -3,7 +3,7 @@
 import { useChatStore } from '@/store/chat';
 import { cn, formatDate, truncate, formatPhone } from '@/lib/utils';
 import { LEAD_STATUS_LABELS, LEAD_STATUS_COLORS } from '@/lib/constants';
-import { Search, Inbox } from 'lucide-react';
+import { Search, Inbox, Users } from 'lucide-react';
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import ContactAvatar from '@/components/ui/ContactAvatar';
@@ -92,7 +92,7 @@ export default function ConversationList() {
   }, [selectValue, isAgent]);
 
   return (
-    <div className="w-96 border-r border-gray-200 bg-white flex flex-col h-full min-w-0">
+    <div className="w-full md:w-96 border-r border-gray-200 bg-white flex flex-col h-full min-w-0">
       <div className="p-4 border-b border-gray-100">
         <div className="flex items-center justify-between mb-2">
           <h2 className="text-lg font-bold text-gray-900">{filterLabel}</h2>
@@ -181,20 +181,34 @@ export default function ConversationList() {
                   'bg-whatsapp/5 border-l-2 border-l-whatsapp',
               )}
             >
-              <ContactAvatar
-                name={conv.contact.name}
-                surname={conv.contact.surname}
-                phone={conv.contact.phone}
-                avatarUrl={conv.contact.avatarUrl}
-                size="md"
-              />
+              {conv.isGroup ? (
+                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-green-400 to-green-600 flex items-center justify-center flex-shrink-0">
+                  <Users className="w-5 h-5 text-white" />
+                </div>
+              ) : (
+                <ContactAvatar
+                  name={conv.contact.name}
+                  surname={conv.contact.surname}
+                  phone={conv.contact.phone}
+                  avatarUrl={conv.contact.avatarUrl}
+                  size="md"
+                />
+              )}
               <div className="flex-1 min-w-0">
                 <div className="flex items-center justify-between gap-1">
                   <span className="font-semibold text-sm text-gray-900 truncate flex items-center gap-1.5 min-w-0">
+                    {conv.isGroup && (
+                      <span className="text-[10px] bg-green-100 text-green-700 px-1 py-0.5 rounded font-medium flex-shrink-0">
+                        Grup
+                      </span>
+                    )}
                     <span className="truncate">
-                      {[conv.contact.name, conv.contact.surname].filter(Boolean).join(' ') || formatPhone(conv.contact.phone)}
+                      {conv.isGroup 
+                        ? (conv.groupName || 'WhatsApp Grubu')
+                        : ([conv.contact.name, conv.contact.surname].filter(Boolean).join(' ') || formatPhone(conv.contact.phone))
+                      }
                     </span>
-                    <EcommerceCustomerBadge metadata={conv.contact.metadata} />
+                    {!conv.isGroup && <EcommerceCustomerBadge metadata={conv.contact.metadata} />}
                   </span>
                   <span className="text-xs text-gray-400 flex-shrink-0 ml-2">
                     {formatDate(conv.lastMessageAt)}

@@ -832,14 +832,22 @@ export class WahaService implements OnModuleInit {
     }
   }
 
+  /**
+   * @deprecated Yeni kod için extractPhoneFromIndividualJid kullanın
+   * Eski: chatId'den telefon çıkarır (hem @c.us hem @g.us için - hatalı!)
+   * Bu fonksiyon geriye uyumluluk için korunuyor.
+   */
   extractPhoneFromChatId(chatId: string): string {
-    const raw = chatId.replace('@c.us', '').replace('@g.us', '').replace(/\D/g, '');
-    if (!raw) return '';
-    let d = raw;
-    if (d.startsWith('00')) d = d.slice(2);
-    if (d.length === 11 && d.startsWith('0') && d[1] === '5') d = `90${d.slice(1)}`;
-    if (d.length === 10 && d.startsWith('5')) d = `90${d}`;
-    return d;
+    // Yeni utility'leri kullan
+    const { extractPhoneFromIndividualJid, isIndividualChat } = require('../../common/contact-phone');
+    
+    // Sadece bireysel sohbetler için telefon çıkar
+    if (isIndividualChat(chatId)) {
+      return extractPhoneFromIndividualJid(chatId) || '';
+    }
+    
+    // Grup ve diğer tipler için boş döndür
+    return '';
   }
 
   /**

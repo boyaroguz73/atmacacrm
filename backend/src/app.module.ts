@@ -31,6 +31,7 @@ import { QuotesModule } from './modules/quotes/quotes.module';
 import { OrdersModule } from './modules/orders/orders.module';
 import { AccountingModule } from './modules/accounting/accounting.module';
 import { PdfModule } from './modules/pdf/pdf.module';
+import { SuppliersModule } from './modules/suppliers/suppliers.module';
 import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerGuard } from '@nestjs/throttler';
 
@@ -68,6 +69,7 @@ import { ThrottlerGuard } from '@nestjs/throttler';
     QuotesModule,
     OrdersModule,
     AccountingModule,
+    SuppliersModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

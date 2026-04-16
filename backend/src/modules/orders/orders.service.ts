@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, BadRequestException, Logger } from '@nes
 import { PrismaService } from '../prisma/prisma.service';
 import { PdfService } from '../pdf/pdf.service';
 import { OrderStatus, DiscountType } from '@prisma/client';
+import { splitSearchTokens } from '../../common/search-tokens';
 
 @Injectable()
 export class OrdersService {
@@ -27,6 +28,7 @@ export class OrdersService {
             googleProductType: true,
           },
         },
+        supplier: { select: { id: true, name: true, phone: true } },
       },
     },
     quote: {
@@ -63,13 +65,17 @@ export class OrdersService {
       if (to) where.createdAt.lte = new Date(to);
     }
 
-    // Arama (kişi adı veya sipariş numarası)
-    if (search) {
-      where.OR = [
-        { orderNumber: parseInt(search, 10) || -1 },
-        { contact: { name: { contains: search, mode: 'insensitive' } } },
-        { contact: { phone: { contains: search } } },
-      ];
+    const tokens = splitSearchTokens(search);
+    if (tokens.length) {
+      where.AND = tokens.map((token) => ({
+        OR: [
+          { orderNumber: parseInt(token, 10) || -1 },
+          { contact: { name: { contains: token, mode: 'insensitive' } } },
+          { contact: { surname: { contains: token, mode: 'insensitive' } } },
+          { contact: { phone: { contains: token } } },
+          { contact: { company: { contains: token, mode: 'insensitive' } } },
+        ],
+      }));
     }
 
     const [orders, total] = await Promise.all([
@@ -211,6 +217,7 @@ export class OrdersService {
       include: {
         items: { include: { product: { select: { imageUrl: true } } } },
         contact: true,
+        createdBy: { select: { id: true, name: true } },
         quote: true,
       },
     });
@@ -255,6 +262,7 @@ export class OrdersService {
         vatTotal: orderFull.vatTotal,
         grandTotal: orderFull.grandTotal,
         orderNotes: orderFull.notes || undefined,
+        createdByName: orderFull.createdBy?.name || undefined,
       });
       return this.prisma.salesOrder.update({
         where: { id: orderId },
@@ -265,5 +273,60 @@ export class OrdersService {
       this.logger.error(`Sipariş PDF: ${e?.message}`);
       throw new BadRequestException(e?.message || 'PDF oluşturulamadı');
     }
+  }
+
+  /** Sipariş kaleminin tedarikçi bilgilerini güncelle */
+  async updateOrderItem(
+    itemId: string,
+    data: {
+      supplierId?: string | null;
+      supplierOrderNo?: string | null;
+      isFromStock?: boolean;
+    },
+  ) {
+    const item = await this.prisma.orderItem.findUnique({
+      where: { id: itemId },
+    });
+    if (!item) throw new NotFoundException('Sipariş kalemi bulunamadı');
+
+    const patch: any = {};
+    if ('supplierId' in data) {
+      patch.supplierId = data.supplierId || null;
+    }
+    if ('supplierOrderNo' in data) {
+      patch.supplierOrderNo = data.supplierOrderNo?.trim() || null;
+    }
+    if ('isFromStock' in data) {
+      patch.isFromStock = !!data.isFromStock;
+    }
+
+    const updated = await this.prisma.orderItem.update({
+      where: { id: itemId },
+      data: patch,
+      include: {
+        supplier: true,
+        product: { select: { id: true, sku: true, name: true, imageUrl: true } },
+      },
+    });
+
+    await this.prisma.salesOrder.update({
+      where: { id: item.orderId },
+      data: { panelEditedAt: new Date() },
+    });
+
+    return updated;
+  }
+
+  /** Sipariş kalemlerini tedarikçi ile birlikte getir */
+  async getOrderItems(orderId: string) {
+    const items = await this.prisma.orderItem.findMany({
+      where: { orderId },
+      include: {
+        supplier: true,
+        product: { select: { id: true, sku: true, name: true, imageUrl: true } },
+      },
+      orderBy: { id: 'asc' },
+    });
+    return items;
   }
 }

@@ -19,6 +19,7 @@ import {
   CheckCheck,
   Image as ImageIcon,
   User,
+  Users,
   PanelRightOpen,
   PanelRightClose,
   X,
@@ -36,6 +37,7 @@ import {
   Smile,
   MapPin,
   FileUp,
+  ArrowLeft,
 } from 'lucide-react';
 import ContactPanel from './ContactPanel';
 import api, { getApiErrorMessage } from '@/lib/api';
@@ -77,7 +79,11 @@ function groupReactions(reactions: { emoji: string; senderName?: string }[]) {
   }));
 }
 
-export default function ChatWindow() {
+interface ChatWindowProps {
+  onMobileBack?: () => void;
+}
+
+export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
   const {
     activeConversation,
     messages,
@@ -518,43 +524,73 @@ export default function ChatWindow() {
       {/* Chat Area */}
       <div className="flex-1 flex flex-col h-full bg-[#efeae2]">
         {/* Header */}
-        <div className="bg-white border-b border-gray-200 px-5 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <ContactAvatar
-              name={contact.name}
-              surname={contact.surname}
-              phone={contact.phone}
-              avatarUrl={contact.avatarUrl}
-              size="sm"
-            />
+        <div className="bg-white border-b border-gray-200 px-3 md:px-5 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-2 md:gap-3">
+            {/* Mobile back button */}
+            {onMobileBack && (
+              <button
+                onClick={onMobileBack}
+                className="md:hidden p-2 -ml-1 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+                aria-label="Geri"
+              >
+                <ArrowLeft className="w-5 h-5" />
+              </button>
+            )}
+            {activeConversation.isGroup ? (
+              <div className="w-9 h-9 rounded-full bg-gradient-to-br from-green-400 to-green-600 flex items-center justify-center flex-shrink-0">
+                <Users className="w-5 h-5 text-white" />
+              </div>
+            ) : (
+              <ContactAvatar
+                name={contact.name}
+                surname={contact.surname}
+                phone={contact.phone}
+                avatarUrl={contact.avatarUrl}
+                size="sm"
+              />
+            )}
             <div>
               <div className="flex items-center gap-2 flex-wrap">
+                {activeConversation.isGroup && (
+                  <span className="text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded font-medium">
+                    Grup
+                  </span>
+                )}
                 <h3 className="font-semibold text-gray-900">
-                  {[contact.name, contact.surname].filter(Boolean).join(' ') || formatPhone(contact.phone)}
+                  {activeConversation.isGroup
+                    ? (activeConversation.groupName || 'WhatsApp Grubu')
+                    : ([contact.name, contact.surname].filter(Boolean).join(' ') || formatPhone(contact.phone))
+                  }
                 </h3>
-                <EcommerceCustomerBadge metadata={contact.metadata} />
+                {!activeConversation.isGroup && <EcommerceCustomerBadge metadata={contact.metadata} />}
               </div>
               <p className="text-xs text-gray-400">
-                {formatPhone(contact.phone)}
+                {activeConversation.isGroup
+                  ? 'WhatsApp Grup Sohbeti'
+                  : formatPhone(contact.phone)
+                }
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            {contact.tags?.map((tag: string) => (
-              <span
-                key={tag}
-                className="text-[10px] bg-whatsapp/10 text-whatsapp px-2 py-0.5 rounded-full font-medium"
-              >
-                {tag}
-              </span>
-            ))}
-            {activeConversation.assignments?.[0] && (
-              <span className="flex items-center gap-1 text-xs bg-blue-50 text-blue-600 px-2 py-1 rounded-full">
-                <User className="w-3 h-3" />
-                {activeConversation.assignments[0].user.name}
-              </span>
-            )}
-            <label className="flex items-center gap-1.5 text-xs text-gray-600 shrink-0">
+          <div className="flex items-center gap-1 md:gap-2">
+            {/* Mobilde gizle: tags, assignment, source */}
+            <div className="hidden md:flex items-center gap-2">
+              {contact.tags?.map((tag: string) => (
+                <span
+                  key={tag}
+                  className="text-[10px] bg-whatsapp/10 text-whatsapp px-2 py-0.5 rounded-full font-medium"
+                >
+                  {tag}
+                </span>
+              ))}
+              {activeConversation.assignments?.[0] && (
+                <span className="flex items-center gap-1 text-xs bg-blue-50 text-blue-600 px-2 py-1 rounded-full">
+                  <User className="w-3 h-3" />
+                  {activeConversation.assignments[0].user.name}
+                </span>
+              )}
+            </div>
+            <label className="hidden sm:flex items-center gap-1.5 text-xs text-gray-600 shrink-0">
               <ListFilter className="w-3.5 h-3.5 text-gray-400" aria-hidden />
               <select
                 value={messageAuthorFilter}
@@ -574,7 +610,7 @@ export default function ChatWindow() {
               </select>
             </label>
             {(contact as any).source && (
-              <span className="text-[10px] bg-purple-50 text-purple-600 px-2 py-0.5 rounded-full font-medium">
+              <span className="hidden md:inline-flex text-[10px] bg-purple-50 text-purple-600 px-2 py-0.5 rounded-full font-medium">
                 {(contact as any).source}
               </span>
             )}
@@ -642,6 +678,7 @@ export default function ChatWindow() {
                 const isImage =
                   msg.mediaType === 'IMAGE' ||
                   mediaUrlResolved?.match(/\.(jpg|jpeg|png|gif|webp)(\?|$)/i);
+                const isImageMessage = !!(mediaUrlResolved && isImage);
 
                 return (
                   <div
@@ -651,7 +688,14 @@ export default function ChatWindow() {
                       isOutgoing ? 'justify-end' : 'justify-start',
                     )}
                   >
-                    <div className="relative max-w-[65%]">
+                    <div
+                      className={cn(
+                        'relative',
+                        isImageMessage
+                          ? 'w-full max-w-[min(92vw,720px)] sm:max-w-[min(85vw,800px)]'
+                          : 'max-w-[65%]',
+                      )}
+                    >
                       {/* Hover Actions Bar */}
                       <div className={cn(
                         'absolute top-0 flex items-center gap-0.5 bg-white rounded-lg shadow-md border border-gray-200 p-0.5 opacity-0 group-hover/msg:opacity-100 transition-opacity z-20',
@@ -721,12 +765,21 @@ export default function ChatWindow() {
                       </div>
                       <div
                         className={cn(
-                          'rounded-2xl px-3 py-2 shadow-sm',
+                          'rounded-2xl shadow-sm',
+                          isImageMessage && !msg.body?.trim()
+                            ? 'p-1'
+                            : 'px-3 py-2',
                           isOutgoing
                             ? 'bg-[#d9fdd3] rounded-tr-md'
                             : 'bg-white rounded-tl-md',
                         )}
                       >
+                      {/* Grup mesajlarında gönderen adını göster */}
+                      {!isOutgoing && activeConversation?.isGroup && (msg.participantName || msg.participantPhone) && (
+                        <div className="text-xs font-semibold text-green-600 mb-1 truncate">
+                          {msg.participantName || formatPhone(msg.participantPhone)}
+                        </div>
+                      )}
                       {mediaUrlResolved && isImage && (
                         <div
                           onClick={() => setLightboxUrl(mediaUrlResolved)}
@@ -735,9 +788,9 @@ export default function ChatWindow() {
                           <img
                             src={mediaUrlResolved}
                             alt=""
-                            style={{ maxWidth: '100%', width: 'auto', height: 'auto', minWidth: 120, minHeight: 80 }}
-                            className="rounded-lg mb-1 hover:opacity-90 transition-opacity"
+                            className="block w-auto max-w-full h-auto max-h-[min(75vh,960px)] rounded-lg object-contain mx-auto hover:opacity-95 transition-opacity"
                             loading="lazy"
+                            decoding="async"
                             onError={(e) => {
                               const target = e.currentTarget;
                               target.style.display = 'none';
@@ -837,10 +890,10 @@ export default function ChatWindow() {
                   <img
                     src={filePreview}
                     alt=""
-                    className="w-20 h-20 object-cover rounded-xl border border-gray-200"
+                    className="max-h-56 max-w-[min(280px,45vw)] w-auto h-auto object-contain rounded-xl border border-gray-200 bg-gray-50"
                   />
                 ) : (
-                  <div className="w-20 h-20 bg-gray-100 rounded-xl flex items-center justify-center border border-gray-200">
+                  <div className="w-24 h-24 min-h-[120px] bg-gray-100 rounded-xl flex items-center justify-center border border-gray-200">
                     <FileText className="w-8 h-8 text-gray-400" />
                   </div>
                 )}
@@ -1109,7 +1162,7 @@ export default function ChatWindow() {
                           }}
                           className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-gray-50 border-b border-gray-50 last:border-b-0 text-left disabled:opacity-50"
                         >
-                          <div className="w-11 h-11 rounded-lg bg-gray-100 overflow-hidden shrink-0 border border-gray-100">
+                          <div className="w-16 h-16 rounded-xl bg-gray-100 overflow-hidden shrink-0 border border-gray-100">
                             {p.imageUrl ? (
                               // eslint-disable-next-line @next/next/no-img-element
                               <img
@@ -1125,7 +1178,6 @@ export default function ChatWindow() {
                           </div>
                           <div className="min-w-0 flex-1">
                             <p className="text-sm font-medium text-gray-900 truncate">{p.name}</p>
-                            <p className="text-[11px] text-gray-500 font-mono truncate">{p.sku}</p>
                             {p.category ? (
                               <p className="text-[11px] text-gray-400 truncate">{p.category}</p>
                             ) : null}
@@ -1305,21 +1357,15 @@ export default function ChatWindow() {
             >
               <X className="w-7 h-7" style={{ color: 'white' }} />
             </button>
-            <div data-lightbox-stage="">
+            <div
+              data-lightbox-stage=""
+              className="absolute inset-0 flex items-center justify-center p-4 pt-20 pointer-events-none"
+            >
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={lightboxUrl}
                 alt=""
-                style={{
-                  maxWidth: '100%',
-                  maxHeight: '100%',
-                  width: 'auto',
-                  height: 'auto',
-                  objectFit: 'contain',
-                  borderRadius: 8,
-                  pointerEvents: 'auto',
-                  cursor: 'default',
-                }}
+                className="max-h-[calc(100vh-6rem)] max-w-[min(100vw-2rem,1600px)] w-auto h-auto object-contain rounded-lg shadow-2xl pointer-events-auto cursor-default"
                 onClick={(e) => e.stopPropagation()}
               />
             </div>

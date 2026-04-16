@@ -17,6 +17,47 @@ export class ConversationsService {
     });
   }
 
+  /**
+   * WhatsApp grubu için conversation oluştur/bul.
+   * Gruplar için isGroup=true ve waGroupId alanları kullanılır.
+   */
+  async findOrCreateGroup(
+    contactId: string,
+    sessionId: string,
+    waGroupId: string,
+    groupName?: string,
+  ) {
+    // Önce waGroupId ile ara (eğer unique constraint varsa)
+    const existing = await this.prisma.conversation.findFirst({
+      where: {
+        waGroupId: waGroupId.toLowerCase(),
+        sessionId,
+      },
+    });
+
+    if (existing) {
+      // Grup adı değiştiyse güncelle
+      if (groupName && existing.groupName !== groupName) {
+        return this.prisma.conversation.update({
+          where: { id: existing.id },
+          data: { groupName },
+        });
+      }
+      return existing;
+    }
+
+    // Yeni grup conversation oluştur
+    return this.prisma.conversation.create({
+      data: {
+        contactId,
+        sessionId,
+        isGroup: true,
+        waGroupId: waGroupId.toLowerCase(),
+        groupName: groupName || 'WhatsApp Grubu',
+      },
+    });
+  }
+
   async findAll(
     user: OrgSessionScopeUser,
     params: {
@@ -133,6 +174,24 @@ export class ConversationsService {
     return { conversations, total, page, totalPages: Math.ceil(total / limit) };
   }
 
+  /** Teklif sayfası gömülü chat: kişiye ait son görüşme (herhangi bir oturum). */
+  async findLatestByContactId(contactId: string) {
+    return this.prisma.conversation.findFirst({
+      where: { contactId },
+      include: {
+        contact: { include: { lead: true } },
+        session: { select: { id: true, name: true, phone: true, organizationId: true } },
+        assignments: {
+          where: { unassignedAt: null },
+          include: {
+            user: { select: { id: true, name: true, avatar: true } },
+          },
+        },
+      },
+      orderBy: { lastMessageAt: 'desc' },
+    });
+  }
+
   async findById(id: string) {
     const conversation = await this.prisma.conversation.findUnique({
       where: { id },
@@ -148,7 +207,12 @@ export class ConversationsService {
       },
     });
     if (!conversation) throw new NotFoundException('Görüşme bulunamadı');
-    return conversation;
+    return {
+      ...conversation,
+      isGroup: conversation.isGroup ?? false,
+      groupName: conversation.groupName,
+      waGroupId: conversation.waGroupId,
+    };
   }
 
   async markAsRead(id: string) {

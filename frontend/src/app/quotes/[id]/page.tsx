@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuthStore } from '@/store/auth';
+import { QuoteEmbeddedChat } from '@/components/quotes/QuoteEmbeddedChat';
 
 function toDateInputValue(iso: string | null | undefined): string {
   if (!iso) return '';
@@ -47,6 +48,8 @@ type DiscountType = 'PERCENT' | 'AMOUNT';
 interface LocalLineItem {
   key: string;
   productId?: string;
+  productVariantId?: string;
+  lineImageUrl?: string;
   name: string;
   description?: string;
   quantity: number;
@@ -64,6 +67,7 @@ interface ProductHit {
   unitPrice: number;
   vatRate: number;
   currency?: string;
+  imageUrl?: string | null;
 }
 
 function currencySymbol(c: string): string {
@@ -166,7 +170,6 @@ export default function QuoteDetailPage() {
   const [termsOverride, setTermsOverride] = useState('');
   const [footerNoteOverride, setFooterNoteOverride] = useState('');
   const [documentKind, setDocumentKind] = useState<'PROFORMA' | 'QUOTE'>('PROFORMA');
-  const [agentInfo, setAgentInfo] = useState('');
   const [colorFabricInfo, setColorFabricInfo] = useState('');
   const [measurementInfo, setMeasurementInfo] = useState('');
   const [grandTotalOverride, setGrandTotalOverride] = useState<string>('');
@@ -178,9 +181,17 @@ export default function QuoteDetailPage() {
   const [productDropdownOpen, setProductDropdownOpen] = useState(false);
   const productDebounceRef = useRef<ReturnType<typeof setTimeout>>();
 
+  const [variantPick, setVariantPick] = useState<{
+    product: ProductHit;
+    variants: { id: string; name: string; unitPrice: number; vatRate: number }[];
+  } | null>(null);
+
   // Accept modal
   const [showAcceptModal, setShowAcceptModal] = useState(false);
   const [acceptPaymentMode, setAcceptPaymentMode] = useState<PaymentModeUI>('FULL');
+
+  // WhatsApp gönderim onay modalı
+  const [showSendConfirm, setShowSendConfirm] = useState(false);
 
   const sym = currencySymbol(currency);
 
@@ -210,6 +221,8 @@ export default function QuoteDetailPage() {
       (q.items || []).map((it: any) => ({
         key: String(it.id),
         productId: it.productId || undefined,
+        productVariantId: it.productVariantId || undefined,
+        lineImageUrl: it.lineImageUrl || undefined,
         name: String(it.name || ''),
         description: it.description || undefined,
         quantity: Number(it.quantity || 0),
@@ -228,7 +241,6 @@ export default function QuoteDetailPage() {
     setTermsOverride(q.termsOverride != null ? String(q.termsOverride) : '');
     setFooterNoteOverride(q.footerNoteOverride != null ? String(q.footerNoteOverride) : '');
     setDocumentKind(q.documentKind === 'QUOTE' ? 'QUOTE' : 'PROFORMA');
-    setAgentInfo(q.agentInfo || '');
     setColorFabricInfo(q.colorFabricInfo || '');
     setMeasurementInfo(q.measurementInfo || '');
     setGrandTotalOverride(q.grandTotalOverride ? String(q.grandTotalOverride) : '');
@@ -261,25 +273,50 @@ export default function QuoteDetailPage() {
     productDebounceRef.current = setTimeout(() => searchProducts(val), 300);
   };
 
-  const addProductLine = (p: ProductHit) => {
+  const finalizeProductLine = (
+    p: ProductHit,
+    variant?: { id: string; name: string; unitPrice: number; vatRate: number },
+  ) => {
     setLines((prev) => [
       ...prev,
       {
         key: genKey(),
         productId: p.id,
-        name: String(p.name ?? ''),
+        productVariantId: variant?.id,
+        lineImageUrl: p.imageUrl || undefined,
+        name: variant ? variant.name : String(p.name ?? ''),
         description: p.description || undefined,
         quantity: 1,
-        unitPrice: p.unitPrice,
-        vatRate: p.vatRate,
+        unitPrice: variant ? variant.unitPrice : p.unitPrice,
+        vatRate: variant ? variant.vatRate : p.vatRate,
         discountType: 'PERCENT',
         discountValue: 0,
       },
     ]);
-    setProductQuery('');
-    setProductResults([]);
-    setProductDropdownOpen(false);
     toast.success('Ürün satıra eklendi');
+  };
+
+  const onPickProductFromSearch = async (p: ProductHit) => {
+    try {
+      const { data } = await api.get(`/products/${p.id}/variants`);
+      const vars = Array.isArray(data) ? data : [];
+      if (vars.length === 0) {
+        finalizeProductLine(p);
+        setProductQuery('');
+        setProductResults([]);
+        setProductDropdownOpen(false);
+        return;
+      }
+      setVariantPick({ product: p, variants: vars });
+      setProductQuery('');
+      setProductResults([]);
+      setProductDropdownOpen(false);
+    } catch {
+      finalizeProductLine(p);
+      setProductQuery('');
+      setProductResults([]);
+      setProductDropdownOpen(false);
+    }
   };
 
   const updateLine = (key: string, patch: Partial<LocalLineItem>) => {
@@ -309,7 +346,6 @@ export default function QuoteDetailPage() {
         termsOverride: termsOverride.trim() || null,
         footerNoteOverride: footerNoteOverride.trim() || null,
         documentKind,
-        agentInfo: agentInfo.trim() || null,
         colorFabricInfo: colorFabricInfo.trim() || null,
         measurementInfo: measurementInfo.trim() || null,
         grandTotalOverride: grandTotalOverride && parseFloat(grandTotalOverride) > 0 
@@ -317,6 +353,8 @@ export default function QuoteDetailPage() {
           : null,
         items: validLines.map((l) => ({
           productId: l.productId || undefined,
+          productVariantId: l.productVariantId || undefined,
+          lineImageUrl: l.lineImageUrl?.trim() || undefined,
           name: String(l.name ?? '').trim(),
           description: l.description || undefined,
           quantity: l.quantity,
@@ -405,7 +443,41 @@ export default function QuoteDetailPage() {
 
   if (editMode) {
     return (
-      <div className="p-4 md:p-8 max-w-6xl mx-auto pb-28">
+      <div className="p-4 md:p-8 max-w-[1920px] mx-auto pb-28">
+        {variantPick && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
+            <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-5 space-y-3">
+              <h3 className="text-sm font-bold text-gray-900">Varyant seçin</h3>
+              <p className="text-xs text-gray-500 line-clamp-2">{variantPick.product.name}</p>
+              <div className="max-h-56 overflow-y-auto space-y-1">
+                {variantPick.variants.map((v) => (
+                  <button
+                    key={v.id}
+                    type="button"
+                    onClick={() => {
+                      finalizeProductLine(variantPick.product, v);
+                      setVariantPick(null);
+                    }}
+                    className="w-full text-left px-3 py-2 rounded-lg border border-gray-100 hover:bg-green-50 text-sm"
+                  >
+                    <span className="font-medium text-gray-900">{v.name}</span>
+                    <span className="text-xs text-gray-500 ml-2 tabular-nums">
+                      {sym}
+                      {v.unitPrice.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
+                    </span>
+                  </button>
+                ))}
+              </div>
+              <button
+                type="button"
+                onClick={() => setVariantPick(null)}
+                className="w-full py-2 text-sm text-gray-600 border border-gray-200 rounded-xl hover:bg-gray-50"
+              >
+                Vazgeç
+              </button>
+            </div>
+          </div>
+        )}
         <div className="flex items-center gap-4 mb-8 rounded-2xl border border-gray-100 bg-white/90 shadow-sm px-4 py-4 md:px-6">
           <button
             type="button"
@@ -431,8 +503,12 @@ export default function QuoteDetailPage() {
           </span>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:gap-8 items-start">
-          <div className="lg:col-span-2 space-y-6">
+        <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 xl:gap-6 items-start">
+          <aside className="xl:col-span-3 space-y-2 order-2 xl:order-1">
+            <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Sohbet</h3>
+            <QuoteEmbeddedChat contactId={c.id} contactPhone={c.phone} />
+          </aside>
+          <div className="xl:col-span-6 space-y-6 order-1 xl:order-2 min-w-0">
             {/* Ürün arama */}
             <section className="bg-white rounded-xl border border-gray-100 shadow-sm p-5 space-y-3">
               <h2 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
@@ -456,11 +532,10 @@ export default function QuoteDetailPage() {
                       <button
                         key={p.id}
                         type="button"
-                        onMouseDown={() => addProductLine(p)}
+                        onMouseDown={() => void onPickProductFromSearch(p)}
                         className="w-full text-left px-4 py-2.5 hover:bg-green-50/60 border-b border-gray-50 last:border-0"
                       >
                         <p className="text-sm font-medium text-gray-900">{p.name}</p>
-                        <p className="text-[11px] text-gray-500 font-mono">{p.sku}</p>
                       </button>
                     ))}
                   </div>
@@ -484,10 +559,11 @@ export default function QuoteDetailPage() {
                 Ürün seçili satırlarda birim fiyat ve KDV, XML'den gelen değer olarak kilitlidir; sadece indirim düzenlenir. Açıklama alanı PDF'e yazdırılmaz.
               </p>
               <div className="overflow-x-auto">
-                <table className="w-full text-xs min-w-[800px]">
+                <table className="w-full text-xs min-w-[880px]">
                   <thead>
                     <tr className="bg-gray-50/90 text-gray-500 font-semibold uppercase tracking-wide text-[10px]">
-                      <th className="text-left px-3 py-2 w-[24%]">Ürün</th>
+                      <th className="text-left px-2 py-2 w-14">Görsel</th>
+                      <th className="text-left px-3 py-2 w-[22%]">Ürün</th>
                       <th className="text-left px-2 py-2 w-[18%]">Açıklama (sadece form)</th>
                       <th className="text-left px-2 py-2 w-16">Miktar</th>
                       <th className="text-left px-2 py-2 w-24">Birim Fiyat (KDV Dahil)</th>
@@ -501,6 +577,29 @@ export default function QuoteDetailPage() {
                   <tbody className="divide-y divide-gray-100">
                     {lines.map((line, idx) => (
                       <tr key={line.key} className="align-top">
+                        <td className="px-2 py-2 w-14">
+                          <div className="w-11 h-11 rounded-lg border border-gray-100 bg-gray-50 overflow-hidden shrink-0">
+                            {line.lineImageUrl ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img
+                                src={rewriteMediaUrlForClient(line.lineImageUrl)}
+                                alt=""
+                                className="w-full h-full object-cover"
+                              />
+                            ) : (
+                              <span className="flex w-full h-full items-center justify-center text-[9px] text-gray-300">
+                                —
+                              </span>
+                            )}
+                          </div>
+                          <input
+                            type="url"
+                            value={line.lineImageUrl || ''}
+                            onChange={(e) => updateLine(line.key, { lineImageUrl: e.target.value || undefined })}
+                            placeholder="Görsel URL"
+                            className="mt-1 w-full px-1 py-0.5 border border-gray-100 rounded text-[10px] text-gray-600"
+                          />
+                        </td>
                         <td className="px-3 py-2">
                           <input
                             value={line.name}
@@ -677,16 +776,6 @@ export default function QuoteDetailPage() {
               <h3 className="text-sm font-semibold text-gray-900">Ek Bilgiler</h3>
               <div className="grid sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-semibold text-gray-500 mb-1">Temsilci Bilgisi</label>
-                  <input
-                    type="text"
-                    value={agentInfo}
-                    onChange={(e) => setAgentInfo(e.target.value)}
-                    placeholder="Satış temsilcisi adı veya kodu"
-                    className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-whatsapp"
-                  />
-                </div>
-                <div>
                   <label className="block text-xs font-semibold text-gray-500 mb-1">Renk/Kumaş Bilgisi</label>
                   <input
                     type="text"
@@ -787,7 +876,7 @@ export default function QuoteDetailPage() {
           </div>
 
           {/* Özet paneli */}
-          <aside className="lg:col-span-1">
+          <aside className="xl:col-span-3 order-3">
             <div className="sticky top-6 bg-gradient-to-b from-green-50/80 to-white rounded-2xl border border-green-100 shadow-md p-6 space-y-4">
               <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wide text-whatsapp">
                 Özet
@@ -843,7 +932,7 @@ export default function QuoteDetailPage() {
 
   // View Mode (normal detay görünümü)
   return (
-    <div className="p-4 md:p-8 space-y-6 max-w-5xl mx-auto pb-16">
+    <div className="p-4 md:p-8 space-y-6 max-w-[1920px] mx-auto pb-16">
       {showAcceptModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
           <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 space-y-4">
@@ -912,6 +1001,44 @@ export default function QuoteDetailPage() {
         </div>
       )}
 
+      {/* WhatsApp Gönderim Onay Modalı */}
+      {showSendConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
+          <div className="bg-white rounded-2xl shadow-xl max-w-sm w-full p-6 space-y-4">
+            <div className="text-center">
+              <div className="w-14 h-14 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                <Send className="w-7 h-7 text-green-600" />
+              </div>
+              <h2 className="text-lg font-bold text-gray-900">WhatsApp ile Gönder</h2>
+              <p className="text-sm text-gray-600 mt-2">
+                Bu teklifi müşteriye WhatsApp üzerinden göndermek istediğinize emin misiniz?
+              </p>
+            </div>
+            <div className="flex gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowSendConfirm(false)}
+                className="flex-1 px-4 py-2.5 rounded-xl text-sm font-medium bg-red-50 text-red-600 hover:bg-red-100 transition-colors"
+              >
+                Hayır
+              </button>
+              <button
+                type="button"
+                disabled={!!actionLoading}
+                onClick={() => {
+                  setShowSendConfirm(false);
+                  void handleAction('send');
+                }}
+                className="flex-1 px-4 py-2.5 rounded-xl text-sm font-medium bg-green-500 text-white hover:bg-green-600 disabled:opacity-50 transition-colors inline-flex items-center justify-center gap-2"
+              >
+                {actionLoading === 'send' ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                Evet, Gönder
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="flex flex-col sm:flex-row sm:items-center gap-4 rounded-2xl border border-gray-100 bg-white shadow-sm p-4 md:p-5">
         <button
           type="button"
@@ -946,8 +1073,12 @@ export default function QuoteDetailPage() {
         </span>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:gap-8">
-        <div className="lg:col-span-2 space-y-4">
+      <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 xl:gap-6 items-start">
+        <aside className="xl:col-span-3 space-y-2 order-2 xl:order-1">
+          <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Sohbet</h3>
+          <QuoteEmbeddedChat contactId={c.id} contactPhone={c.phone} />
+        </aside>
+        <div className="xl:col-span-6 space-y-4 order-1 xl:order-2 min-w-0">
           <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-sm min-w-[640px]">
@@ -968,10 +1099,10 @@ export default function QuoteDetailPage() {
                     <tr key={item.id} className="border-t border-gray-50">
                       <td className="px-4 py-2.5 w-16 align-middle">
                         <div className="w-12 h-12 rounded-lg border border-gray-100 bg-gray-50 overflow-hidden shrink-0">
-                          {item.product?.imageUrl ? (
+                          {item.lineImageUrl || item.product?.imageUrl ? (
                             // eslint-disable-next-line @next/next/no-img-element
                             <img
-                              src={rewriteMediaUrlForClient(item.product.imageUrl)}
+                              src={rewriteMediaUrlForClient(item.lineImageUrl || item.product.imageUrl)}
                               alt=""
                               className="w-full h-full object-cover"
                             />
@@ -1016,16 +1147,10 @@ export default function QuoteDetailPage() {
           </div>
 
           {/* Ek bilgiler görünümü */}
-          {(quote.agentInfo || quote.colorFabricInfo || quote.measurementInfo) && (
+          {(quote.colorFabricInfo || quote.measurementInfo) && (
             <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4 md:p-5">
               <h3 className="text-sm font-semibold text-gray-800 mb-3">Ek Bilgiler</h3>
               <div className="grid sm:grid-cols-3 gap-4 text-sm">
-                {quote.agentInfo && (
-                  <div>
-                    <span className="text-gray-500">Temsilci:</span>
-                    <span className="ml-2 text-gray-900">{quote.agentInfo}</span>
-                  </div>
-                )}
                 {quote.colorFabricInfo && (
                   <div>
                     <span className="text-gray-500">Renk/Kumaş:</span>
@@ -1076,7 +1201,7 @@ export default function QuoteDetailPage() {
           </div>
         </div>
 
-        <div className="space-y-4">
+        <div className="xl:col-span-3 space-y-4 order-3">
           <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5 space-y-3">
             <div className="flex justify-between text-sm">
               <span className="text-gray-500">Ara Toplam</span>
@@ -1160,7 +1285,7 @@ export default function QuoteDetailPage() {
 
             <button
               type="button"
-              onClick={() => void handleAction('send')}
+              onClick={() => setShowSendConfirm(true)}
               disabled={!!actionLoading}
               className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-whatsapp text-white rounded-xl text-sm font-medium hover:bg-green-600 disabled:opacity-50"
             >

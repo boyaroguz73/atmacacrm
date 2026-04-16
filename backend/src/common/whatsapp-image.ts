@@ -52,17 +52,17 @@ export async function optimizeImageBufferForWhatsapp(buf: Buffer): Promise<{
       .toBuffer();
   }
 
-  // Hala çok büyükse boyutu da düşür
+  // Hâlâ çok büyükse boyutu düşür (ekranda ve WhatsApp’ta daha okunaklı kalite)
   if (out.length > MAX_FILE_SIZE) {
     pipeline = sharp(buf, { failOn: 'none' }).resize({
-      width: 2048,
-      height: 2048,
+      width: 2560,
+      height: 2560,
       fit: 'inside',
       withoutEnlargement: true,
     });
     out = await pipeline
       .jpeg({
-        quality: 70,
+        quality: 82,
         mozjpeg: true,
         chromaSubsampling: '4:2:0',
       })

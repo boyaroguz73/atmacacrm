@@ -394,13 +394,14 @@ export default function OrdersPage() {
                 <th className="px-5 py-3 text-right">Toplam</th>
                 <th className="px-5 py-3">Plan. teslim</th>
                 <th className="px-5 py-3">Sipariş tarihi</th>
+                <th className="px-5 py-3">Temsilci</th>
                 {canDeleteOrder ? <th className="px-5 py-3 w-12" /> : null}
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={canDeleteOrder ? 9 : 8} className="text-center py-16 text-gray-400">
+                  <td colSpan={canDeleteOrder ? 10 : 9} className="text-center py-16 text-gray-400">
                     <div className="flex flex-col items-center gap-2">
                       <Loader2 className="w-8 h-8 animate-spin text-whatsapp" />
                       <span className="text-sm">Yükleniyor…</span>
@@ -409,7 +410,7 @@ export default function OrdersPage() {
                 </tr>
               ) : orders.length === 0 ? (
                 <tr>
-                  <td colSpan={canDeleteOrder ? 9 : 8} className="text-center py-16 text-gray-400 text-sm">
+                  <td colSpan={canDeleteOrder ? 10 : 9} className="text-center py-16 text-gray-400 text-sm">
                     Sipariş bulunamadı
                   </td>
                 </tr>
@@ -465,6 +466,9 @@ export default function OrdersPage() {
                         hour: '2-digit',
                         minute: '2-digit',
                       })}
+                    </td>
+                    <td className="px-5 py-3 text-xs text-gray-600 whitespace-nowrap">
+                      {order.createdBy?.name || '—'}
                     </td>
                     {canDeleteOrder ? (
                       <td className="px-5 py-3 text-right">

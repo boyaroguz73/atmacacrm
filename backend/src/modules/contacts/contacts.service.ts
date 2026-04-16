@@ -15,7 +15,9 @@ import axios from 'axios';
 import {
   canonicalContactPhone,
   contactPhoneLookupKeys,
+  isValidPhoneNumber,
 } from '../../common/contact-phone';
+import { splitSearchTokens } from '../../common/search-tokens';
 
 @Injectable()
 export class ContactsService {
@@ -37,17 +39,13 @@ export class ContactsService {
     });
 
     if (existing) {
-      const updates: { phone?: string; name?: string; organizationId?: string } = {};
+      const updates: { phone?: string; organizationId?: string } = {};
       
       if (existing.phone !== primary) {
         updates.phone = primary;
       }
       
-      // SADECE mevcut name boşsa pushName kullan
-      // Kayıtlı kişi adını WhatsApp pushName ile EZMİYORUZ
-      if (!existing.name && name?.trim()) {
-        updates.name = name.trim();
-      }
+      // pushName ASLA kullanılmıyor - isim yalnızca manuel güncellenebilir
       
       // organizationId boşsa ve yeni değer varsa güncelle
       if (!existing.organizationId && organizationId) {
@@ -67,10 +65,56 @@ export class ContactsService {
       return this.prisma.contact.findUniqueOrThrow({ where: { id: existing.id } });
     }
 
+    // pushName kullanmıyoruz - yeni kişi için isim boş bırakılır
+    // Frontend'de isim yoksa telefon numarası gösterilecek
     return this.prisma.contact.create({
       data: { 
         phone: primary, 
-        name: (name && name.trim()) || primary,
+        name: (name && name.trim()) || null,
+        organizationId: organizationId || null,
+      },
+    });
+  }
+
+  /**
+   * WhatsApp grupları için placeholder contact oluştur/bul.
+   * Gruplar telefon numarası olmadığından özel bir şekilde işlenir.
+   * waGroupId (örn: 123456789@g.us) phone alanında saklanır ama gruplar 
+   * isGroup:true conversation'a bağlanır.
+   */
+  async findOrCreateForGroup(
+    waGroupId: string, 
+    groupName: string, 
+    organizationId?: string | null,
+  ) {
+    // Grup JID'sini temizle ve anahtar olarak kullan
+    const groupKey = `group:${waGroupId.toLowerCase()}`;
+    
+    // Önce mevcut grup contact'ı bul
+    const existing = await this.prisma.contact.findFirst({
+      where: { phone: groupKey },
+    });
+
+    if (existing) {
+      // Grup adı değiştiyse güncelle
+      if (existing.name !== groupName && groupName) {
+        try {
+          return await this.prisma.contact.update({
+            where: { id: existing.id },
+            data: { name: groupName },
+          });
+        } catch {
+          return existing;
+        }
+      }
+      return existing;
+    }
+
+    // Yeni grup contact'ı oluştur
+    return this.prisma.contact.create({
+      data: {
+        phone: groupKey,
+        name: groupName || 'WhatsApp Grubu',
         organizationId: organizationId || null,
       },
     });
@@ -99,13 +143,17 @@ export class ContactsService {
       if (to) where.createdAt.lte = new Date(to);
     }
 
-    if (search) {
-      where.OR = [
-        { name: { contains: search, mode: 'insensitive' } },
-        { surname: { contains: search, mode: 'insensitive' } },
-        { phone: { contains: search } },
-        { email: { contains: search, mode: 'insensitive' } },
-      ];
+    const tokens = splitSearchTokens(search);
+    if (tokens.length) {
+      where.AND = tokens.map((token) => ({
+        OR: [
+          { name: { contains: token, mode: 'insensitive' } },
+          { surname: { contains: token, mode: 'insensitive' } },
+          { phone: { contains: token } },
+          { email: { contains: token, mode: 'insensitive' } },
+          { company: { contains: token, mode: 'insensitive' } },
+        ],
+      }));
     }
 
     if (tag) {

@@ -4,6 +4,7 @@ import { Prisma, ProductFeedSource } from '@prisma/client';
 import { XMLParser } from 'fast-xml-parser';
 import axios from 'axios';
 import { randomUUID } from 'crypto';
+import { splitSearchTokens } from '../../common/search-tokens';
 
 function normalizeText(v: unknown): string {
   if (v == null) return '';
@@ -118,18 +119,31 @@ export class ProductsService {
     const where: any = {};
     if (isActive !== undefined) where.isActive = isActive;
     if (category && category.trim()) where.category = category.trim();
-    if (search) {
-      where.OR = [
-        { name: { contains: search, mode: 'insensitive' } },
-        { sku: { contains: search, mode: 'insensitive' } },
-        { description: { contains: search, mode: 'insensitive' } },
-        { brand: { contains: search, mode: 'insensitive' } },
-        { category: { contains: search, mode: 'insensitive' } },
-        { googleProductCategory: { contains: search, mode: 'insensitive' } },
-        { googleProductType: { contains: search, mode: 'insensitive' } },
-        { productUrl: { contains: search, mode: 'insensitive' } },
-        { gtin: { contains: search, mode: 'insensitive' } },
-      ];
+    const tokens = splitSearchTokens(search);
+    if (tokens.length) {
+      where.AND = tokens.map((token) => ({
+        OR: [
+          { name: { contains: token, mode: 'insensitive' } },
+          { sku: { contains: token, mode: 'insensitive' } },
+          { description: { contains: token, mode: 'insensitive' } },
+          { brand: { contains: token, mode: 'insensitive' } },
+          { category: { contains: token, mode: 'insensitive' } },
+          { googleProductCategory: { contains: token, mode: 'insensitive' } },
+          { googleProductType: { contains: token, mode: 'insensitive' } },
+          { productUrl: { contains: token, mode: 'insensitive' } },
+          { gtin: { contains: token, mode: 'insensitive' } },
+          {
+            variants: {
+              some: {
+                OR: [
+                  { name: { contains: token, mode: 'insensitive' } },
+                  { externalId: { contains: token, mode: 'insensitive' } },
+                ],
+              },
+            },
+          },
+        ],
+      }));
     }
 
     const [products, total] = await Promise.all([
@@ -165,6 +179,23 @@ export class ProductsService {
     const product = await this.prisma.product.findUnique({ where: { id } });
     if (!product) throw new NotFoundException('Ürün bulunamadı');
     return product;
+  }
+
+  async findVariantsByProductId(productId: string) {
+    await this.findById(productId);
+    return this.prisma.productVariant.findMany({
+      where: { productId, isActive: true },
+      orderBy: { name: 'asc' },
+      select: {
+        id: true,
+        externalId: true,
+        name: true,
+        unitPrice: true,
+        currency: true,
+        vatRate: true,
+        stock: true,
+      },
+    });
   }
 
   async create(data: {
@@ -253,6 +284,7 @@ export class ProductsService {
     const items = extractItems(parsed);
     const now = new Date();
     const seenSkus = new Set<string>();
+    const seenVariantExternalIds = new Set<string>();
     const seenCategories = new Set<string>();
     let imported = 0;
     let updated = 0;
@@ -261,6 +293,7 @@ export class ProductsService {
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
       const sku = field(item, 'id', 'g:id');
+      const itemGroupId = field(item, 'item_group_id', 'g:item_group_id');
       const name = field(item, 'title', 'g:title');
       const descriptionRaw = field(item, 'description', 'g:description') || null;
       const description = impDesc ? descriptionRaw : null;
@@ -306,6 +339,98 @@ export class ProductsService {
 
       if (!sku || !name) {
         errors.push(`Öğe ${i + 1}: id veya title eksik`);
+        continue;
+      }
+
+      // Google Shopping varyant satırı (item_group_id): ana ürün + ProductVariant
+      if (itemGroupId) {
+        const parentSku = `IG-${itemGroupId}`.slice(0, 200);
+        seenSkus.add(parentSku);
+        seenVariantExternalIds.add(sku);
+
+        const parentExisting = await this.prisma.product.findUnique({ where: { sku: parentSku } });
+        if (parentExisting?.productFeedSource === ProductFeedSource.MANUAL) {
+          this.logger.debug(`XML sync: varyant grubu ${parentSku} elle oluşturulmuş, atlandı`);
+          continue;
+        }
+
+        if (impImg && !imageUrlFromFeed) {
+          errors.push(`Varyant ${sku}: görsel yok (image_link / additional_image_link)`);
+        }
+
+        try {
+          const parentName = name.includes(' - ')
+            ? name.split(' - ')[0].trim()
+            : name.split('|')[0].trim() || name;
+
+          await this.prisma.product.upsert({
+            where: { sku: parentSku },
+            create: {
+              sku: parentSku,
+              name: parentName,
+              description: impDesc ? description : null,
+              unit: 'Adet',
+              unitPrice: 0,
+              currency,
+              vatRate: vatDefault,
+              stock: null,
+              isActive: true,
+              productFeedSource: ProductFeedSource.XML,
+              category,
+              productUrl,
+              imageUrl: impImg ? imageUrlFromFeed : null,
+              googleProductType: googleProductType || null,
+              xmlSyncedAt: now,
+            },
+            update: {
+              name: parentName,
+              productFeedSource: ProductFeedSource.XML,
+              category: category ?? undefined,
+              productUrl: productUrl ?? undefined,
+              xmlSyncedAt: now,
+              ...(impDesc ? { description: description ?? undefined } : {}),
+              ...(impImg && imageUrlFromFeed ? { imageUrl: imageUrlFromFeed } : {}),
+            },
+          });
+
+          const parent = await this.prisma.product.findUniqueOrThrow({
+            where: { sku: parentSku },
+            select: { id: true },
+          });
+
+          const existingVar = await this.prisma.productVariant.findUnique({
+            where: { externalId: sku },
+            select: { id: true },
+          });
+
+          await this.prisma.productVariant.upsert({
+            where: { externalId: sku },
+            create: {
+              productId: parent.id,
+              externalId: sku,
+              name,
+              unitPrice,
+              currency,
+              vatRate: vatDefault,
+              stock,
+              isActive,
+            },
+            update: {
+              name,
+              unitPrice,
+              currency,
+              vatRate: vatDefault,
+              stock,
+              isActive,
+            },
+          });
+
+          if (!existingVar) imported++;
+          else updated++;
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          errors.push(`Varyant ${sku}: ${msg}`);
+        }
         continue;
       }
 
@@ -413,6 +538,16 @@ export class ProductsService {
         data: { isActive: false },
       });
       deactivated = res.count;
+    }
+
+    if (seenVariantExternalIds.size > 0) {
+      await this.prisma.productVariant.updateMany({
+        where: {
+          externalId: { notIn: [...seenVariantExternalIds] },
+          product: { productFeedSource: ProductFeedSource.XML },
+        },
+        data: { isActive: false },
+      });
     }
 
     if (seenCategories.size > 0) {

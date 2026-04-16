@@ -7,9 +7,12 @@ import { Prisma, QuoteStatus, DiscountType, QuotePaymentMode, LeadStatus } from 
 import { join } from 'path';
 import { readFileSync, existsSync } from 'fs';
 import { normalizeWhatsappChatId } from '../../common/whatsapp-chat-id';
+import { splitSearchTokens } from '../../common/search-tokens';
 
 interface CreateQuoteItem {
   productId?: string;
+  productVariantId?: string;
+  lineImageUrl?: string;
   name: string;
   description?: string;
   quantity: number;
@@ -106,6 +109,15 @@ export class QuotesService {
             googleProductType: true,
           },
         },
+        productVariant: {
+          select: {
+            id: true,
+            externalId: true,
+            name: true,
+            unitPrice: true,
+            product: { select: { imageUrl: true } },
+          },
+        },
       },
       orderBy: { id: 'asc' as const },
     },
@@ -133,13 +145,17 @@ export class QuotesService {
       if (to) where.createdAt.lte = new Date(to);
     }
 
-    // Arama (kişi adı veya teklif numarası)
-    if (search) {
-      where.OR = [
-        { quoteNumber: parseInt(search, 10) || -1 },
-        { contact: { name: { contains: search, mode: 'insensitive' } } },
-        { contact: { phone: { contains: search } } },
-      ];
+    const tokens = splitSearchTokens(search);
+    if (tokens.length) {
+      where.AND = tokens.map((token) => ({
+        OR: [
+          { quoteNumber: parseInt(token, 10) || -1 },
+          { contact: { name: { contains: token, mode: 'insensitive' } } },
+          { contact: { surname: { contains: token, mode: 'insensitive' } } },
+          { contact: { phone: { contains: token } } },
+          { contact: { company: { contains: token, mode: 'insensitive' } } },
+        ],
+      }));
     }
 
     const [quotes, total] = await Promise.all([
@@ -219,6 +235,11 @@ export class QuotesService {
         items: {
           create: totals.items.map((item) => ({
             productId: item.productId || null,
+            productVariantId: item.productVariantId || null,
+            lineImageUrl:
+              item.lineImageUrl != null && String(item.lineImageUrl).trim() !== ''
+                ? String(item.lineImageUrl).trim()
+                : null,
             name: item.name,
             description: item.description,
             quantity: item.quantity,
@@ -318,6 +339,8 @@ export class QuotesService {
       ? (data.items || [])
       : (current.items || []).map((it) => ({
           productId: it.productId || undefined,
+          productVariantId: it.productVariantId || undefined,
+          lineImageUrl: it.lineImageUrl || undefined,
           name: it.name,
           description: it.description || undefined,
           quantity: it.quantity,
@@ -434,6 +457,11 @@ export class QuotesService {
                 deleteMany: {},
                 create: (totals?.items || recalcSourceItems).map((item: any) => ({
                   productId: item.productId || null,
+                  productVariantId: item.productVariantId || null,
+                  lineImageUrl:
+                    item.lineImageUrl != null && String(item.lineImageUrl).trim() !== ''
+                      ? String(item.lineImageUrl).trim()
+                      : null,
                   name: item.name,
                   description: item.description,
                   quantity: item.quantity,
@@ -500,7 +528,11 @@ export class QuotesService {
           ? (i.discountType === 'AMOUNT' ? `${i.discountValue} ${quote.currency}` : `%${i.discountValue}`)
           : undefined,
         lineTotal: i.lineTotal,
-        imageUrl: i.product?.imageUrl || undefined,
+        imageUrl:
+          i.lineImageUrl ||
+          i.productVariant?.product?.imageUrl ||
+          i.product?.imageUrl ||
+          undefined,
       })),
       currency: quote.currency,
       subtotal: quote.subtotal,
@@ -510,6 +542,7 @@ export class QuotesService {
       notes: quote.notes || undefined,
       termsOverride: quote.termsOverride || undefined,
       footerNoteOverride: quote.footerNoteOverride || undefined,
+      createdByName: quote.createdBy?.name || undefined,
     });
 
     await this.prisma.quote.update({ where: { id }, data: { pdfUrl } });
@@ -619,6 +652,7 @@ export class QuotesService {
       include: {
         items: { include: { product: { select: { imageUrl: true } } } },
         contact: true,
+        createdBy: { select: { id: true, name: true } },
         quote: {
           select: {
             quoteNumber: true,
@@ -668,6 +702,7 @@ export class QuotesService {
           vatTotal: orderFull.vatTotal,
           grandTotal: orderFull.grandTotal,
           orderNotes: orderFull.notes || undefined,
+          createdByName: orderFull.createdBy?.name || undefined,
         });
         await this.prisma.salesOrder.update({
           where: { id: order.id },

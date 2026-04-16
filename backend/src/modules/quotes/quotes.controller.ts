@@ -88,6 +88,8 @@ export class QuotesController {
       documentKind?: string | null;
       items?: Array<{
         productId?: string;
+        productVariantId?: string;
+        lineImageUrl?: string;
         name: string;
         description?: string;
         quantity: number;

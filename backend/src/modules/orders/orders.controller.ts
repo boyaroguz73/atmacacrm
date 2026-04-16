@@ -75,4 +75,24 @@ export class OrdersController {
   remove(@Param('id') id: string) {
     return this.ordersService.remove(id);
   }
+
+  @Get(':id/items')
+  @Roles('AGENT')
+  getOrderItems(@Param('id') id: string) {
+    return this.ordersService.getOrderItems(id);
+  }
+
+  @Patch('items/:itemId')
+  @Roles('ADMIN', 'SUPERADMIN', 'ACCOUNTANT')
+  updateOrderItem(
+    @Param('itemId') itemId: string,
+    @Body()
+    body: {
+      supplierId?: string | null;
+      supplierOrderNo?: string | null;
+      isFromStock?: boolean;
+    },
+  ) {
+    return this.ordersService.updateOrderItem(itemId, body);
+  }
 }

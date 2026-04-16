@@ -310,6 +310,16 @@ model Conversation {
   unreadCount     Int      @default(0)
   isArchived      Boolean  @default(false)
   isClosed        Boolean  @default(false)
+  /// WhatsApp grup sohbeti mi?
+  isGroup         Boolean  @default(false)
+  /// WhatsApp grup JID'si (örn: 123456789@g.us)
+  waGroupId       String?
+  /// Grup adı (WhatsApp'tan alınan)
+  groupName       String?
+  /// Grup açıklaması
+  groupDescription String?
+  /// Grup profil fotoğrafı URL'si
+  groupAvatarUrl  String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -320,9 +330,11 @@ model Conversation {
   internalNotes InternalNote[]
 
   @@unique([contactId, sessionId])
+  @@unique([waGroupId, sessionId])
   @@index([lastMessageAt(sort: Desc)])
   @@index([contactId])
   @@index([sessionId])
+  @@index([isGroup])
   @@map("conversations")
 }
 
@@ -343,6 +355,10 @@ model Message {
   isEdited      Boolean          @default(false)
   editedAt      DateTime?
   metadata      Json?
+  /// Grup mesajlarında gönderenin WhatsApp numarası (participant JID'den)
+  participantPhone String?
+  /// Grup mesajlarında gönderenin adı (pushName/notifyName)
+  participantName  String?
   createdAt     DateTime         @default(now())
 
   conversation Conversation    @relation(fields: [conversationId], references: [id], onDelete: Cascade)
@@ -352,6 +368,7 @@ model Message {
   @@index([conversationId, timestamp(sort: Desc)])
   @@index([waMessageId])
   @@index([sessionId])
+  @@index([participantPhone])
   @@map("messages")
 }
 
@@ -655,11 +672,34 @@ model Product {
 
   quoteItems QuoteItem[]
   orderItems OrderItem[]
+  variants  ProductVariant[]
 
   @@index([sku])
   @@index([productFeedSource])
   @@index([category])
   @@map("products")
+}
+
+/// XML / Google Shopping varyant satırları (item_group_id altında)
+model ProductVariant {
+  id         String   @id @default(uuid())
+  productId  String
+  product    Product    @relation(fields: [productId], references: [id], onDelete: Cascade)
+  /// Akıştaki benzersiz kimlik (g:id / SKU)
+  externalId String     @unique
+  name       String
+  unitPrice  Float
+  currency   String     @default("TRY")
+  vatRate    Int        @default(20)
+  stock      Int?
+  isActive   Boolean    @default(true)
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+
+  quoteItems QuoteItem[]
+
+  @@index([productId])
+  @@map("product_variants")
 }
 
 // ─── Quotes ───
@@ -738,6 +778,7 @@ model QuoteItem {
   id            String        @id @default(uuid())
   quoteId       String
   productId     String?
+  productVariantId String?
   name          String
   description   String?
   quantity      Float         @default(1)
@@ -746,11 +787,15 @@ model QuoteItem {
   discountType  DiscountType? @default(PERCENT)
   discountValue Float?        @default(0)
   lineTotal     Float         @default(0)
+  /// Satır görseli (PDF / ekran)
+  lineImageUrl  String?
 
-  quote   Quote    @relation(fields: [quoteId], references: [id], onDelete: Cascade)
-  product Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  quote            Quote           @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  product          Product?        @relation(fields: [productId], references: [id], onDelete: SetNull)
+  productVariant   ProductVariant? @relation(fields: [productVariantId], references: [id], onDelete: SetNull)
 
   @@index([quoteId])
+  @@index([productVariantId])
   @@map("quote_items")
 }
 
@@ -794,20 +839,46 @@ model SalesOrder {
   @@map("sales_orders")
 }
 
-model OrderItem {
-  id        String  @id @default(uuid())
-  orderId   String
-  productId String?
-  name      String
-  quantity  Float   @default(1)
-  unitPrice Float
-  vatRate   Int     @default(20)
-  lineTotal Float   @default(0)
+// ─── Suppliers ───
 
-  order   SalesOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  product Product?   @relation(fields: [productId], references: [id], onDelete: SetNull)
+model Supplier {
+  id        String   @id @default(uuid())
+  name      String
+  phone     String?
+  email     String?
+  address   String?
+  notes     String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  orderItems OrderItem[]
+
+  @@map("suppliers")
+}
+
+model OrderItem {
+  id              String   @id @default(uuid())
+  orderId         String
+  productId       String?
+  name            String
+  quantity        Float    @default(1)
+  unitPrice       Float
+  vatRate         Int      @default(20)
+  lineTotal       Float    @default(0)
+  /// Tedarikçi (boş ise henüz belirlenmemiş)
+  supplierId      String?
+  /// Tedarikçiye verilen sipariş numarası
+  supplierOrderNo String?
+  /// Stoktan mı karşılanacak
+  isFromStock     Boolean  @default(false)
+
+  order    SalesOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product  Product?   @relation(fields: [productId], references: [id], onDelete: SetNull)
+  supplier Supplier?  @relation(fields: [supplierId], references: [id], onDelete: SetNull)
 
   @@index([orderId])
+  @@index([supplierId])
   @@map("order_items")
 }
 
