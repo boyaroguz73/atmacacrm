@@ -257,10 +257,23 @@ export class MessagesService {
     const product = await this.prisma.product.findUnique({ where: { id: productId } });
     if (!product) throw new NotFoundException('Ürün bulunamadı');
     const url = (product.imageUrl || '').trim();
+    const unitPrice = Number(product.unitPrice ?? 0);
+    const price = `${unitPrice.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ${product.currency}`;
+    const cat = (product.category || product.googleProductType || '').trim();
+    const caption =
+      `${product.name}\nSKU: ${product.sku}` +
+      (cat ? `\nKategori: ${cat}` : '') +
+      `\nFiyat: ${price}` +
+      (product.productUrl ? `\n${product.productUrl}` : '');
     if (!url) {
-      throw new BadRequestException(
-        'Bu üründe görsel URL yok. XML akışında image_link veya additional_image_link olmalı.',
-      );
+      this.logger.warn(`Ürün görseli yok, metin olarak gönderiliyor: productId=${productId}`);
+      return this.sendText({
+        conversationId,
+        sessionName,
+        chatId,
+        body: caption,
+        sentById,
+      });
     }
 
     const dir = join(process.cwd(), 'uploads', 'product-shares');
@@ -281,20 +294,23 @@ export class MessagesService {
       });
       writeFileSync(fullPath, Buffer.from(res.data));
     } catch (e: any) {
-      const msg = axios.isAxiosError(e)
-        ? `${e.message}${e.response ? ` (HTTP ${e.response.status})` : ''}`
-        : e?.message || String(e);
-      throw new BadRequestException(`Ürün görseli indirilemedi: ${msg}`);
+      const msg =
+        axios.isAxiosError(e)
+          ? `${e.message}${e.response ? ` (HTTP ${e.response.status})` : ''}`
+          : e?.message || String(e);
+      this.logger.warn(
+        `Ürün görseli indirilemedi, metin fallback kullanılacak. productId=${productId} error=${msg}`,
+      );
+      return this.sendText({
+        conversationId,
+        sessionName,
+        chatId,
+        body: caption,
+        sentById,
+      });
     }
 
     const mediaUrl = `/uploads/product-shares/${filename}`;
-    const price = `${product.unitPrice.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ${product.currency}`;
-    const cat = (product.category || product.googleProductType || '').trim();
-    const caption =
-      `${product.name}\nSKU: ${product.sku}` +
-      (cat ? `\nKategori: ${cat}` : '') +
-      `\nFiyat: ${price}` +
-      (product.productUrl ? `\n${product.productUrl}` : '');
 
     return this.sendMedia({
       conversationId,

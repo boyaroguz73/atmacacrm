@@ -52,6 +52,7 @@ export default function LoginPage() {
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
+                autoComplete="email"
                 className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-whatsapp focus:ring-2 focus:ring-whatsapp/20 outline-none transition-all"
                 placeholder="admin@crm.com"
                 required
@@ -66,6 +67,7 @@ export default function LoginPage() {
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
+                autoComplete="current-password"
                 className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-whatsapp focus:ring-2 focus:ring-whatsapp/20 outline-none transition-all"
                 placeholder="••••••••"
                 required

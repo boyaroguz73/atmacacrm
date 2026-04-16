@@ -446,7 +446,7 @@ export class ConversationsController {
         if (preferred) session = preferred;
       }
     }
-    const contact = await this.contactsService.findOrCreate(cleanPhone, cleanPhone);
+    const contact = await this.contactsService.findOrCreate(cleanPhone, cleanPhone, session.organizationId);
     const conversation = await this.conversationsService.findOrCreate(
       contact.id,
       session.id,
@@ -556,6 +556,7 @@ export class ConversationsController {
           const contact = await this.contactsService.findOrCreate(
             phoneRaw,
             contactName,
+            session.organizationId,
           );
           const conversation = await this.conversationsService.findOrCreate(
             contact.id,

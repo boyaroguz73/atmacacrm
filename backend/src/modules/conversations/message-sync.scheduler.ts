@@ -85,7 +85,7 @@ export class MessageSyncScheduler implements OnModuleInit {
               const phone = canonicalContactPhone(rawPhone) || rawPhone;
 
               const contactName = chat.name || chat.pushname || phone;
-              const contact = await this.contactsService.findOrCreate(phone, contactName);
+              const contact = await this.contactsService.findOrCreate(phone, contactName, session.organizationId);
               const conversation = await this.conversationsService.findOrCreate(
                 contact.id,
                 session.id,

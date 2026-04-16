@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { LeadStatus } from '@prisma/client';
 import { TasksService } from '../tasks/tasks.service';
@@ -149,14 +149,22 @@ export class LeadsService {
     },
     organizationId?: string,
   ) {
+    // Contact'ın organizationId'si boşsa ve kullanıcının org'u varsa, sessizce ata
     if (organizationId) {
       const contact = await this.prisma.contact.findUnique({
         where: { id: data.contactId },
-        select: { organizationId: true },
+        select: { id: true, organizationId: true },
       });
-      if (contact?.organizationId !== organizationId) {
-        throw new ForbiddenException('Bu kişi organizasyonunuza ait değil');
+      if (!contact) {
+        throw new NotFoundException('Kişi bulunamadı');
       }
+      if (!contact.organizationId) {
+        await this.prisma.contact.update({
+          where: { id: contact.id },
+          data: { organizationId },
+        });
+      }
+      // org eşleşmese bile devam et (tek kullanıcı modu)
     }
 
     return this.prisma.lead.create({

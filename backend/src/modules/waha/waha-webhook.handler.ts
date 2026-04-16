@@ -67,18 +67,22 @@ export class WahaWebhookHandler {
       const phone = this.wahaService.extractPhoneFromChatId(chatId);
       const contactName = msg.pushName || msg._data?.notifyName || phone;
 
-      const contact = await this.contactsService.findOrCreate(phone, contactName);
-
-      if (!contact.avatarUrl) {
-        this.fetchAndSaveAvatar(sessionName, phone, contact.id).catch(() => {});
-      }
-
       const waSession = await this.prisma.whatsappSession.findUnique({
         where: { name: sessionName },
       });
       if (!waSession) {
         this.logger.warn(`Session not found: ${sessionName}`);
         return;
+      }
+
+      const contact = await this.contactsService.findOrCreate(
+        phone, 
+        contactName,
+        waSession.organizationId,
+      );
+
+      if (!contact.avatarUrl) {
+        this.fetchAndSaveAvatar(sessionName, phone, contact.id).catch(() => {});
       }
 
       const conversation = await this.conversationsService.findOrCreate(

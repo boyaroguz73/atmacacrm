@@ -228,16 +228,62 @@ export class QuotesService {
   async updateMeta(
     id: string,
     data: {
+      currency?: string | null;
+      discountType?: DiscountType | null;
+      discountValue?: number | null;
       validUntil?: string | null;
       deliveryDate?: string | null;
       notes?: string | null;
       termsOverride?: string | null;
       footerNoteOverride?: string | null;
       documentKind?: string | null;
+      items?: CreateQuoteItem[] | null;
     },
   ) {
-    await this.findById(id);
+    const current = await this.findById(id);
+    if (current.order) {
+      throw new BadRequestException('Siparişe dönüşmüş teklif düzenlenemez');
+    }
+
+    const hasItemsPayload = 'items' in data;
+    const hasFinancialPayload =
+      'discountType' in data || 'discountValue' in data || 'currency' in data;
+
+    const recalcSourceItems: CreateQuoteItem[] = hasItemsPayload
+      ? (data.items || [])
+      : (current.items || []).map((it) => ({
+          productId: it.productId || undefined,
+          name: it.name,
+          description: it.description || undefined,
+          quantity: it.quantity,
+          unitPrice: it.unitPrice,
+          vatRate: it.vatRate,
+          discountType: (it.discountType as DiscountType | null) || undefined,
+          discountValue: it.discountValue || 0,
+        }));
+
+    if (hasItemsPayload && recalcSourceItems.length === 0) {
+      throw new BadRequestException('En az bir kalem gerekli');
+    }
+
+    const effectiveDiscountType =
+      (data.discountType as DiscountType | null | undefined) ?? current.discountType;
+    const effectiveDiscountValue =
+      typeof data.discountValue === 'number' ? data.discountValue : current.discountValue;
+
+    const shouldRecalc = hasItemsPayload || hasFinancialPayload;
+    const totals = shouldRecalc
+      ? this.calcTotals(recalcSourceItems, effectiveDiscountType, effectiveDiscountValue)
+      : null;
+
     const patch: {
+      currency?: string;
+      discountType?: DiscountType;
+      discountValue?: number;
+      discountTotal?: number;
+      subtotal?: number;
+      vatTotal?: number;
+      grandTotal?: number;
       validUntil?: Date | null;
       deliveryDate?: Date | null;
       notes?: string | null;
@@ -254,6 +300,21 @@ export class QuotesService {
       const v = data.deliveryDate;
       patch.deliveryDate =
         v == null || String(v).trim() === '' ? null : new Date(String(v));
+    }
+    if ('currency' in data && data.currency != null && data.currency !== '') {
+      patch.currency = String(data.currency).toUpperCase();
+    }
+    if ('discountType' in data && data.discountType != null) {
+      patch.discountType = data.discountType;
+    }
+    if ('discountValue' in data && typeof data.discountValue === 'number') {
+      patch.discountValue = data.discountValue;
+    }
+    if (totals) {
+      patch.discountTotal = totals.discountTotal;
+      patch.subtotal = totals.subtotal;
+      patch.vatTotal = totals.vatTotal;
+      patch.grandTotal = totals.grandTotal;
     }
     if ('notes' in data) patch.notes = data.notes == null ? null : String(data.notes);
     if ('termsOverride' in data) {
@@ -275,7 +336,31 @@ export class QuotesService {
 
     return this.prisma.quote.update({
       where: { id },
-      data: { ...patch, panelEditedAt: new Date() },
+      data: {
+        ...patch,
+        panelEditedAt: new Date(),
+        ...(hasItemsPayload
+          ? {
+              items: {
+                deleteMany: {},
+                create: (totals?.items || recalcSourceItems).map((item: any) => ({
+                  productId: item.productId || null,
+                  name: item.name,
+                  description: item.description,
+                  quantity: item.quantity,
+                  unitPrice: item.unitPrice,
+                  vatRate: item.vatRate,
+                  discountType: item.discountType || null,
+                  discountValue: item.discountValue || 0,
+                  lineTotal:
+                    typeof item.lineTotal === 'number'
+                      ? item.lineTotal
+                      : this.calcLineTotal(item),
+                })),
+              },
+            }
+          : {}),
+      },
       include: this.includeRelations,
     });
   }
@@ -393,9 +478,11 @@ export class QuotesService {
     return { message: 'Teklif gönderildi', pdfUrl };
   }
 
-  async convertToOrder(id: string, userId: string) {
+  async convertToOrder(id: string, userId: string, options?: { manual?: boolean }) {
     const quote = await this.findById(id);
-    if (quote.status !== 'ACCEPTED') throw new BadRequestException('Sadece kabul edilmiş teklifler siparişe dönüştürülebilir');
+    if (!options?.manual && quote.status !== 'ACCEPTED') {
+      throw new BadRequestException('Sadece kabul edilmiş teklifler siparişe dönüştürülebilir');
+    }
 
     const existing = await this.prisma.salesOrder.findUnique({ where: { quoteId: id } });
     if (existing) throw new BadRequestException('Bu teklif zaten siparişe dönüştürülmüş');

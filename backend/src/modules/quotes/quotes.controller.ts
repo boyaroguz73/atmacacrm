@@ -66,12 +66,25 @@ export class QuotesController {
   updateMeta(
     @Param('id') id: string,
     @Body() body: {
+      currency?: string | null;
+      discountType?: 'PERCENT' | 'AMOUNT' | null;
+      discountValue?: number | null;
       validUntil?: string | null;
       deliveryDate?: string | null;
       notes?: string | null;
       termsOverride?: string | null;
       footerNoteOverride?: string | null;
       documentKind?: string | null;
+      items?: Array<{
+        productId?: string;
+        name: string;
+        description?: string;
+        quantity: number;
+        unitPrice: number;
+        vatRate: number;
+        discountType?: 'PERCENT' | 'AMOUNT';
+        discountValue?: number;
+      }> | null;
     },
   ) {
     return this.quotesService.updateMeta(id, body);
@@ -98,7 +111,11 @@ export class QuotesController {
 
   @Post(':id/convert-to-order')
   @Roles('ACCOUNTANT', 'ADMIN')
-  convertToOrder(@Param('id') id: string, @CurrentUser('id') userId: string) {
-    return this.quotesService.convertToOrder(id, userId);
+  convertToOrder(
+    @Param('id') id: string,
+    @CurrentUser('id') userId: string,
+    @Body() body?: { manual?: boolean },
+  ) {
+    return this.quotesService.convertToOrder(id, userId, { manual: body?.manual === true });
   }
 }

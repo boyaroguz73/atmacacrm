@@ -23,7 +23,7 @@ export class ContactsService {
 
   constructor(private prisma: PrismaService) {}
 
-  async findOrCreate(phone: string, name?: string) {
+  async findOrCreate(phone: string, name?: string, organizationId?: string | null) {
     const keys = contactPhoneLookupKeys(phone).filter(Boolean);
     const primary =
       canonicalContactPhone(phone) || keys[0] || String(phone ?? '').replace(/\D/g, '');
@@ -37,28 +37,41 @@ export class ContactsService {
     });
 
     if (existing) {
+      const updates: { phone?: string; name?: string; organizationId?: string } = {};
+      
       if (existing.phone !== primary) {
+        updates.phone = primary;
+      }
+      
+      const displayName = (name && name.trim()) || existing.name || primary;
+      if (displayName !== existing.name && name?.trim()) {
+        updates.name = name.trim();
+      }
+      
+      // organizationId boşsa ve yeni değer varsa güncelle
+      if (!existing.organizationId && organizationId) {
+        updates.organizationId = organizationId;
+      }
+      
+      if (Object.keys(updates).length > 0) {
         try {
-          await this.prisma.contact.update({
+          return await this.prisma.contact.update({
             where: { id: existing.id },
-            data: { phone: primary },
+            data: updates,
           });
         } catch {
           /* eşsizlik çakışması: başka satır aynı primary kullanıyorsa eski kaydı bırak */
         }
       }
-      const displayName = (name && name.trim()) || existing.name || primary;
-      if (displayName !== existing.name && name?.trim()) {
-        return this.prisma.contact.update({
-          where: { id: existing.id },
-          data: { name: name.trim() },
-        });
-      }
       return this.prisma.contact.findUniqueOrThrow({ where: { id: existing.id } });
     }
 
     return this.prisma.contact.create({
-      data: { phone: primary, name: (name && name.trim()) || primary },
+      data: { 
+        phone: primary, 
+        name: (name && name.trim()) || primary,
+        organizationId: organizationId || null,
+      },
     });
   }
 

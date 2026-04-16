@@ -18,12 +18,23 @@ export class TemplatesService {
     if (params?.category) where.category = params.category;
     if (params?.isActive !== undefined) where.isActive = params.isActive;
     if (params?.organizationId) where.organizationId = params.organizationId;
-
-    return this.prisma.messageTemplate.findMany({
+    const templates = await this.prisma.messageTemplate.findMany({
       where,
       orderBy: { createdAt: 'desc' },
-      include: { creator: { select: { id: true, name: true } } },
     });
+    const creatorIds = Array.from(new Set(templates.map((t) => t.createdBy))).filter(Boolean);
+    const creators =
+      creatorIds.length > 0
+        ? await this.prisma.user.findMany({
+            where: { id: { in: creatorIds } },
+            select: { id: true, name: true },
+          })
+        : [];
+    const creatorMap = new Map(creators.map((u) => [u.id, u]));
+    return templates.map((t) => ({
+      ...t,
+      creator: creatorMap.get(t.createdBy) || { id: t.createdBy, name: 'Bilinmeyen Kullanıcı' },
+    }));
   }
 
   async findById(id: string) {

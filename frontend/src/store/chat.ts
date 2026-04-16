@@ -347,20 +347,42 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const { activeConversation } = get();
     if (activeConversation?.id === message.conversationId) {
       set((state) => {
-        const exists = state.messages.some((m) => m.id === message.id);
-        if (exists) return state;
+        // Aynı ID'li mesaj varsa güncelle (duplicate kontrolü)
+        const existingIdx = state.messages.findIndex((m) => m.id === message.id);
+        if (existingIdx >= 0) {
+          const updated = [...state.messages];
+          updated[existingIdx] = message;
+          return { messages: updated };
+        }
+        
+        // Temp mesaj ara (optimistic update için)
         const tempIdx = state.messages.findIndex(
           (m) =>
             m.id.startsWith('temp-') &&
             m.direction === message.direction &&
+            m.status === 'PENDING' &&
             (m.body === message.body ||
-              (m.mediaUrl && message.mediaUrl)),
+              (m.mediaUrl && message.mediaUrl) ||
+              (m.body?.includes('Ürün gönderiliyor') && message.mediaType === 'IMAGE')),
         );
         if (tempIdx >= 0) {
           const updated = [...state.messages];
           updated[tempIdx] = message;
           return { messages: updated };
         }
+        
+        // Aynı içerikli ve yakın zamanlı giden mesaj varsa (socket duplicate) atla
+        const recentDuplicate = state.messages.some((m) => {
+          if (m.direction !== message.direction) return false;
+          if (m.id.startsWith('temp-')) return false;
+          const timeDiff = Math.abs(
+            new Date(m.timestamp).getTime() - new Date(message.timestamp).getTime()
+          );
+          if (timeDiff > 5000) return false; // 5 saniye içinde aynı mesaj mı?
+          return m.body === message.body && m.mediaUrl === message.mediaUrl;
+        });
+        if (recentDuplicate) return state;
+        
         return { messages: [...state.messages, message] };
       });
     }

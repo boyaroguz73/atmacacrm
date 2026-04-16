@@ -9,6 +9,8 @@ import {
   FileText,
   Send,
   ShoppingCart,
+  Plus,
+  Trash2,
   CheckCircle2,
   XCircle,
   Loader2,
@@ -36,6 +38,18 @@ const STATUS_BADGE: Record<string, { label: string; cls: string }> = {
 };
 
 type PaymentModeUI = 'FULL' | 'DEPOSIT_50';
+type DiscountType = 'PERCENT' | 'AMOUNT';
+type EditableQuoteItem = {
+  key: string;
+  productId?: string;
+  name: string;
+  description?: string;
+  quantity: number;
+  unitPrice: number;
+  vatRate: number;
+  discountType: DiscountType;
+  discountValue: number;
+};
 
 export default function QuoteDetailPage() {
   const { user } = useAuthStore();
@@ -55,6 +69,11 @@ export default function QuoteDetailPage() {
   const [metaSaving, setMetaSaving] = useState(false);
   const [showAcceptModal, setShowAcceptModal] = useState(false);
   const [acceptPaymentMode, setAcceptPaymentMode] = useState<PaymentModeUI>('FULL');
+  const [itemsEditing, setItemsEditing] = useState(false);
+  const [itemsSaving, setItemsSaving] = useState(false);
+  const [itemDrafts, setItemDrafts] = useState<EditableQuoteItem[]>([]);
+  const [discountTypeDraft, setDiscountTypeDraft] = useState<DiscountType>('PERCENT');
+  const [discountValueDraft, setDiscountValueDraft] = useState(0);
 
   const fetchQuote = async () => {
     try {
@@ -80,7 +99,81 @@ export default function QuoteDetailPage() {
     setFooterNoteOverrideInput(quote.footerNoteOverride != null ? String(quote.footerNoteOverride) : '');
     const dk = quote.documentKind === 'QUOTE' ? 'QUOTE' : 'PROFORMA';
     setDocumentKindSelect(dk);
+    setItemDrafts(
+      (quote.items || []).map((it: any) => ({
+        key: String(it.id),
+        productId: it.productId || undefined,
+        name: String(it.name || ''),
+        description: it.description || undefined,
+        quantity: Number(it.quantity || 0),
+        unitPrice: Number(it.unitPrice || 0),
+        vatRate: Number(it.vatRate || 0),
+        discountType: (it.discountType || 'PERCENT') as DiscountType,
+        discountValue: Number(it.discountValue || 0),
+      })),
+    );
+    setDiscountTypeDraft((quote.discountType || 'PERCENT') as DiscountType);
+    setDiscountValueDraft(Number(quote.discountValue || 0));
+    setItemsEditing(false);
   }, [quote?.id, quote?.validUntil, quote?.deliveryDate, quote?.notes, quote?.termsOverride, quote?.footerNoteOverride, quote?.documentKind]);
+
+  const addDraftRow = () => {
+    setItemDrafts((prev) => [
+      ...prev,
+      {
+        key: `new-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        name: '',
+        quantity: 1,
+        unitPrice: 0,
+        vatRate: 20,
+        discountType: 'PERCENT',
+        discountValue: 0,
+      },
+    ]);
+  };
+
+  const updateDraftRow = (key: string, patch: Partial<EditableQuoteItem>) => {
+    setItemDrafts((prev) => prev.map((it) => (it.key === key ? { ...it, ...patch } : it)));
+  };
+
+  const removeDraftRow = (key: string) => {
+    setItemDrafts((prev) => prev.filter((it) => it.key !== key));
+  };
+
+  const saveItems = async () => {
+    const cleaned = itemDrafts
+      .map((it) => ({ ...it, name: String(it.name || '').trim() }))
+      .filter((it) => it.name !== '');
+    if (!cleaned.length) {
+      toast.error('En az bir ürün satırı olmalı');
+      return;
+    }
+    setItemsSaving(true);
+    try {
+      const payload = {
+        items: cleaned.map((it) => ({
+          productId: it.productId || undefined,
+          name: it.name,
+          description: it.description || undefined,
+          quantity: Number(it.quantity || 0),
+          unitPrice: Number(it.unitPrice || 0),
+          vatRate: Number(it.vatRate || 0),
+          discountType: it.discountType,
+          discountValue: Number(it.discountValue || 0),
+        })),
+        discountType: discountTypeDraft,
+        discountValue: Number(discountValueDraft || 0),
+      };
+      const { data } = await api.patch(`/quotes/${id}`, payload);
+      setQuote(data);
+      setItemsEditing(false);
+      toast.success('Teklif kalemleri güncellendi');
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, 'Kalemler güncellenemedi'));
+    } finally {
+      setItemsSaving(false);
+    }
+  };
 
   const saveMeta = async () => {
     setMetaSaving(true);
@@ -120,6 +213,10 @@ export default function QuoteDetailPage() {
       } else if (action === 'convert') {
         await api.post(`/quotes/${id}/convert-to-order`);
         toast.success('Sipariş oluşturuldu');
+        router.push('/orders');
+      } else if (action === 'convert-manual') {
+        await api.post(`/quotes/${id}/convert-to-order`, { manual: true });
+        toast.success('Teklif manuel olarak siparişe çevrildi');
         router.push('/orders');
       }
     } catch (err) {
@@ -324,6 +421,128 @@ export default function QuoteDetailPage() {
                 </tbody>
               </table>
             </div>
+            {itemsEditing ? (
+              <div className="border-t border-gray-100 p-4 space-y-3 bg-gray-50/40">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-semibold text-gray-700 uppercase">Kalemleri Düzenle</p>
+                  <button
+                    type="button"
+                    onClick={addDraftRow}
+                    className="inline-flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50"
+                  >
+                    <Plus className="w-3.5 h-3.5" /> Satır Ekle
+                  </button>
+                </div>
+                <div className="space-y-2">
+                  {itemDrafts.map((it) => (
+                    <div key={it.key} className="grid grid-cols-12 gap-2 items-start">
+                      <input
+                        value={it.name}
+                        onChange={(e) => updateDraftRow(it.key, { name: e.target.value })}
+                        placeholder="Ürün adı"
+                        className="col-span-12 md:col-span-4 px-2.5 py-2 rounded-lg border border-gray-200 text-sm"
+                      />
+                      <input
+                        type="number"
+                        min={0.01}
+                        step={0.01}
+                        value={it.quantity}
+                        onChange={(e) => updateDraftRow(it.key, { quantity: Number(e.target.value || 0) })}
+                        className="col-span-4 md:col-span-2 px-2.5 py-2 rounded-lg border border-gray-200 text-sm"
+                      />
+                      <input
+                        type="number"
+                        min={0}
+                        step={0.01}
+                        value={it.unitPrice}
+                        onChange={(e) => updateDraftRow(it.key, { unitPrice: Number(e.target.value || 0) })}
+                        className="col-span-4 md:col-span-2 px-2.5 py-2 rounded-lg border border-gray-200 text-sm"
+                      />
+                      <input
+                        type="number"
+                        min={0}
+                        max={100}
+                        step={1}
+                        value={it.vatRate}
+                        onChange={(e) => updateDraftRow(it.key, { vatRate: Number(e.target.value || 0) })}
+                        className="col-span-4 md:col-span-1 px-2.5 py-2 rounded-lg border border-gray-200 text-sm"
+                      />
+                      <select
+                        value={it.discountType}
+                        onChange={(e) => updateDraftRow(it.key, { discountType: e.target.value as DiscountType })}
+                        className="col-span-4 md:col-span-1 px-2.5 py-2 rounded-lg border border-gray-200 text-sm bg-white"
+                      >
+                        <option value="PERCENT">%</option>
+                        <option value="AMOUNT">TL</option>
+                      </select>
+                      <input
+                        type="number"
+                        min={0}
+                        step={0.01}
+                        value={it.discountValue}
+                        onChange={(e) => updateDraftRow(it.key, { discountValue: Number(e.target.value || 0) })}
+                        className="col-span-6 md:col-span-1 px-2.5 py-2 rounded-lg border border-gray-200 text-sm"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => removeDraftRow(it.key)}
+                        className="col-span-6 md:col-span-1 inline-flex items-center justify-center px-2.5 py-2 rounded-lg border border-red-200 text-red-600 bg-red-50 hover:bg-red-100"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <div className="grid grid-cols-2 gap-2 max-w-sm">
+                  <select
+                    value={discountTypeDraft}
+                    onChange={(e) => setDiscountTypeDraft(e.target.value as DiscountType)}
+                    className="px-2.5 py-2 rounded-lg border border-gray-200 text-sm bg-white"
+                  >
+                    <option value="PERCENT">Genel İndirim %</option>
+                    <option value="AMOUNT">Genel İndirim TL</option>
+                  </select>
+                  <input
+                    type="number"
+                    min={0}
+                    step={0.01}
+                    value={discountValueDraft}
+                    onChange={(e) => setDiscountValueDraft(Number(e.target.value || 0))}
+                    className="px-2.5 py-2 rounded-lg border border-gray-200 text-sm"
+                  />
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void saveItems()}
+                    disabled={itemsSaving}
+                    className="px-3 py-2 rounded-lg bg-whatsapp text-white text-sm font-medium disabled:opacity-50"
+                  >
+                    {itemsSaving ? 'Kaydediliyor...' : 'Kalemleri Kaydet'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setItemsEditing(false);
+                      void fetchQuote();
+                    }}
+                    className="px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm"
+                  >
+                    Vazgeç
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="border-t border-gray-100 p-3">
+                <button
+                  type="button"
+                  onClick={() => setItemsEditing(true)}
+                  className="px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm font-medium hover:bg-gray-50"
+                >
+                  Teklifi Düzenle (Kalem/Fiyat/İndirim)
+                </button>
+              </div>
+            )}
           </div>
 
           <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4 md:p-5 space-y-4">
@@ -516,7 +735,7 @@ export default function QuoteDetailPage() {
               </>
             )}
 
-            {quote.status === 'ACCEPTED' && canConvertToOrder && (
+            {quote.status === 'ACCEPTED' && canConvertToOrder && !quote.order && (
               <button
                 type="button"
                 onClick={() => void handleAction('convert')}
@@ -525,6 +744,17 @@ export default function QuoteDetailPage() {
               >
                 {actionLoading === 'convert' ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShoppingCart className="w-4 h-4" />}
                 Siparişe Dönüştür
+              </button>
+            )}
+            {quote.status !== 'ACCEPTED' && canConvertToOrder && !quote.order && (
+              <button
+                type="button"
+                onClick={() => void handleAction('convert-manual')}
+                disabled={!!actionLoading}
+                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-orange-50 text-orange-700 rounded-xl text-sm font-medium hover:bg-orange-100 disabled:opacity-50"
+              >
+                {actionLoading === 'convert-manual' ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShoppingCart className="w-4 h-4" />}
+                Manuel Siparişe Çevir
               </button>
             )}
           </div>
