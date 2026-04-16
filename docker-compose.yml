@@ -5,14 +5,14 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_DB: whatsapp_crm
-      POSTGRES_USER: postgres
+      POSTGRES_USER: crm_user
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-crm_secret_password}
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d whatsapp_crm"]
+      test: ["CMD-SHELL", "pg_isready -U crm_user -d whatsapp_crm"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -62,7 +62,7 @@ services:
       - "4000:4000"
     environment:
       NODE_ENV: ${NODE_ENV:-production}
-      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-crm_secret_password}@postgres:5432/whatsapp_crm
+      DATABASE_URL: postgresql://crm_user:${POSTGRES_PASSWORD:-crm_secret_password}@postgres:5432/whatsapp_crm
       REDIS_HOST: redis
       REDIS_PORT: "6379"
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
