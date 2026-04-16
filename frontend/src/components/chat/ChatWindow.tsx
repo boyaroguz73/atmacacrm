@@ -718,6 +718,7 @@ export default function ChatWindow() {
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
                         )}
+                      </div>
                       <div
                         className={cn(
                           'rounded-2xl px-3 py-2 shadow-sm',
