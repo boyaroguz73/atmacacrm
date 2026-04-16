@@ -89,7 +89,12 @@ interface ChatState {
     caption?: string;
   }) => Promise<void>;
   /** Ürün görseli + açıklama (sohbetten paylaşım) */
-  sendProductShare: (params: { conversationId: string; productId: string }) => Promise<void>;
+  sendProductShare: (params: {
+    conversationId: string;
+    productId: string;
+    sessionName?: string;
+    chatId?: string;
+  }) => Promise<void>;
   addMessage: (message: Message) => void;
   updateConversation: (conversation: Conversation) => void;
   updateMessageStatus: (messageId: string, status: string) => void;

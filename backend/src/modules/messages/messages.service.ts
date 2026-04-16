@@ -312,14 +312,28 @@ export class MessagesService {
 
     const mediaUrl = `/uploads/product-shares/${filename}`;
 
-    return this.sendMedia({
-      conversationId,
-      sessionName,
-      chatId,
-      mediaUrl,
-      caption,
-      sentById,
-    });
+    try {
+      return await this.sendMedia({
+        conversationId,
+        sessionName,
+        chatId,
+        mediaUrl,
+        caption,
+        sentById,
+      });
+    } catch (e: any) {
+      const msg = e?.message || 'Bilinmeyen hata';
+      this.logger.warn(
+        `Ürün görseli gönderilemedi, metin fallback kullanılacak. productId=${productId} error=${msg}`,
+      );
+      return this.sendText({
+        conversationId,
+        sessionName,
+        chatId,
+        body: caption,
+        sentById,
+      });
+    }
   }
 
   private resolveLocalPath(mediaUrl: string): string | null {

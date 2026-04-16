@@ -858,6 +858,8 @@ export default function ChatWindow() {
                             sendProductShare({
                               conversationId: activeConversation.id,
                               productId: p.id,
+                              sessionName: activeConversation.session?.name,
+                              chatId: `${activeConversation.contact.phone}@c.us`,
                             })
                               .then(() => {
                                 setProductPickerOpen(false);

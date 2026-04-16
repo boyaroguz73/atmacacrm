@@ -149,6 +149,8 @@ export class LeadsService {
     },
     organizationId?: string,
   ) {
+    let targetContactId = data.contactId;
+
     // Contact'ın organizationId'si boşsa ve kullanıcının org'u varsa, sessizce ata
     if (organizationId) {
       const contact = await this.prisma.contact.findUnique({
@@ -164,12 +166,19 @@ export class LeadsService {
           data: { organizationId },
         });
       }
+      targetContactId = contact.id;
       // org eşleşmese bile devam et (tek kullanıcı modu)
     }
 
+    const existing = await this.prisma.lead.findUnique({
+      where: { contactId: targetContactId },
+      include: { contact: true },
+    });
+    if (existing) return existing;
+
     return this.prisma.lead.create({
       data: {
-        contactId: data.contactId,
+        contactId: targetContactId,
         status: data.status || LeadStatus.NEW,
         value: data.value,
         source: data.source,

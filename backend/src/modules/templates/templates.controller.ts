@@ -34,12 +34,13 @@ export class TemplatesController {
     return this.templatesService.findAll({
       category,
       isActive,
+      organizationId: requireOrgId(user),
     });
   }
 
   @Get('categories')
-  getCategories(@CurrentUser() _user: { role: string; organizationId?: string }) {
-    return this.templatesService.getCategories();
+  getCategories(@CurrentUser() user: { role: string; organizationId?: string }) {
+    return this.templatesService.getCategories(requireOrgId(user));
   }
 
   @Get(':id')
@@ -57,7 +58,7 @@ export class TemplatesController {
     @Body() body: { title: string; body: string; category?: string; shortcut?: string },
     @CurrentUser() user: { id: string; role: string; organizationId?: string },
   ) {
-    return this.templatesService.create(body, user.id);
+    return this.templatesService.create(body, user.id, requireOrgId(user));
   }
 
   @Patch(':id')
