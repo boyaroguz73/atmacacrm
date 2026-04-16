@@ -160,6 +160,10 @@ export default function NewQuotePage() {
   const [notes, setNotes] = useState('');
   const [termsOverride, setTermsOverride] = useState('');
   const [footerNoteOverride, setFooterNoteOverride] = useState('');
+  const [agentInfo, setAgentInfo] = useState('');
+  const [colorFabricInfo, setColorFabricInfo] = useState('');
+  const [measurementInfo, setMeasurementInfo] = useState('');
+  const [grandTotalOverride, setGrandTotalOverride] = useState<string>('');
   const [submitting, setSubmitting] = useState(false);
 
   const sym = currencySymbol(currency);
@@ -297,6 +301,12 @@ export default function NewQuotePage() {
         notes: String(notes ?? '').trim() || undefined,
         termsOverride: String(termsOverride ?? '').trim() || undefined,
         footerNoteOverride: String(footerNoteOverride ?? '').trim() || undefined,
+        agentInfo: agentInfo.trim() || undefined,
+        colorFabricInfo: colorFabricInfo.trim() || undefined,
+        measurementInfo: measurementInfo.trim() || undefined,
+        grandTotalOverride: grandTotalOverride && parseFloat(grandTotalOverride) > 0 
+          ? parseFloat(grandTotalOverride) 
+          : undefined,
         items: validLines.map((l) => ({
           productId: l.productId || undefined,
           name: String(l.name ?? '').trim(),
@@ -616,6 +626,52 @@ export default function NewQuotePage() {
                 className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-whatsapp"
               />
             </div>
+            {/* Ek Bilgiler */}
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 mb-1">Temsilci Bilgisi</label>
+              <input
+                type="text"
+                value={agentInfo}
+                onChange={(e) => setAgentInfo(e.target.value)}
+                placeholder="Satış temsilcisi adı veya kodu"
+                className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-whatsapp"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 mb-1">Renk/Kumaş Bilgisi</label>
+              <input
+                type="text"
+                value={colorFabricInfo}
+                onChange={(e) => setColorFabricInfo(e.target.value)}
+                placeholder="Örn: Krem kumaş, Antrasit deri"
+                className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-whatsapp"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 mb-1">Ölçü Bilgisi</label>
+              <input
+                type="text"
+                value={measurementInfo}
+                onChange={(e) => setMeasurementInfo(e.target.value)}
+                placeholder="Örn: 180x200 cm"
+                className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-whatsapp"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 mb-1">
+                Genel Toplam (Manuel)
+                <span className="text-[10px] text-gray-400 ml-1">(Hesaplanan yerine)</span>
+              </label>
+              <input
+                type="number"
+                min={0}
+                step={0.01}
+                value={grandTotalOverride}
+                onChange={(e) => setGrandTotalOverride(e.target.value)}
+                placeholder="Boş bırakılırsa otomatik"
+                className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-whatsapp tabular-nums"
+              />
+            </div>
             <div className="sm:col-span-2">
               <label className="block text-xs font-semibold text-gray-500 mb-1">Notlar</label>
               <textarea
@@ -699,11 +755,22 @@ export default function NewQuotePage() {
                   {fmt(totals.vatTotal)}
                 </dd>
               </div>
+              {grandTotalOverride && parseFloat(grandTotalOverride) > 0 && (
+                <div className="flex justify-between gap-2 text-gray-500 text-xs">
+                  <dt>Hesaplanan Toplam</dt>
+                  <dd className="tabular-nums line-through">
+                    {sym}
+                    {fmt(totals.grandTotal)}
+                  </dd>
+                </div>
+              )}
               <div className="pt-3 border-t border-green-100 flex justify-between items-baseline gap-2">
                 <dt className="text-base font-bold text-gray-900">GENEL TOPLAM</dt>
                 <dd className="text-2xl font-extrabold text-whatsapp tabular-nums">
                   {sym}
-                  {fmt(totals.grandTotal)}
+                  {fmt(grandTotalOverride && parseFloat(grandTotalOverride) > 0 
+                    ? parseFloat(grandTotalOverride) 
+                    : totals.grandTotal)}
                 </dd>
               </div>
             </dl>
