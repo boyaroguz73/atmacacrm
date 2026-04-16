@@ -758,12 +758,12 @@ export class WahaService implements OnModuleInit {
     emoji: string,
   ): Promise<any> {
     try {
-      const encodedChatId = encodeURIComponent(chatId);
-      const encodedMsgId = encodeURIComponent(messageId);
-      const response = await this.http.put(
-        `/api/${sessionName}/chats/${encodedChatId}/messages/${encodedMsgId}/reaction`,
-        { reaction: emoji },
-      );
+      const response = await this.http.post('/api/reaction', {
+        session: sessionName,
+        chatId,
+        messageId,
+        reaction: emoji,
+      });
       return response.data;
     } catch (error: any) {
       const detail = error.response?.data
