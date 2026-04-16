@@ -256,7 +256,22 @@ export class MessagesService {
       normalizeWhatsappChatId(`${conv.contact.phone.replace(/\D/g, '')}@c.us`);
     const product = await this.prisma.product.findUnique({ where: { id: productId } });
     if (!product) throw new NotFoundException('Ürün bulunamadı');
-    const url = (product.imageUrl || '').trim();
+    
+    // Önce imageUrl'e bak, yoksa additionalImages dizisinin ilk elemanını al
+    let url = (product.imageUrl || '').trim();
+    if (!url && product.additionalImages) {
+      try {
+        const images = Array.isArray(product.additionalImages)
+          ? product.additionalImages
+          : JSON.parse(String(product.additionalImages));
+        if (Array.isArray(images) && images.length > 0) {
+          url = (images[0] || '').trim();
+        }
+      } catch {
+        // JSON parse hatası - devam et
+      }
+    }
+    
     const unitPrice = Number(product.unitPrice ?? 0);
     const price = `${unitPrice.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ${product.currency}`;
     // Sadece ürün adı ve fiyat gönder (SKU, kategori, URL gönderilmiyor)
