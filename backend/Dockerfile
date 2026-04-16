@@ -5,6 +5,9 @@ WORKDIR /app
 # Prisma + sharp için gerekli bağımlılıklar (Alpine)
 RUN apk add --no-cache openssl libc6-compat python3 make g++ vips-dev
 
+# Sharp source build için node-gyp gerekli
+RUN npm install -g node-gyp
+
 COPY package.json package-lock.json* ./
 COPY prisma ./prisma
 RUN npm install --include=optional
