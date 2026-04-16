@@ -427,6 +427,11 @@ export class MessagesService {
   }) {
     const { conversationId, sessionName, chatId, body, quotedMessageId, sentById } = params;
     
+    const conversation = await this.prisma.conversation.findUnique({
+      where: { id: conversationId },
+    });
+    if (!conversation) throw new NotFoundException('Görüşme bulunamadı');
+
     const quotedMessage = await this.prisma.message.findUnique({ where: { id: quotedMessageId } });
     if (!quotedMessage || !quotedMessage.waMessageId) {
       throw new BadRequestException('Yanıt verilecek mesaj bulunamadı veya WAHA ID eksik');
@@ -440,18 +445,18 @@ export class MessagesService {
     );
 
     const waMessageId = this.extractWaMessageId(waResponse);
-    const msg = await this.saveMessage({
+    const message = await this.persistMessage({
       conversationId,
-      sessionName,
-      chatId,
-      body,
+      sessionId: conversation.sessionId,
       waMessageId,
-      direction: 'OUTGOING',
-      status: 'SENT',
+      direction: MessageDirection.OUTGOING,
+      body,
+      status: MessageStatus.SENT,
       sentById,
     });
 
-    return msg;
+    this.emitAndUpdateList(conversationId, message, body);
+    return message;
   }
 
   /** WAHA Plus - Mesaj silme */
@@ -527,6 +532,11 @@ export class MessagesService {
   }) {
     const { conversationId, sessionName, chatId, latitude, longitude, title, address, sentById } = params;
 
+    const conversation = await this.prisma.conversation.findUnique({
+      where: { id: conversationId },
+    });
+    if (!conversation) throw new NotFoundException('Görüşme bulunamadı');
+
     const waResponse = await this.wahaService.sendLocation(
       sessionName,
       chatId,
@@ -539,18 +549,18 @@ export class MessagesService {
     const waMessageId = this.extractWaMessageId(waResponse);
     const locationText = title || address || `📍 ${latitude}, ${longitude}`;
     
-    const msg = await this.saveMessage({
+    const message = await this.persistMessage({
       conversationId,
-      sessionName,
-      chatId,
-      body: locationText,
+      sessionId: conversation.sessionId,
       waMessageId,
-      direction: 'OUTGOING',
-      status: 'SENT',
+      direction: MessageDirection.OUTGOING,
+      body: locationText,
+      status: MessageStatus.SENT,
       sentById,
-      mediaType: 'DOCUMENT', // LOCATION tipi yoksa DOCUMENT kullanabiliriz
+      mediaType: 'DOCUMENT',
     });
 
-    return msg;
+    this.emitAndUpdateList(conversationId, message, locationText);
+    return message;
   }
 }
