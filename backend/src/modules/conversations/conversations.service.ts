@@ -89,6 +89,25 @@ export class ConversationsService {
       }
     }
 
+    // WhatsApp kanallarını filtrele (newsletter ve broadcast)
+    // Gruplar (@g.us) ve bireysel sohbetler (@c.us) görünür
+    const channelFilter = {
+      contact: {
+        ...whereExtras.contact,
+        NOT: {
+          OR: [
+            { phone: { contains: '@newsletter' } },
+            { phone: { contains: '@broadcast' } },
+          ],
+        },
+      },
+    };
+    if (whereExtras.contact) {
+      whereExtras.contact = channelFilter.contact;
+    } else {
+      whereExtras.contact = channelFilter.contact;
+    }
+
     const where = whereConversationsForOrg(user, whereExtras);
 
     const [conversations, total] = await Promise.all([

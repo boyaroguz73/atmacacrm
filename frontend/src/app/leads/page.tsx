@@ -18,6 +18,7 @@ import {
   DragStartEvent,
   DragEndEvent,
   DragOverEvent,
+  useDroppable,
 } from '@dnd-kit/core';
 import {
   SortableContext,
@@ -129,6 +130,51 @@ function LeadCardPreview({ lead }: { lead: Lead }) {
   );
 }
 
+function DroppableColumn({ 
+  stage, 
+  leads, 
+  isOver 
+}: { 
+  stage: typeof STAGES[number]; 
+  leads: Lead[]; 
+  isOver: boolean;
+}) {
+  const { setNodeRef } = useDroppable({ id: stage.key });
+  
+  return (
+    <div 
+      ref={setNodeRef}
+      className={`rounded-xl border-t-4 ${stage.color} p-4 min-h-[200px] transition-all duration-200 ${
+        isOver ? 'ring-2 ring-whatsapp ring-offset-2 bg-whatsapp/5' : ''
+      }`}
+    >
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="font-semibold text-sm text-gray-700">{stage.label}</h3>
+        <span className="text-xs bg-white rounded-full px-2 py-0.5 font-bold text-gray-600 shadow-sm">
+          {leads.length}
+        </span>
+      </div>
+      <SortableContext 
+        items={leads.map(l => l.id)} 
+        strategy={verticalListSortingStrategy}
+      >
+        <div className={`space-y-2 min-h-[100px] rounded-lg transition-colors ${
+          isOver ? 'bg-whatsapp/10' : ''
+        }`}>
+          {leads.length === 0 && (
+            <div className="flex items-center justify-center h-[100px] text-xs text-gray-400 border-2 border-dashed border-gray-200 rounded-lg">
+              Buraya sürükle
+            </div>
+          )}
+          {leads.map((lead) => (
+            <DraggableLeadCard key={lead.id} lead={lead} />
+          ))}
+        </div>
+      </SortableContext>
+    </div>
+  );
+}
+
 export default function LeadsPage() {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
@@ -146,6 +192,7 @@ export default function LeadsPage() {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [overId, setOverId] = useState<string | null>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
@@ -227,6 +274,7 @@ export default function LeadsPage() {
   const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event;
     setActiveId(null);
+    setOverId(null);
     
     if (!over) return;
     
@@ -237,7 +285,7 @@ export default function LeadsPage() {
     // over.id bir stage key mi yoksa başka bir lead id mi kontrol et
     let newStatus: string | null = null;
     
-    // over.id direkt stage key ise
+    // over.id direkt stage key ise (DroppableColumn)
     if (STAGES.some((s) => s.key === over.id)) {
       newStatus = over.id as string;
     } else {
@@ -254,7 +302,21 @@ export default function LeadsPage() {
   };
 
   const handleDragOver = (event: DragOverEvent) => {
-    // Sadece visual feedback için, gerçek güncelleme dragEnd'de
+    const { over } = event;
+    if (!over) {
+      setOverId(null);
+      return;
+    }
+    // over.id stage key mi kontrol et
+    if (STAGES.some((s) => s.key === over.id)) {
+      setOverId(over.id as string);
+    } else {
+      // over.id bir lead ise, o lead'in stage'ini bul
+      const overLead = leads.find((l) => l.id === over.id);
+      if (overLead) {
+        setOverId(overLead.status);
+      }
+    }
   };
 
   return (
@@ -465,28 +527,12 @@ export default function LeadsPage() {
         >
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
             {groupedLeads.map((stage) => (
-              <div 
-                key={stage.key} 
-                id={stage.key}
-                className={`rounded-xl border-t-4 ${stage.color} p-4 min-h-[200px]`}
-              >
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="font-semibold text-sm text-gray-700">{stage.label}</h3>
-                  <span className="text-xs bg-white rounded-full px-2 py-0.5 font-bold text-gray-600 shadow-sm">
-                    {stage.leads.length}
-                  </span>
-                </div>
-                <SortableContext 
-                  items={stage.leads.map(l => l.id)} 
-                  strategy={verticalListSortingStrategy}
-                >
-                  <div className="space-y-2 min-h-[100px]">
-                    {stage.leads.map((lead) => (
-                      <DraggableLeadCard key={lead.id} lead={lead} />
-                    ))}
-                  </div>
-                </SortableContext>
-              </div>
+              <DroppableColumn
+                key={stage.key}
+                stage={stage}
+                leads={stage.leads}
+                isOver={overId === stage.key}
+              />
             ))}
           </div>
           <DragOverlay>

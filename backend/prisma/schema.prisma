@@ -696,6 +696,14 @@ model Quote {
   documentKind  String       @default("PROFORMA")
   /// Yönetim panelinde kayıt elle güncellendi (müşteri PDF’lerinde gösterilmez)
   panelEditedAt DateTime?
+  /// Temsilci bilgisi
+  agentInfo     String?
+  /// Renk/Kumaş bilgisi
+  colorFabricInfo String?
+  /// Ölçü bilgisi
+  measurementInfo String?
+  /// Genel toplam manuel düzenleme (doluysa hesaplanan yerine kullanılır)
+  grandTotalOverride Float?
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
 

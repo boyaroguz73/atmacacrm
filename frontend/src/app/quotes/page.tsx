@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import api, { getApiErrorMessage } from '@/lib/api';
 import PanelEditedBadge from '@/components/ui/PanelEditedBadge';
+import DateRangePicker from '@/components/ui/DateRangePicker';
 import { useAuthStore } from '@/store/auth';
 import { formatPhone } from '@/lib/utils';
 import toast from 'react-hot-toast';
@@ -13,6 +14,7 @@ import {
   FileText,
   Loader2,
   Plus,
+  Search,
   Trash2,
 } from 'lucide-react';
 
@@ -112,6 +114,9 @@ export default function QuotesPage() {
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<'' | QuoteStatus>('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
 
   const totalPages = Math.max(1, Math.ceil(total / LIMIT));
 
@@ -120,6 +125,9 @@ export default function QuotesPage() {
     try {
       const params: Record<string, string | number> = { page, limit: LIMIT };
       if (statusFilter) params.status = statusFilter;
+      if (dateFrom) params.from = dateFrom;
+      if (dateTo) params.to = dateTo;
+      if (searchQuery.trim()) params.search = searchQuery.trim();
       const { data } = await api.get('/quotes', { params });
       setQuotes(data.quotes ?? []);
       setTotal(data.total ?? 0);
@@ -130,7 +138,7 @@ export default function QuotesPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, statusFilter]);
+  }, [page, statusFilter, dateFrom, dateTo, searchQuery]);
 
   useEffect(() => {
     fetchQuotes();
@@ -138,7 +146,7 @@ export default function QuotesPage() {
 
   useEffect(() => {
     setPage(1);
-  }, [statusFilter]);
+  }, [statusFilter, dateFrom, dateTo, searchQuery]);
 
   const goPage = (p: number) => {
     setPage(Math.min(Math.max(1, p), totalPages));
@@ -185,21 +193,43 @@ export default function QuotesPage() {
         </button>
       </div>
 
-      <div className="flex flex-wrap gap-2">
-        {STATUS_FILTERS.map((f) => (
-          <button
-            key={f.key || 'all'}
-            type="button"
-            onClick={() => setStatusFilter(f.key)}
-            className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-colors ${
-              statusFilter === f.key
-                ? 'bg-whatsapp text-white shadow-sm'
-                : 'bg-white text-gray-600 border border-gray-200 hover:border-whatsapp/40 hover:bg-green-50/50'
-            }`}
-          >
-            {f.label}
-          </button>
-        ))}
+      <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+        <div className="flex flex-wrap gap-2">
+          {STATUS_FILTERS.map((f) => (
+            <button
+              key={f.key || 'all'}
+              type="button"
+              onClick={() => setStatusFilter(f.key)}
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-colors ${
+                statusFilter === f.key
+                  ? 'bg-whatsapp text-white shadow-sm'
+                  : 'bg-white text-gray-600 border border-gray-200 hover:border-whatsapp/40 hover:bg-green-50/50'
+              }`}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+        <div className="flex flex-wrap items-center gap-3 sm:ml-auto">
+          <DateRangePicker
+            from={dateFrom}
+            to={dateTo}
+            onChange={(from, to) => {
+              setDateFrom(from);
+              setDateTo(to);
+            }}
+          />
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+            <input
+              type="text"
+              placeholder="Kişi adı veya telefon..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-9 pr-3 py-2 w-52 bg-white border border-gray-200 rounded-xl text-sm text-gray-700 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-whatsapp/25 focus:border-whatsapp"
+            />
+          </div>
+        </div>
       </div>
 
       <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">

@@ -44,9 +44,14 @@ export class WahaWebhookHandler {
 
       const isFromMe = !!msg.fromMe;
       const chatId = isFromMe ? (msg.to || msg.from) : msg.from;
-      if (!chatId || chatId.includes('@g.us')) return;
+      if (!chatId) return;
 
-      if (chatId === 'status@broadcast' || chatId.includes('@broadcast')) return;
+      // Kanal mesajlarını filtrele (newsletter ve broadcast kanalları)
+      // Gruplar (@g.us) ve bireysel sohbetler (@c.us) geçer
+      if (chatId.includes('@newsletter') || chatId.includes('@broadcast')) {
+        this.logger.debug(`Kanal mesajı atlandı: ${chatId}`);
+        return;
+      }
 
       const skipTypes = new Set([
         'e2e_notification', 'notification_template', 'call_log',

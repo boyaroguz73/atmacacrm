@@ -3,7 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { PdfService } from '../pdf/pdf.service';
 import { WahaService } from '../waha/waha.service';
 import { MailService } from '../mail/mail.service';
-import { Prisma, QuoteStatus, DiscountType, QuotePaymentMode } from '@prisma/client';
+import { Prisma, QuoteStatus, DiscountType, QuotePaymentMode, LeadStatus } from '@prisma/client';
 import { join } from 'path';
 import { readFileSync, existsSync } from 'fs';
 import { normalizeWhatsappChatId } from '../../common/whatsapp-chat-id';
@@ -174,6 +174,10 @@ export class QuotesService {
     notes?: string;
     termsOverride?: string;
     footerNoteOverride?: string;
+    agentInfo?: string;
+    colorFabricInfo?: string;
+    measurementInfo?: string;
+    grandTotalOverride?: number;
     items: CreateQuoteItem[];
   }) {
     if (!data.items?.length) throw new BadRequestException('En az bir kalem gerekli');
@@ -206,6 +210,12 @@ export class QuotesService {
           data.footerNoteOverride != null && String(data.footerNoteOverride).trim() !== ''
             ? String(data.footerNoteOverride)
             : null,
+        agentInfo: data.agentInfo?.trim() || null,
+        colorFabricInfo: data.colorFabricInfo?.trim() || null,
+        measurementInfo: data.measurementInfo?.trim() || null,
+        grandTotalOverride: typeof data.grandTotalOverride === 'number' && data.grandTotalOverride > 0 
+          ? data.grandTotalOverride 
+          : null,
         items: {
           create: totals.items.map((item) => ({
             productId: item.productId || null,
@@ -243,9 +253,27 @@ export class QuotesService {
     if (dto.status === QuoteStatus.ACCEPTED) {
       data.acceptedAt = new Date();
       if (dto.paymentMode) data.paymentMode = dto.paymentMode;
-      // Kısmi ödeme tutarı
       if (dto.partialPaymentAmount != null && dto.partialPaymentAmount > 0) {
         data.partialPaymentAmount = dto.partialPaymentAmount;
+      }
+      
+      // Teklif kabul edildiğinde Lead'i WON olarak işaretle
+      try {
+        const lead = await this.prisma.lead.findUnique({
+          where: { contactId: q.contactId },
+        });
+        if (lead && lead.status !== LeadStatus.WON && lead.status !== LeadStatus.LOST) {
+          await this.prisma.lead.update({
+            where: { id: lead.id },
+            data: { 
+              status: LeadStatus.WON, 
+              closedAt: new Date(),
+            },
+          });
+          this.logger.log(`Teklif kabul edildi, Lead ${lead.id} WON olarak işaretlendi`);
+        }
+      } catch (err: any) {
+        this.logger.warn(`Lead WON güncellemesi başarısız: ${err.message}`);
       }
     } else if (prevStatus === QuoteStatus.ACCEPTED) {
       data.acceptedAt = null;
@@ -270,6 +298,10 @@ export class QuotesService {
       termsOverride?: string | null;
       footerNoteOverride?: string | null;
       documentKind?: string | null;
+      agentInfo?: string | null;
+      colorFabricInfo?: string | null;
+      measurementInfo?: string | null;
+      grandTotalOverride?: number | null;
       items?: CreateQuoteItem[] | null;
     },
   ) {
@@ -323,6 +355,10 @@ export class QuotesService {
       termsOverride?: string | null;
       footerNoteOverride?: string | null;
       documentKind?: string;
+      agentInfo?: string | null;
+      colorFabricInfo?: string | null;
+      measurementInfo?: string | null;
+      grandTotalOverride?: number | null;
     } = {};
     if ('validUntil' in data) {
       const v = data.validUntil;
@@ -365,6 +401,26 @@ export class QuotesService {
     if ('documentKind' in data && data.documentKind != null && data.documentKind !== '') {
       const dk = String(data.documentKind).toUpperCase();
       if (dk === 'PROFORMA' || dk === 'QUOTE') patch.documentKind = dk;
+    }
+    if ('agentInfo' in data) {
+      patch.agentInfo = data.agentInfo == null || String(data.agentInfo).trim() === '' 
+        ? null 
+        : String(data.agentInfo).trim();
+    }
+    if ('colorFabricInfo' in data) {
+      patch.colorFabricInfo = data.colorFabricInfo == null || String(data.colorFabricInfo).trim() === '' 
+        ? null 
+        : String(data.colorFabricInfo).trim();
+    }
+    if ('measurementInfo' in data) {
+      patch.measurementInfo = data.measurementInfo == null || String(data.measurementInfo).trim() === '' 
+        ? null 
+        : String(data.measurementInfo).trim();
+    }
+    if ('grandTotalOverride' in data) {
+      patch.grandTotalOverride = typeof data.grandTotalOverride === 'number' && data.grandTotalOverride > 0 
+        ? data.grandTotalOverride 
+        : null;
     }
 
     return this.prisma.quote.update({
@@ -437,7 +493,6 @@ export class QuotesService {
       contactAddress: c.address || undefined,
       items: quote.items.map((i) => ({
         name: i.name,
-        description: i.description || undefined,
         quantity: i.quantity,
         unitPrice: i.unitPrice,
         vatRate: i.vatRate,
@@ -451,7 +506,7 @@ export class QuotesService {
       subtotal: quote.subtotal,
       discountTotal: quote.discountTotal,
       vatTotal: quote.vatTotal,
-      grandTotal: quote.grandTotal,
+      grandTotal: (quote as any).grandTotalOverride ?? quote.grandTotal,
       notes: quote.notes || undefined,
       termsOverride: quote.termsOverride || undefined,
       footerNoteOverride: quote.footerNoteOverride || undefined,
@@ -480,7 +535,7 @@ export class QuotesService {
     }
 
     const chatId = normalizeWhatsappChatId(`${c.phone.replace(/\D/g, '')}@c.us`);
-    const caption = `Sayin ${c.name || 'Musteri'}, TKL-${String(quote.quoteNumber).padStart(5, '0')} numarali teklifiniz ektedir.`;
+    const caption = `Değerli müşterimiz, teklifiniz ektedir. (TKL-${String(quote.quoteNumber).padStart(5, '0')})`;
 
     const localPath = join(process.cwd(), pdfUrl!.replace(/^\//, ''));
     const buf = readFileSync(localPath);

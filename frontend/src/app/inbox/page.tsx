@@ -13,8 +13,11 @@ export default function InboxPage() {
 
   const {
     activeConversation,
+    conversations,
+    isLoadingConversations,
     fetchConversations,
     setListFilter,
+    setActiveConversation,
     addMessage,
     updateConversation,
     updateMessageStatus,
@@ -23,11 +26,20 @@ export default function InboxPage() {
   } = useChatStore();
 
   const inboxLoadedOnce = useRef(false);
+  const autoSelectedRef = useRef(false);
+
+  useEffect(() => {
+    if (!activeConversation && conversations.length > 0 && !isLoadingConversations && !autoSelectedRef.current) {
+      autoSelectedRef.current = true;
+      setActiveConversation(conversations[0]);
+    }
+  }, [conversations, activeConversation, isLoadingConversations, setActiveConversation]);
 
   useEffect(() => {
     setListFilter(filter);
     const silent = inboxLoadedOnce.current;
     inboxLoadedOnce.current = true;
+    autoSelectedRef.current = false;
     fetchConversations(silent);
 
     const socket = connectSocket();

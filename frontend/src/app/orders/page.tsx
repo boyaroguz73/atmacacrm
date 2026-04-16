@@ -5,6 +5,7 @@ import api, { getApiErrorMessage } from '@/lib/api';
 import { formatPhone, rewriteMediaUrlForClient, backendPublicUrl } from '@/lib/utils';
 import toast from 'react-hot-toast';
 import { useAuthStore } from '@/store/auth';
+import DateRangePicker from '@/components/ui/DateRangePicker';
 import {
   Package,
   Loader2,
@@ -18,6 +19,7 @@ import {
   User,
   Calendar,
   ExternalLink,
+  Search,
   Trash2,
 } from 'lucide-react';
 import PanelEditedBadge from '@/components/ui/PanelEditedBadge';
@@ -148,6 +150,9 @@ export default function OrdersPage() {
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<'' | OrderStatus>('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
   const [selectedOrder, setSelectedOrder] = useState<SalesOrder | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [statusSaving, setStatusSaving] = useState(false);
@@ -166,6 +171,9 @@ export default function OrdersPage() {
     try {
       const params: Record<string, string | number> = { page, limit: LIMIT };
       if (statusFilter) params.status = statusFilter;
+      if (dateFrom) params.from = dateFrom;
+      if (dateTo) params.to = dateTo;
+      if (searchQuery.trim()) params.search = searchQuery.trim();
       const { data } = await api.get('/orders', { params });
       setOrders(data.orders ?? []);
       setTotal(typeof data.total === 'number' ? data.total : 0);
@@ -180,7 +188,7 @@ export default function OrdersPage() {
     } finally {
       if (!background) setLoading(false);
     }
-  }, [page, statusFilter]);
+  }, [page, statusFilter, dateFrom, dateTo, searchQuery]);
 
   useEffect(() => {
     loadFromStorage();
@@ -327,24 +335,50 @@ export default function OrdersPage() {
         </button>
       </div>
 
-      <div className="flex flex-wrap gap-2">
-        {STATUS_FILTERS.map((f) => (
-          <button
-            key={f.value || 'all'}
-            type="button"
-            onClick={() => {
-              setStatusFilter(f.value);
+      <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+        <div className="flex flex-wrap gap-2">
+          {STATUS_FILTERS.map((f) => (
+            <button
+              key={f.value || 'all'}
+              type="button"
+              onClick={() => {
+                setStatusFilter(f.value);
+                setPage(1);
+              }}
+              className={`px-3.5 py-1.5 rounded-xl text-sm font-medium border shadow-sm transition-colors ${
+                statusFilter === f.value
+                  ? 'bg-whatsapp text-white border-whatsapp'
+                  : 'bg-white text-gray-600 border-gray-200 hover:border-whatsapp/30 hover:text-gray-900'
+              }`}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+        <div className="flex flex-wrap items-center gap-3 sm:ml-auto">
+          <DateRangePicker
+            from={dateFrom}
+            to={dateTo}
+            onChange={(from, to) => {
+              setDateFrom(from);
+              setDateTo(to);
               setPage(1);
             }}
-            className={`px-3.5 py-1.5 rounded-xl text-sm font-medium border shadow-sm transition-colors ${
-              statusFilter === f.value
-                ? 'bg-whatsapp text-white border-whatsapp'
-                : 'bg-white text-gray-600 border-gray-200 hover:border-whatsapp/30 hover:text-gray-900'
-            }`}
-          >
-            {f.label}
-          </button>
-        ))}
+          />
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+            <input
+              type="text"
+              placeholder="Kişi adı veya telefon..."
+              value={searchQuery}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setPage(1);
+              }}
+              className="pl-9 pr-3 py-2 w-52 bg-white border border-gray-200 rounded-xl text-sm text-gray-700 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-whatsapp/25 focus:border-whatsapp"
+            />
+          </div>
+        </div>
       </div>
 
       <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">

@@ -30,6 +30,12 @@ import {
   ListTodo,
   Package,
   Search,
+  Plus,
+  Reply,
+  Trash2,
+  Smile,
+  MapPin,
+  FileUp,
 } from 'lucide-react';
 import ContactPanel from './ContactPanel';
 import api, { getApiErrorMessage } from '@/lib/api';
@@ -126,6 +132,14 @@ export default function ChatWindow() {
   const [productCategories, setProductCategories] = useState<{ category: string; count: number }[]>([]);
   const [productSearchLoading, setProductSearchLoading] = useState(false);
 
+  const [actionTrayOpen, setActionTrayOpen] = useState(false);
+  const actionTrayRef = useRef<HTMLDivElement>(null);
+
+  const [contextMenuMsg, setContextMenuMsg] = useState<{ id: string; body: string | null; x: number; y: number } | null>(null);
+  const [replyingTo, setReplyingTo] = useState<{ id: string; body: string | null } | null>(null);
+  const [emojiPickerOpen, setEmojiPickerOpen] = useState<string | null>(null);
+  const emojiPickerRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     setMounted(true);
     api
@@ -192,7 +206,27 @@ export default function ChatWindow() {
     setProductSearch('');
     setProductHits([]);
     setProductCategoryFilter('');
+    setActionTrayOpen(false);
+    setReplyingTo(null);
+    setContextMenuMsg(null);
+    setEmojiPickerOpen(null);
   }, [activeConversation?.id]);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (actionTrayRef.current && !actionTrayRef.current.contains(e.target as Node)) {
+        setActionTrayOpen(false);
+      }
+      if (emojiPickerRef.current && !emojiPickerRef.current.contains(e.target as Node)) {
+        setEmojiPickerOpen(null);
+      }
+      if (contextMenuMsg) {
+        setContextMenuMsg(null);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [contextMenuMsg]);
 
   useEffect(() => {
     if (!activeConversation) return;
@@ -374,6 +408,57 @@ export default function ChatWindow() {
       alert(err?.response?.data?.message || 'Mesaj düzenlenemedi');
     }
   };
+
+  const handleSendReply = async () => {
+    if (!replyingTo || !text.trim()) return;
+    setSending(true);
+    try {
+      await api.post('/messages/send-reply', {
+        conversationId: activeConversation.id,
+        sessionName: activeConversation.session.name,
+        chatId,
+        body: formatMessage(text.trim()),
+        quotedMessageId: replyingTo.id,
+      });
+      setText('');
+      setReplyingTo(null);
+      queueMicrotask(() => composerRef.current?.focus());
+    } catch (err: any) {
+      toast.error(getApiErrorMessage(err, 'Yanıt gönderilemedi'));
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const handleDeleteMessage = async (messageId: string) => {
+    if (!confirm('Bu mesajı silmek istediğinize emin misiniz?')) return;
+    try {
+      await api.delete(`/messages/${messageId}`, {
+        data: {
+          sessionName: activeConversation.session.name,
+          chatId,
+        },
+      });
+      toast.success('Mesaj silindi');
+    } catch (err: any) {
+      toast.error(getApiErrorMessage(err, 'Mesaj silinemedi'));
+    }
+  };
+
+  const handleSendReaction = async (messageId: string, emoji: string) => {
+    try {
+      await api.post(`/messages/${messageId}/reaction`, {
+        sessionName: activeConversation.session.name,
+        chatId,
+        emoji,
+      });
+      setEmojiPickerOpen(null);
+    } catch (err: any) {
+      toast.error(getApiErrorMessage(err, 'Tepki gönderilemedi'));
+    }
+  };
+
+  const quickEmojis = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
 
   const getStatusIcon = (status: string) => {
     switch (status) {
@@ -567,26 +652,80 @@ export default function ChatWindow() {
                     )}
                   >
                     <div className="relative max-w-[65%]">
-                      {isOutgoing && msg.body && !msg.id.startsWith('temp-') && (
+                      {/* Hover Actions Bar */}
+                      <div className={cn(
+                        'absolute top-0 flex items-center gap-0.5 bg-white rounded-lg shadow-md border border-gray-200 p-0.5 opacity-0 group-hover/msg:opacity-100 transition-opacity z-20',
+                        isOutgoing ? '-left-24' : '-right-24'
+                      )}>
                         <button
                           onClick={() => {
-                            setEditingMessage({ id: msg.id, body: msg.body || '' });
-                            setEditText(msg.body || '');
+                            setReplyingTo({ id: msg.id, body: msg.body });
+                            queueMicrotask(() => composerRef.current?.focus());
                           }}
-                          className="absolute -left-8 top-1/2 -translate-y-1/2 p-1 rounded-full bg-white shadow border border-gray-200 text-gray-400 hover:text-gray-600 opacity-0 group-hover/msg:opacity-100 transition-opacity z-10"
-                          title="Düzenle"
+                          className="p-1.5 text-gray-400 hover:text-whatsapp hover:bg-green-50 rounded-md transition-colors"
+                          title="Yanıtla"
                         >
-                          <Pencil className="w-3 h-3" />
+                          <Reply className="w-3.5 h-3.5" />
                         </button>
-                      )}
-                    <div
-                      className={cn(
-                        'rounded-2xl px-3 py-2 shadow-sm',
-                        isOutgoing
-                          ? 'bg-[#d9fdd3] rounded-tr-md'
-                          : 'bg-white rounded-tl-md',
-                      )}
-                    >
+                        <div className="relative">
+                          <button
+                            onClick={() => setEmojiPickerOpen(emojiPickerOpen === msg.id ? null : msg.id)}
+                            className="p-1.5 text-gray-400 hover:text-yellow-500 hover:bg-yellow-50 rounded-md transition-colors"
+                            title="Tepki"
+                          >
+                            <Smile className="w-3.5 h-3.5" />
+                          </button>
+                          {emojiPickerOpen === msg.id && (
+                            <div 
+                              ref={emojiPickerRef}
+                              className={cn(
+                                'absolute top-full mt-1 bg-white rounded-lg shadow-lg border border-gray-200 p-2 z-30',
+                                isOutgoing ? 'right-0' : 'left-0'
+                              )}
+                            >
+                              <div className="flex gap-1">
+                                {quickEmojis.map((emoji) => (
+                                  <button
+                                    key={emoji}
+                                    onClick={() => handleSendReaction(msg.id, emoji)}
+                                    className="w-8 h-8 flex items-center justify-center text-lg hover:bg-gray-100 rounded-md transition-colors"
+                                  >
+                                    {emoji}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                        {isOutgoing && msg.body && !msg.id.startsWith('temp-') && (
+                          <button
+                            onClick={() => {
+                              setEditingMessage({ id: msg.id, body: msg.body || '' });
+                              setEditText(msg.body || '');
+                            }}
+                            className="p-1.5 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded-md transition-colors"
+                            title="Düzenle"
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                        {isOutgoing && !msg.id.startsWith('temp-') && (
+                          <button
+                            onClick={() => handleDeleteMessage(msg.id)}
+                            className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-md transition-colors"
+                            title="Sil"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      <div
+                        className={cn(
+                          'rounded-2xl px-3 py-2 shadow-sm',
+                          isOutgoing
+                            ? 'bg-[#d9fdd3] rounded-tr-md'
+                            : 'bg-white rounded-tl-md',
+                        )}
+                      >
                       {mediaUrlResolved && isImage && (
                         <div
                           onClick={() => setLightboxUrl(mediaUrlResolved)}
@@ -611,31 +750,33 @@ export default function ChatWindow() {
                           />
                         </div>
                       )}
-                      {mediaUrlResolved && !isImage && msg.mediaType && (
+                      {msg.mediaType === 'AUDIO' && mediaUrlResolved && (
+                        <div className="mb-1">
+                          <audio controls className="max-w-[240px] h-10">
+                            <source src={mediaUrlResolved} type={msg.mediaMimeType || 'audio/ogg'} />
+                            Tarayıcınız ses oynatmayı desteklemiyor.
+                          </audio>
+                        </div>
+                      )}
+                      {mediaUrlResolved && !isImage && msg.mediaType && msg.mediaType !== 'AUDIO' && (
                         <button
                           onClick={() => handleDownload(mediaUrlResolved, msg.body || undefined)}
                           className="flex items-center gap-2 p-2.5 bg-gray-50 rounded-lg mb-1 hover:bg-gray-100 transition-colors border border-gray-100 w-full text-left"
                         >
                           <div className={cn(
                             'w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0',
-                            msg.mediaType === 'VIDEO' ? 'bg-purple-100' :
-                            msg.mediaType === 'AUDIO' ? 'bg-orange-100' :
-                            'bg-blue-100'
+                            msg.mediaType === 'VIDEO' ? 'bg-purple-100' : 'bg-blue-100'
                           )}>
                             <FileText className={cn(
                               'w-5 h-5',
-                              msg.mediaType === 'VIDEO' ? 'text-purple-600' :
-                              msg.mediaType === 'AUDIO' ? 'text-orange-600' :
-                              'text-blue-600'
+                              msg.mediaType === 'VIDEO' ? 'text-purple-600' : 'text-blue-600'
                             )} />
                           </div>
                           <div className="min-w-0 flex-1">
                             <span className="text-xs font-medium text-gray-700 block truncate">
                               {msg.body && msg.body.match(/\.\w+$/)
                                 ? msg.body
-                                : msg.mediaType === 'VIDEO' ? '🎬 Video'
-                                : msg.mediaType === 'AUDIO' ? '🎵 Ses dosyası'
-                                : '📄 Belge'}
+                                : msg.mediaType === 'VIDEO' ? '🎬 Video' : '📄 Belge'}
                             </span>
                             <span className="text-[10px] text-gray-400">İndirmek için tıklayın</span>
                           </div>
@@ -742,6 +883,24 @@ export default function ChatWindow() {
           </div>
         )}
 
+        {/* Reply Banner */}
+        {replyingTo && (
+          <div className="bg-green-50 border-t border-green-200 px-4 py-2 flex items-center gap-3">
+            <Reply className="w-4 h-4 text-green-600 flex-shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="text-xs text-green-600 font-medium">Yanıtlanıyor</p>
+              <p className="text-xs text-green-500 truncate">{replyingTo.body || '(medya mesajı)'}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setReplyingTo(null)}
+              className="p-1 text-green-400 hover:text-green-600"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+
         {/* Edit Banner */}
         {editingMessage && (
           <div className="bg-blue-50 border-t border-blue-200 px-4 py-2 flex items-center gap-3">
@@ -766,6 +925,7 @@ export default function ChatWindow() {
             onSubmit={(e) => {
               e.preventDefault();
               if (editingMessage) void handleEditMessage();
+              else if (replyingTo) void handleSendReply();
               else submitComposer();
             }}
             className="bg-white border-t border-gray-200 px-4 py-3 flex items-end gap-3"
@@ -777,55 +937,116 @@ export default function ChatWindow() {
               onChange={handleFileSelect}
               className="hidden"
             />
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              className="p-2 text-gray-400 hover:text-whatsapp hover:bg-green-50 rounded-lg transition-colors"
-              title="Görsel / Dosya Gönder"
-            >
-              <Paperclip className="w-5 h-5" />
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                if (fileInputRef.current) {
-                  fileInputRef.current.accept = 'image/*';
-                  fileInputRef.current.click();
-                  setTimeout(() => {
-                    if (fileInputRef.current) fileInputRef.current.accept = 'image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.mp4,.mp3,.ogg,.txt,.csv,.zip,.rar';
-                  }, 100);
-                }
-              }}
-              className="p-2 text-gray-400 hover:text-whatsapp hover:bg-green-50 rounded-lg transition-colors"
-              title="Görsel Gönder"
-            >
-              <ImageIcon className="w-5 h-5" />
-            </button>
-            {templates.length > 0 && (
+            
+            {/* Action Tray */}
+            <div ref={actionTrayRef} className="relative">
               <button
                 type="button"
-                onClick={() => setShowTemplates(!showTemplates)}
-                className="p-2 text-gray-400 hover:text-whatsapp hover:bg-green-50 rounded-lg transition-colors"
-                title="Şablonlar"
+                onClick={() => {
+                  setActionTrayOpen(!actionTrayOpen);
+                  setShowTemplates(false);
+                  setProductPickerOpen(false);
+                }}
+                className={cn(
+                  'p-2 rounded-lg transition-all duration-200',
+                  actionTrayOpen
+                    ? 'text-white bg-whatsapp rotate-45'
+                    : 'text-gray-400 hover:text-whatsapp hover:bg-green-50'
+                )}
+                title="Ekle"
               >
-                <BookTemplate className="w-5 h-5" />
+                <Plus className="w-5 h-5" />
               </button>
-            )}
-            <button
-              type="button"
-              onClick={() => {
-                setProductPickerOpen((o) => !o);
-                setShowTemplates(false);
-              }}
-              className={`p-2 rounded-lg transition-colors ${
-                productPickerOpen
-                  ? 'text-whatsapp bg-green-50'
-                  : 'text-gray-400 hover:text-whatsapp hover:bg-green-50'
-              }`}
-              title="Ürün gönder (katalog)"
-            >
-              <Package className="w-5 h-5" />
-            </button>
+              
+              {actionTrayOpen && (
+                <div className="absolute bottom-full mb-2 left-0 bg-white rounded-xl shadow-lg border border-gray-200 p-3 z-30 min-w-[280px]">
+                  <p className="text-xs text-gray-500 font-medium mb-2 px-1">Ekle</p>
+                  <div className="grid grid-cols-3 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (fileInputRef.current) {
+                          fileInputRef.current.accept = 'image/*';
+                          fileInputRef.current.click();
+                          setTimeout(() => {
+                            if (fileInputRef.current) fileInputRef.current.accept = 'image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.mp4,.mp3,.ogg,.txt,.csv,.zip,.rar';
+                          }, 100);
+                        }
+                        setActionTrayOpen(false);
+                      }}
+                      className="flex flex-col items-center gap-1.5 p-3 rounded-xl hover:bg-purple-50 transition-colors group"
+                    >
+                      <div className="w-10 h-10 rounded-full bg-purple-100 flex items-center justify-center group-hover:bg-purple-200 transition-colors">
+                        <ImageIcon className="w-5 h-5 text-purple-600" />
+                      </div>
+                      <span className="text-xs text-gray-600 font-medium">Görsel</span>
+                    </button>
+                    
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (fileInputRef.current) {
+                          fileInputRef.current.accept = '.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip,.rar';
+                          fileInputRef.current.click();
+                          setTimeout(() => {
+                            if (fileInputRef.current) fileInputRef.current.accept = 'image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.mp4,.mp3,.ogg,.txt,.csv,.zip,.rar';
+                          }, 100);
+                        }
+                        setActionTrayOpen(false);
+                      }}
+                      className="flex flex-col items-center gap-1.5 p-3 rounded-xl hover:bg-blue-50 transition-colors group"
+                    >
+                      <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center group-hover:bg-blue-200 transition-colors">
+                        <FileUp className="w-5 h-5 text-blue-600" />
+                      </div>
+                      <span className="text-xs text-gray-600 font-medium">Belge</span>
+                    </button>
+                    
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setProductPickerOpen(true);
+                        setActionTrayOpen(false);
+                      }}
+                      className="flex flex-col items-center gap-1.5 p-3 rounded-xl hover:bg-orange-50 transition-colors group"
+                    >
+                      <div className="w-10 h-10 rounded-full bg-orange-100 flex items-center justify-center group-hover:bg-orange-200 transition-colors">
+                        <Package className="w-5 h-5 text-orange-600" />
+                      </div>
+                      <span className="text-xs text-gray-600 font-medium">Ürün</span>
+                    </button>
+                    
+                    <button
+                      type="button"
+                      onClick={() => {
+                        toast('Konum gönderme yakında eklenecek', { icon: '📍' });
+                        setActionTrayOpen(false);
+                      }}
+                      className="flex flex-col items-center gap-1.5 p-3 rounded-xl hover:bg-green-50 transition-colors group"
+                    >
+                      <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center group-hover:bg-green-200 transition-colors">
+                        <MapPin className="w-5 h-5 text-green-600" />
+                      </div>
+                      <span className="text-xs text-gray-600 font-medium">Konum</span>
+                    </button>
+                    
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowTemplates(true);
+                        setActionTrayOpen(false);
+                      }}
+                      className="flex flex-col items-center gap-1.5 p-3 rounded-xl hover:bg-amber-50 transition-colors group"
+                    >
+                      <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center group-hover:bg-amber-200 transition-colors">
+                        <BookTemplate className="w-5 h-5 text-amber-600" />
+                      </div>
+                      <span className="text-xs text-gray-600 font-medium">Şablon</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
             <div className="flex-1 relative">
               {productPickerOpen && (
                 <div className="absolute bottom-full mb-2 left-0 right-0 bg-white border border-gray-200 rounded-xl shadow-lg z-20 overflow-hidden flex flex-col max-h-72">

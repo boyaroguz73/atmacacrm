@@ -330,14 +330,13 @@ export class PdfService {
         const HEADER_H = 18;
 
         const cols = [
-          { label: '#',                          w: 22  },
-          { label: this.t('Urun / Hizmet'),      w: 126 },
-          { label: this.t('Aciklama'),           w: 92  },
-          { label: this.t('Miktar'),             w: 45  },
-          { label: `${this.t('B.Fiyat')} (${cs})`, w: 78 },
-          { label: 'KDV%',                       w: 38  },
-          { label: this.t('Indirim'),            w: 52  },
-          { label: `${this.t('Toplam')} (${cs})`, w: PW - 453 },
+          { label: '#',                          w: 26  },
+          { label: this.t('Urun / Hizmet'),      w: 200 },
+          { label: this.t('Miktar'),             w: 55  },
+          { label: `${this.t('B.Fiyat')} (${cs})`, w: 85 },
+          { label: 'KDV%',                       w: 45  },
+          { label: this.t('Indirim'),            w: 55  },
+          { label: `${this.t('Toplam')} (${cs})`, w: PW - 466 },
         ];
 
         // Header row
@@ -353,8 +352,7 @@ export class PdfService {
         const softLayout = data.layout === 'order_form';
         data.items.forEach((item, idx) => {
           const imgBuf = itemImageBuffers[idx];
-          const hasDesc = !!(item.description);
-          const itemH = Math.max(hasDesc ? 40 : 32, imgBuf ? 36 : 0);
+          const itemH = Math.max(32, imgBuf ? 36 : 0);
           // Sayfa taşması
           if (rowY + itemH + 8 > PAGE_H - 120) {
             doc.addPage({ margin: 0 });
@@ -378,25 +376,17 @@ export class PdfService {
             R(); doc.fontSize(9).fillColor('#222');
             doc.text(this.t(item.name), nameColLeft + namePad, rowY + 6, { width: cols[1].w - namePad - 4, ellipsis: true, lineBreak: false });
             rx += cols[1].w;
-            doc.fontSize(7).fillColor('#666');
-            doc.text(
-              hasDesc ? this.t(item.description!) : '-',
-              rx + 3,
-              rowY + 9,
-              { width: cols[2].w - 6, ellipsis: true, lineBreak: false },
-            );
-            rx += cols[2].w;
             doc.fontSize(8).fillColor('#333');
-            doc.text(String(item.quantity), rx, rowY + 10, { width: cols[3].w - 6, align: 'right', lineBreak: false });
+            doc.text(String(item.quantity), rx, rowY + 10, { width: cols[2].w - 6, align: 'right', lineBreak: false });
+            rx += cols[2].w;
+            doc.text(item.unitPrice.toFixed(2), rx, rowY + 10, { width: cols[3].w - 6, align: 'right', lineBreak: false });
             rx += cols[3].w;
-            doc.text(item.unitPrice.toFixed(2), rx, rowY + 10, { width: cols[4].w - 6, align: 'right', lineBreak: false });
+            doc.text(`%${item.vatRate}`, rx, rowY + 10, { width: cols[4].w - 6, align: 'right', lineBreak: false });
             rx += cols[4].w;
-            doc.text(`%${item.vatRate}`, rx, rowY + 10, { width: cols[5].w - 6, align: 'right', lineBreak: false });
+            doc.text(item.discountText ? this.t(item.discountText) : '-', rx, rowY + 10, { width: cols[5].w - 6, align: 'right', lineBreak: false });
             rx += cols[5].w;
-            doc.text(item.discountText ? this.t(item.discountText) : '-', rx, rowY + 10, { width: cols[6].w - 6, align: 'right', lineBreak: false });
-            rx += cols[6].w;
             B(); doc.fillColor(primary);
-            doc.text(item.lineTotal.toFixed(2), rx, rowY + 10, { width: cols[7].w - 6, align: 'right', lineBreak: false });
+            doc.text(item.lineTotal.toFixed(2), rx, rowY + 10, { width: cols[6].w - 6, align: 'right', lineBreak: false });
             rowY += itemH + 6;
           } else {
             if (idx % 2 === 1) {
@@ -415,14 +405,12 @@ export class PdfService {
             }
             txt(this.t(item.name), nameColX + pad, rowY + 6, { size: 8, width: cols[1].w - pad - 3 });
             rx += cols[1].w;
-            txt(hasDesc ? this.t(item.description!) : '-', rx + 3, rowY + 6, { size: 7, color: '#777', width: cols[2].w - 6 });
-            rx += cols[2].w;
-            const rowH = Math.max(hasDesc ? 28 : ROW_H, imgBuf ? 30 : 0);
-            txt(String(item.quantity), rx + 3, rowY + 6, { size: 8, width: cols[3].w - 6, align: 'right' }); rx += cols[3].w;
-            txt(item.unitPrice.toFixed(2), rx + 3, rowY + 6, { size: 8, width: cols[4].w - 6, align: 'right' }); rx += cols[4].w;
-            txt(`%${item.vatRate}`, rx + 3, rowY + 6, { size: 8, width: cols[5].w - 6, align: 'right' }); rx += cols[5].w;
-            txt(item.discountText ? this.t(item.discountText) : '-', rx + 3, rowY + 6, { size: 8, width: cols[6].w - 6, align: 'right' }); rx += cols[6].w;
-            txt(item.lineTotal.toFixed(2), rx + 3, rowY + 6, { size: 8, width: cols[7].w - 6, align: 'right' });
+            const rowH = Math.max(ROW_H, imgBuf ? 30 : 0);
+            txt(String(item.quantity), rx + 3, rowY + 6, { size: 8, width: cols[2].w - 6, align: 'right' }); rx += cols[2].w;
+            txt(item.unitPrice.toFixed(2), rx + 3, rowY + 6, { size: 8, width: cols[3].w - 6, align: 'right' }); rx += cols[3].w;
+            txt(`%${item.vatRate}`, rx + 3, rowY + 6, { size: 8, width: cols[4].w - 6, align: 'right' }); rx += cols[4].w;
+            txt(item.discountText ? this.t(item.discountText) : '-', rx + 3, rowY + 6, { size: 8, width: cols[5].w - 6, align: 'right' }); rx += cols[5].w;
+            txt(item.lineTotal.toFixed(2), rx + 3, rowY + 6, { size: 8, width: cols[6].w - 6, align: 'right' });
             rowY += rowH;
           }
         });

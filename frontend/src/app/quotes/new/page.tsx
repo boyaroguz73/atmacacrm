@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import api from '@/lib/api';
 import { formatPhone } from '@/lib/utils';
 import toast from 'react-hot-toast';
@@ -119,6 +119,9 @@ function emptyLine(): LocalLineItem {
 
 export default function NewQuotePage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const preselectedContactId = searchParams.get('contactId');
+  
   const [contactQuery, setContactQuery] = useState('');
   const [contactResults, setContactResults] = useState<
     { id: string; name: string | null; phone: string }[]
@@ -130,6 +133,18 @@ export default function NewQuotePage() {
   } | null>(null);
   const [contactDropdownOpen, setContactDropdownOpen] = useState(false);
   const contactDebounceRef = useRef<ReturnType<typeof setTimeout>>();
+  
+  // URL'den gelen contactId ile kişiyi otomatik seç
+  useEffect(() => {
+    if (preselectedContactId && !selectedContact) {
+      api.get(`/contacts/${preselectedContactId}`)
+        .then(({ data }) => {
+          setSelectedContact({ id: data.id, name: data.name, phone: data.phone });
+          setContactQuery(data.name || data.phone);
+        })
+        .catch(() => {});
+    }
+  }, [preselectedContactId]);
 
   const [productQuery, setProductQuery] = useState('');
   const [productResults, setProductResults] = useState<ProductHit[]>([]);

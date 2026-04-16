@@ -130,7 +130,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
       if (listFilter) params.filter = listFilter;
 
       const { data } = await api.get('/conversations', { params });
-      const sorted = [...(data.conversations || [])].sort(
+      // WhatsApp kanallarını filtrele (newsletter ve broadcast)
+      // Gruplar (@g.us) ve bireysel sohbetler (@c.us) görünür
+      const filtered = (data.conversations || []).filter((c: Conversation) => {
+        const phone = c.contact?.phone || '';
+        return !phone.includes('@newsletter') && !phone.includes('@broadcast');
+      });
+      const sorted = [...filtered].sort(
         (a: Conversation, b: Conversation) =>
           new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime(),
       );
@@ -425,6 +431,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   updateConversation: (conversation) => {
     set((state) => {
+      // WhatsApp kanallarını filtrele (newsletter ve broadcast)
+      const phone = conversation.contact?.phone || '';
+      if (phone.includes('@newsletter') || phone.includes('@broadcast')) {
+        return state;
+      }
+
       const index = state.conversations.findIndex(
         (c) => c.id === conversation.id,
       );

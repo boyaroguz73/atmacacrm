@@ -226,7 +226,7 @@ export class AccountingService {
     const chatId = normalizeWhatsappChatId(`${c.phone.replace(/\D/g, '')}@c.us`);
     const invNo = `FTR-${String(inv.invoiceNumber).padStart(5, '0')}`;
     const text = templateBody
-      || `Sayin ${c.name || 'Musteri'}, ${invNo} numarali faturaniz ektedir.`;
+      || `Değerli müşterimiz, faturanız ektedir. (${invNo})`;
 
     const localPath = join(process.cwd(), pdfPath.replace(/^\//, ''));
     if (!existsSync(localPath)) {
