@@ -169,8 +169,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
   setActiveConversation: (conv) => {
     const updated = { ...conv, unreadCount: 0 };
     set((state) => ({
+      ...(state.activeConversation?.id === conv.id ? {} : { messages: [] }),
       activeConversation: updated,
-      messages: [],
       conversations: state.conversations.map((c) =>
         c.id === conv.id ? { ...c, unreadCount: 0 } : c,
       ),

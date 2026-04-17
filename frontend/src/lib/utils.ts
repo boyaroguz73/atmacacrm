@@ -80,11 +80,6 @@ export function formatPhone(phone: string | null | undefined): string {
     return `+90 ${rest.slice(0, 3)} ${rest.slice(3, 6)} ${rest.slice(6, 8)} ${rest.slice(8)}`;
   }
 
-  // LID / iç kimlik gibi kayıtlı çok uzun rakam dizileri (14 hane üzeri gerçek numara pratik yok)
-  if (d.length > 14) {
-    return `Kimlik · …${d.slice(-4)}`;
-  }
-
   return `+${d}`;
 }
 
@@ -112,7 +107,8 @@ export function truncate(str: string, maxLength: number): string {
 
 function looksLikeFallbackName(name: string, phone: string | null | undefined): boolean {
   if (/^WhatsApp/i.test(name)) return true;
-  if (/^Kimlik\s*·/i.test(name)) return true;
+  if (/^Kimlik\b/i.test(name)) return true;
+  if (/^LID\b/i.test(name)) return true;
   const stripped = name.replace(/[\s+\-().·…]/g, '');
   if (/^\d{7,}$/.test(stripped)) return true;
   if (phone) {

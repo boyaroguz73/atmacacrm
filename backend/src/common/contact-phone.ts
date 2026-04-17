@@ -186,10 +186,13 @@ export function isFallbackContactName(
   const n = name.trim();
 
   if (/^WhatsApp/i.test(n)) return true;
+  if (/^Kimlik\b/i.test(n)) return true;
+  if (/^LID\b/i.test(n)) return true;
 
   if (/^(Grup|WhatsApp Grubu)$/i.test(n)) return true;
 
   const stripped = n.replace(/[\s+\-().·…]/g, '');
+  if (stripped.length > 14 && /^\d+$/.test(stripped)) return true;
   if (/^\d{7,15}$/.test(stripped)) return true;
 
   if (phone) {

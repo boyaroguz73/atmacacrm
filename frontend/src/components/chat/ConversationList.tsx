@@ -184,7 +184,7 @@ export default function ConversationList() {
               className={cn(
                 'w-full flex items-start gap-3 p-4 border-b border-gray-50 hover:bg-gray-50 transition-colors text-left',
                 activeConversation?.id === conv.id &&
-                  'bg-whatsapp/5 border-l-2 border-l-whatsapp',
+                  'bg-whatsapp/5 border-l-4 border-l-whatsapp',
               )}
             >
               {conv.isGroup ? (

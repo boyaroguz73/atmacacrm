@@ -618,7 +618,7 @@ export class ConversationsController {
           if (!phoneRaw || phoneRaw.length < 6) continue;
           const phone = canonicalContactPhone(phoneRaw) || phoneRaw;
 
-          const contactName = chat.name || chat.pushname || phone;
+          const contactName = chat.pushname || chat.name || phone;
           const wahaTs = chat.timestamp
             ? new Date(chat.timestamp * 1000)
             : null;
