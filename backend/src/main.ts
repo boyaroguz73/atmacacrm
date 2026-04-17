@@ -4,7 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import helmet from 'helmet';
-import express from 'express';
+import { json as expressJson, urlencoded as expressUrlencoded } from 'express';
 import { join } from 'path';
 import { existsSync, mkdirSync } from 'fs';
 import { AppModule } from './app.module';
@@ -62,10 +62,10 @@ async function bootstrap() {
 
   app.useStaticAssets(uploadsDir, { prefix: '/uploads/' });
   // WAHA webhook payload'ları (özellikle medya/base64) default body limitini aşabilir.
-  app.use('/api/waha/webhook', express.json({ limit: '50mb' }));
-  app.use('/api/waha/webhook', express.urlencoded({ extended: true, limit: '50mb' }));
-  app.use(express.json({ limit: '5mb' }));
-  app.use(express.urlencoded({ extended: true, limit: '5mb' }));
+  app.use('/api/waha/webhook', expressJson({ limit: '50mb' }));
+  app.use('/api/waha/webhook', expressUrlencoded({ extended: true, limit: '50mb' }));
+  app.use(expressJson({ limit: '5mb' }));
+  app.use(expressUrlencoded({ extended: true, limit: '5mb' }));
 
   app.useGlobalPipes(
     new ValidationPipe({
