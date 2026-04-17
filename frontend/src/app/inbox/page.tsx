@@ -36,11 +36,24 @@ export default function InboxPage() {
     }
   }, [conversations, activeConversation, isLoadingConversations, setActiveConversation]);
 
+  /** Sadece dar ekranda (mobil) sohbet seçilince tam ekran chat; masaüstünde liste hep görünsün */
   useEffect(() => {
-    if (activeConversation) {
+    if (!activeConversation) return;
+    if (typeof window === 'undefined') return;
+    if (window.matchMedia('(max-width: 767px)').matches) {
       setMobileShowChat(true);
     }
   }, [activeConversation]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const mq = window.matchMedia('(min-width: 768px)');
+    const onDesktop = () => {
+      if (mq.matches) setMobileShowChat(false);
+    };
+    mq.addEventListener('change', onDesktop);
+    return () => mq.removeEventListener('change', onDesktop);
+  }, []);
 
   useEffect(() => {
     setListFilter(filter);

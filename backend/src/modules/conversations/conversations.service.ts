@@ -6,7 +6,11 @@ import {
 } from '../../common/org-session-scope';
 import { WahaService } from '../waha/waha.service';
 import { ContactsService } from '../contacts/contacts.service';
-import { canonicalContactPhone } from '../../common/contact-phone';
+import {
+  canonicalContactPhone,
+  extractPhoneFromIndividualJid,
+  isValidPhoneNumber,
+} from '../../common/contact-phone';
 
 function isWeakGroupLabel(name: string | null | undefined): boolean {
   const t = (name ?? '').trim();
@@ -246,7 +250,6 @@ export class ConversationsService {
       !conv.isGroup &&
       conv.session?.name &&
       conv.contact?.phone &&
-      !conv.contact.phone.startsWith('lid:') &&
       !conv.contact.phone.startsWith('group:')
     ) {
       await this.enrichDmContactFromWaha(
@@ -263,7 +266,10 @@ export class ConversationsService {
     return conv;
   }
 
-  async findById(id: string) {
+  async findById(
+    id: string,
+    options?: { skipContactEnrichment?: boolean },
+  ) {
     let conversation = await this.prisma.conversation.findUnique({
       where: { id },
       include: {
@@ -327,10 +333,10 @@ export class ConversationsService {
         : undefined;
 
     if (
+      !options?.skipContactEnrichment &&
       !conversation.isGroup &&
       conversation.session?.name &&
       conversation.contact?.phone &&
-      !conversation.contact.phone.startsWith('lid:') &&
       !conversation.contact.phone.startsWith('group:')
     ) {
       try {
@@ -370,17 +376,103 @@ export class ConversationsService {
   }
 
   /**
-   * Bireysel DM: telefonu 90… kanonik forma çeker, isim ve profil fotoğrafını WAHA’dan doldurur (grup/LID hariç).
+   * Mesaj senkronu / toplu işlemler sonrası tek seferlik çağrı için.
+   */
+  async enrichConversationContactFromWaha(conversationId: string): Promise<void> {
+    const conv = await this.prisma.conversation.findUnique({
+      where: { id: conversationId },
+      include: { contact: true, session: true },
+    });
+    if (!conv || conv.isGroup || !conv.session?.name || !conv.contact?.phone) return;
+    await this.enrichDmContactFromWaha(
+      conv.contactId,
+      conv.session.name,
+      conv.contact.organizationId,
+    );
+  }
+
+  /**
+   * Bireysel DM: @c.us için 90… kanonik; LID için önce pn→telefon, yoksa @lid ile isim/foto.
    */
   private async enrichDmContactFromWaha(
     contactId: string,
     sessionName: string,
     organizationId: string | null,
+    depth = 0,
   ): Promise<void> {
+    if (depth > 2) return;
+
     const row = await this.prisma.contact.findUnique({ where: { id: contactId } });
     if (!row) return;
     const p = row.phone;
-    if (!p || p.startsWith('lid:') || p.startsWith('group:')) return;
+    if (!p || p.startsWith('group:')) return;
+
+    if (p.startsWith('lid:')) {
+      const lidDigits = p.slice(4).replace(/\D/g, '');
+      if (!lidDigits) return;
+      const lidJid = `${lidDigits}@lid`;
+
+      const pnJid = await this.wahaService.getLinkedPnFromLid(sessionName, lidJid);
+      if (pnJid) {
+        const extracted = extractPhoneFromIndividualJid(pnJid);
+        const phoneCanon =
+          extracted ||
+          canonicalContactPhone(pnJid.replace(/\D/g, '')) ||
+          '';
+        if (phoneCanon && isValidPhoneNumber(phoneCanon)) {
+          try {
+            await this.prisma.contact.update({
+              where: { id: contactId },
+              data: { phone: phoneCanon },
+            });
+          } catch {
+            return;
+          }
+          await this.enrichDmContactFromWaha(
+            contactId,
+            sessionName,
+            organizationId,
+            depth + 1,
+          );
+          return;
+        }
+      }
+
+      const current = await this.prisma.contact.findUnique({ where: { id: contactId } });
+      if (!current) return;
+
+      if (!current.name?.trim() && !current.surname?.trim()) {
+        const details = await this.wahaService.getContactDetails(sessionName, lidJid);
+        const waName = (
+          details?.name ||
+          details?.pushname ||
+          details?.shortName ||
+          ''
+        ).trim();
+        if (waName) {
+          await this.prisma.contact.update({
+            where: { id: contactId },
+            data: { name: waName },
+          });
+        }
+      }
+
+      const afterName = await this.prisma.contact.findUnique({
+        where: { id: contactId },
+        select: { avatarUrl: true },
+      });
+      if (!afterName?.avatarUrl) {
+        const picUrl = await this.wahaService.getProfilePicture(sessionName, lidJid);
+        if (picUrl) {
+          await this.contactsService.fetchAndSaveProfilePicture(
+            contactId,
+            `lid_${lidDigits}`,
+            picUrl,
+          );
+        }
+      }
+      return;
+    }
 
     const merged = await this.contactsService.findOrCreate(
       p,

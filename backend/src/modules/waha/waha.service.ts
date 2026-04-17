@@ -703,14 +703,42 @@ export class WahaService implements OnModuleInit {
     const effectiveLimit = limit ?? this.syncMessageLimit;
     try {
       const fullChatId = chatId.includes('@') ? chatId : `${chatId}@c.us`;
+      const encSession = encodeURIComponent(sessionName);
+      const encChat = encodeURIComponent(fullChatId);
       const response = await this.http.get(
-        `/api/${sessionName}/chats/${fullChatId}/messages`,
+        `/api/${encSession}/chats/${encChat}/messages`,
         { params: { limit: effectiveLimit, downloadMedia: true }, timeout: this.syncTimeoutMs },
       );
       return response.data || [];
     } catch (error: any) {
       this.logger.error(`Mesajlar alınamadı: ${chatId} - ${error.message}`);
       return [];
+    }
+  }
+
+  /**
+   * LID → bağlı telefon (pn). WAHA: GET /api/{session}/lids/{lid}
+   * Yanıt örn. { pn: "905551234567@c.us" }
+   */
+  async getLinkedPnFromLid(
+    sessionName: string,
+    lidJid: string,
+  ): Promise<string | null> {
+    const id = /@lid$/i.test(String(lidJid).trim())
+      ? String(lidJid).trim()
+      : `${String(lidJid).replace(/\D/g, '')}@lid`;
+    if (id === '@lid') return null;
+    try {
+      const encSession = encodeURIComponent(sessionName);
+      const encId = encodeURIComponent(id);
+      const response = await this.http.get(`/api/${encSession}/lids/${encId}`, {
+        timeout: 12000,
+      });
+      const pn = response.data?.pn;
+      return typeof pn === 'string' && pn.trim() ? pn.trim() : null;
+    } catch (error: any) {
+      this.logger.debug(`LID pn alınamadı (${id}): ${error?.message}`);
+      return null;
     }
   }
 

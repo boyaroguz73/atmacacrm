@@ -270,31 +270,15 @@ export class ConversationsController {
     @Param('id') id: string,
     @CurrentUser() user: { id: string; role: string; organizationId?: string | null },
   ) {
-    const conversation = await this.conversationsService.findById(id);
+    const conversation = await this.conversationsService.findById(id, {
+      skipContactEnrichment: true,
+    });
     assertConversationBelongsToOrg(conversation, user);
     const result = await this.syncMessagesCore(id);
 
-    if (!conversation.contact.avatarUrl) {
-      try {
-        const waDigits =
-          this.contactsService.digitsForWahaProfile(conversation.contact.phone) ||
-          canonicalContactPhone(conversation.contact.phone) ||
-          '';
-        const picUrl = waDigits
-          ? await this.wahaService.getProfilePicture(
-              conversation.session.name,
-              waDigits,
-            )
-          : null;
-        if (picUrl) {
-          await this.contactsService.fetchAndSaveProfilePicture(
-            conversation.contact.id,
-            waDigits,
-            picUrl,
-          );
-        }
-      } catch {}
-    }
+    await this.conversationsService
+      .enrichConversationContactFromWaha(id)
+      .catch(() => {});
 
     return result;
   }
@@ -303,14 +287,41 @@ export class ConversationsController {
   async syncMessagesCore(
     id: string,
   ): Promise<{ synced: number; message: string }> {
-    const conversation = await this.conversationsService.findById(id);
-    const phone = canonicalContactPhone(conversation.contact.phone) || conversation.contact.phone;
+    const conversation = await this.conversationsService.findById(id, {
+      skipContactEnrichment: true,
+    });
+    if (conversation.isGroup) {
+      return {
+        synced: 0,
+        message: 'Grup sohbetleri bu senkron ile desteklenmez',
+      };
+    }
+
+    const rawPhone = conversation.contact.phone;
     const sessionName = conversation.session.name;
-    const chatId = `${phone}@c.us`;
+
+    let chatIdForWaha: string;
+    if (rawPhone.startsWith('lid:')) {
+      const lidDigits = rawPhone.slice(4).replace(/\D/g, '');
+      chatIdForWaha = lidDigits ? `${lidDigits}@lid` : '';
+    } else {
+      const waDigits =
+        this.contactsService.digitsForWahaProfile(rawPhone) ||
+        canonicalContactPhone(rawPhone) ||
+        '';
+      if (!waDigits || !/^\d{10,15}$/.test(waDigits)) {
+        return { synced: 0, message: 'Geçersiz telefon veya kimlik' };
+      }
+      chatIdForWaha = `${waDigits}@c.us`;
+    }
+
+    if (!chatIdForWaha) {
+      return { synced: 0, message: 'Geçersiz telefon veya kimlik' };
+    }
 
     const wahaMessages = await this.wahaService.getChatMessages(
       sessionName,
-      chatId,
+      chatIdForWaha,
     );
 
     if (!wahaMessages.length) {
@@ -412,7 +423,7 @@ export class ConversationsController {
     }
 
     if (synced > 0) {
-      this.logger.log(`${synced} mesaj senkronize edildi (${phone})`);
+      this.logger.log(`${synced} mesaj senkronize edildi (${chatIdForWaha})`);
     }
     return { synced, message: `${synced} mesaj senkronize edildi` };
   }
@@ -613,9 +624,22 @@ export class ConversationsController {
 
             if (!task.hasAvatar) {
               try {
-                const picUrl = await this.wahaService.getProfilePicture(session.name, task.phone);
+                const waDigits =
+                  this.contactsService.digitsForWahaProfile(task.phone) ||
+                  canonicalContactPhone(task.phone) ||
+                  '';
+                const picUrl = waDigits
+                  ? await this.wahaService.getProfilePicture(
+                      session.name,
+                      waDigits,
+                    )
+                  : null;
                 if (picUrl) {
-                  await this.contactsService.fetchAndSaveProfilePicture(task.contactId, task.phone, picUrl);
+                  await this.contactsService.fetchAndSaveProfilePicture(
+                    task.contactId,
+                    waDigits,
+                    picUrl,
+                  );
                 }
               } catch {}
             }

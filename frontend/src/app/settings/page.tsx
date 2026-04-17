@@ -430,8 +430,10 @@ export default function SettingsPage() {
                 try {
                   const { data } = await api.post('/conversations/sync-all');
                   toast.success(data.message || `${data.totalSynced} mesaj senkronize edildi`);
-                } catch {
-                  toast.error('Mesaj senkronizasyonu başarısız');
+                } catch (err) {
+                  toast.error(
+                    getApiErrorMessage(err, 'Mesaj senkronizasyonu başarısız'),
+                  );
                 } finally {
                   if (btn) btn.removeAttribute('disabled');
                 }
