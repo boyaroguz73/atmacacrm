@@ -42,7 +42,7 @@ export class WahaService implements OnModuleInit {
     this.http = axios.create({
       baseURL,
       headers: apiKey ? { 'X-Api-Key': apiKey } : {},
-      timeout: 30000,
+      timeout: 3000000000000,
     });
 
     this.webhookUrl = this.config.get(
@@ -935,7 +935,7 @@ export class WahaService implements OnModuleInit {
     try {
       const response = await this.http.get(
         `/api/files/${sessionName}/${fileId}`,
-        { responseType: 'arraybuffer', timeout: 30000 },
+        { responseType: 'arraybuffer', timeout: 3000000000 },
       );
       const contentType =
         response.headers['content-type'] || 'application/octet-stream';
