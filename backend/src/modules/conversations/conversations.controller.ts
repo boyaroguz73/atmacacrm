@@ -334,13 +334,55 @@ export class ConversationsController {
             `Konuşma kişi bağı güncellendi: conv=${conversation.id}, contact=${resolvedContact.id}`,
           );
         } catch (e: any) {
-          this.logger.debug(
-            `Konuşma kişi bağı güncellenemedi (${conversation.id}): ${e?.message}`,
-          );
+          const targetConversation = await this.prisma.conversation.findFirst({
+            where: {
+              contactId: resolvedContact.id,
+              sessionId: conversation.session.id,
+            },
+            select: { id: true },
+          });
+          if (targetConversation && targetConversation.id !== conversation.id) {
+            // contactId+sessionId unique çakışmasında konuşmaları birleştir.
+            await this.prisma.$transaction(async (tx) => {
+              await tx.message.updateMany({
+                where: { conversationId: conversation.id },
+                data: { conversationId: targetConversation.id },
+              });
+              await tx.assignment.updateMany({
+                where: { conversationId: conversation.id },
+                data: { conversationId: targetConversation.id },
+              });
+              await tx.internalNote.updateMany({
+                where: { conversationId: conversation.id },
+                data: { conversationId: targetConversation.id },
+              });
+              await tx.conversation.update({
+                where: { id: targetConversation.id },
+                data: {
+                  lastMessageAt: conversation.lastMessageAt,
+                  lastMessageText: conversation.lastMessageText || undefined,
+                  unreadCount: { increment: conversation.unreadCount || 0 },
+                },
+              });
+              await tx.conversation.delete({ where: { id: conversation.id } });
+            });
+            const refreshed = await this.conversationsService.findById(targetConversation.id, {
+              skipContactEnrichment: true,
+            });
+            conversation = refreshed;
+            this.logger.log(
+              `Konuşmalar birleştirildi: source=${id}, target=${targetConversation.id}`,
+            );
+          } else {
+            this.logger.debug(
+              `Konuşma kişi bağı güncellenemedi (${conversation.id}): ${e?.message}`,
+            );
+          }
         }
       }
     }
 
+    const effectiveConversationId = conversation.id;
     const waDigits =
       this.contactsService.digitsForWahaProfile(rawPhone) ||
       canonicalContactPhone(rawPhone) ||
@@ -362,7 +404,7 @@ export class ConversationsController {
     const existingIds = new Set(
       (
         await this.prisma.message.findMany({
-          where: { conversationId: id, waMessageId: { not: null } },
+          where: { conversationId: effectiveConversationId, waMessageId: { not: null } },
           select: { waMessageId: true },
         })
       )
@@ -411,7 +453,7 @@ export class ConversationsController {
       }
 
       messagesToCreate.push({
-        conversationId: id,
+        conversationId: effectiveConversationId,
         sessionId: conversation.session.id,
         waMessageId,
         direction,
@@ -445,7 +487,7 @@ export class ConversationsController {
     if (lastReal) {
       const preview = lastReal.body || (lastReal.hasMedia ? '📎 Medya' : '');
       await this.prisma.conversation.update({
-        where: { id },
+        where: { id: effectiveConversationId },
         data: {
           lastMessageText: preview,
           lastMessageAt: new Date((lastReal.timestamp || 0) * 1000),
