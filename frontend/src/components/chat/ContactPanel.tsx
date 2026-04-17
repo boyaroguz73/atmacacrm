@@ -35,10 +35,11 @@ import { LEAD_STATUSES, LEAD_STATUS_LABELS, LEAD_STATUS_COLORS, SOURCES } from '
 import ContactAvatar from '@/components/ui/ContactAvatar';
 import EcommerceCustomerBadge from '@/components/ui/EcommerceCustomerBadge';
 import { getEcommerceCustomerLabel } from '@/lib/ecommerceBadge';
+import type { Contact } from '@/store/chat';
 
 interface ContactPanelProps {
   conversationId: string;
-  contact: any;
+  contact: Contact;
   assignments: any[];
   onClose: () => void;
   internalChatEnabled: boolean;
@@ -54,7 +55,7 @@ export default function ContactPanel({
   userRole = 'AGENT',
 }: ContactPanelProps) {
   const isAdmin = userRole === 'ADMIN' || userRole === 'SUPERADMIN';
-  const [contact, setContact] = useState(initialContact);
+  const [contact, setContact] = useState<Contact>(initialContact);
   const [editing, setEditing] = useState(false);
   const [editData, setEditData] = useState({
     name: '',
@@ -141,7 +142,7 @@ export default function ContactPanel({
 
   /** Gelen kutusundan gelen güncel telefon / avatar / isim */
   useEffect(() => {
-    setContact((prev) => ({ ...prev, ...initialContact }));
+    setContact((prev: Contact) => ({ ...prev, ...initialContact }));
   }, [
     initialContact.id,
     initialContact.phone,

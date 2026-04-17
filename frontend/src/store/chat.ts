@@ -4,7 +4,7 @@ import api from '@/lib/api';
 /** Gelen kutusu liste boyutu (API `limit`; backend üst sınırı 2000) */
 const CONVERSATIONS_LIST_LIMIT = 1000;
 
-interface Contact {
+export interface Contact {
   id: string;
   phone: string;
   name: string | null;
@@ -15,6 +15,11 @@ interface Contact {
   source?: string | null;
   company?: string | null;
   city?: string | null;
+  address?: string | null;
+  billingAddress?: string | null;
+  taxOffice?: string | null;
+  taxNumber?: string | null;
+  identityNumber?: string | null;
   notes?: string | null;
   metadata?: unknown;
   organizationId?: string | null;
