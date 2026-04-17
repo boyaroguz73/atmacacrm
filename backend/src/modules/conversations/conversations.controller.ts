@@ -280,7 +280,7 @@ export class ConversationsController {
     const result = await this.syncMessagesCore(id);
 
     await this.conversationsService
-      .enrichConversationContactFromWaha(id)
+      .enrichConversationContactFromWaha(result.conversationId || id)
       .catch(() => {});
 
     return result;
@@ -289,7 +289,7 @@ export class ConversationsController {
   /** WAHA’dan mesaj çekme (iç kullanım; org kontrolü çağıran yapar) */
   async syncMessagesCore(
     id: string,
-  ): Promise<{ synced: number; message: string }> {
+  ): Promise<{ synced: number; message: string; conversationId: string }> {
     let conversation = await this.conversationsService.findById(id, {
       skipContactEnrichment: true,
     });
@@ -297,6 +297,7 @@ export class ConversationsController {
       return {
         synced: 0,
         message: 'Grup sohbetleri bu senkron ile desteklenmez',
+        conversationId: id,
       };
     }
 
@@ -310,7 +311,7 @@ export class ConversationsController {
         sessionName,
       );
       if (!resolved) {
-        return { synced: 0, message: 'LID numara çözümlenemedi' };
+        return { synced: 0, message: 'LID numara çözümlenemedi', conversationId: id };
       }
       rawPhone = resolved;
 
@@ -388,7 +389,7 @@ export class ConversationsController {
       canonicalContactPhone(rawPhone) ||
       '';
     if (!waDigits || !/^\d{10,15}$/.test(waDigits)) {
-      return { synced: 0, message: 'Geçersiz telefon veya kimlik' };
+      return { synced: 0, message: 'Geçersiz telefon veya kimlik', conversationId: effectiveConversationId };
     }
     const chatIdForWaha = `${waDigits}@c.us`;
 
@@ -398,7 +399,7 @@ export class ConversationsController {
     );
 
     if (!wahaMessages.length) {
-      return { synced: 0, message: 'WAHA\'dan mesaj bulunamadı' };
+      return { synced: 0, message: 'WAHA\'dan mesaj bulunamadı', conversationId: effectiveConversationId };
     }
 
     const existingIds = new Set(
@@ -498,7 +499,11 @@ export class ConversationsController {
     if (synced > 0) {
       this.logger.log(`${synced} mesaj senkronize edildi (${chatIdForWaha})`);
     }
-    return { synced, message: `${synced} mesaj senkronize edildi` };
+    return {
+      synced,
+      message: `${synced} mesaj senkronize edildi`,
+      conversationId: effectiveConversationId,
+    };
   }
 
   @Post('sync-phone/:phone')
@@ -759,6 +764,9 @@ export class ConversationsController {
             const result = await this.syncMessagesCore(task.conversationId);
             totalSynced += result.synced;
             if (result.synced > 0) updatedConversations++;
+            await this.conversationsService
+              .enrichConversationContactFromWaha(result.conversationId || task.conversationId)
+              .catch(() => {});
 
             if (!task.hasAvatar) {
               try {

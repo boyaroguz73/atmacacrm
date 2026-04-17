@@ -203,22 +203,30 @@ export const useChatStore = create<ChatState>((set, get) => ({
           return { ...patchActive, conversations };
         });
       }
-      const { data } = await api.get(`/messages/conversation/${conversationId}`);
+      const { data } = await api
+        .get(`/messages/conversation/${conversationId}`)
+        .catch(() => ({ data: { messages: [] } }));
       set({ messages: data.messages || [], isLoadingMessages: false });
 
       api
         .post(`/conversations/${conversationId}/sync`)
-        .then(() =>
-          Promise.all([
-            api.get(`/messages/conversation/${conversationId}`),
-            api.get(`/conversations/${conversationId}`),
-          ]),
-        )
-        .then(([msgRes, convRes]) => {
+        .then((syncRes) => {
+          const effectiveId =
+            syncRes?.data?.conversationId && typeof syncRes.data.conversationId === 'string'
+              ? syncRes.data.conversationId
+              : conversationId;
+          return Promise.all([
+            api.get(`/messages/conversation/${effectiveId}`),
+            api.get(`/conversations/${effectiveId}`),
+          ]).then(([msgRes, convRes]) => ({ msgRes, convRes, effectiveId }));
+        })
+        .then(({ msgRes, convRes, effectiveId }) => {
           const freshMsgs = msgRes.data.messages || [];
           const conv = convRes.data;
           set((state) => {
-            const stillViewing = state.activeConversation?.id === conversationId;
+            const stillViewing =
+              state.activeConversation?.id === conversationId ||
+              state.activeConversation?.id === effectiveId;
             const patchActive =
               stillViewing && conv
                 ? {
@@ -231,7 +239,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
                 : {};
             const conversations = conv
               ? state.conversations.map((c) =>
-                  c.id === conversationId
+                  c.id === conversationId || c.id === effectiveId
                     ? { ...c, ...conv, contact: conv.contact ?? c.contact }
                     : c,
                 )
@@ -246,6 +254,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
         .catch(() => {});
     } catch {
       set({ isLoadingMessages: false });
+      // Olası merge/ID değişiminden sonra listeyi tazeleyip UI'ı toparla.
+      get().fetchConversations(true).catch(() => {});
     }
   },
 

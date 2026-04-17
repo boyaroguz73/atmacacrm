@@ -429,39 +429,37 @@ export class ConversationsService {
     const current = await this.prisma.contact.findUnique({ where: { id: effectiveId } });
     if (!current) return;
 
-    if (!current.surname?.trim()) {
-      const details = await this.wahaService.getContactDetails(
-        sessionName,
-        `${waDigits}@c.us`,
-      );
-      const waPush = (details?.pushname || '').trim();
-      const waNameField = (details?.name || '').trim();
-      const waNotify = ((details as any)?.notify || '').trim();
-      const waVerified = ((details as any)?.verifiedName || '').trim();
-      const waShort = (details?.shortName || '').trim();
-      const waName = (
-        waPush ||
-        waNotify ||
-        waVerified ||
-        waNameField ||
-        waShort
-      ).trim();
+    const details = await this.wahaService.getContactDetails(
+      sessionName,
+      `${waDigits}@c.us`,
+    );
+    const waPush = (details?.pushname || '').trim();
+    const waNameField = (details?.name || '').trim();
+    const waNotify = ((details as any)?.notify || '').trim();
+    const waVerified = ((details as any)?.verifiedName || '').trim();
+    const waShort = (details?.shortName || '').trim();
+    const waName = (
+      waPush ||
+      waNotify ||
+      waVerified ||
+      waNameField ||
+      waShort
+    ).trim();
 
-      const shouldReplaceName =
-        isFallbackContactName(current.name, current.phone) ||
-        // WAHA'da name alanı generic/rehber etiketi olabilir; pushname varsa onu tercih et.
-        (!!waPush &&
-          !!current.name?.trim() &&
-          !!waNameField &&
-          current.name.trim() === waNameField &&
-          waPush !== waNameField);
+    const shouldReplaceName =
+      isFallbackContactName(current.name, current.phone) ||
+      // WAHA'da name alanı generic/rehber etiketi olabilir; pushname varsa onu tercih et.
+      (!!waPush &&
+        !!current.name?.trim() &&
+        !!waNameField &&
+        current.name.trim() === waNameField &&
+        waPush !== waNameField);
 
-      if (waName && shouldReplaceName) {
-        await this.prisma.contact.update({
-          where: { id: effectiveId },
-          data: { name: waName },
-        });
-      }
+    if (waName && shouldReplaceName) {
+      await this.prisma.contact.update({
+        where: { id: effectiveId },
+        data: { name: waName },
+      });
     }
 
     const afterName = await this.prisma.contact.findUnique({
