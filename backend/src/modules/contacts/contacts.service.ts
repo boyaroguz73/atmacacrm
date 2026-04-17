@@ -16,6 +16,7 @@ import {
   canonicalContactPhone,
   contactPhoneLookupKeys,
   formatPhoneDisplay,
+  isFallbackContactName,
   isValidPhoneNumber,
 } from '../../common/contact-phone';
 import { splitSearchTokens } from '../../common/search-tokens';
@@ -32,7 +33,7 @@ export class ContactsService {
       const existing = await this.prisma.contact.findFirst({ where: { phone: raw } });
       if (existing) {
         const nm = name?.trim();
-        if (nm && !existing.name) {
+        if (nm && isFallbackContactName(existing.name, existing.phone)) {
           try {
             return await this.prisma.contact.update({
               where: { id: existing.id },
@@ -73,7 +74,7 @@ export class ContactsService {
       }
 
       const nm = name?.trim();
-      if (nm && !existing.name?.trim() && !existing.surname?.trim()) {
+      if (nm && isFallbackContactName(existing.name, existing.phone) && !existing.surname?.trim()) {
         updates.name = nm;
       }
 

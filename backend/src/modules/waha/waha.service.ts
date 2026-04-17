@@ -657,6 +657,8 @@ export class WahaService implements OnModuleInit {
     pushname?: string | null;
     shortName?: string | null;
     number?: string | null;
+    notify?: string | null;
+    verifiedName?: string | null;
   } | null> {
     const id = /@(c\.us|g\.us|lid)$/i.test(String(chatId))
       ? String(chatId).trim()
@@ -680,8 +682,12 @@ export class WahaService implements OnModuleInit {
           params: ep.params,
           timeout: 12000,
         });
-        const d = response.data;
+        let d = response.data;
+        if (Array.isArray(d) && d.length > 0) d = d[0];
         if (d && typeof d === 'object') {
+          this.logger.debug(
+            `WAHA kişi detayı (${id}): name=${d.name}, pushname=${d.pushname}, shortName=${d.shortName}, number=${d.number}, notify=${d.notify}, verifiedName=${d.verifiedName}`,
+          );
           return d;
         }
       } catch (error: any) {

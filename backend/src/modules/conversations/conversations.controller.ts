@@ -622,6 +622,12 @@ export class ConversationsController {
             totalSynced += result.synced;
             if (result.synced > 0) updatedConversations++;
 
+            try {
+              await this.conversationsService.enrichConversationContactFromWaha(
+                task.conversationId,
+              );
+            } catch {}
+
             if (!task.hasAvatar) {
               try {
                 const waDigits =

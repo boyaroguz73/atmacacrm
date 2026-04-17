@@ -24,6 +24,7 @@ import {
   isLidChat,
   lidJidToContactPhone,
   contactPhoneLookupKeys,
+  isFallbackContactName,
 } from '../../common/contact-phone';
 
 function extractGroupNameFromWahaMessage(msg: any): string {
@@ -199,6 +200,16 @@ export class WahaWebhookHandler {
           displayName,
           waSession.organizationId,
         );
+
+        if (displayName && isFallbackContactName(contact.name, contact.phone)) {
+          try {
+            contact = await this.prisma.contact.update({
+              where: { id: contact.id },
+              data: { name: displayName.trim() },
+            });
+          } catch { /* unique constraint veya başka hata — mevcut kaydı koru */ }
+        }
+
         conversation = await this.conversationsService.findOrCreate(
           contact.id,
           waSession.id,
@@ -226,6 +237,15 @@ export class WahaWebhookHandler {
           displayName,
           waSession.organizationId,
         );
+
+        if (displayName && isFallbackContactName(contact.name, contact.phone)) {
+          try {
+            contact = await this.prisma.contact.update({
+              where: { id: contact.id },
+              data: { name: displayName.trim() },
+            });
+          } catch { /* unique constraint — mevcut kaydı koru */ }
+        }
 
         if (!contact.avatarUrl) {
           this.fetchAndSaveAvatar(sessionName, phone, contact.id).catch(() => {});

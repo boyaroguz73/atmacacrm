@@ -193,6 +193,36 @@ export function phoneToWhatsAppJid(phone: string): string {
 }
 
 /**
+ * İsim gerçek bir kişi adı mı yoksa fallback (telefon formatı, LID yer tutucu vb.) mi?
+ * Fallback ise true → pushName/WAHA ismi ile güncellenmeli.
+ */
+export function isFallbackContactName(
+  name: string | null | undefined,
+  phone: string | null | undefined,
+): boolean {
+  if (!name?.trim()) return true;
+  const n = name.trim();
+
+  if (/^WhatsApp/i.test(n)) return true;
+
+  if (/^(Grup|WhatsApp Grubu)$/i.test(n)) return true;
+
+  const stripped = n.replace(/[\s+\-().·…]/g, '');
+  if (/^\d{7,15}$/.test(stripped)) return true;
+
+  if (phone) {
+    const phoneDigits = String(phone).replace(/\D/g, '');
+    if (phoneDigits && stripped === phoneDigits) return true;
+    if (phoneDigits.length >= 7) {
+      const formatted = formatPhoneDisplay(phone);
+      if (formatted && formatted !== '—' && n === formatted) return true;
+    }
+  }
+
+  return false;
+}
+
+/**
  * Telefon numarasını görüntüleme formatına çevir
  */
 export function formatPhoneDisplay(phone: string | null | undefined): string {

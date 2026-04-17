@@ -10,6 +10,7 @@ import {
   canonicalContactPhone,
   extractPhoneFromIndividualJid,
   formatPhoneDisplay,
+  isFallbackContactName,
   isValidPhoneNumber,
 } from '../../common/contact-phone';
 
@@ -442,19 +443,45 @@ export class ConversationsService {
       const current = await this.prisma.contact.findUnique({ where: { id: contactId } });
       if (!current) return;
 
-      if (!current.name?.trim() && !current.surname?.trim()) {
+      const needsName = isFallbackContactName(current.name, current.phone) && !current.surname?.trim();
+      const needsPhone = current.phone?.startsWith('lid:');
+      if (needsName || needsPhone) {
         const details = await this.wahaService.getContactDetails(sessionName, lidJid);
+        const updateData: { name?: string; phone?: string } = {};
+
         const waName = (
           details?.name ||
           details?.pushname ||
+          (details as any)?.notify ||
+          (details as any)?.verifiedName ||
           details?.shortName ||
           ''
         ).trim();
-        if (waName) {
-          await this.prisma.contact.update({
-            where: { id: contactId },
-            data: { name: waName },
-          });
+        if (waName && needsName) {
+          updateData.name = waName;
+        }
+
+        const waNumber = details?.number
+          ? String(details.number).replace(/\D/g, '')
+          : '';
+        if (waNumber && waNumber.length >= 7 && waNumber.length <= 15 && needsPhone) {
+          const phoneCanon = canonicalContactPhone(waNumber);
+          if (phoneCanon && isValidPhoneNumber(phoneCanon)) {
+            updateData.phone = phoneCanon;
+          }
+        }
+
+        if (Object.keys(updateData).length > 0) {
+          try {
+            await this.prisma.contact.update({
+              where: { id: contactId },
+              data: updateData,
+            });
+            if (updateData.phone) {
+              await this.enrichDmContactFromWaha(contactId, sessionName, organizationId, depth + 1);
+              return;
+            }
+          } catch { /* unique constraint — mevcut kaydı koru */ }
         }
       }
 
@@ -492,7 +519,7 @@ export class ConversationsService {
     const current = await this.prisma.contact.findUnique({ where: { id: effectiveId } });
     if (!current) return;
 
-    if (!current.name?.trim() && !current.surname?.trim()) {
+    if (isFallbackContactName(current.name, current.phone) && !current.surname?.trim()) {
       const details = await this.wahaService.getContactDetails(
         sessionName,
         `${waDigits}@c.us`,
@@ -500,6 +527,8 @@ export class ConversationsService {
       const waName = (
         details?.name ||
         details?.pushname ||
+        (details as any)?.notify ||
+        (details as any)?.verifiedName ||
         details?.shortName ||
         ''
       ).trim();

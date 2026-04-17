@@ -114,14 +114,26 @@ export function truncate(str: string, maxLength: number): string {
   return str.slice(0, maxLength) + '...';
 }
 
+function looksLikeFallbackName(name: string, phone: string | null | undefined): boolean {
+  if (/^WhatsApp/i.test(name)) return true;
+  const stripped = name.replace(/[\s+\-().·…]/g, '');
+  if (/^\d{7,15}$/.test(stripped)) return true;
+  if (phone) {
+    const pd = String(phone).replace(/\D/g, '');
+    if (pd && stripped === pd) return true;
+  }
+  return false;
+}
+
 /** Başlık: ad+soyad; yoksa formatlı telefon */
 export function getContactDisplayTitle(contact: {
   name?: string | null;
   surname?: string | null;
   phone?: string | null;
 }): string {
-  const t = [contact.name, contact.surname].filter(Boolean).join(' ').trim();
-  if (t) return t;
+  const parts = [contact.name, contact.surname].filter(Boolean).map(s => (s as string).trim()).filter(Boolean);
+  const t = parts.join(' ');
+  if (t && !looksLikeFallbackName(t, contact.phone)) return t;
   return formatPhone(contact.phone);
 }
 
