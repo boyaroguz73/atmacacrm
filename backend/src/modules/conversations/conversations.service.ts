@@ -8,6 +8,7 @@ import { WahaService } from '../waha/waha.service';
 import { ContactsService } from '../contacts/contacts.service';
 import {
   canonicalContactPhone,
+  contactPhoneLookupKeys,
   extractPhoneFromIndividualJid,
   formatPhoneDisplay,
   isValidPhoneNumber,
@@ -422,6 +423,20 @@ export class ConversationsService {
           canonicalContactPhone(pnJid.replace(/\D/g, '')) ||
           '';
         if (phoneCanon && isValidPhoneNumber(phoneCanon)) {
+          // Aynı numaraya sahip contact zaten varsa LID contact'ı ona merge et
+          const lookupKeys = contactPhoneLookupKeys(phoneCanon).filter(Boolean);
+          const existingPhoneContact = await this.prisma.contact.findFirst({
+            where: {
+              phone: { in: lookupKeys },
+              id: { not: contactId },
+            },
+          });
+
+          if (existingPhoneContact) {
+            await this.mergeLidContactIntoPhoneContact(contactId, existingPhoneContact.id);
+            return;
+          }
+
           try {
             await this.prisma.contact.update({
               where: { id: contactId },
@@ -489,6 +504,51 @@ export class ConversationsService {
     }
 
     await this.ensureContactDisplayNameFallback(effectiveId);
+  }
+
+  /**
+   * LID kontağını numara kontağına merge eder.
+   * LID'in conversation'larını numara kontağına taşır (aynı sessionId'de çakışma
+   * varsa mesajları birleştirir), sonra LID kontağını siler.
+   */
+  private async mergeLidContactIntoPhoneContact(
+    lidContactId: string,
+    phoneContactId: string,
+  ): Promise<void> {
+    try {
+      const lidConvs = await this.prisma.conversation.findMany({
+        where: { contactId: lidContactId },
+      });
+
+      for (const conv of lidConvs) {
+        const existing = await this.prisma.conversation.findFirst({
+          where: { contactId: phoneContactId, sessionId: conv.sessionId },
+        });
+
+        if (existing) {
+          // Mesajları mevcut conversation'a taşı (yinelenenler skipDuplicates ile)
+          await this.prisma.message.updateMany({
+            where: { conversationId: conv.id },
+            data: { conversationId: existing.id },
+          }).catch(() => {});
+          await this.prisma.assignment.updateMany({
+            where: { conversationId: conv.id },
+            data: { conversationId: existing.id },
+          }).catch(() => {});
+          await this.prisma.conversation.delete({ where: { id: conv.id } }).catch(() => {});
+        } else {
+          await this.prisma.conversation.update({
+            where: { id: conv.id },
+            data: { contactId: phoneContactId },
+          }).catch(() => {});
+        }
+      }
+
+      await this.prisma.contact.delete({ where: { id: lidContactId } }).catch(() => {});
+      this.logger.log(`LID contact ${lidContactId} → ${phoneContactId} merge edildi`);
+    } catch (e: any) {
+      this.logger.warn(`LID merge başarısız (${lidContactId}): ${e?.message}`);
+    }
   }
 
   /** WA isim yoksa listelerde boş kalmasın: görünen telefon veya LID kısaltması */
