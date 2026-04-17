@@ -713,7 +713,7 @@ export class WahaService implements OnModuleInit {
       const encChat = encodeURIComponent(fullChatId);
       const response = await this.http.get(
         `/api/${encSession}/chats/${encChat}/messages`,
-        { params: { limit: effectiveLimit, downloadMedia: true }, timeout: this.syncTimeoutMs },
+        { params: { limit: effectiveLimit, downloadMedia: false }, timeout: this.syncTimeoutMs },
       );
       return response.data || [];
     } catch (error: any) {

@@ -27,6 +27,14 @@ import {
   isFallbackContactName,
 } from '../../common/contact-phone';
 
+function splitPushName(displayName: string): { firstName: string; lastName: string | null } {
+  const parts = displayName.trim().split(/\s+/);
+  return {
+    firstName: parts[0],
+    lastName: parts.length > 1 ? parts.slice(1).join(' ') : null,
+  };
+}
+
 function extractGroupNameFromWahaMessage(msg: any): string {
   const candidates = [
     msg?.chat?.name,
@@ -201,11 +209,12 @@ export class WahaWebhookHandler {
           waSession.organizationId,
         );
 
-        if (displayName && isFallbackContactName(contact.name, contact.phone)) {
+        if (displayName && isFallbackContactName(contact.name, contact.phone) && !contact.surname?.trim()) {
+          const { firstName, lastName } = splitPushName(displayName);
           try {
             contact = await this.prisma.contact.update({
               where: { id: contact.id },
-              data: { name: displayName.trim() },
+              data: { name: firstName, surname: lastName },
             });
           } catch { /* unique constraint veya başka hata — mevcut kaydı koru */ }
         }
@@ -238,11 +247,12 @@ export class WahaWebhookHandler {
           waSession.organizationId,
         );
 
-        if (displayName && isFallbackContactName(contact.name, contact.phone)) {
+        if (displayName && isFallbackContactName(contact.name, contact.phone) && !contact.surname?.trim()) {
+          const { firstName, lastName } = splitPushName(displayName);
           try {
             contact = await this.prisma.contact.update({
               where: { id: contact.id },
-              data: { name: displayName.trim() },
+              data: { name: firstName, surname: lastName },
             });
           } catch { /* unique constraint — mevcut kaydı koru */ }
         }
@@ -283,8 +293,10 @@ export class WahaWebhookHandler {
           mediaUrl = await this.downloadAndSaveMedia(String(wahaStoredUrl), mediaMimeType);
         }
 
+        // Sadece msg.media.data kullan (tam boyutlu base64). msg._data.body ve msg.body
+        // WhatsApp Web.js'de thumbnail/caption; düşük çözünürlüklü önizleme olur.
         if (!mediaUrl) {
-          const base64Data = msg.media?.data || msg._data?.body || msg.body;
+          const base64Data = msg.media?.data;
           const looksB64 =
             typeof base64Data === 'string' &&
             base64Data.length > 80 &&
@@ -294,6 +306,16 @@ export class WahaWebhookHandler {
               base64Data.replace(/\s/g, ''),
               mediaMimeType,
             );
+          }
+        }
+
+        // URL/base64 yoksa mesaj ID'sini bekle — frontend /api/files/{session}/{msgId} ile tam boyutu çeker
+        if (!mediaUrl) {
+          const rawId = msg.id?._serialized || msg.id?.id || msg.id;
+          const waMessageId = typeof rawId === 'string' ? rawId : String(rawId ?? '');
+          if (waMessageId) {
+            const ext = this.getExtFromMime(mediaMimeType);
+            mediaUrl = `/api/files/${sessionName}/${waMessageId}${ext}`;
           }
         }
 
