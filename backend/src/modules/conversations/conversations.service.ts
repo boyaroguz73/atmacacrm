@@ -445,6 +445,7 @@ export class ConversationsService {
       waNameField ||
       waShort
     ).trim();
+    const phoneFallbackName = formatPhoneDisplay(current.phone || waDigits);
 
     const shouldReplaceName =
       isFallbackContactName(current.name, current.phone) ||
@@ -455,10 +456,10 @@ export class ConversationsService {
         current.name.trim() === waNameField &&
         waPush !== waNameField);
 
-    if (waName && shouldReplaceName) {
+    if ((waName || phoneFallbackName) && shouldReplaceName) {
       await this.prisma.contact.update({
         where: { id: effectiveId },
-        data: { name: waName },
+        data: { name: waName || phoneFallbackName || null },
       });
     }
 

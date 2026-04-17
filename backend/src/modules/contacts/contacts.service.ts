@@ -99,7 +99,7 @@ export class ContactsService {
     return this.prisma.contact.create({
       data: { 
         phone: primary, 
-        name: (name && name.trim()) || null,
+        name: (name && name.trim()) || formatPhoneDisplay(primary) || null,
         organizationId: organizationId || null,
       },
     });

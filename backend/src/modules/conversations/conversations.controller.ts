@@ -309,6 +309,7 @@ export class ConversationsController {
         conversation.contact.id,
         rawPhone,
         sessionName,
+        conversation.session.id,
       );
       if (!resolved) {
         return { synced: 0, message: 'LID numara çözümlenemedi', conversationId: id };
@@ -562,6 +563,7 @@ export class ConversationsController {
     contactId: string,
     lidPhone: string,
     sessionName: string,
+    sessionId?: string,
   ): Promise<string | null> {
     const lidDigits = String(lidPhone).replace(/\D/g, '');
     if (!lidDigits) return null;
@@ -594,12 +596,78 @@ export class ConversationsController {
           if (!existing) throw e;
         }
         this.logger.log(`LID telefon çözümlendi: ${lidDigits} → ${realPhone}`);
+        if (sessionId) {
+          await this.mergeLidConversationsIntoResolvedContact(
+            contactId,
+            realPhone,
+            sessionId,
+          );
+        }
         return realPhone;
       }
     } catch (e: any) {
       this.logger.debug(`LID çözümleme hatası (${lidDigits}): ${e?.message}`);
     }
     return null;
+  }
+
+  private async mergeLidConversationsIntoResolvedContact(
+    sourceContactId: string,
+    resolvedPhone: string,
+    sessionId: string,
+  ): Promise<void> {
+    const targetContact = await this.prisma.contact.findFirst({
+      where: { phone: resolvedPhone },
+      select: { id: true },
+    });
+    if (!targetContact || targetContact.id === sourceContactId) return;
+
+    const sourceConversations = await this.prisma.conversation.findMany({
+      where: { contactId: sourceContactId, sessionId, isGroup: false },
+      select: { id: true, lastMessageAt: true, lastMessageText: true, unreadCount: true },
+    });
+
+    for (const sourceConv of sourceConversations) {
+      const targetConv = await this.prisma.conversation.findFirst({
+        where: { contactId: targetContact.id, sessionId, isGroup: false },
+        select: { id: true },
+      });
+      if (!targetConv) {
+        await this.prisma.conversation
+          .update({
+            where: { id: sourceConv.id },
+            data: { contactId: targetContact.id },
+          })
+          .catch(() => {});
+        continue;
+      }
+      if (targetConv.id === sourceConv.id) continue;
+
+      await this.prisma.$transaction(async (tx) => {
+        await tx.message.updateMany({
+          where: { conversationId: sourceConv.id },
+          data: { conversationId: targetConv.id },
+        });
+        await tx.assignment.updateMany({
+          where: { conversationId: sourceConv.id },
+          data: { conversationId: targetConv.id },
+        });
+        await tx.internalNote.updateMany({
+          where: { conversationId: sourceConv.id },
+          data: { conversationId: targetConv.id },
+        });
+        await tx.conversation.update({
+          where: { id: targetConv.id },
+          data: {
+            lastMessageAt: sourceConv.lastMessageAt,
+            lastMessageText: sourceConv.lastMessageText || undefined,
+            unreadCount: { increment: sourceConv.unreadCount || 0 },
+          },
+        });
+        await tx.conversation.delete({ where: { id: sourceConv.id } });
+      });
+      this.logger.log(`LID konuşma birleştirildi: source=${sourceConv.id}, target=${targetConv.id}`);
+    }
   }
 
   private async processInBatches<T>(
@@ -647,7 +715,7 @@ export class ConversationsController {
         if (actualLidContacts.length > 0) {
           this.logger.log(`${actualLidContacts.length} LID telefonlu kişi bulundu, çözümleniyor...`);
           await this.processInBatches(actualLidContacts, 3, async (c) => {
-            const resolved = await this.tryResolveLidPhone(c.id, c.phone, session.name);
+            const resolved = await this.tryResolveLidPhone(c.id, c.phone, session.name, session.id);
             if (resolved) lidResolved++;
           });
           this.logger.log(`${lidResolved} LID telefon gerçek numaraya çevrildi`);
