@@ -100,6 +100,15 @@ export class MessageSyncScheduler implements OnModuleInit {
                 session.id,
               );
 
+              // Incremental: WAHA'daki son mesaj zamani DB'dekinden yeni degilse atla
+              const chatTimestampMs = chat.timestamp ? Number(chat.timestamp) * 1000 : 0;
+              const lastKnownMs = conversation.lastMessageAt
+                ? new Date(conversation.lastMessageAt).getTime()
+                : 0;
+              if (chatTimestampMs && lastKnownMs && chatTimestampMs <= lastKnownMs) {
+                continue;
+              }
+
               const result = await this.controller.syncMessagesCore(conversation.id);
               totalSynced += result.synced;
               if (result.synced > 0) totalConversations++;
