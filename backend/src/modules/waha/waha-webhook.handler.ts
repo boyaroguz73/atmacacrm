@@ -288,28 +288,15 @@ export class WahaWebhookHandler {
         else if (msg.type === 'audio' || msg.type === 'ptt') mediaType = 'AUDIO';
         else if (msg.hasMedia || msg.type === 'document') mediaType = 'DOCUMENT';
 
+        // WAHA tam boyutlu URL varsa indirip local'e kaydet
         const wahaStoredUrl = msg.media?.url || msg.mediaUrl || msg._data?.mediaUrl;
         if (wahaStoredUrl) {
           mediaUrl = await this.downloadAndSaveMedia(String(wahaStoredUrl), mediaMimeType);
         }
 
-        // Sadece msg.media.data kullan (tam boyutlu base64). msg._data.body ve msg.body
-        // WhatsApp Web.js'de thumbnail/caption; düşük çözünürlüklü önizleme olur.
-        if (!mediaUrl) {
-          const base64Data = msg.media?.data;
-          const looksB64 =
-            typeof base64Data === 'string' &&
-            base64Data.length > 80 &&
-            /^[A-Za-z0-9+/=\s]+$/.test(base64Data.replace(/\s/g, ''));
-          if (base64Data && looksB64) {
-            mediaUrl = await this.saveBase64Media(
-              base64Data.replace(/\s/g, ''),
-              mediaMimeType,
-            );
-          }
-        }
-
-        // URL/base64 yoksa mesaj ID'sini bekle — frontend /api/files/{session}/{msgId} ile tam boyutu çeker
+        // URL yoksa files proxy kullan — frontend acildiginda WAHA'dan tam boyutu ceker.
+        // Webhook'tan gelen base64 (msg.media.data / _data.body / body) genelde thumbnail olup
+        // dusuk cozunurluk uretir, bu yuzden base64 fallback tamamen devre disi.
         if (!mediaUrl) {
           const rawId = msg.id?._serialized || msg.id?.id || msg.id;
           const waMessageId = typeof rawId === 'string' ? rawId : String(rawId ?? '');

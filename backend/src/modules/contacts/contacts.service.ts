@@ -45,13 +45,22 @@ export class ContactsService {
         }
         return existing;
       }
-      return this.prisma.contact.create({
-        data: {
-          phone: raw,
-          name: name?.trim() || null,
-          organizationId: organizationId || null,
-        },
-      });
+      try {
+        return await this.prisma.contact.create({
+          data: {
+            phone: raw,
+            name: name?.trim() || null,
+            organizationId: organizationId || null,
+          },
+        });
+      } catch (e) {
+        // Race condition: paralel webhook aynı phone'u yarattı; mevcut olanı dön
+        if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
+          const again = await this.prisma.contact.findFirst({ where: { phone: raw } });
+          if (again) return again;
+        }
+        throw e;
+      }
     }
 
     const keys = contactPhoneLookupKeys(phone).filter(Boolean);
@@ -96,13 +105,24 @@ export class ContactsService {
       return this.prisma.contact.findUniqueOrThrow({ where: { id: existing.id } });
     }
 
-    return this.prisma.contact.create({
-      data: { 
-        phone: primary, 
-        name: (name && name.trim()) || null,
-        organizationId: organizationId || null,
-      },
-    });
+    try {
+      return await this.prisma.contact.create({
+        data: {
+          phone: primary,
+          name: (name && name.trim()) || null,
+          organizationId: organizationId || null,
+        },
+      });
+    } catch (e) {
+      // Race condition: paralel webhook/sync aynı phone'u yarattı; mevcut olanı dön
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
+        const again = await this.prisma.contact.findFirst({
+          where: { phone: { in: keys } },
+        });
+        if (again) return again;
+      }
+      throw e;
+    }
   }
 
   /**
