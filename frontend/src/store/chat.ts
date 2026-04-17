@@ -218,8 +218,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
           const freshMsgs = msgRes.data.messages || [];
           const conv = convRes.data;
           set((state) => {
+            const stillViewing = state.activeConversation?.id === conversationId;
             const patchActive =
-              state.activeConversation?.id === conversationId && conv
+              stillViewing && conv
                 ? {
                     activeConversation: {
                       ...state.activeConversation,
@@ -236,7 +237,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
                 )
               : state.conversations;
             return {
-              messages: freshMsgs,
+              ...(stillViewing ? { messages: freshMsgs } : {}),
               ...patchActive,
               conversations,
             };

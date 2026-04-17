@@ -23,6 +23,9 @@ import {
 import {
   canonicalContactPhone,
   contactPhoneLookupKeys,
+  isLikelyLidPhone,
+  isValidPhoneNumber,
+  extractPhoneFromIndividualJid,
 } from '../../common/contact-phone';
 import { ConversationsService } from './conversations.service';
 import { WahaService } from '../waha/waha.service';
@@ -297,8 +300,20 @@ export class ConversationsController {
       };
     }
 
-    const rawPhone = conversation.contact.phone;
+    let rawPhone = conversation.contact.phone;
     const sessionName = conversation.session.name;
+
+    if (isLikelyLidPhone(rawPhone)) {
+      const resolved = await this.tryResolveLidPhone(
+        conversation.contact.id,
+        rawPhone,
+        sessionName,
+      );
+      if (!resolved) {
+        return { synced: 0, message: 'LID numara çözümlenemedi' };
+      }
+      rawPhone = resolved;
+    }
 
     const waDigits =
       this.contactsService.digitsForWahaProfile(rawPhone) ||
@@ -470,6 +485,41 @@ export class ConversationsController {
     return result;
   }
 
+  private async tryResolveLidPhone(
+    contactId: string,
+    lidPhone: string,
+    sessionName: string,
+  ): Promise<string | null> {
+    const lidDigits = String(lidPhone).replace(/\D/g, '');
+    if (!lidDigits) return null;
+    try {
+      const lidJid = `${lidDigits}@lid`;
+      const pnJid = await this.wahaService.getLinkedPnFromLid(sessionName, lidJid).catch(() => null);
+      let realPhone: string | null = null;
+      if (pnJid) {
+        realPhone = extractPhoneFromIndividualJid(pnJid);
+      }
+      if (!realPhone) {
+        const details = await this.wahaService.getContactDetails(sessionName, lidJid).catch(() => null);
+        const waNumber = details?.number ? String(details.number).replace(/\D/g, '') : '';
+        if (waNumber && waNumber !== lidDigits && !isLikelyLidPhone(waNumber)) {
+          realPhone = canonicalContactPhone(waNumber);
+        }
+      }
+      if (realPhone && isValidPhoneNumber(realPhone) && !isLikelyLidPhone(realPhone)) {
+        await this.prisma.contact.update({
+          where: { id: contactId },
+          data: { phone: realPhone },
+        }).catch(() => {});
+        this.logger.log(`LID telefon çözümlendi: ${lidDigits} → ${realPhone}`);
+        return realPhone;
+      }
+    } catch (e: any) {
+      this.logger.debug(`LID çözümleme hatası (${lidDigits}): ${e?.message}`);
+    }
+    return null;
+  }
+
   private async processInBatches<T>(
     items: T[],
     batchSize: number,
@@ -497,9 +547,30 @@ export class ConversationsController {
     let totalSynced = 0;
     let updatedConversations = 0;
     let skippedConversations = 0;
+    let lidResolved = 0;
 
     for (const session of sessions) {
       try {
+        const lidContacts = await this.prisma.contact.findMany({
+          where: {
+            conversations: { some: { sessionId: session.id } },
+            NOT: [
+              { phone: { startsWith: 'group:' } },
+              { phone: { startsWith: 'lid:' } },
+            ],
+          },
+          select: { id: true, phone: true },
+        });
+        const actualLidContacts = lidContacts.filter(c => isLikelyLidPhone(c.phone));
+        if (actualLidContacts.length > 0) {
+          this.logger.log(`${actualLidContacts.length} LID telefonlu kişi bulundu, çözümleniyor...`);
+          await this.processInBatches(actualLidContacts, 3, async (c) => {
+            const resolved = await this.tryResolveLidPhone(c.id, c.phone, session.name);
+            if (resolved) lidResolved++;
+          });
+          this.logger.log(`${lidResolved} LID telefon gerçek numaraya çevrildi`);
+        }
+
         const chats = await this.wahaService.getChats(session.name);
         this.logger.log(
           `WAHA'dan ${chats.length} chat alındı (${session.name})`,
@@ -647,14 +718,15 @@ export class ConversationsController {
     }
 
     this.logger.log(
-      `Tam senkronizasyon: ${totalSynced} mesaj, ${updatedConversations} güncellenen, ${skippedConversations} atlanan konuşma`,
+      `Tam senkronizasyon: ${totalSynced} mesaj, ${updatedConversations} güncellenen, ${skippedConversations} atlanan konuşma, ${lidResolved} LID çözümlendi`,
     );
 
     return {
       totalSynced,
       updatedConversations,
       skippedConversations,
-      message: `${totalSynced} mesaj senkronize edildi, ${updatedConversations} konuşma güncellendi, ${skippedConversations} atlandı`,
+      lidResolved,
+      message: `${totalSynced} mesaj senkronize edildi, ${updatedConversations} konuşma güncellendi, ${skippedConversations} atlandı, ${lidResolved} LID çözümlendi`,
     };
   }
 
