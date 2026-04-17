@@ -21,8 +21,7 @@ import {
   extractPhoneFromIndividualJid,
   extractPhoneFromParticipant,
   isValidPhoneNumber,
-  isLidChat,
-  lidJidToContactPhone,
+  canonicalContactPhone,
   contactPhoneLookupKeys,
   isFallbackContactName,
 } from '../../common/contact-phone';
@@ -123,7 +122,7 @@ export class WahaWebhookHandler {
           msg.pushName ||
           msg._data?.notifyName ||
           msg._data?.pushName ||
-          (typeof rawParticipant === 'string' && /@lid$/i.test(rawParticipant) ? 'WhatsApp kullanıcısı' : null);
+          null;
 
         let groupName = extractGroupNameFromWahaMessage(msg);
         if (!groupName) {
@@ -141,11 +140,7 @@ export class WahaWebhookHandler {
         }
 
         // Kayıtlı müşteri adı (TR numara) — grup mesajında gönderen satırı
-        if (
-          participantPhone &&
-          !participantPhone.startsWith('lid:') &&
-          !participantName
-        ) {
+        if (participantPhone && !participantName) {
           const keys = contactPhoneLookupKeys(participantPhone);
           const peer = await this.prisma.contact.findFirst({
             where: { phone: { in: keys } },
@@ -155,17 +150,6 @@ export class WahaWebhookHandler {
             participantName = [peer.name, peer.surname].filter(Boolean).join(' ') || null;
           }
         }
-        if (participantPhone?.startsWith('lid:') && !participantName) {
-          const lidPeer = await this.prisma.contact.findFirst({
-            where: { phone: participantPhone },
-            select: { name: true, surname: true },
-          });
-          if (lidPeer?.name || lidPeer?.surname) {
-            participantName =
-              [lidPeer.name, lidPeer.surname].filter(Boolean).join(' ') || null;
-          }
-        }
-
         // Grup için placeholder contact oluştur/bul
         contact = await this.contactsService.findOrCreateForGroup(
           chatId,
@@ -184,19 +168,30 @@ export class WahaWebhookHandler {
         this.logger.debug(
           `Grup mesajı: ${chatId} | Gönderen: ${participantPhone || 'bilinmiyor'} (${participantName || 'adsız'})`,
         );
-      } else if (isLidChat(chatId)) {
+      } else if (/@lid$/i.test(chatId)) {
         // ─────────────────────────────────────────────────────────────
-        // LID (@lid) — WhatsApp iç kimliği; numara yerine lid:… anahtarı + pushName
+        // LID → telefona çevir, başarısızsa atla
         // ─────────────────────────────────────────────────────────────
-        const lidKey = lidJidToContactPhone(chatId);
-        if (!lidKey) {
-          this.logger.warn(`LID çıkarılamadı: ${chatId}`);
+        const pnJid = await this.wahaService.getLinkedPnFromLid(sessionName, chatId).catch(() => null);
+        if (pnJid) {
+          phone = extractPhoneFromIndividualJid(pnJid);
+        }
+        if (!phone) {
+          const details = await this.wahaService.getContactDetails(sessionName, chatId).catch(() => null);
+          const waNumber = details?.number ? String(details.number).replace(/\D/g, '') : '';
+          if (waNumber && waNumber.length >= 7 && waNumber.length <= 15) {
+            phone = canonicalContactPhone(waNumber);
+          }
+        }
+        if (!phone || !isValidPhoneNumber(phone)) {
+          this.logger.debug(`LID telefona çevrilemedi, atlanıyor: ${chatId}`);
           return;
         }
+
         const displayName =
           msg.pushName || msg._data?.notifyName || msg.notifyName || undefined;
         contact = await this.contactsService.findOrCreate(
-          lidKey,
+          phone,
           displayName,
           waSession.organizationId,
         );
@@ -207,7 +202,11 @@ export class WahaWebhookHandler {
               where: { id: contact.id },
               data: { name: displayName.trim() },
             });
-          } catch { /* unique constraint veya başka hata — mevcut kaydı koru */ }
+          } catch {}
+        }
+
+        if (!contact.avatarUrl) {
+          this.fetchAndSaveAvatar(sessionName, phone, contact.id).catch(() => {});
         }
 
         conversation = await this.conversationsService.findOrCreate(

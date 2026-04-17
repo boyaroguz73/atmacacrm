@@ -50,18 +50,6 @@ export function isProcessableChat(jid: string): boolean {
   return type === 'individual' || type === 'group' || type === 'lid';
 }
 
-/** WhatsApp LID (@lid) sohbeti — kişi anahtarı `lid:<rakamlar>` */
-export function isLidChat(jid: string): boolean {
-  return getWhatsAppJidType(jid) === 'lid';
-}
-
-/** 123456789012345@lid → lid:123456789012345 (contact.phone için) */
-export function lidJidToContactPhone(jid: string): string | null {
-  if (!isLidChat(jid)) return null;
-  const m = String(jid).trim().match(/^(\d+)@lid$/i);
-  return m ? `lid:${m[1]}` : null;
-}
-
 /**
  * Telefon numarasının geçerli E.164 formatına yakın olup olmadığını kontrol et
  * (7-15 rakam, genellikle ülke kodu ile başlar)
@@ -116,14 +104,8 @@ export function extractPhoneFromParticipant(participant: string | undefined | nu
   if (!participant) return null;
 
   const raw = String(participant).trim();
-  // Yeni WhatsApp: gönderen @lid ile gelebilir (telefon yerine iç kimlik)
-  if (/@lid$/i.test(raw)) {
-    const digits = raw.replace(/@lid$/i, '').replace(/\D/g, '');
-    return digits ? `lid:${digits}` : null;
-  }
+  if (/@lid$/i.test(raw)) return null;
 
-  // Participant genellikle 905551234567@c.us formatında
-  // veya sadece 905551234567 olabilir
   const cleaned = raw.replace(/@.*$/, '').replace(/\D/g, '');
   if (!cleaned) return null;
 

@@ -300,24 +300,14 @@ export class ConversationsController {
     const rawPhone = conversation.contact.phone;
     const sessionName = conversation.session.name;
 
-    let chatIdForWaha: string;
-    if (rawPhone.startsWith('lid:')) {
-      const lidDigits = rawPhone.slice(4).replace(/\D/g, '');
-      chatIdForWaha = lidDigits ? `${lidDigits}@lid` : '';
-    } else {
-      const waDigits =
-        this.contactsService.digitsForWahaProfile(rawPhone) ||
-        canonicalContactPhone(rawPhone) ||
-        '';
-      if (!waDigits || !/^\d{10,15}$/.test(waDigits)) {
-        return { synced: 0, message: 'Geçersiz telefon veya kimlik' };
-      }
-      chatIdForWaha = `${waDigits}@c.us`;
-    }
-
-    if (!chatIdForWaha) {
+    const waDigits =
+      this.contactsService.digitsForWahaProfile(rawPhone) ||
+      canonicalContactPhone(rawPhone) ||
+      '';
+    if (!waDigits || !/^\d{10,15}$/.test(waDigits)) {
       return { synced: 0, message: 'Geçersiz telefon veya kimlik' };
     }
+    const chatIdForWaha = `${waDigits}@c.us`;
 
     const wahaMessages = await this.wahaService.getChatMessages(
       sessionName,
@@ -621,12 +611,6 @@ export class ConversationsController {
             const result = await this.syncMessagesCore(task.conversationId);
             totalSynced += result.synced;
             if (result.synced > 0) updatedConversations++;
-
-            try {
-              await this.conversationsService.enrichConversationContactFromWaha(
-                task.conversationId,
-              );
-            } catch {}
 
             if (!task.hasAvatar) {
               try {

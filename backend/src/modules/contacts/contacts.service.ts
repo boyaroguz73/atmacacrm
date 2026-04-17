@@ -29,7 +29,7 @@ export class ContactsService {
 
   async findOrCreate(phone: string, name?: string, organizationId?: string | null) {
     const raw = String(phone ?? '').trim();
-    if (raw.startsWith('lid:') || raw.startsWith('group:')) {
+    if (raw.startsWith('group:')) {
       const existing = await this.prisma.contact.findFirst({ where: { phone: raw } });
       if (existing) {
         const nm = name?.trim();

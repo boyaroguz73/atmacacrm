@@ -63,10 +63,6 @@ export function phoneToWhatsappChatId(phone: string | null | undefined): string 
 export function formatPhone(phone: string | null | undefined): string {
   if (phone == null || phone === '') return '—';
   const raw = String(phone).trim();
-  if (raw.toLowerCase().startsWith('lid:')) {
-    const id = raw.slice(4).replace(/\D/g, '');
-    return id.length ? `WhatsApp · …${id.slice(-4)}` : 'WhatsApp (LID)';
-  }
   if (raw.toLowerCase().startsWith('group:')) {
     return 'WhatsApp Grubu';
   }

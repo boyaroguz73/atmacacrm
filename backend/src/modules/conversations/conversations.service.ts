@@ -394,114 +394,17 @@ export class ConversationsService {
   }
 
   /**
-   * Bireysel DM: @c.us için 90… kanonik; LID için önce pn→telefon, yoksa @lid ile isim/foto.
+   * Bireysel DM: WAHA'dan isim / profil fotoğrafı çekip contact'ı günceller.
    */
   private async enrichDmContactFromWaha(
     contactId: string,
     sessionName: string,
     organizationId: string | null,
-    depth = 0,
   ): Promise<void> {
-    if (depth > 2) return;
-
     const row = await this.prisma.contact.findUnique({ where: { id: contactId } });
     if (!row) return;
     const p = row.phone;
-    if (!p || p.startsWith('group:')) return;
-
-    if (p.startsWith('lid:')) {
-      const lidDigits = p.slice(4).replace(/\D/g, '');
-      if (!lidDigits) return;
-      const lidJid = `${lidDigits}@lid`;
-
-      const pnJid = await this.wahaService.getLinkedPnFromLid(sessionName, lidJid);
-      if (pnJid) {
-        const extracted = extractPhoneFromIndividualJid(pnJid);
-        const phoneCanon =
-          extracted ||
-          canonicalContactPhone(pnJid.replace(/\D/g, '')) ||
-          '';
-        if (phoneCanon && isValidPhoneNumber(phoneCanon)) {
-          try {
-            await this.prisma.contact.update({
-              where: { id: contactId },
-              data: { phone: phoneCanon },
-            });
-          } catch {
-            return;
-          }
-          await this.enrichDmContactFromWaha(
-            contactId,
-            sessionName,
-            organizationId,
-            depth + 1,
-          );
-          return;
-        }
-      }
-
-      const current = await this.prisma.contact.findUnique({ where: { id: contactId } });
-      if (!current) return;
-
-      const needsName = isFallbackContactName(current.name, current.phone) && !current.surname?.trim();
-      const needsPhone = current.phone?.startsWith('lid:');
-      if (needsName || needsPhone) {
-        const details = await this.wahaService.getContactDetails(sessionName, lidJid);
-        const updateData: { name?: string; phone?: string } = {};
-
-        const waName = (
-          details?.name ||
-          details?.pushname ||
-          (details as any)?.notify ||
-          (details as any)?.verifiedName ||
-          details?.shortName ||
-          ''
-        ).trim();
-        if (waName && needsName) {
-          updateData.name = waName;
-        }
-
-        const waNumber = details?.number
-          ? String(details.number).replace(/\D/g, '')
-          : '';
-        if (waNumber && waNumber.length >= 7 && waNumber.length <= 15 && needsPhone) {
-          const phoneCanon = canonicalContactPhone(waNumber);
-          if (phoneCanon && isValidPhoneNumber(phoneCanon)) {
-            updateData.phone = phoneCanon;
-          }
-        }
-
-        if (Object.keys(updateData).length > 0) {
-          try {
-            await this.prisma.contact.update({
-              where: { id: contactId },
-              data: updateData,
-            });
-            if (updateData.phone) {
-              await this.enrichDmContactFromWaha(contactId, sessionName, organizationId, depth + 1);
-              return;
-            }
-          } catch { /* unique constraint — mevcut kaydı koru */ }
-        }
-      }
-
-      const afterName = await this.prisma.contact.findUnique({
-        where: { id: contactId },
-        select: { avatarUrl: true },
-      });
-      if (!afterName?.avatarUrl) {
-        const picUrl = await this.wahaService.getProfilePicture(sessionName, lidJid);
-        if (picUrl) {
-          await this.contactsService.fetchAndSaveProfilePicture(
-            contactId,
-            `lid_${lidDigits}`,
-            picUrl,
-          );
-        }
-      }
-      await this.ensureContactDisplayNameFallback(contactId);
-      return;
-    }
+    if (!p || p.startsWith('group:') || p.startsWith('lid:')) return;
 
     const merged = await this.contactsService.findOrCreate(
       p,
@@ -558,7 +461,7 @@ export class ConversationsService {
     await this.ensureContactDisplayNameFallback(effectiveId);
   }
 
-  /** WA isim yoksa listelerde boş kalmasın: görünen telefon veya LID kısaltması */
+  /** WA isim yoksa listelerde boş kalmasın: görünen telefon */
   private async ensureContactDisplayNameFallback(contactRowId: string): Promise<void> {
     const row = await this.prisma.contact.findUnique({
       where: { id: contactRowId },
@@ -567,17 +470,6 @@ export class ConversationsService {
     if (!row || row.name?.trim() || row.surname?.trim()) return;
     const p = row.phone;
     if (!p || p.startsWith('group:')) return;
-
-    if (p.startsWith('lid:')) {
-      const d = p.slice(4).replace(/\D/g, '');
-      await this.prisma.contact
-        .update({
-          where: { id: contactRowId },
-          data: { name: d ? `WhatsApp · …${d.slice(-4)}` : 'WhatsApp' },
-        })
-        .catch(() => {});
-      return;
-    }
 
     const label = formatPhoneDisplay(p);
     if (label && label !== '—') {

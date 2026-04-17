@@ -35,9 +35,9 @@ export class WahaService implements OnModuleInit {
     const rawKey = this.config.get<string>('WAHA_API_KEY', '') ?? '';
     const apiKey = typeof rawKey === 'string' ? rawKey.trim() : '';
 
-    this.syncChatLimit = parseInt(this.config.get('SYNC_CHAT_LIMIT', '99999'), 10);
-    this.syncMessageLimit = parseInt(this.config.get('SYNC_MESSAGE_LIMIT', '99999'), 10);
-    this.syncTimeoutMs = parseInt(this.config.get('SYNC_TIMEOUT_MS', '60000'), 10);
+    this.syncChatLimit = parseInt(this.config.get('SYNC_CHAT_LIMIT', '200'), 10);
+    this.syncMessageLimit = parseInt(this.config.get('SYNC_MESSAGE_LIMIT', '200'), 10);
+    this.syncTimeoutMs = parseInt(this.config.get('SYNC_TIMEOUT_MS', '120000'), 10);
 
     this.http = axios.create({
       baseURL,
@@ -751,7 +751,7 @@ export class WahaService implements OnModuleInit {
   async getChats(sessionName: string, limit?: number): Promise<any[]> {
     const effectiveLimit = limit ?? this.syncChatLimit;
     try {
-      const response = await this.http.get(`/api/${sessionName}/chats`, {
+      const response = await this.http.get(`/api/${encodeURIComponent(sessionName)}/chats`, {
         params: { limit: effectiveLimit },
         timeout: this.syncTimeoutMs,
       });
