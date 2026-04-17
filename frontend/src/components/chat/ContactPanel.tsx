@@ -3,7 +3,11 @@
 import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import api from '@/lib/api';
-import { formatPhone } from '@/lib/utils';
+import {
+  formatPhone,
+  getContactDisplayTitle,
+  getContactSecondaryPhoneLine,
+} from '@/lib/utils';
 import {
   X,
   User,
@@ -135,6 +139,17 @@ export default function ContactPanel({
     fetchNotes();
   }, [fetchContact, fetchAgents, fetchNotes]);
 
+  /** Gelen kutusundan gelen güncel telefon / avatar / isim */
+  useEffect(() => {
+    setContact((prev) => ({ ...prev, ...initialContact }));
+  }, [
+    initialContact.id,
+    initialContact.phone,
+    initialContact.name,
+    initialContact.surname,
+    initialContact.avatarUrl,
+  ]);
+
   useEffect(() => {
     api
       .get('/ecommerce/status')
@@ -187,6 +202,7 @@ export default function ContactPanel({
   };
 
   const ecommerceLinked = !!getEcommerceCustomerLabel(contact.metadata);
+  const secondaryPhoneLine = getContactSecondaryPhoneLine(contact);
   const canTsoftCreate =
     ecommerceStatus?.canPushCustomer &&
     !ecommerceLinked &&
@@ -348,12 +364,12 @@ export default function ContactPanel({
                     </div>
                   ) : (
                     <p className="font-semibold text-gray-900 truncate">
-                      {[contact.name, contact.surname].filter(Boolean).join(' ') || formatPhone(contact.phone)}
+                      {getContactDisplayTitle(contact)}
                     </p>
                   )}
-                  <p className="text-xs text-gray-400 truncate">
-                    {formatPhone(contact.phone)}
-                  </p>
+                  {secondaryPhoneLine ? (
+                    <p className="text-xs text-gray-400 truncate">{secondaryPhoneLine}</p>
+                  ) : null}
                   <div className="mt-1.5">
                     <EcommerceCustomerBadge metadata={contact.metadata} />
                   </div>
@@ -395,7 +411,7 @@ export default function ContactPanel({
               <div className="space-y-2.5 text-sm">
                 <div className="flex items-center gap-2.5 text-gray-600">
                   <Phone className="w-3.5 h-3.5 text-gray-400" />
-                  <span>{formatPhone(contact.phone)}</span>
+                  <span className="break-all">{formatPhone(contact.phone)}</span>
                 </div>
                 {editing ? (
                   <>

@@ -113,3 +113,29 @@ export function truncate(str: string, maxLength: number): string {
   if (str.length <= maxLength) return str;
   return str.slice(0, maxLength) + '...';
 }
+
+/** Başlık: ad+soyad; yoksa formatlı telefon */
+export function getContactDisplayTitle(contact: {
+  name?: string | null;
+  surname?: string | null;
+  phone?: string | null;
+}): string {
+  const t = [contact.name, contact.surname].filter(Boolean).join(' ').trim();
+  if (t) return t;
+  return formatPhone(contact.phone);
+}
+
+const normLabel = (s: string) => s.replace(/\s+/g, ' ').trim();
+
+/** Alt satırda telefon: başlık telefon metniyle aynı değilse göster */
+export function getContactSecondaryPhoneLine(contact: {
+  name?: string | null;
+  surname?: string | null;
+  phone?: string | null;
+}): string | null {
+  const phone = formatPhone(contact.phone);
+  if (!phone || phone === '—') return null;
+  const title = getContactDisplayTitle(contact);
+  if (normLabel(title) === normLabel(phone)) return null;
+  return phone;
+}

@@ -9,6 +9,7 @@ import { ContactsService } from '../contacts/contacts.service';
 import {
   canonicalContactPhone,
   extractPhoneFromIndividualJid,
+  formatPhoneDisplay,
   isValidPhoneNumber,
 } from '../../common/contact-phone';
 
@@ -471,6 +472,7 @@ export class ConversationsService {
           );
         }
       }
+      await this.ensureContactDisplayNameFallback(contactId);
       return;
     }
 
@@ -522,6 +524,40 @@ export class ConversationsService {
           picUrl,
         );
       }
+    }
+
+    await this.ensureContactDisplayNameFallback(effectiveId);
+  }
+
+  /** WA isim yoksa listelerde boş kalmasın: görünen telefon veya LID kısaltması */
+  private async ensureContactDisplayNameFallback(contactRowId: string): Promise<void> {
+    const row = await this.prisma.contact.findUnique({
+      where: { id: contactRowId },
+      select: { name: true, surname: true, phone: true },
+    });
+    if (!row || row.name?.trim() || row.surname?.trim()) return;
+    const p = row.phone;
+    if (!p || p.startsWith('group:')) return;
+
+    if (p.startsWith('lid:')) {
+      const d = p.slice(4).replace(/\D/g, '');
+      await this.prisma.contact
+        .update({
+          where: { id: contactRowId },
+          data: { name: d ? `WhatsApp · …${d.slice(-4)}` : 'WhatsApp' },
+        })
+        .catch(() => {});
+      return;
+    }
+
+    const label = formatPhoneDisplay(p);
+    if (label && label !== '—') {
+      await this.prisma.contact
+        .update({
+          where: { id: contactRowId },
+          data: { name: label },
+        })
+        .catch(() => {});
     }
   }
 

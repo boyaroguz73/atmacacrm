@@ -1,7 +1,13 @@
 'use client';
 
 import { useChatStore } from '@/store/chat';
-import { cn, formatDate, truncate, formatPhone } from '@/lib/utils';
+import {
+  cn,
+  formatDate,
+  truncate,
+  formatPhone,
+  getContactDisplayTitle,
+} from '@/lib/utils';
 import { LEAD_STATUS_LABELS, LEAD_STATUS_COLORS } from '@/lib/constants';
 import { Search, Inbox, Users } from 'lucide-react';
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
@@ -205,7 +211,7 @@ export default function ConversationList() {
                     <span className="truncate">
                       {conv.isGroup 
                         ? (conv.groupName || conv.contact?.name || 'WhatsApp Grubu')
-                        : ([conv.contact.name, conv.contact.surname].filter(Boolean).join(' ') || formatPhone(conv.contact.phone))
+                        : getContactDisplayTitle(conv.contact)
                       }
                     </span>
                     {!conv.isGroup && <EcommerceCustomerBadge metadata={conv.contact.metadata} />}

@@ -36,23 +36,32 @@ export default function InboxPage() {
     }
   }, [conversations, activeConversation, isLoadingConversations, setActiveConversation]);
 
-  /** Sadece dar ekranda (mobil) sohbet seçilince tam ekran chat; masaüstünde liste hep görünsün */
+  /** lg (1024px) altında: sohbet seçilince tam ekran chat. Üstünde: sol liste asla kaybolmaz (md=768 çok dar kalıyordu). */
   useEffect(() => {
     if (!activeConversation) return;
     if (typeof window === 'undefined') return;
-    if (window.matchMedia('(max-width: 767px)').matches) {
+    if (window.matchMedia('(max-width: 1023px)').matches) {
       setMobileShowChat(true);
+    } else {
+      setMobileShowChat(false);
     }
   }, [activeConversation]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    const mq = window.matchMedia('(min-width: 768px)');
-    const onDesktop = () => {
-      if (mq.matches) setMobileShowChat(false);
+    const syncLayoutMode = () => {
+      if (window.matchMedia('(min-width: 1024px)').matches) {
+        setMobileShowChat(false);
+      }
     };
-    mq.addEventListener('change', onDesktop);
-    return () => mq.removeEventListener('change', onDesktop);
+    syncLayoutMode();
+    window.addEventListener('resize', syncLayoutMode);
+    const mq = window.matchMedia('(min-width: 1024px)');
+    mq.addEventListener('change', syncLayoutMode);
+    return () => {
+      window.removeEventListener('resize', syncLayoutMode);
+      mq.removeEventListener('change', syncLayoutMode);
+    };
   }, []);
 
   useEffect(() => {
@@ -97,19 +106,21 @@ export default function InboxPage() {
   }, [filter]);
 
   return (
-    <div className="flex h-full">
-      {/* Conversation List - mobilde chat açıksa gizle */}
-      <div className={`${mobileShowChat ? 'hidden md:flex' : 'flex'} md:flex`}>
+    <div className="flex h-full min-h-0">
+      {/* Conversation List — lg+ her zaman görünür; küçük ekranda chat odaklıyken gizlenir */}
+      <div className={`${mobileShowChat ? 'hidden lg:flex' : 'flex'} lg:flex min-h-0`}>
         <ConversationList />
       </div>
-      
-      {/* Chat Window - mobilde liste açıksa gizle */}
+
       {activeConversation ? (
-        <div className={`${mobileShowChat ? 'flex' : 'hidden md:flex'} flex-1`}>
+        /* Sohbet: tablet (md+) her zaman görünsün; yalnızca dar mobilde liste açıkken gizlenir */
+        <div
+          className={`flex flex-1 min-h-0 min-w-0 flex-col ${mobileShowChat ? '' : 'hidden md:flex'}`}
+        >
           <ChatWindow onMobileBack={() => setMobileShowChat(false)} />
         </div>
       ) : (
-        <div className="hidden md:flex flex-1 items-center justify-center bg-gray-50">
+        <div className="hidden md:flex flex-1 min-h-0 items-center justify-center bg-gray-50">
           <div className="text-center">
             <div className="w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
               <svg

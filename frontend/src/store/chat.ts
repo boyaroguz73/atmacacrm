@@ -204,13 +204,39 @@ export const useChatStore = create<ChatState>((set, get) => ({
       api
         .post(`/conversations/${conversationId}/sync`)
         .then(() =>
-          api.get(`/messages/conversation/${conversationId}`).then(({ data: fresh }) => {
-            const current = get();
-            if (current.activeConversation?.id === conversationId) {
-              set({ messages: fresh.messages || [] });
-            }
-          }),
+          Promise.all([
+            api.get(`/messages/conversation/${conversationId}`),
+            api.get(`/conversations/${conversationId}`),
+          ]),
         )
+        .then(([msgRes, convRes]) => {
+          const freshMsgs = msgRes.data.messages || [];
+          const conv = convRes.data;
+          set((state) => {
+            const patchActive =
+              state.activeConversation?.id === conversationId && conv
+                ? {
+                    activeConversation: {
+                      ...state.activeConversation,
+                      ...conv,
+                      contact: conv.contact ?? state.activeConversation!.contact,
+                    },
+                  }
+                : {};
+            const conversations = conv
+              ? state.conversations.map((c) =>
+                  c.id === conversationId
+                    ? { ...c, ...conv, contact: conv.contact ?? c.contact }
+                    : c,
+                )
+              : state.conversations;
+            return {
+              messages: freshMsgs,
+              ...patchActive,
+              conversations,
+            };
+          });
+        })
         .catch(() => {});
     } catch {
       set({ isLoadingMessages: false });

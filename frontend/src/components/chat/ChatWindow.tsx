@@ -8,6 +8,8 @@ import {
   cn,
   formatTime,
   formatPhone,
+  getContactDisplayTitle,
+  getContactSecondaryPhoneLine,
   phoneToWhatsappChatId,
   backendPublicUrl,
   rewriteMediaUrlForClient,
@@ -286,6 +288,8 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
   const contact = activeConversation.contact;
   if (!contact?.phone) return null;
 
+  const headerPhoneSubline = getContactSecondaryPhoneLine(contact);
+
   const chatId =
     phoneToWhatsappChatId(contact.phone) ||
     `${String(contact.phone).replace(/\D/g, '')}@c.us`;
@@ -524,13 +528,13 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
       {/* Chat Area */}
       <div className="flex-1 flex flex-col h-full bg-[#efeae2]">
         {/* Header */}
-        <div className="bg-white border-b border-gray-200 px-3 md:px-5 py-3 flex items-center justify-between">
+        <div className="bg-white border-b border-gray-200 px-3 lg:px-5 py-3 flex items-center justify-between">
           <div className="flex items-center gap-2 md:gap-3">
             {/* Mobile back button */}
             {onMobileBack && (
               <button
                 onClick={onMobileBack}
-                className="md:hidden p-2 -ml-1 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+                className="lg:hidden p-2 -ml-1 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
                 aria-label="Geri"
               >
                 <ArrowLeft className="w-5 h-5" />
@@ -559,19 +563,20 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
                 <h3 className="font-semibold text-gray-900">
                   {activeConversation.isGroup
                     ? (activeConversation.groupName || contact.name || 'WhatsApp Grubu')
-                    : ([contact.name, contact.surname].filter(Boolean).join(' ') || formatPhone(contact.phone))
+                    : getContactDisplayTitle(contact)
                   }
                 </h3>
                 {!activeConversation.isGroup && <EcommerceCustomerBadge metadata={contact.metadata} />}
               </div>
-              <p className="text-xs text-gray-400">
-                {activeConversation.isGroup
-                  ? (typeof activeConversation.groupParticipantCount === 'number'
-                      ? `Grup · ${activeConversation.groupParticipantCount} üye`
-                      : 'WhatsApp Grup Sohbeti')
-                  : formatPhone(contact.phone)
-                }
-              </p>
+              {(activeConversation.isGroup || headerPhoneSubline) && (
+                <p className="text-xs text-gray-400">
+                  {activeConversation.isGroup
+                    ? (typeof activeConversation.groupParticipantCount === 'number'
+                        ? `Grup · ${activeConversation.groupParticipantCount} üye`
+                        : 'WhatsApp Grup Sohbeti')
+                    : headerPhoneSubline}
+                </p>
+              )}
             </div>
           </div>
           <div className="flex items-center gap-1 md:gap-2">

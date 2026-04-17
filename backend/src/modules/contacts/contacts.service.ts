@@ -15,6 +15,7 @@ import axios from 'axios';
 import {
   canonicalContactPhone,
   contactPhoneLookupKeys,
+  formatPhoneDisplay,
   isValidPhoneNumber,
 } from '../../common/contact-phone';
 import { splitSearchTokens } from '../../common/search-tokens';
@@ -495,11 +496,15 @@ export class ContactsService {
     } as const;
 
     try {
+      const nameTrim = dto.name?.trim() || '';
+      const surnameTrim = dto.surname?.trim() || '';
+      const usePhoneAsName = !nameTrim && !surnameTrim;
+
       const contact = await this.prisma.contact.create({
         data: {
           phone,
-          name: dto.name?.trim() || null,
-          surname: dto.surname?.trim() || null,
+          name: nameTrim || (usePhoneAsName ? formatPhoneDisplay(phone) || null : null),
+          surname: surnameTrim || null,
           email: dto.email?.trim() || null,
           source: dto.source?.trim() || null,
           notes: dto.notes?.trim() || null,
