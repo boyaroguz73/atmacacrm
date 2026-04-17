@@ -21,6 +21,7 @@ import {
   extractPhoneFromIndividualJid,
   extractPhoneFromParticipant,
   isValidPhoneNumber,
+  isLikelyLidPhone,
   canonicalContactPhone,
   contactPhoneLookupKeys,
   isFallbackContactName,
@@ -172,6 +173,8 @@ export class WahaWebhookHandler {
         // ─────────────────────────────────────────────────────────────
         // LID → telefona çevir, başarısızsa atla
         // ─────────────────────────────────────────────────────────────
+        const lidDigits = chatId.replace(/@lid$/i, '').replace(/\D/g, '');
+
         const pnJid = await this.wahaService.getLinkedPnFromLid(sessionName, chatId).catch(() => null);
         if (pnJid) {
           phone = extractPhoneFromIndividualJid(pnJid);
@@ -179,9 +182,13 @@ export class WahaWebhookHandler {
         if (!phone) {
           const details = await this.wahaService.getContactDetails(sessionName, chatId).catch(() => null);
           const waNumber = details?.number ? String(details.number).replace(/\D/g, '') : '';
-          if (waNumber && waNumber.length >= 7 && waNumber.length <= 15) {
+          if (waNumber && waNumber.length >= 7 && waNumber !== lidDigits) {
             phone = canonicalContactPhone(waNumber);
           }
+        }
+        if (phone && (phone === lidDigits || isLikelyLidPhone(phone))) {
+          this.logger.debug(`Çözümlenen numara hala LID gibi görünüyor (${phone}), atlanıyor`);
+          phone = null;
         }
         if (!phone || !isValidPhoneNumber(phone)) {
           this.logger.debug(`LID telefona çevrilemedi, atlanıyor: ${chatId}`);

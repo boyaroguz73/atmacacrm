@@ -205,6 +205,18 @@ export function isFallbackContactName(
 }
 
 /**
+ * Rakam dizisi gerçek bir telefon numarasından çok LID'e mi benziyor?
+ * WhatsApp LID'leri genellikle 15+ haneli, gerçek ülke kodu kalıbına uymayan uzun sayılardır.
+ * E.164 max 15 hane der ama pratikte 14 hane üzeri gerçek numara neredeyse yoktur.
+ */
+export function isLikelyLidPhone(phone: string | null | undefined): boolean {
+  const d = String(phone ?? '').replace(/\D/g, '');
+  if (!d) return false;
+  if (d.length > 14) return true;
+  return false;
+}
+
+/**
  * Telefon numarasını görüntüleme formatına çevir
  */
 export function formatPhoneDisplay(phone: string | null | undefined): string {

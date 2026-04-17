@@ -11,6 +11,7 @@ import {
   extractPhoneFromIndividualJid,
   formatPhoneDisplay,
   isFallbackContactName,
+  isLikelyLidPhone,
   isValidPhoneNumber,
 } from '../../common/contact-phone';
 
@@ -403,8 +404,14 @@ export class ConversationsService {
   ): Promise<void> {
     const row = await this.prisma.contact.findUnique({ where: { id: contactId } });
     if (!row) return;
-    const p = row.phone;
+    let p = row.phone;
     if (!p || p.startsWith('group:') || p.startsWith('lid:')) return;
+
+    if (isLikelyLidPhone(p)) {
+      const resolved = await this.tryResolveLidPhoneToReal(row.id, p, sessionName);
+      if (!resolved) return;
+      p = resolved;
+    }
 
     const merged = await this.contactsService.findOrCreate(
       p,
@@ -459,6 +466,46 @@ export class ConversationsService {
     }
 
     await this.ensureContactDisplayNameFallback(effectiveId);
+  }
+
+  /**
+   * DB'de LID numarası olarak saklanan telefonu WAHA LID API ile gerçek telefona çevirmeye çalışır.
+   * Başarılıysa contact.phone güncellenir ve yeni telefon döner; başarısızsa null.
+   */
+  private async tryResolveLidPhoneToReal(
+    contactId: string,
+    lidPhone: string,
+    sessionName: string,
+  ): Promise<string | null> {
+    const lidDigits = String(lidPhone).replace(/\D/g, '');
+    if (!lidDigits) return null;
+
+    try {
+      const lidJid = `${lidDigits}@lid`;
+      const pnJid = await this.wahaService.getLinkedPnFromLid(sessionName, lidJid).catch(() => null);
+      let realPhone: string | null = null;
+      if (pnJid) {
+        realPhone = extractPhoneFromIndividualJid(pnJid);
+      }
+      if (!realPhone) {
+        const details = await this.wahaService.getContactDetails(sessionName, lidJid).catch(() => null);
+        const waNumber = details?.number ? String(details.number).replace(/\D/g, '') : '';
+        if (waNumber && waNumber !== lidDigits && !isLikelyLidPhone(waNumber)) {
+          realPhone = canonicalContactPhone(waNumber);
+        }
+      }
+      if (realPhone && isValidPhoneNumber(realPhone) && !isLikelyLidPhone(realPhone)) {
+        await this.prisma.contact.update({
+          where: { id: contactId },
+          data: { phone: realPhone },
+        }).catch(() => {});
+        this.logger.log(`LID telefon gerçeğe çevrildi: ${lidDigits} → ${realPhone}`);
+        return realPhone;
+      }
+    } catch (e: any) {
+      this.logger.debug(`LID çözümleme hatası (${lidDigits}): ${e?.message}`);
+    }
+    return null;
   }
 
   /** WA isim yoksa listelerde boş kalmasın: görünen telefon */
