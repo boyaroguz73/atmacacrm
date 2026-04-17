@@ -25,7 +25,14 @@ function filterToSelectValue(filter: string | undefined, isAgent: boolean): stri
 function selectValueToHref(value: string, isAgent: boolean): string {
   if (value === 'kutum') return isAgent ? '/inbox?filter=mine_and_unassigned' : '/inbox';
   if (value === 'all') return '/inbox?filter=all';
-  if (value === 'mine' || value === 'unassigned' || value === 'unanswered' || value === 'answered' || value === 'followup') {
+  if (
+    value === 'mine' ||
+    value === 'unassigned' ||
+    value === 'unanswered' ||
+    value === 'answered' ||
+    value === 'followup' ||
+    value === 'groups'
+  ) {
     return `/inbox?filter=${value}`;
   }
   return '/inbox';
@@ -92,6 +99,7 @@ export default function ConversationList() {
       unanswered: 'Cevapsızlar',
       answered: 'Cevaplananlar',
       followup: 'Takiptekiler',
+      groups: 'Gruplar',
       mine_and_unassigned: 'Kutum',
     };
     return map[selectValue] || 'Mesajlar';
@@ -125,6 +133,7 @@ export default function ConversationList() {
                 <option value="all">Tüm sohbetler</option>
                 <option value="mine">Sadece bana atanan</option>
                 <option value="unassigned">Sadece atanmamış</option>
+                <option value="groups">Gruplar</option>
               </optgroup>
               <optgroup label="Durum">
                 <option value="unanswered">Cevapsızlar</option>
@@ -138,6 +147,7 @@ export default function ConversationList() {
                 <option value="all">Tüm sohbetler</option>
                 <option value="unassigned">Atanmamış</option>
                 <option value="mine">Bana atanan görüşmeler</option>
+                <option value="groups">Gruplar</option>
               </optgroup>
               <optgroup label="Durum">
                 <option value="unanswered">Cevapsızlar</option>

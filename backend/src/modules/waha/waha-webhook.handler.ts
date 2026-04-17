@@ -194,7 +194,9 @@ export class WahaWebhookHandler {
         );
       } else if (isLidChat(chatId)) {
         // ─────────────────────────────────────────────────────────────
-        // LID (@lid) — WhatsApp iç kimliği; numara yerine lid:… anahtarı + pushName
+        // LID (@lid) — WhatsApp iç kimliği
+        // Onceden WAHA'dan numara cozumlemesi yap; basarili olursa contact'i
+        // numara ile olustur (duplicate'lari onler). Yoksa lid:xxx fallback.
         // ─────────────────────────────────────────────────────────────
         const lidKey = lidJidToContactPhone(chatId);
         if (!lidKey) {
@@ -203,11 +205,35 @@ export class WahaWebhookHandler {
         }
         const displayName =
           msg.pushName || msg._data?.notifyName || msg.notifyName || undefined;
-        contact = await this.contactsService.findOrCreate(
-          lidKey,
-          displayName,
-          waSession.organizationId,
-        );
+
+        // LID -> numara cozumlemesini hizlica dene
+        let resolvedPhone: string | null = null;
+        try {
+          const pnJid = await this.wahaService.getLinkedPnFromLid(sessionName, chatId);
+          if (pnJid) {
+            const extracted = extractPhoneFromIndividualJid(pnJid);
+            if (extracted && isValidPhoneNumber(extracted)) {
+              resolvedPhone = extracted;
+            }
+          }
+        } catch { /* WAHA timeout/hata - LID fallback */ }
+
+        if (resolvedPhone) {
+          // Numara ile findOrCreate — mevcut kaydi bulur, duplicate yaratmaz
+          phone = resolvedPhone;
+          contact = await this.contactsService.findOrCreate(
+            resolvedPhone,
+            displayName,
+            waSession.organizationId,
+          );
+        } else {
+          // WAHA cevap vermedi - LID anahtariyla olustur; cleanupLidDuplicates sonra merge eder
+          contact = await this.contactsService.findOrCreate(
+            lidKey,
+            displayName,
+            waSession.organizationId,
+          );
+        }
 
         if (displayName && isFallbackContactName(contact.name, contact.phone) && !contact.surname?.trim()) {
           const { firstName, lastName } = splitPushName(displayName);
@@ -217,6 +243,10 @@ export class WahaWebhookHandler {
               data: { name: firstName, surname: lastName },
             });
           } catch { /* unique constraint veya başka hata — mevcut kaydı koru */ }
+        }
+
+        if (resolvedPhone && !contact.avatarUrl) {
+          this.fetchAndSaveAvatar(sessionName, resolvedPhone, contact.id).catch(() => {});
         }
 
         conversation = await this.conversationsService.findOrCreate(

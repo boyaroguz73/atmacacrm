@@ -141,6 +141,8 @@ export class ConversationsService {
 
     if (filter === 'all') {
       // Yalnızca org kapsamı; atama filtresi yok (temsilci "tüm sohbetler")
+    } else if (filter === 'groups') {
+      whereExtras.isGroup = true;
     } else if (filter === 'mine' && assignedTo) {
       whereExtras.assignments = {
         some: { userId: assignedTo, unassignedAt: null },

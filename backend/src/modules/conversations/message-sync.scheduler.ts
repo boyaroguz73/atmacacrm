@@ -39,6 +39,16 @@ export class MessageSyncScheduler implements OnModuleInit {
 
   private async runStartupSync() {
     this.logger.log('Başlangıç mesaj senkronu başlıyor...');
+    // Startup'ta ilk is: varolan LID duplicate'lari temizle
+    try {
+      const sessions = await this.prisma.whatsappSession.findMany({
+        where: { status: 'WORKING' },
+        select: { name: true },
+      });
+      for (const s of sessions) {
+        await this.cleanupLidDuplicates(s.name).catch(() => {});
+      }
+    } catch { /* ignore */ }
     await this.syncAllSessions();
   }
 
