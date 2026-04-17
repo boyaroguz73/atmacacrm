@@ -509,10 +509,18 @@ export class ConversationsService {
         }
       }
       if (realPhone && isValidPhoneNumber(realPhone) && !isLikelyLidPhone(realPhone)) {
-        await this.prisma.contact.update({
-          where: { id: contactId },
-          data: { phone: realPhone },
-        }).catch(() => {});
+        try {
+          await this.prisma.contact.update({
+            where: { id: contactId },
+            data: { phone: realPhone },
+          });
+        } catch (e: any) {
+          const existing = await this.prisma.contact.findFirst({
+            where: { phone: realPhone },
+            select: { id: true },
+          });
+          if (!existing) throw e;
+        }
         this.logger.log(`LID telefon gerçeğe çevrildi: ${lidDigits} → ${realPhone}`);
         return realPhone;
       }

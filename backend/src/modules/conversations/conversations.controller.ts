@@ -290,7 +290,7 @@ export class ConversationsController {
   async syncMessagesCore(
     id: string,
   ): Promise<{ synced: number; message: string }> {
-    const conversation = await this.conversationsService.findById(id, {
+    let conversation = await this.conversationsService.findById(id, {
       skipContactEnrichment: true,
     });
     if (conversation.isGroup) {
@@ -313,6 +313,32 @@ export class ConversationsController {
         return { synced: 0, message: 'LID numara çözümlenemedi' };
       }
       rawPhone = resolved;
+
+      // Kalıcılaştır: çözülmüş telefon başka bir kişide varsa bu konuşmayı ona bağla.
+      // Böylece frontend bir sonraki fetch'te doğrudan gerçek numarayı görür.
+      const resolvedContact = await this.prisma.contact.findFirst({
+        where: { phone: resolved },
+        select: { id: true },
+      });
+      if (resolvedContact && resolvedContact.id !== conversation.contact.id) {
+        try {
+          await this.prisma.conversation.update({
+            where: { id: conversation.id },
+            data: { contactId: resolvedContact.id },
+          });
+          const refreshed = await this.conversationsService.findById(conversation.id, {
+            skipContactEnrichment: true,
+          });
+          conversation = refreshed;
+          this.logger.log(
+            `Konuşma kişi bağı güncellendi: conv=${conversation.id}, contact=${resolvedContact.id}`,
+          );
+        } catch (e: any) {
+          this.logger.debug(
+            `Konuşma kişi bağı güncellenemedi (${conversation.id}): ${e?.message}`,
+          );
+        }
+      }
     }
 
     const waDigits =
@@ -507,10 +533,19 @@ export class ConversationsController {
         }
       }
       if (realPhone && isValidPhoneNumber(realPhone) && !isLikelyLidPhone(realPhone)) {
-        await this.prisma.contact.update({
-          where: { id: contactId },
-          data: { phone: realPhone },
-        }).catch(() => {});
+        try {
+          await this.prisma.contact.update({
+            where: { id: contactId },
+            data: { phone: realPhone },
+          });
+        } catch (e: any) {
+          // Unique çakışma olabilir; bu durumda gerçek telefon zaten başka bir contact'ta kayıtlıdır.
+          const existing = await this.prisma.contact.findFirst({
+            where: { phone: realPhone },
+            select: { id: true },
+          });
+          if (!existing) throw e;
+        }
         this.logger.log(`LID telefon çözümlendi: ${lidDigits} → ${realPhone}`);
         return realPhone;
       }
