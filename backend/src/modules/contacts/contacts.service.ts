@@ -6,7 +6,7 @@ import {
   ConflictException,
   ForbiddenException,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { LeadStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { writeFileSync, existsSync, mkdirSync, unlinkSync, readdirSync } from 'fs';
 import { join } from 'path';
@@ -269,16 +269,45 @@ export class ContactsService {
       source?: string;
       company?: string;
       city?: string;
+      district?: string;
       address?: string;
       taxNumber?: string;
       taxOffice?: string;
       identityNumber?: string;
       billingAddress?: string;
+      billingEmail?: string;
       shippingAddress?: string;
       metadata?: object;
     },
   ) {
-    return this.prisma.contact.update({ where: { id }, data });
+    const current = await this.prisma.contact.findUnique({ where: { id } });
+    if (!current) throw new NotFoundException('Kişi bulunamadı');
+    const currentMeta =
+      current.metadata && typeof current.metadata === 'object'
+        ? (current.metadata as Record<string, any>)
+        : {};
+    const metadataPatch: Record<string, any> = {
+      ...currentMeta,
+      ...(data.metadata && typeof data.metadata === 'object' ? data.metadata : {}),
+    };
+    if ('district' in data) metadataPatch.district = data.district?.trim() || null;
+    if ('billingEmail' in data) metadataPatch.billingEmail = data.billingEmail?.trim() || null;
+
+    const patch: any = { ...data, metadata: metadataPatch };
+    delete patch.district;
+    delete patch.billingEmail;
+
+    // Açık adres/fatura adresi senkronu: biri boşsa diğerine kopyala
+    if ('address' in data && !('billingAddress' in data)) {
+      const nextAddress = data.address?.trim() || null;
+      if (nextAddress && !current.billingAddress) patch.billingAddress = nextAddress;
+    }
+    if ('billingAddress' in data && !('address' in data)) {
+      const nextBilling = data.billingAddress?.trim() || null;
+      if (nextBilling && !current.address) patch.address = nextBilling;
+    }
+
+    return this.prisma.contact.update({ where: { id }, data: patch });
   }
 
   async addTag(id: string, tag: string) {
@@ -464,13 +493,21 @@ export class ContactsService {
       notes?: string | null;
       company?: string | null;
       city?: string | null;
+      district?: string | null;
       address?: string | null;
       billingAddress?: string | null;
+      billingEmail?: string | null;
       taxOffice?: string | null;
       taxNumber?: string | null;
       identityNumber?: string | null;
       organizationId?: string | null;
       sessionId?: string | null;
+      lead?: {
+        status?: LeadStatus;
+        value?: number;
+        source?: string;
+        notes?: string;
+      };
     },
   ): Promise<{ contact: any; conversation: any | null }> {
     const phone = this.normalizePhoneInput(dto.phone);
@@ -513,6 +550,10 @@ export class ContactsService {
           city: dto.city?.trim() || null,
           address: dto.address?.trim() || null,
           billingAddress: dto.billingAddress?.trim() || null,
+          metadata: {
+            district: dto.district?.trim() || null,
+            billingEmail: dto.billingEmail?.trim() || null,
+          },
           taxOffice: dto.taxOffice?.trim() || null,
           taxNumber: dto.taxNumber?.trim() || null,
           identityNumber: dto.identityNumber?.trim() || null,
@@ -520,6 +561,24 @@ export class ContactsService {
         },
         include: { lead: true },
       });
+
+      if (
+        dto.lead &&
+        (dto.lead.status ||
+          dto.lead.value != null ||
+          (dto.lead.source && dto.lead.source.trim()) ||
+          (dto.lead.notes && dto.lead.notes.trim()))
+      ) {
+        await this.prisma.lead.create({
+          data: {
+            contactId: contact.id,
+            status: dto.lead.status || LeadStatus.NEW,
+            value: dto.lead.value,
+            source: dto.lead.source?.trim() || null,
+            notes: dto.lead.notes?.trim() || null,
+          },
+        });
+      }
 
       let conversation: any | null = null;
       if (dto.sessionId) {
@@ -533,7 +592,11 @@ export class ContactsService {
         });
       }
 
-      return { contact, conversation };
+      const contactWithLead = await this.prisma.contact.findUnique({
+        where: { id: contact.id },
+        include: { lead: true },
+      });
+      return { contact: contactWithLead || contact, conversation };
     } catch (e) {
       if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
         throw new ConflictException('Bu telefon numarası zaten kayıtlı');

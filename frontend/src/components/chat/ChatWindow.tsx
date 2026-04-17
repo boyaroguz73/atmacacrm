@@ -40,6 +40,7 @@ import {
   MapPin,
   FileUp,
   ArrowLeft,
+  Info,
 } from 'lucide-react';
 import ContactPanel from './ContactPanel';
 import api, { getApiErrorMessage } from '@/lib/api';
@@ -81,6 +82,31 @@ function groupReactions(reactions: { emoji: string; senderName?: string }[]) {
   }));
 }
 
+function isLikelyEncodedPayload(text: string): boolean {
+  const s = (text || '').trim();
+  if (s.length < 400) return false;
+  if (/^data:[^;]+;base64,/i.test(s)) return true;
+  return /^[A-Za-z0-9+/=\s]+$/.test(s) && !/\s{2,}/.test(s.slice(0, 300));
+}
+
+function dayKey(input: string | Date): string {
+  const d = new Date(input);
+  return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+}
+
+function dayLabel(input: string | Date): string {
+  const d = new Date(input);
+  const now = new Date();
+  const today = dayKey(now);
+  const y = new Date(now);
+  y.setDate(now.getDate() - 1);
+  const yesterday = dayKey(y);
+  const key = dayKey(d);
+  if (key === today) return 'Bugün';
+  if (key === yesterday) return 'Dün';
+  return d.toLocaleDateString('tr-TR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+}
+
 interface ChatWindowProps {
   onMobileBack?: () => void;
 }
@@ -94,6 +120,7 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
     sendMessage,
     sendMediaMessage,
     sendProductShare,
+    sendContactCard,
   } = useChatStore();
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
@@ -139,6 +166,12 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
   const [productCategoryFilter, setProductCategoryFilter] = useState('');
   const [productCategories, setProductCategories] = useState<{ category: string; count: number }[]>([]);
   const [productSearchLoading, setProductSearchLoading] = useState(false);
+  const [contactPickerOpen, setContactPickerOpen] = useState(false);
+  const [contactSearch, setContactSearch] = useState('');
+  const [contactHits, setContactHits] = useState<
+    { id: string; name: string | null; surname?: string | null; phone: string }[]
+  >([]);
+  const [contactSearchLoading, setContactSearchLoading] = useState(false);
 
   const [actionTrayOpen, setActionTrayOpen] = useState(false);
   const actionTrayRef = useRef<HTMLDivElement>(null);
@@ -147,6 +180,12 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
   const [replyingTo, setReplyingTo] = useState<{ id: string; body: string | null } | null>(null);
   const [emojiPickerOpen, setEmojiPickerOpen] = useState<string | null>(null);
   const emojiPickerRef = useRef<HTMLDivElement>(null);
+  const [expandedMessages, setExpandedMessages] = useState<Set<string>>(new Set());
+  const [groupDetailOpen, setGroupDetailOpen] = useState(false);
+  const [groupParticipants, setGroupParticipants] = useState<
+    { jid: string; phone: string | null; role: string; contactId: string | null; name: string | null }[]
+  >([]);
+  const [groupParticipantsLoading, setGroupParticipantsLoading] = useState(false);
 
   useEffect(() => {
     setMounted(true);
@@ -177,6 +216,24 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
     }, 280);
     return () => clearTimeout(t);
   }, [productSearch, productPickerOpen, productCategoryFilter]);
+
+  useEffect(() => {
+    if (!contactPickerOpen) return;
+    const q = contactSearch.trim();
+    const t = setTimeout(() => {
+      if (q.length < 2) {
+        setContactHits([]);
+        return;
+      }
+      setContactSearchLoading(true);
+      api
+        .get('/contacts', { params: { search: q, limit: 20 } })
+        .then(({ data }) => setContactHits(data.contacts || []))
+        .catch(() => setContactHits([]))
+        .finally(() => setContactSearchLoading(false));
+    }, 260);
+    return () => clearTimeout(t);
+  }, [contactSearch, contactPickerOpen]);
 
   useEffect(() => {
     if (!productPickerOpen) return;
@@ -214,10 +271,15 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
     setProductSearch('');
     setProductHits([]);
     setProductCategoryFilter('');
+    setContactPickerOpen(false);
+    setContactSearch('');
+    setContactHits([]);
     setActionTrayOpen(false);
     setReplyingTo(null);
     setContextMenuMsg(null);
     setEmojiPickerOpen(null);
+    setGroupDetailOpen(false);
+    setGroupParticipants([]);
   }, [activeConversation?.id]);
 
   useEffect(() => {
@@ -282,6 +344,20 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
     () => filterMessagesByAuthor(messages, messageAuthorFilter, currentUserId),
     [messages, messageAuthorFilter, currentUserId],
   );
+
+  const timelineItems = useMemo(() => {
+    const out: Array<{ type: 'day'; key: string; label: string } | { type: 'msg'; message: Message }> = [];
+    let lastDay = '';
+    for (const m of displayMessages) {
+      const k = dayKey(m.timestamp);
+      if (k !== lastDay) {
+        out.push({ type: 'day', key: k, label: dayLabel(m.timestamp) });
+        lastDay = k;
+      }
+      out.push({ type: 'msg', message: m });
+    }
+    return out;
+  }, [displayMessages]);
 
   if (!activeConversation) return null;
 
@@ -468,6 +544,55 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
     }
   };
 
+  const handleSendLocation = async () => {
+    const raw = window.prompt(
+      'Konum girin: "lat,lng" veya Google Maps linki',
+      '',
+    );
+    if (!raw) return;
+    const value = raw.trim();
+    const coordMatch = value.match(/(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)/);
+    const linkMatch = value.match(/@(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/) || value.match(/q=(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/);
+    const lat = Number(coordMatch?.[1] || linkMatch?.[1]);
+    const lng = Number(coordMatch?.[2] || linkMatch?.[2]);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      toast.error('Geçerli koordinat bulunamadı');
+      return;
+    }
+    try {
+      await api.post('/messages/send-location', {
+        conversationId: activeConversation.id,
+        sessionName: activeConversation.session.name,
+        chatId,
+        latitude: lat,
+        longitude: lng,
+        title: 'Konum',
+        address: value.startsWith('http') ? value : undefined,
+      });
+      toast.success('Konum gönderildi');
+    } catch (err: any) {
+      toast.error(getApiErrorMessage(err, 'Konum gönderilemedi'));
+    }
+  };
+
+  const openGroupDetail = async () => {
+    if (!activeConversation?.isGroup) return;
+    setGroupDetailOpen(true);
+    setGroupParticipantsLoading(true);
+    try {
+      const { data } = await api.get(`/conversations/${activeConversation.id}/group-participants`);
+      setGroupParticipants(Array.isArray(data) ? data : []);
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, 'Grup katılımcıları alınamadı'));
+      setGroupParticipants([]);
+    } finally {
+      setGroupParticipantsLoading(false);
+    }
+  };
+
+  const isVcardMessage = (msg: Message) =>
+    msg.metadata?.kind === 'vcard' || /^BEGIN:VCARD/i.test(String(msg.body || ''));
+
   const quickEmojis = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
 
   const getStatusIcon = (status: string) => {
@@ -487,9 +612,10 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
     }
   };
 
-  const resolveMediaUrl = (url: string | null) => {
-    if (!url) return null;
-    const t = url.trim();
+  const resolveMediaUrl = (msg: Message) => {
+    const preferred = msg.metadata?.originalMediaUrl || msg.mediaUrl;
+    if (!preferred) return null;
+    const t = String(preferred).trim();
     if (t.startsWith('http')) return rewriteMediaUrlForClient(t);
     if (
       t.startsWith('/uploads/') ||
@@ -621,6 +747,16 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
                 {(contact as any).source}
               </span>
             )}
+            {activeConversation.isGroup && (
+              <button
+                type="button"
+                onClick={() => void openGroupDetail()}
+                className="p-2 text-gray-400 hover:text-whatsapp hover:bg-green-50 rounded-lg transition-colors"
+                title="Grup detayları"
+              >
+                <Info className="w-4 h-4" />
+              </button>
+            )}
             <button
               type="button"
               onClick={async () => {
@@ -679,9 +815,19 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
             </div>
           ) : (
             <>
-              {displayMessages.map((msg) => {
+              {timelineItems.map((item) => {
+                if (item.type === 'day') {
+                  return (
+                    <div key={`day-${item.key}`} className="flex justify-center py-1">
+                      <span className="text-[11px] text-gray-600 bg-white/70 border border-gray-200 rounded-full px-3 py-1">
+                        {item.label}
+                      </span>
+                    </div>
+                  );
+                }
+                const msg = item.message;
                 const isOutgoing = msg.direction === 'OUTGOING';
-                const mediaUrlResolved = resolveMediaUrl(msg.mediaUrl);
+                const mediaUrlResolved = resolveMediaUrl(msg);
                 const isImage =
                   msg.mediaType === 'IMAGE' ||
                   mediaUrlResolved?.match(/\.(jpg|jpeg|png|gif|webp)(\?|$)/i);
@@ -845,11 +991,43 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
                           </div>
                         </button>
                       )}
-                      {msg.body && (
-                        <p className="text-sm text-gray-800 whitespace-pre-wrap break-words">
-                          {renderMessageBody(msg.body)}
-                        </p>
-                      )}
+                      {isVcardMessage(msg) ? (
+                        <div className="rounded-lg border border-gray-200 bg-gray-50 p-2.5">
+                          <div className="text-xs text-gray-500">Kişi kartı</div>
+                          <div className="text-sm font-semibold text-gray-800">
+                            {msg.metadata?.contactName || 'Kişi'}
+                          </div>
+                          {msg.metadata?.contactPhone ? (
+                            <div className="text-xs text-gray-600">{formatPhone(msg.metadata.contactPhone)}</div>
+                          ) : null}
+                        </div>
+                      ) : msg.body ? (
+                        <div>
+                          <p className="text-sm text-gray-800 whitespace-pre-wrap break-all [overflow-wrap:anywhere]">
+                            {renderMessageBody(
+                              isLikelyEncodedPayload(msg.body) && !expandedMessages.has(msg.id)
+                                ? `${msg.body.slice(0, 420)}...`
+                                : msg.body,
+                            )}
+                          </p>
+                          {isLikelyEncodedPayload(msg.body) && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setExpandedMessages((prev) => {
+                                  const next = new Set(prev);
+                                  if (next.has(msg.id)) next.delete(msg.id);
+                                  else next.add(msg.id);
+                                  return next;
+                                })
+                              }
+                              className="mt-1 text-[11px] text-blue-600 hover:text-blue-800"
+                            >
+                              {expandedMessages.has(msg.id) ? 'Daha az göster' : 'Devamını göster'}
+                            </button>
+                          )}
+                        </div>
+                      ) : null}
                       {(msg as any).reactions?.length > 0 && (
                         <div className="flex flex-wrap gap-1 mt-1">
                           {groupReactions((msg as any).reactions).map(({ emoji, count, names }) => (
@@ -1009,6 +1187,7 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
                   setActionTrayOpen(!actionTrayOpen);
                   setShowTemplates(false);
                   setProductPickerOpen(false);
+                  setContactPickerOpen(false);
                 }}
                 className={cn(
                   'p-2 rounded-lg transition-all duration-200',
@@ -1069,6 +1248,7 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
                       type="button"
                       onClick={() => {
                         setProductPickerOpen(true);
+                        setContactPickerOpen(false);
                         setActionTrayOpen(false);
                       }}
                       className="flex flex-col items-center gap-1.5 p-3 rounded-xl hover:bg-orange-50 transition-colors group"
@@ -1082,7 +1262,22 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
                     <button
                       type="button"
                       onClick={() => {
-                        toast('Konum gönderme yakında eklenecek', { icon: '📍' });
+                        setContactPickerOpen(true);
+                        setProductPickerOpen(false);
+                        setActionTrayOpen(false);
+                      }}
+                      className="flex flex-col items-center gap-1.5 p-3 rounded-xl hover:bg-cyan-50 transition-colors group"
+                    >
+                      <div className="w-10 h-10 rounded-full bg-cyan-100 flex items-center justify-center group-hover:bg-cyan-200 transition-colors">
+                        <User className="w-5 h-5 text-cyan-600" />
+                      </div>
+                      <span className="text-xs text-gray-600 font-medium">Kişi</span>
+                    </button>
+                    
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void handleSendLocation();
                         setActionTrayOpen(false);
                       }}
                       className="flex flex-col items-center gap-1.5 p-3 rounded-xl hover:bg-green-50 transition-colors group"
@@ -1193,6 +1388,67 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
                           </div>
                         </button>
                       ))
+                    )}
+                  </div>
+                </div>
+              )}
+              {contactPickerOpen && (
+                <div className="absolute bottom-full mb-2 left-0 right-0 bg-white border border-gray-200 rounded-xl shadow-lg z-20 overflow-hidden flex flex-col max-h-72">
+                  <div className="p-2 border-b border-gray-100 flex items-center gap-2">
+                    <Search className="w-4 h-4 text-gray-400 shrink-0" />
+                    <input
+                      type="search"
+                      autoComplete="off"
+                      placeholder="Kişi adı veya telefon..."
+                      value={contactSearch}
+                      onChange={(e) => setContactSearch(e.target.value)}
+                      className="flex-1 min-w-0 text-sm py-1.5 px-1 border-0 focus:ring-0 focus:outline-none bg-transparent"
+                    />
+                  </div>
+                  <div className="overflow-y-auto flex-1">
+                    {contactSearchLoading ? (
+                      <div className="flex justify-center py-6">
+                        <Loader2 className="w-6 h-6 text-whatsapp animate-spin" />
+                      </div>
+                    ) : contactHits.length === 0 ? (
+                      <p className="text-xs text-gray-400 text-center py-6 px-3">
+                        En az 2 karakterle arayın
+                      </p>
+                    ) : (
+                      contactHits.map((c) => {
+                        const label = [c.name, c.surname].filter(Boolean).join(' ').trim() || formatPhone(c.phone);
+                        return (
+                          <button
+                            key={c.id}
+                            type="button"
+                            disabled={sending}
+                            onClick={() => {
+                              setSending(true);
+                              sendContactCard({
+                                conversationId: activeConversation.id,
+                                sessionName: activeConversation.session?.name,
+                                chatId: `${activeConversation.contact.phone}@c.us`,
+                                contactName: label,
+                                contactPhone: c.phone,
+                              })
+                                .then(() => {
+                                  setContactPickerOpen(false);
+                                  setContactSearch('');
+                                })
+                                .catch((err) => {
+                                  toast.error(getApiErrorMessage(err, 'Kişi kartı gönderilemedi'));
+                                })
+                                .finally(() => setSending(false));
+                            }}
+                            className="w-full flex items-center justify-between px-3 py-2.5 hover:bg-gray-50 border-b border-gray-50 last:border-b-0 text-left disabled:opacity-50"
+                          >
+                            <div>
+                              <p className="text-sm font-medium text-gray-900">{label}</p>
+                              <p className="text-[11px] text-gray-400">{formatPhone(c.phone)}</p>
+                            </div>
+                          </button>
+                        );
+                      })
                     )}
                   </div>
                 </div>
@@ -1381,6 +1637,53 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
           </div>,
           document.body,
         )}
+      {groupDetailOpen && (
+        <div className="fixed inset-0 z-[70] bg-black/40 flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-lg rounded-2xl shadow-xl border border-gray-100 max-h-[80vh] overflow-hidden flex flex-col">
+            <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-semibold text-gray-900">Grup katılımcıları</h3>
+                <p className="text-xs text-gray-500">
+                  {activeConversation.groupName || contact.name || 'WhatsApp Grubu'}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setGroupDetailOpen(false)}
+                className="p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-lg"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="overflow-y-auto p-2">
+              {groupParticipantsLoading ? (
+                <div className="py-10 flex items-center justify-center">
+                  <Loader2 className="w-5 h-5 animate-spin text-whatsapp" />
+                </div>
+              ) : groupParticipants.length === 0 ? (
+                <p className="text-xs text-gray-400 text-center py-8">Katılımcı bulunamadı</p>
+              ) : (
+                groupParticipants.map((p) => (
+                  <div
+                    key={p.jid}
+                    className="px-3 py-2 rounded-lg hover:bg-gray-50 flex items-center justify-between gap-2"
+                  >
+                    <div className="min-w-0">
+                      <p className="text-sm text-gray-800 truncate">
+                        {p.name || (p.phone ? formatPhone(p.phone) : p.jid)}
+                      </p>
+                      <p className="text-[11px] text-gray-400 truncate">{p.phone ? formatPhone(p.phone) : p.jid}</p>
+                    </div>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 shrink-0">
+                      {p.role === 'admin' ? 'Yönetici' : 'Üye'}
+                    </span>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -453,7 +453,7 @@ export default function SettingsPage() {
               </p>
               <p className="text-xs text-gray-400 mt-0.5">
                 Yalnızca fotoğrafı <strong>olmayan</strong> kişiler için WhatsApp&apos;tan indirir.
-                Aynı kişi için disk'te tek dosya tutulur.
+                Aynı kişi için disk&apos;te tek dosya tutulur.
               </p>
               <label className="flex items-center gap-2 mt-2 text-xs text-gray-600 cursor-pointer select-none">
                 <input

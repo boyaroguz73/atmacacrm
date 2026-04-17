@@ -62,6 +62,12 @@ type ContactDetail = {
   conversations: Conv[];
 };
 
+function getMetaText(metadata: unknown, key: string): string {
+  if (!metadata || typeof metadata !== 'object') return '';
+  const value = (metadata as Record<string, unknown>)[key];
+  return typeof value === 'string' ? value : '';
+}
+
 export default function ContactDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -80,8 +86,10 @@ export default function ContactDetailPage() {
     email: '',
     company: '',
     city: '',
+    district: '',
     address: '',
     billingAddress: '',
+    billingEmail: '',
     taxOffice: '',
     taxNumber: '',
     identityNumber: '',
@@ -103,8 +111,10 @@ export default function ContactDetailPage() {
         email: data.email || '',
         company: data.company || '',
         city: data.city || '',
+        district: getMetaText(data.metadata, 'district'),
         address: data.address || '',
         billingAddress: data.billingAddress || '',
+        billingEmail: getMetaText(data.metadata, 'billingEmail'),
         taxOffice: data.taxOffice || '',
         taxNumber: data.taxNumber || '',
         identityNumber: data.identityNumber || '',
@@ -324,6 +334,16 @@ export default function ContactDetailPage() {
                         onChange={(e) => setEditData((d) => ({ ...d, surname: e.target.value }))}
                       />
                     </label>
+                    <label className="block">
+                      <span className="text-xs text-gray-500 flex items-center gap-1">
+                        <MapPin className="w-3 h-3" /> İlçe
+                      </span>
+                      <input
+                        className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-lg"
+                        value={editData.district}
+                        onChange={(e) => setEditData((d) => ({ ...d, district: e.target.value }))}
+                      />
+                    </label>
                   </div>
                   <label className="block">
                     <span className="text-xs text-gray-500 flex items-center gap-1">
@@ -378,6 +398,16 @@ export default function ContactDetailPage() {
                       placeholder="Boşsa açık adres kullanılır"
                       value={editData.billingAddress}
                       onChange={(e) => setEditData((d) => ({ ...d, billingAddress: e.target.value }))}
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="text-xs text-gray-500">Fatura e-posta</span>
+                    <input
+                      type="email"
+                      className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-lg"
+                      placeholder="Boşsa kişi e-postası kullanılır"
+                      value={editData.billingEmail}
+                      onChange={(e) => setEditData((d) => ({ ...d, billingEmail: e.target.value }))}
                     />
                   </label>
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -444,8 +474,10 @@ export default function ContactDetailPage() {
                         email: contact.email || '',
                         company: contact.company || '',
                         city: contact.city || '',
+                        district: getMetaText(contact.metadata, 'district'),
                         address: contact.address || '',
                         billingAddress: contact.billingAddress || '',
+                        billingEmail: getMetaText(contact.metadata, 'billingEmail'),
                         taxOffice: contact.taxOffice || '',
                         taxNumber: contact.taxNumber || '',
                         identityNumber: contact.identityNumber || '',
@@ -470,10 +502,12 @@ export default function ContactDetailPage() {
                       {contact.email}
                     </div>
                   )}
-                  {(contact.company || contact.city) && (
+                  {(contact.company || contact.city || getMetaText(contact.metadata, 'district')) && (
                     <div className="flex items-center gap-2 text-gray-600">
                       <User className="w-4 h-4 text-gray-400" />
-                      {[contact.company, contact.city].filter(Boolean).join(' · ')}
+                      {[contact.company, contact.city, getMetaText(contact.metadata, 'district')]
+                        .filter(Boolean)
+                        .join(' · ')}
                     </div>
                   )}
                   {contact.address && (
@@ -483,6 +517,7 @@ export default function ContactDetailPage() {
                     </div>
                   )}
                   {(contact.billingAddress ||
+                    getMetaText(contact.metadata, 'billingEmail') ||
                     contact.taxOffice ||
                     contact.taxNumber ||
                     contact.identityNumber) && (
@@ -492,6 +527,12 @@ export default function ContactDetailPage() {
                         <p className="text-gray-700 whitespace-pre-wrap">
                           <span className="text-gray-500">Fatura adresi: </span>
                           {contact.billingAddress}
+                        </p>
+                      )}
+                      {getMetaText(contact.metadata, 'billingEmail') && (
+                        <p className="text-gray-700">
+                          <span className="text-gray-500">Fatura e-posta: </span>
+                          {getMetaText(contact.metadata, 'billingEmail')}
                         </p>
                       )}
                       {contact.taxOffice && (

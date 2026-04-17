@@ -229,6 +229,51 @@ export class OrganizationsService {
     };
   }
 
+  private parseMenuSuborder(settings: Prisma.JsonValue | null): Record<string, string[]> | null {
+    const s = this.parseSettings(settings);
+    const raw = s.menuSuborder;
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+    const out: Record<string, string[]> = {};
+    for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+      if (!Array.isArray(v)) continue;
+      const cleaned = [...new Set(v.filter((x): x is string => typeof x === 'string' && x.trim().length > 0))];
+      if (cleaned.length) out[k] = cleaned;
+    }
+    return Object.keys(out).length ? out : null;
+  }
+
+  async getMenuSuborder(organizationId: string) {
+    const org = await this.prisma.organization.findUnique({
+      where: { id: organizationId },
+      select: { settings: true },
+    });
+    if (!org) throw new NotFoundException('Organizasyon bulunamadı');
+    return { suborder: this.parseMenuSuborder(org.settings) ?? {} };
+  }
+
+  async patchMenuSuborder(organizationId: string, body: Record<string, string[] | undefined>) {
+    const org = await this.prisma.organization.findUnique({
+      where: { id: organizationId },
+      select: { settings: true },
+    });
+    if (!org) throw new NotFoundException('Organizasyon bulunamadı');
+    const prev = this.parseSettings(org.settings);
+    const cur = this.parseMenuSuborder(org.settings) ?? {};
+    const next: Record<string, string[]> = { ...cur };
+    for (const [parentKey, values] of Object.entries(body || {})) {
+      if (values === undefined) continue;
+      const cleaned = [...new Set(values.filter((x): x is string => typeof x === 'string' && x.trim().length > 0))];
+      if (cleaned.length) next[parentKey] = cleaned;
+      else delete next[parentKey];
+    }
+    const nextSettings = { ...prev, menuSuborder: next };
+    await this.prisma.organization.update({
+      where: { id: organizationId },
+      data: { settings: nextSettings as Prisma.InputJsonValue },
+    });
+    return { suborder: next };
+  }
+
   async getOrganizationDashboard(organizationId: string) {
     const [users, sessions, contacts, conversations, messages] =
       await Promise.all([

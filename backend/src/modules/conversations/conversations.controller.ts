@@ -140,6 +140,19 @@ export class ConversationsController {
     return conversation;
   }
 
+  @Get(':id/group-participants')
+  async getGroupParticipants(
+    @Param('id') id: string,
+    @CurrentUser()
+    user: { role: string; organizationId?: string | null },
+  ) {
+    const conversation = await this.conversationsService.findById(id, {
+      skipContactEnrichment: true,
+    });
+    assertConversationBelongsToOrg(conversation, user);
+    return this.conversationsService.getGroupParticipants(id);
+  }
+
   @Patch(':id/read')
   async markAsRead(
     @Param('id') id: string,
@@ -426,12 +439,24 @@ export class ConversationsController {
         : MessageDirection.INCOMING;
 
       let body = msg.body || '';
+      let metadata: Record<string, any> | undefined;
       const { mediaType, mediaMimeType } = this.getMediaType(msg);
 
       if (msg.type === 'location' || msg.type === 'live_location') {
         body = body || `📍 Konum: ${msg.lat || ''}, ${msg.lng || ''}`;
-      } else if (msg.type === 'vcard' || msg.type === 'multi_vcard') {
-        body = body || '👤 Kişi kartı';
+      } else if (msg.type === 'vcard' || msg.type === 'multi_vcard' || /^BEGIN:VCARD/i.test(String(msg.body || ''))) {
+        const vcardRaw = String(msg.body || msg._data?.body || '');
+        const fnMatch = vcardRaw.match(/\nFN:([^\n\r]+)/i) || vcardRaw.match(/\nFN;[^:]*:([^\n\r]+)/i);
+        const telMatch = vcardRaw.match(/\nTEL[^:]*:([^\n\r]+)/i);
+        const cName = fnMatch?.[1]?.trim() || null;
+        const cPhone = telMatch?.[1]?.replace(/[^\d+]/g, '') || null;
+        body = `👤 ${cName || 'Kişi kartı'}${cPhone ? ` (${cPhone})` : ''}`;
+        metadata = {
+          ...(metadata || {}),
+          kind: 'vcard',
+          contactName: cName,
+          contactPhone: cPhone,
+        };
       } else if (msg.type === 'order' || msg.type === 'product') {
         body = body || '🛒 Sipariş/Ürün';
       }
@@ -442,6 +467,19 @@ export class ConversationsController {
       if (mediaType) {
         const ext = this.getExtFromFilename(body) || this.getExtFromMime(mediaMimeType);
         mediaUrl = `/api/files/${sessionName}/${waMessageId}${ext}`;
+        metadata = {
+          ...(metadata || {}),
+          source: 'sync_file_proxy',
+          originalMediaUrl: mediaUrl,
+          thumbnailBase64:
+            (typeof msg?.media?.preview === 'string' && msg.media.preview) ||
+            (typeof msg?._data?.body === 'string' && msg._data.body.length > 40 ? msg._data.body : null) ||
+            null,
+          originalMimeType: mediaMimeType || null,
+          originalFileSize: null,
+          width: msg?._data?.width || msg?.media?.width || null,
+          height: msg?._data?.height || msg?.media?.height || null,
+        };
       }
 
       let reactions: any[] | undefined;
@@ -463,6 +501,7 @@ export class ConversationsController {
         mediaUrl,
         mediaType: mediaType as any,
         mediaMimeType,
+        ...(metadata ? { metadata } : {}),
         ...(reactions?.length ? { reactions } : {}),
         status:
           direction === MessageDirection.OUTGOING

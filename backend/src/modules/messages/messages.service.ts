@@ -11,11 +11,11 @@ import axios from 'axios';
 import { v4 as uuid } from 'uuid';
 import { lookup } from 'mime-types';
 import { normalizeWhatsappChatId } from '../../common/whatsapp-chat-id';
-import { optimizeImageBufferForWhatsapp } from '../../common/whatsapp-image';
 
 @Injectable()
 export class MessagesService {
   private readonly logger = new Logger(MessagesService.name);
+  private readonly mediaBackfillDir = join(process.cwd(), 'uploads', 'media-backfill');
 
   constructor(
     private prisma: PrismaService,
@@ -49,6 +49,7 @@ export class MessagesService {
       sentById?: string;
       mediaUrl?: string;
       mediaType?: any;
+      metadata?: any;
     },
   ) {
     const { waMessageId, ...rest } = data;
@@ -57,7 +58,10 @@ export class MessagesService {
       return this.prisma.message.upsert({
         where: { waMessageId },
         create: { ...rest, waMessageId },
-        update: { sentById: rest.sentById || undefined },
+        update: {
+          sentById: rest.sentById || undefined,
+          ...(rest.metadata ? { metadata: rest.metadata } : {}),
+        },
         include: { sentBy: { select: { id: true, name: true } } },
       });
     }
@@ -97,10 +101,74 @@ export class MessagesService {
       include: { sentBy: { select: { id: true, name: true } } },
     });
 
+    if (!cursor && messages.length > 0) {
+      await this.backfillConversationMedia(messages);
+    }
+
     return {
       messages: messages.reverse(),
       nextCursor: messages.length === limit ? messages[0]?.id : null,
     };
+  }
+
+  private async backfillConversationMedia(messages: any[]) {
+    const candidates = messages
+      .filter((m) => {
+        const mediaUrl = String(m.mediaUrl || '');
+        return (
+          !!m.mediaType &&
+          !!m.waMessageId &&
+          mediaUrl.includes('/api/files/') &&
+          !mediaUrl.includes('/uploads/')
+        );
+      })
+      .slice(0, 8);
+    if (candidates.length === 0) return;
+
+    mkdirSync(this.mediaBackfillDir, { recursive: true });
+
+    for (const m of candidates) {
+      try {
+        const mediaUrl = String(m.mediaUrl || '');
+        const match = mediaUrl.match(/\/api\/files\/([^/]+)\/([^/?#]+)/i);
+        const sessionFromUrl = match?.[1] ? decodeURIComponent(match[1]) : null;
+        const fileIdFromUrl = match?.[2] ? decodeURIComponent(match[2]) : null;
+        const sessionName = sessionFromUrl || '';
+        const fileId = fileIdFromUrl || String(m.waMessageId || '');
+        if (!sessionName || !fileId) continue;
+
+        const downloaded = await this.wahaService.downloadFile(sessionName, fileId);
+        if (!downloaded?.data?.length) continue;
+
+        const inferredExt =
+          extname(downloaded.filename || '') ||
+          extname(fileId) ||
+          (downloaded.mimetype?.startsWith('image/') ? '.jpg' : '');
+        const localName = `${uuid()}${inferredExt || ''}`;
+        const fullPath = join(this.mediaBackfillDir, localName);
+        writeFileSync(fullPath, downloaded.data);
+
+        const newMediaUrl = `/uploads/media-backfill/${localName}`;
+        const prevMeta =
+          m.metadata && typeof m.metadata === 'object' ? (m.metadata as Record<string, any>) : {};
+        const nextMeta = {
+          ...prevMeta,
+          source: 'media_backfill',
+          originalMediaUrl: mediaUrl,
+          originalMimeType: downloaded.mimetype || prevMeta.originalMimeType || null,
+          backfilledAt: new Date().toISOString(),
+        };
+
+        await this.prisma.message.update({
+          where: { id: m.id },
+          data: { mediaUrl: newMediaUrl, metadata: nextMeta as any },
+        });
+        m.mediaUrl = newMediaUrl;
+        m.metadata = nextMeta;
+      } catch (err: any) {
+        this.logger.debug(`Medya backfill atlandı (${m?.id}): ${err?.message}`);
+      }
+    }
   }
 
   async sendText(params: {
@@ -189,16 +257,13 @@ export class MessagesService {
     let waResponse: any;
     try {
       if (mediaType === 'IMAGE') {
-        const opt = await optimizeImageBufferForWhatsapp(fileBuffer);
         waResponse = await this.wahaService.sendImage(
           sessionName,
           jid,
           {
-            mimetype: opt.mimetype,
-            data: opt.base64,
-            filename: opt.filename,
-            width: opt.width,
-            height: opt.height,
+            mimetype,
+            data: fileBuffer.toString('base64'),
+            filename: originalFilename,
           },
           caption,
         );
@@ -274,8 +339,14 @@ export class MessagesService {
     
     const unitPrice = Number(product.unitPrice ?? 0);
     const price = `${unitPrice.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ${product.currency}`;
-    // Sadece ürün adı ve fiyat gönder (SKU, kategori, URL gönderilmiyor)
-    const caption = `${product.name}\nFiyat: ${price}`;
+    const siteLink = (product.productUrl || '').trim();
+    const caption = [
+      product.name,
+      `Fiyat (KDV Dahil): ${price}`,
+      siteLink ? `Ürün Linki: ${siteLink}` : '',
+    ]
+      .filter(Boolean)
+      .join('\n');
     if (!url) {
       this.logger.warn(`Ürün görseli yok, metin olarak gönderiliyor: productId=${productId}`);
       return this.sendText({
@@ -576,6 +647,53 @@ export class MessagesService {
     });
 
     this.emitAndUpdateList(conversationId, message, locationText);
+    return message;
+  }
+
+  async sendContact(params: {
+    conversationId: string;
+    sessionName: string;
+    chatId: string;
+    contactName: string;
+    contactPhone: string;
+    sentById?: string;
+  }) {
+    const { conversationId, sessionName, chatId, contactName, contactPhone, sentById } = params;
+    const conversation = await this.prisma.conversation.findUnique({
+      where: { id: conversationId },
+    });
+    if (!conversation) throw new NotFoundException('Görüşme bulunamadı');
+    const normalizedPhone = String(contactPhone || '').replace(/\D/g, '');
+    if (!normalizedPhone) throw new BadRequestException('Geçerli kişi telefonu gerekli');
+    const safeName = (contactName || '').trim() || normalizedPhone;
+    const vcard = [
+      'BEGIN:VCARD',
+      'VERSION:3.0',
+      `FN:${safeName}`,
+      `TEL;TYPE=CELL:${normalizedPhone}`,
+      'END:VCARD',
+    ].join('\n');
+
+    const waResponse = await this.callWahaSendText(sessionName, normalizeWhatsappChatId(chatId), vcard);
+    const waMessageId = this.extractWaMessageId(waResponse);
+    const message = await this.persistMessage({
+      conversationId,
+      sessionId: conversation.sessionId,
+      waMessageId,
+      direction: MessageDirection.OUTGOING,
+      body: '👤 Kişi kartı',
+      status: MessageStatus.SENT,
+      sentById,
+      mediaType: 'DOCUMENT',
+      metadata: {
+        kind: 'vcard',
+        contactName: safeName,
+        contactPhone: normalizedPhone,
+        vcard,
+      },
+    });
+
+    this.emitAndUpdateList(conversationId, message, `${safeName} (${normalizedPhone})`);
     return message;
   }
 }

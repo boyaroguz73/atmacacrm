@@ -1,7 +1,7 @@
 'use client';
 
-import Link from 'next/link';
 import { useEffect, useState, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 import api from '@/lib/api';
 import toast from 'react-hot-toast';
 import { useAuthStore } from '@/store/auth';
@@ -16,8 +16,10 @@ import {
   Loader2,
   ChevronLeft,
   LayoutGrid,
+  ArrowUp,
+  ArrowDown,
 } from 'lucide-react';
-import { MENU_KEYS, MENU_KEY_LABELS } from '@/lib/menu-keys';
+import { MENU_CHILD_KEYS, MENU_KEYS, MENU_KEY_LABELS } from '@/lib/menu-keys';
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL?.replace('/api', '') || 'http://localhost:3002';
 
@@ -39,6 +41,7 @@ export default function OrganizationSettingsPanel({
   backHref,
   backLabel = 'Geri',
 }: OrganizationSettingsPanelProps) {
+  const router = useRouter();
   const { user, updateOrganization } = useAuthStore();
   const isTenantAdmin = user?.role === 'ADMIN';
   const [loading, setLoading] = useState(true);
@@ -55,6 +58,17 @@ export default function OrganizationSettingsPanel({
   const [billingName, setBillingName] = useState('');
   const [billingAddress, setBillingAddress] = useState('');
   const [taxNumber, setTaxNumber] = useState('');
+  const [showBillingGuardWarning, setShowBillingGuardWarning] = useState(false);
+  const [billingGuardShakeKey, setBillingGuardShakeKey] = useState(0);
+  const [initialFormState, setInitialFormState] = useState({
+    name: '',
+    primaryColor: '#25D366',
+    secondaryColor: '#111827',
+    billingEmail: '',
+    billingName: '',
+    billingAddress: '',
+    taxNumber: '',
+  });
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -66,10 +80,46 @@ export default function OrganizationSettingsPanel({
   });
   const [menuCfgLoading, setMenuCfgLoading] = useState(false);
   const [menuSaving, setMenuSaving] = useState(false);
+  const [menuSuborder, setMenuSuborder] = useState<Record<string, string[]>>({});
 
   useEffect(() => {
     fetchOrg();
   }, []);
+
+  const currentFormState = {
+    name: name.trim(),
+    primaryColor: primaryColor.trim(),
+    secondaryColor: secondaryColor.trim(),
+    billingEmail: billingEmail.trim(),
+    billingName: billingName.trim(),
+    billingAddress: billingAddress.trim(),
+    taxNumber: taxNumber.trim(),
+  };
+
+  const hasUnsavedBillingChanges =
+    currentFormState.name !== initialFormState.name ||
+    currentFormState.primaryColor !== initialFormState.primaryColor ||
+    currentFormState.secondaryColor !== initialFormState.secondaryColor ||
+    currentFormState.billingEmail !== initialFormState.billingEmail ||
+    currentFormState.billingName !== initialFormState.billingName ||
+    currentFormState.billingAddress !== initialFormState.billingAddress ||
+    currentFormState.taxNumber !== initialFormState.taxNumber;
+
+  useEffect(() => {
+    if (!hasUnsavedBillingChanges || saving) return;
+    const beforeUnloadHandler = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', beforeUnloadHandler);
+    return () => window.removeEventListener('beforeunload', beforeUnloadHandler);
+  }, [hasUnsavedBillingChanges, saving]);
+
+  useEffect(() => {
+    if (!hasUnsavedBillingChanges) {
+      setShowBillingGuardWarning(false);
+    }
+  }, [hasUnsavedBillingChanges]);
 
   useEffect(() => {
     if (!isTenantAdmin) return;
@@ -91,10 +141,26 @@ export default function OrganizationSettingsPanel({
       .finally(() => {
         if (!cancelled) setMenuCfgLoading(false);
       });
+    api
+      .get<{ suborder?: Record<string, string[]> }>('/organizations/my/menu-suborder')
+      .then(({ data }) => {
+        if (!cancelled) setMenuSuborder(data?.suborder || {});
+      })
+      .catch(() => {});
     return () => {
       cancelled = true;
     };
   }, [isTenantAdmin]);
+
+  const moveInList = (list: string[], key: string, dir: -1 | 1) => {
+    const idx = list.indexOf(key);
+    if (idx < 0) return list;
+    const nextIdx = idx + dir;
+    if (nextIdx < 0 || nextIdx >= list.length) return list;
+    const out = [...list];
+    [out[idx], out[nextIdx]] = [out[nextIdx], out[idx]];
+    return out;
+  };
 
   const fetchOrg = async () => {
     try {
@@ -108,6 +174,16 @@ export default function OrganizationSettingsPanel({
       setBillingName(data.billingName || '');
       setBillingAddress(data.billingAddress || '');
       setTaxNumber(data.taxNumber || '');
+      setInitialFormState({
+        name: (data.name || '').trim(),
+        primaryColor: (data.primaryColor || '#25D366').trim(),
+        secondaryColor: (data.secondaryColor || '#111827').trim(),
+        billingEmail: (data.billingEmail || '').trim(),
+        billingName: (data.billingName || '').trim(),
+        billingAddress: (data.billingAddress || '').trim(),
+        taxNumber: (data.taxNumber || '').trim(),
+      });
+      setShowBillingGuardWarning(false);
     } catch {
       toast.error('Organizasyon bilgileri yüklenemedi');
     } finally {
@@ -139,6 +215,16 @@ export default function OrganizationSettingsPanel({
         logo: data.logo,
         plan: data.plan,
       });
+      setInitialFormState({
+        name: (data.name || '').trim(),
+        primaryColor: (data.primaryColor || '#25D366').trim(),
+        secondaryColor: (data.secondaryColor || '#111827').trim(),
+        billingEmail: (data.billingEmail || '').trim(),
+        billingName: (data.billingName || '').trim(),
+        billingAddress: (data.billingAddress || '').trim(),
+        taxNumber: (data.taxNumber || '').trim(),
+      });
+      setShowBillingGuardWarning(false);
 
       toast.success('Ayarlar başarıyla kaydedildi');
     } catch (err: any) {
@@ -189,6 +275,17 @@ export default function OrganizationSettingsPanel({
     });
   };
 
+  const moveTopMenu = (key: string, dir: -1 | 1) => {
+    setMenuSelections((prev) => ({ ...prev, [menuTab]: moveInList(prev[menuTab], key, dir) }));
+  };
+
+  const moveSubMenu = (parentKey: string, childKey: string, dir: -1 | 1) => {
+    setMenuSuborder((prev) => {
+      const current = prev[parentKey] || (MENU_CHILD_KEYS[parentKey] || []).map((x) => x.key);
+      return { ...prev, [parentKey]: moveInList(current, childKey, dir) };
+    });
+  };
+
   const saveMenuVisibility = async () => {
     setMenuSaving(true);
     try {
@@ -197,8 +294,9 @@ export default function OrganizationSettingsPanel({
         ACCOUNTANT: menuSelections.ACCOUNTANT,
         ADMIN: menuSelections.ADMIN,
       });
+      await api.patch('/organizations/my/menu-suborder', menuSuborder);
       window.dispatchEvent(new Event('crm-menu-visibility-changed'));
-      toast.success('Menü görünürlüğü kaydedildi');
+      toast.success('Menü görünürlüğü ve sırası kaydedildi');
     } catch (err: any) {
       toast.error(err?.response?.data?.message || 'Menü ayarları kaydedilemedi');
     } finally {
@@ -207,6 +305,22 @@ export default function OrganizationSettingsPanel({
   };
 
   const planInfo = PLAN_LABELS[plan] || PLAN_LABELS.FREE;
+
+  const triggerBillingGuardWarning = () => {
+    setShowBillingGuardWarning(true);
+    setBillingGuardShakeKey((prev) => prev + 1);
+    toast.error('Firma/fatura bilgilerini kaydetmeden ilerleyemezsiniz');
+  };
+
+  const handleBackNavigation = () => {
+    if (hasUnsavedBillingChanges) {
+      triggerBillingGuardWarning();
+      return;
+    }
+    if (backHref) {
+      router.push(backHref);
+    }
+  };
 
   if (loading) {
     return (
@@ -219,13 +333,14 @@ export default function OrganizationSettingsPanel({
   return (
     <div className="p-6 max-w-4xl mx-auto space-y-6">
       {backHref ? (
-        <Link
-          href={backHref}
+        <button
+          type="button"
+          onClick={handleBackNavigation}
           className="inline-flex items-center gap-1.5 text-sm font-medium text-gray-600 hover:text-whatsapp transition-colors"
         >
           <ChevronLeft className="w-4 h-4" />
           {backLabel}
-        </Link>
+        </button>
       ) : null}
 
       <div>
@@ -369,11 +484,21 @@ export default function OrganizationSettingsPanel({
         </div>
       </div>
 
-      <div className="bg-white border rounded-xl p-5">
+      <div
+        className={`bg-white border rounded-xl p-5 transition-colors ${
+          showBillingGuardWarning ? 'border-red-500 ring-2 ring-red-100 animate-crm-shake' : ''
+        }`}
+        key={billingGuardShakeKey}
+      >
         <div className="flex items-center gap-2 mb-4">
           <CreditCard className="w-5 h-5 text-gray-400" />
           <h2 className="text-lg font-semibold text-gray-900">Fatura Bilgileri</h2>
         </div>
+        {showBillingGuardWarning ? (
+          <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+            Kaydedilmemiş firma/fatura bilgisi var. Devam etmeden önce lütfen kaydedin.
+          </div>
+        ) : null}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Fatura E-posta</label>
@@ -465,6 +590,75 @@ export default function OrganizationSettingsPanel({
                       />
                       <span>{MENU_KEY_LABELS[key] || key}</span>
                     </label>
+                  );
+                })}
+              </div>
+              <div className="border border-gray-100 rounded-lg p-3 space-y-3">
+                <p className="text-xs font-semibold text-gray-600">Üst menü sırası ({menuTab})</p>
+                <div className="space-y-2 max-h-56 overflow-y-auto">
+                  {menuSelections[menuTab].map((key, idx) => (
+                    <div key={`sort-${menuTab}-${key}`} className="flex items-center justify-between rounded-lg border border-gray-100 px-3 py-2">
+                      <span className="text-sm text-gray-700">{MENU_KEY_LABELS[key] || key}</span>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => moveTopMenu(key, -1)}
+                          disabled={idx === 0}
+                          className="p-1.5 rounded border border-gray-200 disabled:opacity-40"
+                        >
+                          <ArrowUp className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => moveTopMenu(key, 1)}
+                          disabled={idx === menuSelections[menuTab].length - 1}
+                          className="p-1.5 rounded border border-gray-200 disabled:opacity-40"
+                        >
+                          <ArrowDown className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="border border-gray-100 rounded-lg p-3 space-y-3">
+                <p className="text-xs font-semibold text-gray-600">Alt menü sırası</p>
+                {Object.entries(MENU_CHILD_KEYS).map(([parentKey, children]) => {
+                  const ordered = (menuSuborder[parentKey] || children.map((c) => c.key))
+                    .filter((k) => children.some((c) => c.key === k));
+                  if (!ordered.length) return null;
+                  return (
+                    <div key={`sub-${parentKey}`} className="border border-gray-100 rounded-lg p-2">
+                      <p className="text-xs font-medium text-gray-600 mb-2">{MENU_KEY_LABELS[parentKey] || parentKey}</p>
+                      <div className="space-y-1">
+                        {ordered.map((childKey, idx) => {
+                          const childLabel = children.find((c) => c.key === childKey)?.label || childKey;
+                          return (
+                            <div key={`${parentKey}-${childKey}`} className="flex items-center justify-between px-2 py-1 rounded bg-gray-50">
+                              <span className="text-xs text-gray-700">{childLabel}</span>
+                              <div className="flex items-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => moveSubMenu(parentKey, childKey, -1)}
+                                  disabled={idx === 0}
+                                  className="p-1 rounded border border-gray-200 disabled:opacity-40"
+                                >
+                                  <ArrowUp className="w-3 h-3" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => moveSubMenu(parentKey, childKey, 1)}
+                                  disabled={idx === ordered.length - 1}
+                                  className="p-1 rounded border border-gray-200 disabled:opacity-40"
+                                >
+                                  <ArrowDown className="w-3 h-3" />
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
                   );
                 })}
               </div>

@@ -173,7 +173,7 @@ export default function CalendarPage() {
   };
 
   return (
-    <div className="p-6 space-y-6 max-w-7xl">
+    <div className="p-4 sm:p-6 space-y-6 w-full max-w-none">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -200,7 +200,7 @@ export default function CalendarPage() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4">
         {[
           { label: 'Toplam Görev', value: stats.total, color: 'text-blue-600', bg: 'bg-blue-50' },
           { label: 'Bekleyen', value: stats.pending, color: 'text-yellow-600', bg: 'bg-yellow-50' },
@@ -214,9 +214,9 @@ export default function CalendarPage() {
         ))}
       </div>
 
-      <div className="flex gap-6">
+      <div className="flex flex-col xl:flex-row gap-4 xl:gap-6">
         {/* Calendar Grid */}
-        <div className="flex-1 bg-white rounded-xl border border-gray-100 shadow-sm">
+        <div className="min-w-0 flex-1 bg-white rounded-xl border border-gray-100 shadow-sm">
           {/* Month Navigator */}
           <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
             <button onClick={prevMonth} className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors">
@@ -248,7 +248,12 @@ export default function CalendarPage() {
             <div className="grid grid-cols-7">
               {days.map((day, i) => {
                 if (!day) {
-                  return <div key={`empty-${i}`} className="min-h-[100px] border-b border-r border-gray-50 bg-gray-50/30" />;
+                  return (
+                    <div
+                      key={`empty-${i}`}
+                      className="min-h-[110px] lg:min-h-[130px] border-b border-r border-gray-50 bg-gray-50/30"
+                    />
+                  );
                 }
 
                 const dayTasks = getTasksForDay(day);
@@ -260,7 +265,7 @@ export default function CalendarPage() {
                   <button
                     key={day.toISOString()}
                     onClick={() => setSelectedDate(day)}
-                    className={`min-h-[100px] border-b border-r border-gray-50 p-2 text-left transition-colors hover:bg-blue-50/50 ${
+                    className={`min-h-[110px] lg:min-h-[130px] border-b border-r border-gray-50 p-2 text-left transition-colors hover:bg-blue-50/50 ${
                       isSelected ? 'bg-blue-50 ring-2 ring-blue-300 ring-inset' : ''
                     }`}
                   >
@@ -278,22 +283,22 @@ export default function CalendarPage() {
                         <AlertTriangle className="w-3.5 h-3.5 text-red-500" />
                       )}
                     </div>
-                    <div className="space-y-0.5">
-                      {dayTasks.slice(0, 3).map((t) => {
+                    <div className="space-y-0.5 max-h-[70px] lg:max-h-[88px] overflow-y-auto pr-1">
+                      {dayTasks.slice(0, 6).map((t) => {
                         const sc = statusConfig[t.status];
                         return (
                           <div
                             key={t.id}
-                            className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium truncate bg-gray-50"
+                            className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-gray-50"
                           >
                             <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${sc.dot}`} />
-                            <span className="truncate text-gray-700">{t.title}</span>
+                            <span className="truncate text-gray-700 leading-tight">{t.title}</span>
                           </div>
                         );
                       })}
-                      {dayTasks.length > 3 && (
+                      {dayTasks.length > 6 && (
                         <span className="text-[10px] text-gray-400 pl-1">
-                          +{dayTasks.length - 3} daha
+                          +{dayTasks.length - 6} daha
                         </span>
                       )}
                     </div>
@@ -305,7 +310,7 @@ export default function CalendarPage() {
         </div>
 
         {/* Selected Day Detail */}
-        <div className="w-80 bg-white rounded-xl border border-gray-100 shadow-sm flex flex-col">
+        <div className="w-full xl:w-96 shrink-0 bg-white rounded-xl border border-gray-100 shadow-sm flex flex-col min-h-[360px] xl:min-h-0">
           <div className="p-4 border-b border-gray-100">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">

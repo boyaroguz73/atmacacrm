@@ -8,7 +8,7 @@ export default function AccountingLayout({
 }) {
   return (
     <AppShell>
-      <div className="p-6 max-w-6xl mx-auto">
+      <div className="p-4 sm:p-6 w-full max-w-none">
         <AccountingSubnav />
         {children}
       </div>

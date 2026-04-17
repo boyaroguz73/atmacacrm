@@ -15,14 +15,46 @@ export async function optimizeImageBufferForWhatsapp(buf: Buffer): Promise<{
   width?: number;
   height?: number;
 }> {
-  let pipeline = sharp(buf, { failOn: 'none' });
-  const meta = await pipeline.metadata();
+  const meta = await sharp(buf, { failOn: 'none' }).metadata();
   const w = meta.width || 0;
   const h = meta.height || 0;
-  
-  // Boyut kontrolü - çok büyük görselleri küçült
+  const fmt = String(meta.format || '').toLowerCase();
+  const origMime =
+    fmt === 'png'
+      ? 'image/png'
+      : fmt === 'webp'
+        ? 'image/webp'
+        : fmt === 'gif'
+          ? 'image/gif'
+          : fmt === 'heif' || fmt === 'heic'
+            ? 'image/heic'
+            : 'image/jpeg';
+  const origExt =
+    origMime === 'image/png'
+      ? 'png'
+      : origMime === 'image/webp'
+        ? 'webp'
+        : origMime === 'image/gif'
+          ? 'gif'
+          : origMime === 'image/heic'
+            ? 'heic'
+            : 'jpg';
+
+  // Orijinal dosya zaten uygunsa dokunma: kaliteyi koru.
+  if (buf.length <= MAX_FILE_SIZE && w <= MAX_DIMENSION && h <= MAX_DIMENSION) {
+    return {
+      base64: buf.toString('base64'),
+      mimetype: origMime,
+      filename: `photo_${Date.now()}.${origExt}`,
+      width: w || undefined,
+      height: h || undefined,
+    };
+  }
+
+  // Sadece zorunluysa transcode/resize uygula.
+  let pipeline = sharp(buf, { failOn: 'none' });
   if (w > MAX_DIMENSION || h > MAX_DIMENSION) {
-    pipeline = sharp(buf, { failOn: 'none' }).resize({
+    pipeline = pipeline.resize({
       width: MAX_DIMENSION,
       height: MAX_DIMENSION,
       fit: 'inside',
@@ -30,8 +62,7 @@ export async function optimizeImageBufferForWhatsapp(buf: Buffer): Promise<{
     });
   }
 
-  // Başlangıç kalitesi
-  let quality = 94;
+  let quality = 92;
   let out = await pipeline
     .jpeg({
       quality,
@@ -40,36 +71,18 @@ export async function optimizeImageBufferForWhatsapp(buf: Buffer): Promise<{
     })
     .toBuffer();
 
-  // Dosya boyutu 4MB'ı aşıyorsa kaliteyi kademeli düşür
-  while (out.length > MAX_FILE_SIZE && quality > 30) {
-    quality -= 10;
+  while (out.length > MAX_FILE_SIZE && quality > 35) {
+    quality -= 8;
     out = await pipeline
       .jpeg({
         quality,
         mozjpeg: true,
-        chromaSubsampling: quality > 70 ? '4:4:4' : '4:2:0',
+        chromaSubsampling: quality > 72 ? '4:4:4' : '4:2:0',
       })
       .toBuffer();
   }
 
-  // Hâlâ çok büyükse boyutu düşür (ekranda ve WhatsApp’ta daha okunaklı kalite)
-  if (out.length > MAX_FILE_SIZE) {
-    pipeline = sharp(buf, { failOn: 'none' }).resize({
-      width: 2560,
-      height: 2560,
-      fit: 'inside',
-      withoutEnlargement: true,
-    });
-    out = await pipeline
-      .jpeg({
-        quality: 82,
-        mozjpeg: true,
-        chromaSubsampling: '4:2:0',
-      })
-      .toBuffer();
-  }
-
-  const fm = await sharp(out).metadata();
+  const fm = await sharp(out, { failOn: 'none' }).metadata();
   return {
     base64: out.toString('base64'),
     mimetype: 'image/jpeg',

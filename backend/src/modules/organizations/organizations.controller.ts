@@ -108,6 +108,20 @@ export class OrganizationsController {
     return this.orgService.patchMenuVisibility(orgId, body as any);
   }
 
+  @Get('my/menu-suborder')
+  @Roles('AGENT')
+  async getMyMenuSuborder(@Req() req: any) {
+    const orgId = await this.resolveMyOrgId(req);
+    return this.orgService.getMenuSuborder(orgId);
+  }
+
+  @Patch('my/menu-suborder')
+  @Roles('ADMIN')
+  async patchMyMenuSuborder(@Req() req: any, @Body() body: Record<string, string[] | undefined>) {
+    const orgId = await this.resolveMyOrgId(req);
+    return this.orgService.patchMenuSuborder(orgId, body);
+  }
+
   @Get('my/product-feed')
   @Roles('ADMIN', 'SUPERADMIN')
   async getMyProductFeed(@Req() req: any) {

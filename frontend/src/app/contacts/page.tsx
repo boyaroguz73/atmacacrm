@@ -23,6 +23,8 @@ import ContactAvatar from '@/components/ui/ContactAvatar';
 import EcommerceCustomerBadge from '@/components/ui/EcommerceCustomerBadge';
 import { LEAD_STATUS_LABELS, LEAD_STATUS_COLORS } from '@/lib/constants';
 
+type LeadStatus = 'NEW' | 'CONTACTED' | 'INTERESTED' | 'OFFER_SENT' | 'WON' | 'LOST';
+
 interface Contact {
   id: string;
   phone: string;
@@ -53,6 +55,7 @@ export default function ContactsPage() {
 
   const [createOpen, setCreateOpen] = useState(false);
   const [createSubmitting, setCreateSubmitting] = useState(false);
+  const [showLeadFields, setShowLeadFields] = useState(false);
   const [sessions, setSessions] = useState<{ id: string; name: string; status: string }[]>([]);
   const [userRole, setUserRole] = useState<string | null>(null);
   const [form, setForm] = useState({
@@ -60,12 +63,20 @@ export default function ContactsPage() {
     name: '',
     surname: '',
     email: '',
+    city: '',
+    district: '',
     notes: '',
     address: '',
+    billingAddress: '',
+    billingEmail: '',
     source: '',
     openChat: true,
     sessionId: '',
     organizationId: '',
+    leadStatus: 'NEW' as LeadStatus,
+    leadValue: '',
+    leadSource: '',
+    leadNotes: '',
   });
 
   const loadSessionsForModal = async () => {
@@ -98,13 +109,22 @@ export default function ContactsPage() {
       name: '',
       surname: '',
       email: '',
+      city: '',
+      district: '',
       notes: '',
       address: '',
+      billingAddress: '',
+      billingEmail: '',
       source: '',
       openChat: true,
       sessionId: '',
       organizationId: '',
+      leadStatus: 'NEW',
+      leadValue: '',
+      leadSource: '',
+      leadNotes: '',
     });
+    setShowLeadFields(false);
     setCreateOpen(true);
     loadSessionsForModal();
   };
@@ -126,13 +146,25 @@ export default function ContactsPage() {
         name: form.name.trim() || undefined,
         surname: form.surname.trim() || undefined,
         email: form.email.trim() || undefined,
+        city: form.city.trim() || undefined,
+        district: form.district.trim() || undefined,
         notes: form.notes.trim() || undefined,
         address: form.address.trim() || undefined,
+        billingAddress: form.billingAddress.trim() || undefined,
+        billingEmail: form.billingEmail.trim() || undefined,
         source: form.source.trim() || undefined,
         openChat,
         sessionId: form.sessionId || undefined,
         organizationId:
           userRole === 'SUPERADMIN' ? form.organizationId.trim() : undefined,
+        lead: showLeadFields
+          ? {
+              status: form.leadStatus || 'NEW',
+              value: form.leadValue.trim() ? Number(form.leadValue) : undefined,
+              source: form.leadSource.trim() || undefined,
+              notes: form.leadNotes.trim() || undefined,
+            }
+          : undefined,
       });
 
       toast.success('Kişi kaydedildi');
@@ -317,6 +349,24 @@ export default function ContactsPage() {
                   onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
                 />
               </label>
+              <div className="grid grid-cols-2 gap-2">
+                <label className="block text-sm">
+                  <span className="text-gray-600 font-medium">İl</span>
+                  <input
+                    className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl text-sm"
+                    value={form.city}
+                    onChange={(e) => setForm((f) => ({ ...f, city: e.target.value }))}
+                  />
+                </label>
+                <label className="block text-sm">
+                  <span className="text-gray-600 font-medium">İlçe</span>
+                  <input
+                    className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl text-sm"
+                    value={form.district}
+                    onChange={(e) => setForm((f) => ({ ...f, district: e.target.value }))}
+                  />
+                </label>
+              </div>
               <label className="block text-sm">
                 <span className="text-gray-600 font-medium">Açık adres</span>
                 <textarea
@@ -324,6 +374,26 @@ export default function ContactsPage() {
                   className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl text-sm resize-y"
                   value={form.address}
                   onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))}
+                />
+              </label>
+              <label className="block text-sm">
+                <span className="text-gray-600 font-medium">Fatura e-posta</span>
+                <input
+                  type="email"
+                  className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl text-sm"
+                  value={form.billingEmail}
+                  onChange={(e) => setForm((f) => ({ ...f, billingEmail: e.target.value }))}
+                  placeholder="Boşsa kişi e-postası kullanılır"
+                />
+              </label>
+              <label className="block text-sm">
+                <span className="text-gray-600 font-medium">Fatura adresi</span>
+                <textarea
+                  rows={2}
+                  className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl text-sm resize-y"
+                  value={form.billingAddress}
+                  onChange={(e) => setForm((f) => ({ ...f, billingAddress: e.target.value }))}
+                  placeholder="Boşsa açık adres kullanılır"
                 />
               </label>
               <label className="block text-sm">
@@ -344,6 +414,63 @@ export default function ContactsPage() {
                   onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
                 />
               </label>
+              <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={showLeadFields}
+                  onChange={(e) => setShowLeadFields(e.target.checked)}
+                  className="rounded border-gray-300 text-whatsapp focus:ring-whatsapp"
+                />
+                Bu kişi için lead kaydı da oluştur
+              </label>
+              {showLeadFields && (
+                <div className="rounded-xl border border-amber-100 bg-amber-50/50 p-3 space-y-2">
+                  <div className="grid grid-cols-2 gap-2">
+                    <label className="block text-sm">
+                      <span className="text-gray-600 font-medium">Lead durumu</span>
+                      <select
+                        className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl text-sm bg-white"
+                        value={form.leadStatus}
+                        onChange={(e) => setForm((f) => ({ ...f, leadStatus: e.target.value as LeadStatus }))}
+                      >
+                        <option value="NEW">Yeni</option>
+                        <option value="CONTACTED">İletişim kuruldu</option>
+                        <option value="INTERESTED">İlgileniyor</option>
+                        <option value="OFFER_SENT">Teklif gönderildi</option>
+                      </select>
+                    </label>
+                    <label className="block text-sm">
+                      <span className="text-gray-600 font-medium">Potansiyel değer</span>
+                      <input
+                        type="number"
+                        min={0}
+                        className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl text-sm"
+                        value={form.leadValue}
+                        onChange={(e) => setForm((f) => ({ ...f, leadValue: e.target.value }))}
+                        placeholder="Opsiyonel"
+                      />
+                    </label>
+                  </div>
+                  <label className="block text-sm">
+                    <span className="text-gray-600 font-medium">Lead kaynağı</span>
+                    <input
+                      className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl text-sm"
+                      value={form.leadSource}
+                      onChange={(e) => setForm((f) => ({ ...f, leadSource: e.target.value }))}
+                      placeholder="Örn. WhatsApp, Web Form"
+                    />
+                  </label>
+                  <label className="block text-sm">
+                    <span className="text-gray-600 font-medium">Lead notu</span>
+                    <textarea
+                      rows={2}
+                      className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl text-sm resize-y"
+                      value={form.leadNotes}
+                      onChange={(e) => setForm((f) => ({ ...f, leadNotes: e.target.value }))}
+                    />
+                  </label>
+                </div>
+              )}
               {sessions.length > 0 && (
                 <label className="block text-sm">
                   <span className="text-gray-600 font-medium">WhatsApp oturumu (sohbet için)</span>

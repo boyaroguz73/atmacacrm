@@ -28,6 +28,8 @@ export class AuditLogController {
     @Query('userId') userId?: string,
     @Query('entity') entity?: string,
     @Query('action') action?: string,
+    @Query('search') search?: string,
+    @Query('scope') scope?: string,
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
   ) {
@@ -37,6 +39,8 @@ export class AuditLogController {
       userId,
       entity,
       action,
+      search,
+      scope,
       startDate,
       endDate,
       organizationId: requireOrgId(user),

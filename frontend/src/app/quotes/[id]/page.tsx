@@ -44,6 +44,9 @@ const STATUS_BADGE: Record<string, { label: string; cls: string }> = {
 
 type PaymentModeUI = 'FULL' | 'DEPOSIT_50';
 type DiscountType = 'PERCENT' | 'AMOUNT';
+type OrderPaymentModeUI = 'FULL' | 'DEPOSIT_50' | 'CUSTOM';
+
+const LINE_VAT_OPTIONS = [0, 1, 10, 20] as const;
 
 interface LocalLineItem {
   key: string;
@@ -56,7 +59,7 @@ interface LocalLineItem {
   measurementInfo?: string;
   quantity: number;
   unitPrice: number;
-  vatRate: number;
+  applyDiscount: boolean;
   discountType: DiscountType;
   discountValue: number;
 }
@@ -72,16 +75,39 @@ interface ProductHit {
   imageUrl?: string | null;
 }
 
+interface SupplierHit {
+  id: string;
+  name: string;
+}
+
+type ConvertSource = 'STOCK' | 'SUPPLIER' | 'EXISTING_CUSTOMER';
+
+interface ConvertItemSource {
+  quoteItemId: string;
+  source: ConvertSource;
+  supplierId: string;
+  supplierOrderNo: string;
+}
+
 function currencySymbol(c: string): string {
   if (c === 'USD') return '$';
   if (c === 'EUR') return '€';
   return '₺';
 }
 
+function measurementHintFromVariantMetadata(metadata: unknown): string {
+  if (!metadata || typeof metadata !== 'object') return '';
+  const m = metadata as Record<string, unknown>;
+  const t2 = typeof m.type2 === 'string' ? m.type2.trim() : '';
+  const title = typeof m.title === 'string' ? m.title.trim() : '';
+  return t2 || title || '';
+}
+
 function calcTotals(
   items: LocalLineItem[],
   discountType: DiscountType,
   discountValue: number,
+  lineVatRate: number,
 ) {
   let netSubtotalBeforeGeneralDiscount = 0;
   let vatTotalBeforeGeneralDiscount = 0;
@@ -96,7 +122,7 @@ function calcTotals(
           : lineGross * (item.discountValue / 100);
     }
     const grossAfterLineDiscount = Math.max(0, lineGross - lineDiscount);
-    const divider = 1 + (item.vatRate / 100);
+    const divider = 1 + (lineVatRate / 100);
     const lineNet = divider > 0 ? grossAfterLineDiscount / divider : grossAfterLineDiscount;
     const lineVat = grossAfterLineDiscount - lineNet;
     netSubtotalBeforeGeneralDiscount += lineNet;
@@ -146,7 +172,7 @@ function emptyLine(): LocalLineItem {
     measurementInfo: '',
     quantity: 1,
     unitPrice: 0,
-    vatRate: 20,
+    applyDiscount: false,
     discountType: 'PERCENT',
     discountValue: 0,
   };
@@ -176,6 +202,7 @@ export default function QuoteDetailPage() {
   const [documentKind, setDocumentKind] = useState<'PROFORMA' | 'QUOTE'>('PROFORMA');
   const [grandTotalOverride, setGrandTotalOverride] = useState<string>('');
   const [saving, setSaving] = useState(false);
+  const [lineVatRate, setLineVatRate] = useState(20);
 
   // Product search
   const [productQuery, setProductQuery] = useState('');
@@ -185,7 +212,7 @@ export default function QuoteDetailPage() {
 
   const [variantPick, setVariantPick] = useState<{
     product: ProductHit;
-    variants: { id: string; name: string; unitPrice: number; vatRate: number }[];
+    variants: { id: string; name: string; unitPrice: number; vatRate: number; metadata?: unknown }[];
   } | null>(null);
 
   // Accept modal
@@ -194,12 +221,18 @@ export default function QuoteDetailPage() {
 
   // WhatsApp gönderim onay modalı
   const [showSendConfirm, setShowSendConfirm] = useState(false);
+  const [showConvertModal, setShowConvertModal] = useState(false);
+  const [convertManual, setConvertManual] = useState(false);
+  const [convertItemSources, setConvertItemSources] = useState<ConvertItemSource[]>([]);
+  const [convertPaymentMode, setConvertPaymentMode] = useState<OrderPaymentModeUI>('FULL');
+  const [convertCustomPaymentValue, setConvertCustomPaymentValue] = useState<string>('');
+  const [suppliers, setSuppliers] = useState<SupplierHit[]>([]);
 
   const sym = currencySymbol(currency);
 
   const totals = useMemo(
-    () => calcTotals(lines, discountType, discountValue),
-    [lines, discountType, discountValue],
+    () => calcTotals(lines, discountType, discountValue, lineVatRate),
+    [lines, discountType, discountValue, lineVatRate],
   );
 
   const displayGrandTotal = grandTotalOverride && parseFloat(grandTotalOverride) > 0 
@@ -219,8 +252,13 @@ export default function QuoteDetailPage() {
   };
 
   const initFormFromQuote = (q: any) => {
+    const rawItems = q.items || [];
+    const rateSet = Array.from(
+      new Set(rawItems.map((it: any) => Number(it.vatRate ?? 0))),
+    ) as number[];
+    setLineVatRate(rateSet.length === 1 ? rateSet[0]! : 20);
     setLines(
-      (q.items || []).map((it: any) => ({
+      rawItems.map((it: any) => ({
         key: String(it.id),
         productId: it.productId || undefined,
         productVariantId: it.productVariantId || undefined,
@@ -231,7 +269,7 @@ export default function QuoteDetailPage() {
         measurementInfo: it.measurementInfo != null ? String(it.measurementInfo) : '',
         quantity: Number(it.quantity || 0),
         unitPrice: Number(it.unitPrice || 0),
-        vatRate: Number(it.vatRate || 0),
+        applyDiscount: Number(it.discountValue || 0) > 0,
         discountType: (it.discountType || 'PERCENT') as DiscountType,
         discountValue: Number(it.discountValue || 0),
       })),
@@ -255,6 +293,13 @@ export default function QuoteDetailPage() {
     };
   }, [id]);
 
+  useEffect(() => {
+    api
+      .get('/suppliers', { params: { isActive: true, limit: 200 } })
+      .then(({ data }) => setSuppliers(data.suppliers || []))
+      .catch(() => setSuppliers([]));
+  }, []);
+
   const searchProducts = useCallback(async (q: string) => {
     if (q.length < 1) {
       setProductResults([]);
@@ -277,8 +322,9 @@ export default function QuoteDetailPage() {
 
   const finalizeProductLine = (
     p: ProductHit,
-    variant?: { id: string; name: string; unitPrice: number; vatRate: number },
+    variant?: { id: string; name: string; unitPrice: number; metadata?: unknown },
   ) => {
+    const measureHint = variant ? measurementHintFromVariantMetadata(variant.metadata) : '';
     setLines((prev) => [
       ...prev,
       {
@@ -289,10 +335,10 @@ export default function QuoteDetailPage() {
         name: variant ? variant.name : String(p.name ?? ''),
         description: p.description || undefined,
         colorFabricInfo: '',
-        measurementInfo: '',
+        measurementInfo: measureHint,
         quantity: 1,
         unitPrice: variant ? variant.unitPrice : p.unitPrice,
-        vatRate: variant ? variant.vatRate : p.vatRate,
+        applyDiscount: false,
         discountType: 'PERCENT',
         discountValue: 0,
       },
@@ -363,9 +409,9 @@ export default function QuoteDetailPage() {
           description: l.description || undefined,
           quantity: l.quantity,
           unitPrice: l.unitPrice,
-          vatRate: Math.round(l.vatRate),
-          discountType: l.discountType,
-          discountValue: l.discountValue || 0,
+          vatRate: Math.round(lineVatRate),
+          discountType: l.applyDiscount ? l.discountType : 'PERCENT',
+          discountValue: l.applyDiscount ? l.discountValue || 0 : 0,
           colorFabricInfo: String(l.colorFabricInfo ?? '').trim() || null,
           measurementInfo: String(l.measurementInfo ?? '').trim() || null,
         })),
@@ -396,15 +442,85 @@ export default function QuoteDetailPage() {
         await api.patch(`/quotes/${id}/status`, { status: 'REJECTED' });
         toast.success('Teklif reddedildi');
         void fetchQuote();
-      } else if (action === 'convert') {
-        await api.post(`/quotes/${id}/convert-to-order`);
-        toast.success('Sipariş oluşturuldu');
-        router.push('/orders');
-      } else if (action === 'convert-manual') {
-        await api.post(`/quotes/${id}/convert-to-order`, { manual: true });
-        toast.success('Teklif manuel olarak siparişe çevrildi');
-        router.push('/orders');
       }
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, 'İşlem başarısız'));
+    } finally {
+      setActionLoading('');
+    }
+  };
+
+  const openConvertModal = (manual: boolean) => {
+    const initial = (quote?.items || []).map((item: any) => ({
+      quoteItemId: String(item.id),
+      source: 'STOCK' as const,
+      supplierId: '',
+      supplierOrderNo: '',
+    }));
+    setConvertManual(manual);
+    setConvertPaymentMode('FULL');
+    setConvertCustomPaymentValue('');
+    setConvertItemSources(initial);
+    setShowConvertModal(true);
+  };
+
+  const updateConvertSource = (quoteItemId: string, patch: Partial<ConvertItemSource>) => {
+    setConvertItemSources((prev) =>
+      prev.map((x) => {
+        if (x.quoteItemId !== quoteItemId) return x;
+        const next = { ...x, ...patch };
+        if (patch.source === 'STOCK') {
+          next.supplierId = '';
+          next.supplierOrderNo = '';
+        }
+        if (patch.source === 'EXISTING_CUSTOMER') {
+          next.supplierId = '';
+        }
+        return next;
+      }),
+    );
+  };
+
+  const submitConvert = async () => {
+    for (const src of convertItemSources) {
+      const item = (quote?.items || []).find((x: any) => String(x.id) === src.quoteItemId);
+      const itemName = item?.name || 'Kalem';
+      if (src.source === 'SUPPLIER' && (!src.supplierId || !src.supplierOrderNo.trim())) {
+        toast.error(`${itemName} için tedarikçi ve sipariş no zorunlu`);
+        return;
+      }
+      if (src.source === 'EXISTING_CUSTOMER' && !src.supplierOrderNo.trim()) {
+        toast.error(`${itemName} için eski müşteri referansı zorunlu`);
+        return;
+      }
+    }
+    if (
+      convertPaymentMode === 'CUSTOM' &&
+      (!(Number(convertCustomPaymentValue) > 0) || Number(convertCustomPaymentValue) > 100)
+    ) {
+      toast.error('Özel ödeme yüzdesi 0-100 arasında olmalıdır');
+      return;
+    }
+    setActionLoading(convertManual ? 'convert-manual' : 'convert');
+    try {
+      await api.post(`/quotes/${id}/convert-to-order`, {
+        manual: convertManual,
+        payment: {
+          mode: convertPaymentMode,
+          customValue:
+            convertPaymentMode === 'CUSTOM' ? Number(convertCustomPaymentValue) || undefined : undefined,
+        },
+        itemSources: convertItemSources.map((src) => ({
+          quoteItemId: src.quoteItemId,
+          source: src.source,
+          supplierId: src.source === 'SUPPLIER' ? src.supplierId || undefined : undefined,
+          supplierOrderNo:
+            src.source === 'STOCK' ? undefined : src.supplierOrderNo.trim() || undefined,
+        })),
+      });
+      toast.success(convertManual ? 'Teklif manuel olarak siparişe çevrildi' : 'Sipariş oluşturuldu');
+      setShowConvertModal(false);
+      router.push('/orders');
     } catch (err) {
       toast.error(getApiErrorMessage(err, 'İşlem başarısız'));
     } finally {
@@ -561,23 +677,37 @@ export default function QuoteDetailPage() {
                   + Boş satır
                 </button>
               </div>
-              <p className="px-5 pt-3 text-[11px] text-gray-500">
-                Ürün seçili satırlarda birim fiyat ve KDV, XML'den gelen değer olarak kilitlidir; sadece indirim düzenlenir. Açıklama alanı PDF'e yazdırılmaz.
-              </p>
+              <div className="px-5 pt-3 flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-2 sm:gap-4">
+                <label className="flex items-center gap-2 text-xs text-gray-700">
+                  <span className="font-medium text-gray-600 shrink-0">KDV oranı (tüm satırlar)</span>
+                  <select
+                    value={lineVatRate}
+                    onChange={(e) => setLineVatRate(Number(e.target.value))}
+                    className="px-2 py-1.5 border border-gray-200 rounded-lg text-xs font-medium bg-white focus:outline-none focus:border-whatsapp"
+                  >
+                    {LINE_VAT_OPTIONS.map((v) => (
+                      <option key={v} value={v}>
+                        %{v}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <p className="text-[11px] text-gray-500 sm:flex-1 min-w-0">
+                  Birim fiyat KDV dahil düzenlenir. Satır indirimi yalnızca işaretlenirse geçerlidir. Açıklama (sadece form) PDF’e yazdırılmaz.
+                </p>
+              </div>
               <div className="overflow-x-auto">
-                <table className="w-full text-xs min-w-[1040px]">
+                <table className="w-full text-xs min-w-[900px]">
                   <thead>
                     <tr className="bg-gray-50/90 text-gray-500 font-semibold uppercase tracking-wide text-[10px]">
-                      <th className="text-left px-2 py-2 w-14">Görsel</th>
+                      <th className="text-left px-2 py-2 w-20 sm:w-24">Görsel</th>
                       <th className="text-left px-3 py-2 w-[18%]">Ürün</th>
                       <th className="text-left px-2 py-2 w-[12%]">Renk/Kumaş</th>
                       <th className="text-left px-2 py-2 w-[10%]">Ölçü</th>
                       <th className="text-left px-2 py-2 w-[14%]">Açıklama (sadece form)</th>
                       <th className="text-left px-2 py-2 w-16">Miktar</th>
-                      <th className="text-left px-2 py-2 w-24">Birim Fiyat (KDV Dahil)</th>
-                      <th className="text-left px-2 py-2 w-14">KDV %</th>
-                      <th className="text-left px-2 py-2 w-24">İndirim</th>
-                      <th className="text-left px-2 py-2 w-20">Değer</th>
+                      <th className="text-left px-2 py-2 w-28">Birim (KDV dahil)</th>
+                      <th className="text-left px-2 py-2 w-40">Satır indirimi</th>
                       <th className="text-right px-3 py-2 w-24">Satır Toplamı</th>
                       <th className="w-10" />
                     </tr>
@@ -585,8 +715,8 @@ export default function QuoteDetailPage() {
                   <tbody className="divide-y divide-gray-100">
                     {lines.map((line, idx) => (
                       <tr key={line.key} className="align-top">
-                        <td className="px-2 py-2 w-14">
-                          <div className="w-11 h-11 rounded-lg border border-gray-100 bg-gray-50 overflow-hidden shrink-0">
+                        <td className="px-2 py-2 w-16">
+                          <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-lg border border-gray-100 bg-gray-50 overflow-hidden shrink-0">
                             {line.lineImageUrl ? (
                               // eslint-disable-next-line @next/next/no-img-element
                               <img
@@ -662,54 +792,57 @@ export default function QuoteDetailPage() {
                             min={0}
                             step={0.01}
                             value={line.unitPrice}
-                            disabled={!!line.productId}
                             onChange={(e) =>
                               updateLine(line.key, { unitPrice: parseFloat(e.target.value) || 0 })
                             }
-                            className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm tabular-nums disabled:bg-gray-50 disabled:text-gray-500"
+                          className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm tabular-nums"
                           />
                         </td>
                         <td className="px-2 py-2">
-                          <input
-                            type="number"
-                            min={0}
-                            max={100}
-                            step={1}
-                            value={line.vatRate}
-                            disabled={!!line.productId}
-                            onChange={(e) =>
-                              updateLine(line.key, { vatRate: parseFloat(e.target.value) || 0 })
-                            }
-                            className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm disabled:bg-gray-50 disabled:text-gray-500"
-                          />
-                        </td>
-                        <td className="px-2 py-2">
-                          <select
-                            value={line.discountType}
-                            onChange={(e) =>
-                              updateLine(line.key, {
-                                discountType: e.target.value as DiscountType,
-                              })
-                            }
-                            className="w-full px-1 py-1.5 border border-gray-200 rounded-lg text-[11px] font-medium bg-white"
-                          >
-                            <option value="PERCENT">%</option>
-                            <option value="AMOUNT">TL</option>
-                          </select>
-                        </td>
-                        <td className="px-2 py-2">
-                          <input
-                            type="number"
-                            min={0}
-                            step={0.01}
-                            value={line.discountValue}
-                            onChange={(e) =>
-                              updateLine(line.key, {
-                                discountValue: parseFloat(e.target.value) || 0,
-                              })
-                            }
-                            className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm tabular-nums"
-                          />
+                        <div className="flex flex-col gap-1.5 min-w-0">
+                          <label className="inline-flex items-center gap-2 text-[11px] font-medium text-gray-700">
+                            <input
+                              type="checkbox"
+                              checked={line.applyDiscount}
+                              onChange={(e) =>
+                                updateLine(line.key, {
+                                  applyDiscount: e.target.checked,
+                                  ...(e.target.checked ? {} : { discountValue: 0, discountType: 'PERCENT' }),
+                                })
+                              }
+                              className="rounded border-gray-300 text-whatsapp focus:ring-whatsapp shrink-0"
+                            />
+                            İndirim uygula
+                          </label>
+                          {line.applyDiscount ? (
+                            <div className="flex gap-1 items-center">
+                              <select
+                                value={line.discountType}
+                                onChange={(e) =>
+                                  updateLine(line.key, {
+                                    discountType: e.target.value as DiscountType,
+                                  })
+                                }
+                                className="w-14 shrink-0 px-1 py-1 border border-gray-200 rounded-lg text-[11px] font-medium bg-white"
+                              >
+                                <option value="PERCENT">%</option>
+                                <option value="AMOUNT">TL</option>
+                              </select>
+                              <input
+                                type="number"
+                                min={0}
+                                step={0.01}
+                                value={line.discountValue}
+                                onChange={(e) =>
+                                  updateLine(line.key, {
+                                    discountValue: parseFloat(e.target.value) || 0,
+                                  })
+                                }
+                                className="min-w-0 flex-1 px-2 py-1 border border-gray-200 rounded-lg text-sm tabular-nums"
+                              />
+                            </div>
+                          ) : null}
+                        </div>
                         </td>
                         <td className="px-3 py-2 text-right text-sm font-semibold text-gray-800 tabular-nums">
                           {sym}
@@ -922,7 +1055,8 @@ export default function QuoteDetailPage() {
                 />
               </div>
               <p className="text-[11px] text-gray-400 leading-relaxed">
-                Kaydet'e tıkladığınızda değişiklikler veritabanına yazılır. PDF'i yeniden oluşturmak gerekebilir.
+                Kaydet&apos;e tıkladığınızda değişiklikler veritabanına yazılır. PDF&apos;i yeniden oluşturmak
+                gerekebilir.
               </p>
             </div>
           </aside>
@@ -1039,6 +1173,143 @@ export default function QuoteDetailPage() {
           </div>
         </div>
       )}
+      {showConvertModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-3xl p-5 space-y-4 max-h-[85vh] overflow-y-auto">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-bold text-gray-900">Siparişe dönüştürme kaynak seçimi</h2>
+                <p className="text-xs text-gray-500 mt-1">
+                  Her kalem için stok, tedarikçi veya eski müşteri kaynağını belirleyin.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowConvertModal(false)}
+                className="p-1 rounded-lg hover:bg-gray-100 text-gray-500"
+                aria-label="Kapat"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="space-y-3">
+              <div className="border border-gray-100 rounded-xl p-3 space-y-2">
+                <p className="text-sm font-semibold text-gray-900">Ödeme seçimi</p>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-sm">
+                  <label className="inline-flex items-center gap-2">
+                    <input
+                      type="radio"
+                      name="convert-payment"
+                      checked={convertPaymentMode === 'FULL'}
+                      onChange={() => setConvertPaymentMode('FULL')}
+                    />
+                    Tam ödeme
+                  </label>
+                  <label className="inline-flex items-center gap-2">
+                    <input
+                      type="radio"
+                      name="convert-payment"
+                      checked={convertPaymentMode === 'DEPOSIT_50'}
+                      onChange={() => setConvertPaymentMode('DEPOSIT_50')}
+                    />
+                    %50 ön ödeme
+                  </label>
+                  <label className="inline-flex items-center gap-2">
+                    <input
+                      type="radio"
+                      name="convert-payment"
+                      checked={convertPaymentMode === 'CUSTOM'}
+                      onChange={() => setConvertPaymentMode('CUSTOM')}
+                    />
+                    Özel yüzde
+                  </label>
+                </div>
+                {convertPaymentMode === 'CUSTOM' ? (
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    step={1}
+                    value={convertCustomPaymentValue}
+                    onChange={(e) => setConvertCustomPaymentValue(e.target.value)}
+                    placeholder="Örn: 30"
+                    className="px-3 py-2 border border-gray-200 rounded-lg text-sm w-full md:w-48"
+                  />
+                ) : null}
+              </div>
+              {(quote.items || []).map((item: any) => {
+                const src = convertItemSources.find((x) => x.quoteItemId === String(item.id));
+                if (!src) return null;
+                return (
+                  <div key={item.id} className="border border-gray-100 rounded-xl p-3 space-y-2">
+                    <p className="text-sm font-semibold text-gray-900">{item.name}</p>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                      <select
+                        value={src.source}
+                        onChange={(e) =>
+                          updateConvertSource(String(item.id), {
+                            source: e.target.value as ConvertSource,
+                          })
+                        }
+                        className="px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white"
+                      >
+                        <option value="STOCK">Stoktan</option>
+                        <option value="SUPPLIER">Tedarikçi</option>
+                        <option value="EXISTING_CUSTOMER">Eski müşteri</option>
+                      </select>
+                      <select
+                        value={src.supplierId}
+                        disabled={src.source !== 'SUPPLIER'}
+                        onChange={(e) => updateConvertSource(String(item.id), { supplierId: e.target.value })}
+                        className="px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white disabled:bg-gray-50 disabled:text-gray-400"
+                      >
+                        <option value="">Tedarikçi seçin</option>
+                        {suppliers.map((s) => (
+                          <option key={s.id} value={s.id}>
+                            {s.name}
+                          </option>
+                        ))}
+                      </select>
+                      <input
+                        type="text"
+                        value={src.supplierOrderNo}
+                        disabled={src.source === 'STOCK'}
+                        onChange={(e) =>
+                          updateConvertSource(String(item.id), { supplierOrderNo: e.target.value })
+                        }
+                        placeholder={
+                          src.source === 'EXISTING_CUSTOMER' ? 'Müşteri referansı' : 'Sipariş no'
+                        }
+                        className="px-3 py-2 border border-gray-200 rounded-lg text-sm disabled:bg-gray-50 disabled:text-gray-400"
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowConvertModal(false)}
+                className="px-4 py-2 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-100"
+              >
+                Vazgeç
+              </button>
+              <button
+                type="button"
+                disabled={!!actionLoading}
+                onClick={() => void submitConvert()}
+                className="px-4 py-2 rounded-xl text-sm font-medium bg-whatsapp text-white hover:bg-green-600 disabled:opacity-50 inline-flex items-center gap-2"
+              >
+                {(actionLoading === 'convert' || actionLoading === 'convert-manual') ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : null}
+                Dönüştür
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="flex flex-col sm:flex-row sm:items-center gap-4 rounded-2xl border border-gray-100 bg-white shadow-sm p-4 md:p-5">
         <button
@@ -1085,14 +1356,14 @@ export default function QuoteDetailPage() {
               <table className="w-full text-sm min-w-[820px]">
                 <thead className="bg-gray-50 text-xs text-gray-500">
                   <tr>
-                    <th className="text-left px-4 py-3 w-16">Görsel</th>
+                    <th className="text-left px-4 py-3 w-20 sm:w-24">Görsel</th>
                     <th className="text-left px-4 py-3">#</th>
                     <th className="text-left px-4 py-3">Ürün / Hizmet</th>
                     <th className="text-left px-4 py-3">Renk/Kumaş</th>
                     <th className="text-left px-4 py-3">Ölçü</th>
                     <th className="text-right px-4 py-3">Miktar</th>
-                    <th className="text-right px-4 py-3">Birim Fiyat</th>
-                    <th className="text-right px-4 py-3">KDV</th>
+                    <th className="text-right px-4 py-3">Birim (KDV dahil)</th>
+                    <th className="text-right px-4 py-3">KDV %</th>
                     <th className="text-right px-4 py-3">İndirim</th>
                     <th className="text-right px-4 py-3">Toplam</th>
                   </tr>
@@ -1100,8 +1371,8 @@ export default function QuoteDetailPage() {
                 <tbody>
                   {(quote.items || []).map((item: any, i: number) => (
                     <tr key={item.id} className="border-t border-gray-50">
-                      <td className="px-4 py-2.5 w-16 align-middle">
-                        <div className="w-12 h-12 rounded-lg border border-gray-100 bg-gray-50 overflow-hidden shrink-0">
+                      <td className="px-4 py-2.5 w-[72px] align-middle">
+                        <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-lg border border-gray-100 bg-gray-50 overflow-hidden shrink-0">
                           {item.lineImageUrl || item.product?.imageUrl ? (
                             // eslint-disable-next-line @next/next/no-img-element
                             <img
@@ -1308,7 +1579,7 @@ export default function QuoteDetailPage() {
             {quote.status === 'ACCEPTED' && canConvertToOrder && !quote.order && (
               <button
                 type="button"
-                onClick={() => void handleAction('convert')}
+                onClick={() => openConvertModal(false)}
                 disabled={!!actionLoading}
                 className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-orange-50 text-orange-700 rounded-xl text-sm font-medium hover:bg-orange-100 disabled:opacity-50"
               >
@@ -1319,7 +1590,7 @@ export default function QuoteDetailPage() {
             {quote.status !== 'ACCEPTED' && canConvertToOrder && !quote.order && (
               <button
                 type="button"
-                onClick={() => void handleAction('convert-manual')}
+                onClick={() => openConvertModal(true)}
                 disabled={!!actionLoading}
                 className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-orange-50 text-orange-700 rounded-xl text-sm font-medium hover:bg-orange-100 disabled:opacity-50"
               >

@@ -46,6 +46,12 @@ interface ContactPanelProps {
   userRole?: string;
 }
 
+function getMetaText(metadata: unknown, key: string): string {
+  if (!metadata || typeof metadata !== 'object') return '';
+  const value = (metadata as Record<string, unknown>)[key];
+  return typeof value === 'string' ? value : '';
+}
+
 export default function ContactPanel({
   conversationId,
   contact: initialContact,
@@ -63,8 +69,10 @@ export default function ContactPanel({
     email: '',
     company: '',
     city: '',
+    district: '',
     address: '',
     billingAddress: '',
+    billingEmail: '',
     taxOffice: '',
     taxNumber: '',
     identityNumber: '',
@@ -216,8 +224,10 @@ export default function ContactPanel({
       email: contact.email || '',
       company: contact.company || '',
       city: contact.city || '',
+      district: getMetaText(contact.metadata, 'district'),
       address: contact.address || '',
       billingAddress: contact.billingAddress || '',
+      billingEmail: getMetaText(contact.metadata, 'billingEmail'),
       taxOffice: contact.taxOffice || '',
       taxNumber: contact.taxNumber || '',
       identityNumber: contact.identityNumber || '',
@@ -429,6 +439,18 @@ export default function ContactPanel({
                       />
                     </div>
                     <div className="flex items-center gap-2.5">
+                      <MapPin className="w-3.5 h-3.5 text-gray-400" />
+                      <input
+                        type="text"
+                        value={editData.district}
+                        onChange={(e) =>
+                          setEditData((d) => ({ ...d, district: e.target.value }))
+                        }
+                        placeholder="İlçe"
+                        className="flex-1 px-2 py-1 border border-gray-200 rounded text-xs focus:outline-none focus:border-blue-500"
+                      />
+                    </div>
+                    <div className="flex items-center gap-2.5">
                       <Building2 className="w-3.5 h-3.5 text-gray-400" />
                       <input
                         type="text"
@@ -462,6 +484,18 @@ export default function ContactPanel({
                         placeholder="Adres"
                         rows={2}
                         className="flex-1 px-2 py-1 border border-gray-200 rounded text-xs focus:outline-none focus:border-blue-500 resize-none"
+                      />
+                    </div>
+                    <div className="flex items-center gap-2.5">
+                      <Mail className="w-3.5 h-3.5 text-gray-400" />
+                      <input
+                        type="email"
+                        value={editData.billingEmail}
+                        onChange={(e) =>
+                          setEditData((d) => ({ ...d, billingEmail: e.target.value }))
+                        }
+                        placeholder="Fatura e-posta"
+                        className="flex-1 px-2 py-1 border border-gray-200 rounded text-xs focus:outline-none focus:border-blue-500"
                       />
                     </div>
                     <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide pt-1">
@@ -541,6 +575,12 @@ export default function ContactPanel({
                         <span>{contact.city}</span>
                       </div>
                     )}
+                    {getMetaText(contact.metadata, 'district') && (
+                      <div className="flex items-center gap-2.5 text-gray-600">
+                        <MapPin className="w-3.5 h-3.5 text-gray-400" />
+                        <span>{getMetaText(contact.metadata, 'district')}</span>
+                      </div>
+                    )}
                     {contact.address && (
                       <div className="flex items-start gap-2.5 text-gray-600">
                         <MapPin className="w-3.5 h-3.5 text-gray-400 mt-0.5 shrink-0" />
@@ -548,6 +588,7 @@ export default function ContactPanel({
                       </div>
                     )}
                     {(contact.billingAddress ||
+                      getMetaText(contact.metadata, 'billingEmail') ||
                       contact.taxOffice ||
                       contact.taxNumber ||
                       contact.identityNumber) && (
@@ -559,6 +600,12 @@ export default function ContactPanel({
                           <p className="text-xs text-gray-700 whitespace-pre-wrap">
                             <span className="text-gray-500">Fatura adresi: </span>
                             {contact.billingAddress}
+                          </p>
+                        )}
+                        {getMetaText(contact.metadata, 'billingEmail') && (
+                          <p className="text-xs text-gray-700">
+                            <span className="text-gray-500">Fatura e-posta: </span>
+                            {getMetaText(contact.metadata, 'billingEmail')}
                           </p>
                         )}
                         {contact.taxOffice && (

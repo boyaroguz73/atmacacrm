@@ -174,7 +174,7 @@ export default function QuotesPage() {
   }
 
   return (
-    <div className="p-6 space-y-6 max-w-7xl mx-auto">
+    <div className="p-4 sm:p-6 space-y-6 w-full max-w-none">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
@@ -193,8 +193,8 @@ export default function QuotesPage() {
         </button>
       </div>
 
-      <div className="flex flex-col sm:flex-row sm:items-center gap-4">
-        <div className="flex flex-wrap gap-2">
+      <div className="flex flex-col xl:flex-row xl:items-center gap-4">
+        <div className="flex flex-wrap gap-2 xl:flex-1">
           {STATUS_FILTERS.map((f) => (
             <button
               key={f.key || 'all'}
@@ -210,7 +210,7 @@ export default function QuotesPage() {
             </button>
           ))}
         </div>
-        <div className="flex flex-wrap items-center gap-3 sm:ml-auto">
+        <div className="flex flex-wrap items-center gap-3 xl:justify-end">
           <DateRangePicker
             from={dateFrom}
             to={dateTo}
@@ -226,7 +226,7 @@ export default function QuotesPage() {
               placeholder="Kişi adı veya telefon..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9 pr-3 py-2 w-52 bg-white border border-gray-200 rounded-xl text-sm text-gray-700 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-whatsapp/25 focus:border-whatsapp"
+              className="pl-9 pr-3 py-2 w-full sm:w-64 lg:w-72 bg-white border border-gray-200 rounded-xl text-sm text-gray-700 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-whatsapp/25 focus:border-whatsapp"
             />
           </div>
         </div>
@@ -234,7 +234,7 @@ export default function QuotesPage() {
 
       <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="w-full min-w-[980px] text-sm">
             <thead>
               <tr className="bg-gray-50/80 border-b border-gray-100 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
                 <th className="px-4 py-3">Teklif No</th>

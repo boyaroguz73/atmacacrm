@@ -91,6 +91,8 @@ export default function AuditLogPage() {
   const [actionFilter, setActionFilter] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+  const [search, setSearch] = useState('');
+  const [processOnly, setProcessOnly] = useState(false);
 
   const [entities, setEntities] = useState<string[]>([]);
   const [actions, setActions] = useState<string[]>([]);
@@ -103,7 +105,7 @@ export default function AuditLogPage() {
 
   useEffect(() => {
     fetchLogs();
-  }, [page, entityFilter, actionFilter, dateFrom, dateTo]);
+  }, [page, entityFilter, actionFilter, dateFrom, dateTo, search, processOnly]);
 
   const fetchMeta = async () => {
     try {
@@ -124,6 +126,8 @@ export default function AuditLogPage() {
       if (actionFilter) params.action = actionFilter;
       if (dateFrom) params.startDate = `${dateFrom}T00:00:00`;
       if (dateTo) params.endDate = `${dateTo}T23:59:59`;
+      if (search.trim()) params.search = search.trim();
+      if (processOnly) params.scope = 'process';
 
       const { data } = await api.get('/audit-logs', { params });
       setLogs(data.logs);
@@ -147,6 +151,15 @@ export default function AuditLogPage() {
     });
   };
 
+  const summarizeDetails = useCallback((details: any) => {
+    if (!details || typeof details !== 'object') return 'Detay yok';
+    const entries = Object.entries(details).slice(0, 4);
+    if (!entries.length) return 'Detay yok';
+    return entries
+      .map(([k, v]) => `${k}: ${typeof v === 'object' ? JSON.stringify(v) : String(v)}`)
+      .join(' · ');
+  }, []);
+
   return (
     <div className="p-6 max-w-6xl mx-auto">
       <div className="mb-6">
@@ -158,6 +171,15 @@ export default function AuditLogPage() {
 
       {/* Filters */}
       <div className="flex flex-wrap gap-3 mb-4">
+        <div className="relative">
+          <input
+            value={search}
+            onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+            placeholder="Temsilci, işlem, varlık ID ara"
+            className="pl-9 pr-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-whatsapp/20"
+          />
+          <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+        </div>
         <select
           value={entityFilter}
           onChange={(e) => { setEntityFilter(e.target.value); setPage(1); }}
@@ -182,6 +204,14 @@ export default function AuditLogPage() {
             </option>
           ))}
         </select>
+        <label className="inline-flex items-center gap-2 px-3 py-2 border border-gray-200 rounded-lg text-sm text-gray-700 bg-white">
+          <input
+            type="checkbox"
+            checked={processOnly}
+            onChange={(e) => { setProcessOnly(e.target.checked); setPage(1); }}
+          />
+          Kişi / süreç odaklı
+        </label>
         <input
           type="date"
           value={dateFrom}
@@ -194,13 +224,15 @@ export default function AuditLogPage() {
           onChange={(e) => { setDateTo(e.target.value); setPage(1); }}
           className="px-3 py-2 border border-gray-200 rounded-lg text-sm"
         />
-        {(entityFilter || actionFilter || dateFrom || dateTo) && (
+        {(entityFilter || actionFilter || dateFrom || dateTo || search || processOnly) && (
           <button
             onClick={() => {
               setEntityFilter('');
               setActionFilter('');
               setDateFrom('');
               setDateTo('');
+              setSearch('');
+              setProcessOnly(false);
               setPage(1);
             }}
             className="px-3 py-2 text-sm text-red-600 hover:bg-red-50 rounded-lg"
@@ -252,6 +284,9 @@ export default function AuditLogPage() {
                         {ENTITY_LABELS[log.entity] || log.entity}
                       </span>
                     </div>
+                    <p className="text-xs text-gray-500 mt-1 truncate">
+                      {summarizeDetails(log.details)}
+                    </p>
                   </div>
                   <span className="text-xs text-gray-400 flex-shrink-0">
                     {formatDate(log.createdAt)}

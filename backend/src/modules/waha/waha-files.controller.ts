@@ -24,7 +24,7 @@ export class WahaFilesController {
     res.setHeader('Content-Type', result.mimetype);
     res.setHeader(
       'Content-Disposition',
-      `attachment; filename="${encodeURIComponent(result.filename)}"`,
+      `inline; filename="${encodeURIComponent(result.filename)}"`,
     );
     res.setHeader('Content-Length', result.data.length);
     res.send(result.data);

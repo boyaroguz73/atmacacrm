@@ -1,8 +1,14 @@
 import axios from 'axios';
 
+function normalizeTimeoutMs(input: unknown, fallback = 30000): number {
+  const n = Number(input);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(Math.max(Math.trunc(n), 1000), 300000);
+}
+
 const api = axios.create({
   baseURL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api',
-  timeout: 30_000,
+  timeout: normalizeTimeoutMs(process.env.NEXT_PUBLIC_API_TIMEOUT_MS, 30_000),
 });
 
 /** Giriş/kayıt 401 — yanlış şifre; tam sayfa yenileme yapma (toast / konsol kaybolmasın) */

@@ -1061,14 +1061,14 @@ function TsoftPanel({ integration }: { integration: Integration }) {
 }
 
 function EcommercePanel({ integration }: { integration: Integration }) {
-  if (integration.key === 'tsoft') {
-    return <TsoftPanel integration={integration} />;
-  }
-
   const [storeUrl, setStoreUrl] = useState(integration.config?.storeUrl || '');
   const [apiKey, setApiKey] = useState(integration.config?.apiKey || '');
   const [apiSecret, setApiSecret] = useState(integration.config?.apiSecret || '');
   const [saving, setSaving] = useState(false);
+
+  if (integration.key === 'tsoft') {
+    return <TsoftPanel integration={integration} />;
+  }
 
   const handleSave = async () => {
     setSaving(true);

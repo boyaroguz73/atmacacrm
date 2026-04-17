@@ -12,6 +12,7 @@ import { LEAD_STATUS_LABELS, LEAD_STATUS_COLORS } from '@/lib/constants';
 import { Search, Inbox, Users } from 'lucide-react';
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
+import { usePathname } from 'next/navigation';
 import ContactAvatar from '@/components/ui/ContactAvatar';
 import EcommerceCustomerBadge from '@/components/ui/EcommerceCustomerBadge';
 
@@ -33,8 +34,10 @@ function selectValueToHref(value: string, isAgent: boolean): string {
 
 export default function ConversationList() {
   const searchParams = useSearchParams();
+  const pathname = usePathname();
   const router = useRouter();
   const filter = searchParams.get('filter') || undefined;
+  const isGroupsRoute = pathname === '/inbox/groups';
 
   const {
     conversations,
@@ -84,6 +87,7 @@ export default function ConversationList() {
   );
 
   const filterLabel = useMemo(() => {
+    if (isGroupsRoute) return 'Gruplar';
     const map: Record<string, string> = {
       kutum: isAgent ? 'Kutum' : 'Tüm sohbetler',
       all: 'Tüm sohbetler',
@@ -95,7 +99,12 @@ export default function ConversationList() {
       mine_and_unassigned: 'Kutum',
     };
     return map[selectValue] || 'Mesajlar';
-  }, [selectValue, isAgent]);
+  }, [selectValue, isAgent, isGroupsRoute]);
+
+  const visibleConversations = useMemo(
+    () => conversations.filter((c) => (isGroupsRoute ? !!c.isGroup : !c.isGroup)),
+    [conversations, isGroupsRoute],
+  );
 
   return (
     <div className="w-full md:w-96 border-r border-gray-200 bg-white flex flex-col h-full min-w-0">
@@ -103,7 +112,7 @@ export default function ConversationList() {
         <div className="flex items-center justify-between mb-2">
           <h2 className="text-lg font-bold text-gray-900">{filterLabel}</h2>
           <span className="text-[10px] px-2 py-1 rounded-full font-medium bg-gray-100 text-gray-600">
-            {conversations.length}
+            {visibleConversations.length}
           </span>
         </div>
 
@@ -169,7 +178,7 @@ export default function ConversationList() {
           <div className="flex items-center justify-center py-12">
             <div className="w-6 h-6 border-2 border-whatsapp border-t-transparent rounded-full animate-spin" />
           </div>
-        ) : conversations.length === 0 ? (
+        ) : visibleConversations.length === 0 ? (
           <div className="text-center py-12 px-4">
             <Inbox className="w-10 h-10 text-gray-200 mx-auto mb-2" />
             <p className="text-gray-400 text-sm">
@@ -177,7 +186,7 @@ export default function ConversationList() {
             </p>
           </div>
         ) : (
-          conversations.map((conv) => (
+          visibleConversations.map((conv) => (
             <button
               key={conv.id}
               onClick={() => setActiveConversation(conv)}

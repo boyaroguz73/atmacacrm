@@ -8,6 +8,7 @@ import { WahaService } from '../waha/waha.service';
 import { ContactsService } from '../contacts/contacts.service';
 import {
   canonicalContactPhone,
+  contactPhoneLookupKeys,
   extractPhoneFromIndividualJid,
   formatPhoneDisplay,
   isFallbackContactName,
@@ -705,6 +706,58 @@ export class ConversationsService {
       include: { user: { select: { id: true, name: true } } },
       orderBy: { createdAt: 'desc' },
       take: 50,
+    });
+  }
+
+  async getGroupParticipants(conversationId: string) {
+    const conversation = await this.findById(conversationId, { skipContactEnrichment: true });
+    if (!conversation.isGroup || !conversation.waGroupId) {
+      throw new NotFoundException('Grup konuşması bulunamadı');
+    }
+
+    const participants = await this.wahaService.getGroupParticipantsV2(
+      conversation.session.name,
+      conversation.waGroupId,
+    );
+
+    const normalized = participants.map((p) => {
+      const jid = String(p.id || '');
+      const phone = extractPhoneFromIndividualJid(jid) || canonicalContactPhone(jid) || '';
+      return { jid, phone, role: p.role || 'member' };
+    });
+
+    const allLookupKeys = Array.from(
+      new Set(
+        normalized
+          .flatMap((p) => (p.phone ? contactPhoneLookupKeys(p.phone) : []))
+          .filter(Boolean),
+      ),
+    );
+    const matchedContacts = allLookupKeys.length
+      ? await this.prisma.contact.findMany({
+          where: { phone: { in: allLookupKeys } },
+          select: { id: true, phone: true, name: true, surname: true },
+        })
+      : [];
+    const byPhone = new Map<string, { id: string; name: string | null; surname: string | null }>();
+    for (const c of matchedContacts) {
+      for (const key of contactPhoneLookupKeys(c.phone || '')) {
+        byPhone.set(key, { id: c.id, name: c.name, surname: c.surname });
+      }
+    }
+
+    return normalized.map((p) => {
+      const matched = p.phone ? byPhone.get(p.phone) : undefined;
+      const displayName = matched
+        ? [matched.name, matched.surname].filter(Boolean).join(' ').trim()
+        : null;
+      return {
+        jid: p.jid,
+        phone: p.phone || null,
+        role: p.role,
+        contactId: matched?.id || null,
+        name: displayName || null,
+      };
     });
   }
 }

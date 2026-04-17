@@ -164,15 +164,19 @@ export class QuotesService {
 
     const tokens = splitSearchTokens(search);
     if (tokens.length) {
-      where.AND = tokens.map((token) => ({
-        OR: [
-          { quoteNumber: parseInt(token, 10) || -1 },
-          { contact: { name: { contains: token, mode: 'insensitive' } } },
-          { contact: { surname: { contains: token, mode: 'insensitive' } } },
-          { contact: { phone: { contains: token } } },
-          { contact: { company: { contains: token, mode: 'insensitive' } } },
-        ],
-      }));
+      where.AND = tokens.map((token) => {
+        const numericToken = token.replace(/\D/g, '');
+        const parsedNumber = Number.parseInt(token, 10);
+        return {
+          OR: [
+            ...(Number.isFinite(parsedNumber) ? [{ quoteNumber: parsedNumber }] : []),
+            { contact: { name: { equals: token, mode: 'insensitive' } } },
+            { contact: { surname: { equals: token, mode: 'insensitive' } } },
+            ...(numericToken ? [{ contact: { phone: { startsWith: numericToken } } }] : []),
+            { contact: { company: { equals: token, mode: 'insensitive' } } },
+          ],
+        };
+      });
     }
 
     const [quotes, total] = await Promise.all([
@@ -652,7 +656,23 @@ export class QuotesService {
     return { message: 'Teklif gönderildi', pdfUrl };
   }
 
-  async convertToOrder(id: string, userId: string, options?: { manual?: boolean }) {
+  async convertToOrder(
+    id: string,
+    userId: string,
+    options?: {
+      manual?: boolean;
+      payment?: {
+        mode?: 'FULL' | 'DEPOSIT_50' | 'CUSTOM';
+        customValue?: number | null;
+      };
+      itemSources?: Array<{
+        quoteItemId?: string;
+        source: 'STOCK' | 'SUPPLIER' | 'EXISTING_CUSTOMER';
+        supplierId?: string | null;
+        supplierOrderNo?: string | null;
+      }>;
+    },
+  ) {
     const quote = await this.findById(id);
     if (!options?.manual && quote.status !== 'ACCEPTED') {
       throw new BadRequestException('Sadece kabul edilmiş teklifler siparişe dönüştürülebilir');
@@ -662,11 +682,57 @@ export class QuotesService {
     if (existing) throw new BadRequestException('Bu teklif zaten siparişe dönüştürülmüş');
 
     const noteParts: string[] = [];
-    if (quote.paymentMode === QuotePaymentMode.DEPOSIT_50) {
+    const requestedPaymentMode = options?.payment?.mode;
+    if (requestedPaymentMode === 'DEPOSIT_50') {
       noteParts.push('Ödeme planı: %50 ön ödeme (kalan tutar teslim öncesi tahsil edilecek).');
+    } else if (
+      requestedPaymentMode === 'CUSTOM' &&
+      options?.payment?.customValue != null &&
+      options.payment.customValue > 0
+    ) {
+      noteParts.push(`Ödeme planı: Özel ön ödeme (%${options.payment.customValue}).`);
+    } else if (quote.paymentMode === QuotePaymentMode.DEPOSIT_50) {
+      noteParts.push('Ödeme planı: %50 ön ödeme (kalan tutar teslim öncesi tahsil edilecek).');
+    } else {
+      noteParts.push('Ödeme planı: Tam ödeme.');
     }
     if (quote.notes) noteParts.push(String(quote.notes));
     const mergedNotes = noteParts.length ? noteParts.join('\n\n') : undefined;
+
+    const sourceByItemId = new Map(
+      (options?.itemSources || [])
+        .filter((x) => x?.quoteItemId)
+        .map((x) => [String(x.quoteItemId), x]),
+    );
+
+    const orderItemCreates = quote.items.map((item) => {
+      const cfg = sourceByItemId.get(String(item.id));
+      const source = cfg?.source || 'STOCK';
+      if (source === 'SUPPLIER') {
+        if (!cfg?.supplierId || !cfg?.supplierOrderNo?.trim()) {
+          throw new BadRequestException(`${item.name} için tedarikçi ve sipariş no zorunludur`);
+        }
+      }
+      if (source === 'EXISTING_CUSTOMER') {
+        if (!cfg?.supplierOrderNo?.trim()) {
+          throw new BadRequestException(`${item.name} için eski müşteri referansı/sipariş no zorunludur`);
+        }
+      }
+      return {
+        productId: item.productId,
+        name: item.name,
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+        vatRate: item.vatRate,
+        lineTotal: item.lineTotal,
+        isFromStock: source === 'STOCK',
+        supplierId: source === 'SUPPLIER' ? cfg?.supplierId || null : null,
+        supplierOrderNo:
+          source === 'SUPPLIER' || source === 'EXISTING_CUSTOMER'
+            ? cfg?.supplierOrderNo?.trim() || null
+            : null,
+      };
+    });
 
     const order = await this.prisma.salesOrder.create({
       data: {
@@ -682,14 +748,7 @@ export class QuotesService {
         depositBalanceReminderSent: false,
         expectedDeliveryDate: quote.deliveryDate ?? undefined,
         items: {
-          create: quote.items.map((item) => ({
-            productId: item.productId,
-            name: item.name,
-            quantity: item.quantity,
-            unitPrice: item.unitPrice,
-            vatRate: item.vatRate,
-            lineTotal: item.lineTotal,
-          })),
+          create: orderItemCreates,
         },
       },
       include: {

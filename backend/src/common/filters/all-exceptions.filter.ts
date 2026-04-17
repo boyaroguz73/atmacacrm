@@ -29,6 +29,9 @@ export class AllExceptionsFilter implements ExceptionFilter {
           : (exceptionResponse as any).message || exceptionResponse;
     } else if (exception instanceof Error) {
       message = exception.message;
+      if (exception.message?.toLowerCase().includes('request entity too large')) {
+        status = HttpStatus.PAYLOAD_TOO_LARGE;
+      }
       this.logger.error(
         `Unhandled exception: ${exception.message}`,
         exception.stack,

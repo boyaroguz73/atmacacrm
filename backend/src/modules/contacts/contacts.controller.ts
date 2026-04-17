@@ -22,6 +22,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { PrismaService } from '../prisma/prisma.service';
 import { whereWhatsappSessionsForOrg, requireOrgId, assertBelongsToOrg } from '../../common/org-session-scope';
 import { RefreshAllAvatarsDto } from './dto/refresh-all-avatars.dto';
+import { LeadStatus } from '@prisma/client';
 
 @ApiTags('Contacts')
 @ApiBearerAuth()
@@ -75,14 +76,22 @@ export class ContactsController {
       notes?: string;
       company?: string;
       city?: string;
+      district?: string;
       address?: string;
       billingAddress?: string;
+      billingEmail?: string;
       taxOffice?: string;
       taxNumber?: string;
       identityNumber?: string;
       organizationId?: string;
       openChat?: boolean;
       sessionId?: string;
+      lead?: {
+        status?: LeadStatus;
+        value?: number;
+        source?: string;
+        notes?: string;
+      };
     },
   ) {
     let sessionId: string | undefined;
@@ -111,13 +120,16 @@ export class ContactsController {
       notes: body.notes,
       company: body.company,
       city: body.city,
+      district: body.district,
       address: body.address,
       billingAddress: body.billingAddress,
+      billingEmail: body.billingEmail,
       taxOffice: body.taxOffice,
       taxNumber: body.taxNumber,
       identityNumber: body.identityNumber,
       organizationId: body.organizationId,
       sessionId: sessionId ?? null,
+      lead: body.lead,
     });
   }
 

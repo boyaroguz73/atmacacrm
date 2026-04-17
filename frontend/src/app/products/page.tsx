@@ -498,7 +498,7 @@ export default function ProductsPage() {
                     products.map((p) => (
                       <tr key={p.id} className="border-b border-gray-50 hover:bg-gray-50/60 transition-colors">
                         <td className="px-4 py-3">
-                          <div className="w-11 h-11 rounded-lg border border-gray-100 bg-gray-50 overflow-hidden">
+                          <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-lg border border-gray-100 bg-gray-50 overflow-hidden">
                             {p.imageUrl ? (
                               // eslint-disable-next-line @next/next/no-img-element
                               <img

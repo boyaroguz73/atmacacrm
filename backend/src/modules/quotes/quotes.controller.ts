@@ -127,9 +127,26 @@ export class QuotesController {
   convertToOrder(
     @Param('id') id: string,
     @CurrentUser('id') userId: string,
-    @Body() body?: { manual?: boolean },
+    @Body()
+    body?: {
+      manual?: boolean;
+      payment?: {
+        mode?: 'FULL' | 'DEPOSIT_50' | 'CUSTOM';
+        customValue?: number | null;
+      };
+      itemSources?: Array<{
+        quoteItemId?: string;
+        source: 'STOCK' | 'SUPPLIER' | 'EXISTING_CUSTOMER';
+        supplierId?: string | null;
+        supplierOrderNo?: string | null;
+      }>;
+    },
   ) {
-    return this.quotesService.convertToOrder(id, userId, { manual: body?.manual === true });
+    return this.quotesService.convertToOrder(id, userId, {
+      manual: body?.manual === true,
+      payment: body?.payment,
+      itemSources: body?.itemSources,
+    });
   }
 
   /** Teklif versiyonu oluştur */

@@ -43,6 +43,15 @@ function extractGroupNameFromWahaMessage(msg: any): string {
   return '';
 }
 
+function parseVcardPayload(raw: string): { contactName: string | null; contactPhone: string | null } {
+  const text = String(raw || '');
+  const fnMatch = text.match(/\nFN:([^\n\r]+)/i) || text.match(/\nFN;[^:]*:([^\n\r]+)/i);
+  const telMatch = text.match(/\nTEL[^:]*:([^\n\r]+)/i);
+  const contactName = fnMatch?.[1]?.trim() || null;
+  const contactPhone = telMatch?.[1]?.replace(/[^\d+]/g, '') || null;
+  return { contactName, contactPhone };
+}
+
 @Injectable()
 export class WahaWebhookHandler {
   private readonly logger = new Logger(WahaWebhookHandler.name);
@@ -195,8 +204,10 @@ export class WahaWebhookHandler {
           return;
         }
 
-        const displayName =
+        const rawDisplayName =
           msg.pushName || msg._data?.notifyName || msg.notifyName || undefined;
+        const displayName =
+          rawDisplayName && !isFallbackContactName(rawDisplayName, phone) ? rawDisplayName : undefined;
         contact = await this.contactsService.findOrCreate(
           phone,
           displayName,
@@ -232,11 +243,13 @@ export class WahaWebhookHandler {
           return;
         }
 
-        const displayName =
+        const rawDisplayName =
           msg.pushName ||
           msg._data?.notifyName ||
           msg.notifyName ||
           undefined;
+        const displayName =
+          rawDisplayName && !isFallbackContactName(rawDisplayName, phone) ? rawDisplayName : undefined;
 
         contact = await this.contactsService.findOrCreate(
           phone,
@@ -269,6 +282,7 @@ export class WahaWebhookHandler {
       let mediaUrl: string | undefined;
       let mediaType: string | undefined;
       let mediaMimeType: string | undefined;
+      let mediaMeta: Record<string, any> | undefined;
 
       const hasMediaFlag = msg.hasMedia || msg.mediaUrl || msg._data?.mediaUrl || msg.media;
       const isMediaType = ['image', 'sticker', 'video', 'audio', 'ptt', 'document'].includes(msg.type);
@@ -285,12 +299,59 @@ export class WahaWebhookHandler {
         else if (msg.hasMedia || msg.type === 'document') mediaType = 'DOCUMENT';
 
         const wahaStoredUrl = msg.media?.url || msg.mediaUrl || msg._data?.mediaUrl;
+        const waMessageIdCandidate =
+          (typeof msg.id?._serialized === 'string' && msg.id._serialized) ||
+          (typeof msg.id?.id === 'string' && msg.id.id) ||
+          (typeof msg.id === 'string' && msg.id) ||
+          '';
+        const thumbnailBase64 =
+          (typeof msg.media?.preview === 'string' && msg.media.preview) ||
+          (typeof msg._data?.body === 'string' && msg._data.body.length > 40 ? msg._data.body : null) ||
+          null;
+        mediaMeta = {
+          source: 'none',
+          originalMediaUrl: null,
+          thumbnailBase64,
+          originalMimeType: mediaMimeType || null,
+          originalFileSize: null,
+          width: msg._data?.width || msg.media?.width || null,
+          height: msg._data?.height || msg.media?.height || null,
+        };
+
+        // 1) Öncelik: WAHA'nın verdiği indirilebilir media URL (orijinal dosya varsayımı).
         if (wahaStoredUrl) {
           mediaUrl = await this.downloadAndSaveMedia(String(wahaStoredUrl), mediaMimeType);
+          if (mediaUrl) {
+            mediaMeta.source = 'waha_media_url';
+            mediaMeta.originalMediaUrl = mediaUrl;
+          }
         }
 
+        // 2) İkinci öncelik: messageId ile dosyayı WAHA file endpointinden çek (thumbnail yerine orijinali yakalamak için).
+        if (!mediaUrl && waMessageIdCandidate) {
+          try {
+            const byId = await this.wahaService.downloadFile(sessionName, waMessageIdCandidate);
+            if (byId?.data?.length) {
+              const dir = this.ensureUploadsDir();
+              const ext = this.getExtFromMime(byId.mimetype || mediaMimeType);
+              const filename = `${uuid()}${ext}`;
+              const filePath = join(dir, filename);
+              writeFileSync(filePath, byId.data);
+              mediaUrl = `/uploads/${filename}`;
+              mediaMimeType = byId.mimetype || mediaMimeType;
+              mediaMeta.source = 'waha_file_by_message_id';
+              mediaMeta.originalMediaUrl = mediaUrl;
+              mediaMeta.originalMimeType = mediaMimeType || null;
+              mediaMeta.originalFileSize = byId.data.length;
+            }
+          } catch (e: any) {
+            this.logger.debug(`file-by-id media alınamadı (${waMessageIdCandidate}): ${e?.message}`);
+          }
+        }
+
+        // 3) Son fallback: base64 alanı (çoğu zaman preview/thumbnail olabilir).
         if (!mediaUrl) {
-          const base64Data = msg.media?.data || msg._data?.body || msg.body;
+          const base64Data = msg.media?.data || msg._data?.body;
           const looksB64 =
             typeof base64Data === 'string' &&
             base64Data.length > 80 &&
@@ -300,11 +361,15 @@ export class WahaWebhookHandler {
               base64Data.replace(/\s/g, ''),
               mediaMimeType,
             );
+            if (mediaUrl) {
+              mediaMeta.source = 'base64_fallback';
+              mediaMeta.originalMediaUrl = mediaUrl;
+            }
           }
         }
 
         this.logger.debug(
-          `Media detected: type=${msg.type} hasMedia=${msg.hasMedia} mimetype=${mediaMimeType} saved=${mediaUrl}`,
+          `Media selected: type=${msg.type} source=${mediaMeta?.source} mime=${mediaMimeType} url=${mediaUrl} size=${mediaMeta?.originalFileSize ?? 'n/a'}`,
         );
       }
 
@@ -315,15 +380,32 @@ export class WahaWebhookHandler {
       const waMessageId = typeof rawId === 'string' ? rawId : String(rawId ?? '');
       const direction = isFromMe ? MessageDirection.OUTGOING : MessageDirection.INCOMING;
       
+      const isVcard = msg.type === 'vcard' || msg.type === 'multi_vcard' || /^BEGIN:VCARD/i.test(String(msg.body || ''));
+      const vcardInfo = isVcard ? parseVcardPayload(msg.body || msg._data?.body || '') : null;
+      const mergedMeta = {
+        ...(mediaMeta || {}),
+        ...(isVcard
+          ? {
+              kind: 'vcard',
+              contactName: vcardInfo?.contactName || null,
+              contactPhone: vcardInfo?.contactPhone || null,
+            }
+          : {}),
+      };
+      const bodyPreview = isVcard
+        ? `👤 ${vcardInfo?.contactName || 'Kişi kartı'}${vcardInfo?.contactPhone ? ` (${vcardInfo.contactPhone})` : ''}`
+        : (msg.body || (mediaType ? `📎 ${mediaType}` : ''));
+
       const messageData: any = {
         conversationId: conversation.id,
         sessionId: waSession.id,
         waMessageId,
         direction,
-        body: msg.body || '',
+        body: bodyPreview,
         mediaUrl,
-        mediaType: mediaType as any,
+        mediaType: (mediaType || (isVcard ? 'DOCUMENT' : undefined)) as any,
         mediaMimeType,
+        ...(Object.keys(mergedMeta).length ? { metadata: mergedMeta } : {}),
         status: isFromMe ? MessageStatus.SENT : MessageStatus.DELIVERED,
         timestamp: msg.timestamp ? new Date(msg.timestamp * 1000) : new Date(),
       };
@@ -341,7 +423,18 @@ export class WahaWebhookHandler {
       const message = await this.prisma.message.upsert({
         where: { waMessageId },
         create: messageData,
-        update: {},
+        update: {
+          ...(isGroup
+            ? {
+                participantName:
+                  messageData.participantName ||
+                  undefined,
+                participantPhone:
+                  messageData.participantPhone ||
+                  undefined,
+              }
+            : {}),
+        },
         include: {
           sentBy: { select: { id: true, name: true } },
         },
@@ -350,7 +443,6 @@ export class WahaWebhookHandler {
       // ─────────────────────────────────────────────────────────────
       // CONVERSATION GÜNCELLEME
       // ─────────────────────────────────────────────────────────────
-      const bodyPreview = msg.body || (mediaType ? `📎 ${mediaType}` : '');
       const msgTimestamp = msg.timestamp ? new Date(msg.timestamp * 1000) : new Date();
       await this.conversationsService.updateLastMessage(
         conversation.id,

@@ -187,4 +187,18 @@ export class MessagesController {
   ) {
     return this.messagesService.sendLocation({ ...body, sentById: user.id });
   }
+
+  @Post('send-contact')
+  sendContact(
+    @Body() body: {
+      conversationId: string;
+      sessionName: string;
+      chatId: string;
+      contactName: string;
+      contactPhone: string;
+    },
+    @CurrentUser() user: { id: string },
+  ) {
+    return this.messagesService.sendContact({ ...body, sentById: user.id });
+  }
 }

@@ -83,6 +83,60 @@ function extractItems(parsed: unknown): Record<string, unknown>[] {
   return Array.isArray(items) ? (items as Record<string, unknown>[]) : [items as Record<string, unknown>];
 }
 
+/** XML içindeki <subproducts><subproduct>… type2 …</subproduct> satırları (Ticimax / özel feed). */
+type XmlSubproductRow = {
+  type2: string;
+  title: string;
+  priceRaw: string;
+  subId: string;
+};
+
+function asObjectArray(v: unknown): Record<string, unknown>[] {
+  if (v == null) return [];
+  if (Array.isArray(v)) return v.filter((x) => x && typeof x === 'object') as Record<string, unknown>[];
+  if (typeof v === 'object') return [v as Record<string, unknown>];
+  return [];
+}
+
+function mapSubproductRows(rows: Record<string, unknown>[]): XmlSubproductRow[] {
+  const out: XmlSubproductRow[] = [];
+  for (const r of rows) {
+    const type2 = field(r, 'type2', 'g:type2', 'Type2');
+    const title = field(r, 'title', 'name', 'baslik', 'g:title', 'g:name');
+    const priceRaw = field(r, 'price', 'g:price', 'sale_price', 'g:sale_price');
+    const subId = field(r, 'id', 'g:id', 'sku', 'g:sku');
+    if (!type2 && !title && !subId && !priceRaw) continue;
+    out.push({ type2, title, priceRaw, subId });
+  }
+  return out;
+}
+
+function extractSubproductRows(item: Record<string, unknown>): XmlSubproductRow[] {
+  const containerKeys = ['subproducts', 'g:subproducts'];
+  for (const ck of containerKeys) {
+    const c = item[ck];
+    if (!c || typeof c !== 'object') continue;
+    const box = c as Record<string, unknown>;
+    const rawList = box['subproduct'] ?? box['g:subproduct'];
+    const rows = asObjectArray(rawList);
+    const out = mapSubproductRows(rows);
+    if (out.length) return out;
+  }
+  const direct = asObjectArray(item['subproduct'] ?? item['g:subproduct']);
+  return mapSubproductRows(direct);
+}
+
+function buildSubproductExternalId(parentSku: string, row: XmlSubproductRow, index: number): string {
+  const sid = (row.subId || '').trim();
+  if (sid) return `${parentSku}-${sid}`.slice(0, 200);
+  const raw = row.type2 || row.title || `v${index}`;
+  const slug = raw
+    .replace(/[^a-zA-Z0-9ğüşıöçĞÜŞİÖÇ]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 72);
+  return `${parentSku}-SP${index}-${slug || 'x'}`.slice(0, 200);
+}
+
 function stockFromAvailability(av: string): number | null {
   const a = av.toLowerCase();
   if (a.includes('out of stock')) return 0;
@@ -194,6 +248,7 @@ export class ProductsService {
         currency: true,
         vatRate: true,
         stock: true,
+        metadata: true,
       },
     });
   }
@@ -270,7 +325,8 @@ export class ProductsService {
       ignoreAttributes: true,
       removeNSPrefix: true,
       trimValues: false,
-      isArray: (tagName) => ['item', 'additional_image_link'].includes(String(tagName)),
+      isArray: (tagName) =>
+        ['item', 'additional_image_link', 'subproduct', 'g:subproduct'].includes(String(tagName)),
     });
 
     let parsed: unknown;
@@ -446,6 +502,8 @@ export class ProductsService {
         continue;
       }
 
+      const subRows = extractSubproductRows(item);
+
       try {
         const existing = await this.prisma.product.findUnique({
           where: { sku },
@@ -520,8 +578,74 @@ export class ProductsService {
           update: updateData,
         });
 
-        if (!existing) imported++;
-        else updated++;
+        const parentRow = await this.prisma.product.findUniqueOrThrow({
+          where: { sku },
+          select: { id: true },
+        });
+
+        if (subRows.length > 0) {
+          for (let si = 0; si < subRows.length; si++) {
+            const row = subRows[si];
+            const extId = buildSubproductExternalId(sku, row, si);
+            seenVariantExternalIds.add(extId);
+
+            let vPrice = unitPrice;
+            let vCur = currency;
+            const pr = (row.priceRaw || '').trim();
+            if (pr) {
+              const vp = parseGoogleMoney(pr);
+              if (vp.amount > 0) {
+                vPrice = vp.amount;
+                vCur = vp.currency || currency;
+              }
+            }
+
+            const label = row.type2 || row.title || `Varyant ${si + 1}`;
+            const variantName = `${name} — ${label}`.slice(0, 480);
+
+            const metadata: Prisma.InputJsonValue = {
+              type2: row.type2 || null,
+              title: row.title || null,
+              source: 'xml_subproduct',
+              index: si,
+            };
+
+            const existingVar = await this.prisma.productVariant.findUnique({
+              where: { externalId: extId },
+              select: { id: true },
+            });
+
+            await this.prisma.productVariant.upsert({
+              where: { externalId: extId },
+              create: {
+                productId: parentRow.id,
+                externalId: extId,
+                name: variantName,
+                unitPrice: vPrice,
+                currency: vCur,
+                vatRate: vatDefault,
+                stock,
+                isActive,
+                metadata,
+              },
+              update: {
+                name: variantName,
+                unitPrice: vPrice,
+                currency: vCur,
+                vatRate: vatDefault,
+                stock,
+                isActive,
+                metadata,
+              },
+            });
+
+            if (!existingVar) imported++;
+            else updated++;
+          }
+        } else {
+          if (!existing) imported++;
+          else updated++;
+        }
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
         errors.push(`SKU ${sku}: ${msg}`);

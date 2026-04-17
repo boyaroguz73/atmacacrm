@@ -96,7 +96,7 @@ export default function ReportSoldProductsPage() {
                     return (
                       <tr key={it.id} className="hover:bg-gray-50/60">
                         <td className="px-4 py-2">
-                          <div className="w-10 h-10 rounded-lg border bg-gray-50 overflow-hidden">
+                          <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-lg border bg-gray-50 overflow-hidden">
                             {img ? (
                               // eslint-disable-next-line @next/next/no-img-element
                               <img src={img} alt="" className="w-full h-full object-cover" />

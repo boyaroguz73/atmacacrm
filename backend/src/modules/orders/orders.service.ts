@@ -8,6 +8,20 @@ import { splitSearchTokens } from '../../common/search-tokens';
 export class OrdersService {
   private readonly logger = new Logger(OrdersService.name);
 
+  private formatPaymentNote(payment?: {
+    mode?: 'FULL' | 'DEPOSIT_50' | 'CUSTOM';
+    customValue?: number | null;
+  }): string | null {
+    if (!payment?.mode || payment.mode === 'FULL') return 'Ödeme planı: Tam ödeme.';
+    if (payment.mode === 'DEPOSIT_50') {
+      return 'Ödeme planı: %50 ön ödeme (kalan tutar teslim öncesi tahsil edilecek).';
+    }
+    if (payment.mode === 'CUSTOM' && payment.customValue != null && payment.customValue > 0) {
+      return `Ödeme planı: Özel ön ödeme (%${payment.customValue}).`;
+    }
+    return null;
+  }
+
   constructor(
     private prisma: PrismaService,
     private pdfService: PdfService,
@@ -81,15 +95,19 @@ export class OrdersService {
 
     const tokens = splitSearchTokens(search);
     if (tokens.length) {
-      where.AND = tokens.map((token) => ({
-        OR: [
-          { orderNumber: parseInt(token, 10) || -1 },
-          { contact: { name: { contains: token, mode: 'insensitive' } } },
-          { contact: { surname: { contains: token, mode: 'insensitive' } } },
-          { contact: { phone: { contains: token } } },
-          { contact: { company: { contains: token, mode: 'insensitive' } } },
-        ],
-      }));
+      where.AND = tokens.map((token) => {
+        const numericToken = token.replace(/\D/g, '');
+        const parsedNumber = Number.parseInt(token, 10);
+        return {
+          OR: [
+            ...(Number.isFinite(parsedNumber) ? [{ orderNumber: parsedNumber }] : []),
+            { contact: { name: { equals: token, mode: 'insensitive' } } },
+            { contact: { surname: { equals: token, mode: 'insensitive' } } },
+            ...(numericToken ? [{ contact: { phone: { startsWith: numericToken } } }] : []),
+            { contact: { company: { equals: token, mode: 'insensitive' } } },
+          ],
+        };
+      });
     }
 
     const [orders, total] = await Promise.all([
@@ -120,7 +138,20 @@ export class OrdersService {
     shippingAddress?: string;
     notes?: string;
     expectedDeliveryDate?: string;
-    items: { productId?: string; name: string; quantity: number; unitPrice: number; vatRate: number }[];
+    payment?: {
+      mode?: 'FULL' | 'DEPOSIT_50' | 'CUSTOM';
+      customValue?: number | null;
+    };
+    items: {
+      productId?: string;
+      name: string;
+      quantity: number;
+      unitPrice: number;
+      vatRate: number;
+      supplierId?: string | null;
+      supplierOrderNo?: string | null;
+      isFromStock?: boolean;
+    }[];
   }) {
     if (!data.items?.length) throw new BadRequestException('En az bir kalem gerekli');
 
@@ -128,6 +159,14 @@ export class OrdersService {
     let vatTotal = 0;
     let grossTotal = 0;
     const items = data.items.map((item) => {
+      const isFromStock = !!item.isFromStock;
+      const supplierId = item.supplierId || null;
+      const supplierOrderNo = item.supplierOrderNo?.trim() || null;
+      if (!isFromStock && !supplierOrderNo) {
+        throw new BadRequestException(
+          `${item.name || 'Kalem'} için stok dışı seçimde sipariş no/referans zorunludur`,
+        );
+      }
       const lineGross = item.quantity * item.unitPrice;
       const divider = 1 + (item.vatRate / 100);
       const base = divider > 0 ? lineGross / divider : lineGross;
@@ -135,8 +174,20 @@ export class OrdersService {
       subtotal += base;
       vatTotal += vat;
       grossTotal += lineGross;
-      return { ...item, lineTotal: Math.round(lineGross * 100) / 100 };
+      return {
+        ...item,
+        supplierId,
+        supplierOrderNo,
+        isFromStock,
+        lineTotal: Math.round(lineGross * 100) / 100,
+      };
     });
+
+    const paymentNote = this.formatPaymentNote(data.payment);
+    const normalizedNotes = [
+      paymentNote,
+      data.notes?.trim() || null,
+    ].filter(Boolean).join('\n\n') || undefined;
 
     return this.prisma.salesOrder.create({
       data: {
@@ -147,7 +198,7 @@ export class OrdersService {
         vatTotal: Math.round(vatTotal * 100) / 100,
         grandTotal: Math.round(grossTotal * 100) / 100,
         shippingAddress: data.shippingAddress,
-        notes: data.notes,
+        notes: normalizedNotes,
         expectedDeliveryDate:
           data.expectedDeliveryDate && String(data.expectedDeliveryDate).trim() !== ''
             ? new Date(data.expectedDeliveryDate)
@@ -160,6 +211,9 @@ export class OrdersService {
             unitPrice: i.unitPrice,
             vatRate: i.vatRate,
             lineTotal: i.lineTotal,
+            supplierId: i.supplierId || null,
+            supplierOrderNo: i.supplierOrderNo || null,
+            isFromStock: !!i.isFromStock,
           })),
         },
       },
@@ -318,6 +372,15 @@ export class OrdersService {
     }
     if ('isFromStock' in data) {
       patch.isFromStock = !!data.isFromStock;
+    }
+    const nextIsFromStock =
+      patch.isFromStock !== undefined ? !!patch.isFromStock : !!item.isFromStock;
+    const nextSupplierId =
+      patch.supplierId !== undefined ? patch.supplierId : item.supplierId;
+    const nextSupplierOrderNo =
+      patch.supplierOrderNo !== undefined ? patch.supplierOrderNo : item.supplierOrderNo;
+    if (!nextIsFromStock && !nextSupplierOrderNo) {
+      throw new BadRequestException('Stok dışı kalem için sipariş no/referans zorunludur');
     }
 
     const updated = await this.prisma.orderItem.update({

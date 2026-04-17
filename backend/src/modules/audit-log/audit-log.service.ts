@@ -29,11 +29,24 @@ export class AuditLogService {
     userId?: string;
     entity?: string;
     action?: string;
+    search?: string;
+    scope?: string;
     startDate?: string;
     endDate?: string;
     organizationId?: string;
   }) {
-    const { page = 1, limit = 50, userId, entity, action, startDate, endDate, organizationId } = params;
+    const {
+      page = 1,
+      limit = 50,
+      userId,
+      entity,
+      action,
+      search,
+      scope,
+      startDate,
+      endDate,
+      organizationId,
+    } = params;
     const skip = (page - 1) * limit;
 
     const where: any = {};
@@ -41,6 +54,21 @@ export class AuditLogService {
     if (userId) where.userId = userId;
     if (entity) where.entity = entity;
     if (action) where.action = action;
+    if (scope === 'process') {
+      where.entity = {
+        in: ['Contact', 'Conversation', 'Lead', 'Task', 'Assignment', 'Quote', 'SalesOrder'],
+      };
+    }
+    if (search && search.trim()) {
+      const q = search.trim();
+      where.OR = [
+        { action: { contains: q, mode: 'insensitive' } },
+        { entity: { contains: q, mode: 'insensitive' } },
+        { entityId: { contains: q, mode: 'insensitive' } },
+        { ipAddress: { contains: q, mode: 'insensitive' } },
+        { user: { name: { contains: q, mode: 'insensitive' } } },
+      ];
+    }
     if (startDate || endDate) {
       where.createdAt = {};
       if (startDate) where.createdAt.gte = new Date(startDate);

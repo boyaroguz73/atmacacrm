@@ -26,6 +26,7 @@ export class WahaService implements OnModuleInit {
   readonly syncChatLimit: number;
   readonly syncMessageLimit: number;
   readonly syncTimeoutMs: number;
+  private readonly requestTimeoutMs: number;
 
   constructor(
     private config: ConfigService,
@@ -39,10 +40,15 @@ export class WahaService implements OnModuleInit {
     this.syncMessageLimit = parseInt(this.config.get('SYNC_MESSAGE_LIMIT', '200'), 10);
     this.syncTimeoutMs = parseInt(this.config.get('SYNC_TIMEOUT_MS', '120000'), 10);
 
+    const rawTimeout = parseInt(this.config.get('WAHA_REQUEST_TIMEOUT_MS', '120000'), 10);
+    this.requestTimeoutMs = Number.isFinite(rawTimeout)
+      ? Math.min(Math.max(rawTimeout, 5_000), 300_000)
+      : 120_000;
+
     this.http = axios.create({
       baseURL,
       headers: apiKey ? { 'X-Api-Key': apiKey } : {},
-      timeout: 3000000000000,
+      timeout: this.requestTimeoutMs,
     });
 
     this.webhookUrl = this.config.get(
@@ -935,7 +941,7 @@ export class WahaService implements OnModuleInit {
     try {
       const response = await this.http.get(
         `/api/files/${sessionName}/${fileId}`,
-        { responseType: 'arraybuffer', timeout: 3000000000 },
+        { responseType: 'arraybuffer', timeout: this.requestTimeoutMs },
       );
       const contentType =
         response.headers['content-type'] || 'application/octet-stream';

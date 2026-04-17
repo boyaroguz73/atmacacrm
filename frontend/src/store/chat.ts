@@ -70,6 +70,19 @@ export interface Message {
   timestamp: string;
   reactions?: Reaction[] | null;
   isEdited?: boolean;
+  metadata?: {
+    source?: string | null;
+    originalMediaUrl?: string | null;
+    thumbnailBase64?: string | null;
+    originalMimeType?: string | null;
+    originalFileSize?: number | null;
+    width?: number | null;
+    height?: number | null;
+    kind?: string | null;
+    contactName?: string | null;
+    contactPhone?: string | null;
+    vcard?: string | null;
+  } | null;
   sentBy: { id: string; name: string } | null;
   /** Grup mesajlarında gönderenin telefon numarası */
   participantPhone?: string | null;
@@ -113,6 +126,13 @@ interface ChatState {
     productId: string;
     sessionName?: string;
     chatId?: string;
+  }) => Promise<void>;
+  sendContactCard: (params: {
+    conversationId: string;
+    sessionName: string;
+    chatId: string;
+    contactName: string;
+    contactPhone: string;
   }) => Promise<void>;
   addMessage: (message: Message) => void;
   updateConversation: (conversation: Conversation) => void;
@@ -424,6 +444,38 @@ export const useChatStore = create<ChatState>((set, get) => ({
         }
         return { conversations, activeConversation };
       });
+    } catch (error) {
+      set((state) => ({
+        messages: state.messages.filter((m) => m.id !== tempId),
+      }));
+      throw error;
+    }
+  },
+
+  sendContactCard: async (params) => {
+    const tempId = `temp-contact-${Date.now()}`;
+    const optimisticMsg: Message = {
+      id: tempId,
+      conversationId: params.conversationId,
+      direction: 'OUTGOING',
+      body: `👤 ${params.contactName} (${params.contactPhone})`,
+      mediaType: 'DOCUMENT',
+      mediaUrl: null,
+      status: 'PENDING',
+      timestamp: new Date().toISOString(),
+      sentBy: null,
+      metadata: {
+        kind: 'vcard',
+        contactName: params.contactName,
+        contactPhone: params.contactPhone,
+      },
+    };
+    set((state) => ({ messages: [...state.messages, optimisticMsg] }));
+    try {
+      const { data } = await api.post('/messages/send-contact', params);
+      set((state) => ({
+        messages: state.messages.map((m) => (m.id === tempId ? { ...data } : m)),
+      }));
     } catch (error) {
       set((state) => ({
         messages: state.messages.filter((m) => m.id !== tempId),

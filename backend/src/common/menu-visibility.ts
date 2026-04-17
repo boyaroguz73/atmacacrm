@@ -2,6 +2,7 @@
 export const MENU_KEYS = [
   'dashboard',
   'inbox',
+  'groups',
   'contacts',
   'leads',
   'products',
@@ -35,6 +36,7 @@ export function defaultAllowedMenuKeys(role: string | undefined): Set<string> {
   if (r === 'ACCOUNTANT') {
     return new Set([
       'inbox',
+      'groups',
       'contacts',
       'leads',
       'quotes',
@@ -45,7 +47,7 @@ export function defaultAllowedMenuKeys(role: string | undefined): Set<string> {
     ]);
   }
   // AGENT
-  return new Set(['inbox', 'contacts', 'leads', 'quotes', 'orders', 'tasks', 'calendar']);
+  return new Set(['inbox', 'groups', 'contacts', 'leads', 'quotes', 'orders', 'tasks', 'calendar']);
 }
 
 export function sanitizeMenuKeys(input: string[] | undefined): string[] {

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import api from '@/lib/api';
-import { formatPhone, rewriteMediaUrlForClient } from '@/lib/utils';
+import { cn, formatPhone, rewriteMediaUrlForClient } from '@/lib/utils';
 import { QuoteEmbeddedChat } from '@/components/quotes/QuoteEmbeddedChat';
 import toast from 'react-hot-toast';
 import {
@@ -18,6 +18,29 @@ import {
 
 type DiscountType = 'PERCENT' | 'AMOUNT';
 
+/** Tüm satırlarda tek KDV oranı (birim fiyat KDV dahil hesap için). */
+const LINE_VAT_OPTIONS = [0, 1, 10, 20] as const;
+
+type BillingFields = {
+  company: string;
+  billingAddress: string;
+  address: string;
+  taxOffice: string;
+  taxNumber: string;
+  identityNumber: string;
+};
+
+function billingFingerprint(b: BillingFields): string {
+  return JSON.stringify({
+    company: (b.company || '').trim(),
+    billingAddress: (b.billingAddress || '').trim(),
+    address: (b.address || '').trim(),
+    taxOffice: (b.taxOffice || '').trim(),
+    taxNumber: (b.taxNumber || '').trim(),
+    identityNumber: (b.identityNumber || '').trim(),
+  });
+}
+
 interface LocalLineItem {
   key: string;
   productId?: string;
@@ -30,7 +53,7 @@ interface LocalLineItem {
   measurementInfo?: string;
   quantity: number;
   unitPrice: number;
-  vatRate: number;
+  applyDiscount: boolean;
   discountType: DiscountType;
   discountValue: number;
 }
@@ -52,11 +75,21 @@ function currencySymbol(c: string): string {
   return '₺';
 }
 
+/** XML subproduct metadata.type2 / title → ölçü alanı ön doldurması */
+function measurementHintFromVariantMetadata(metadata: unknown): string {
+  if (!metadata || typeof metadata !== 'object') return '';
+  const m = metadata as Record<string, unknown>;
+  const t2 = typeof m.type2 === 'string' ? m.type2.trim() : '';
+  const title = typeof m.title === 'string' ? m.title.trim() : '';
+  return t2 || title || '';
+}
+
 /** Backend `QuotesService.calcTotals` ile aynı mantık (önizleme). */
 function calcTotals(
   items: LocalLineItem[],
   discountType: DiscountType,
   discountValue: number,
+  lineVatRate: number,
 ) {
   let netSubtotalBeforeGeneralDiscount = 0;
   let vatTotalBeforeGeneralDiscount = 0;
@@ -71,7 +104,7 @@ function calcTotals(
           : lineGross * (item.discountValue / 100);
     }
     const grossAfterLineDiscount = Math.max(0, lineGross - lineDiscount);
-    const divider = 1 + (item.vatRate / 100);
+    const divider = 1 + (lineVatRate / 100);
     const lineNet = divider > 0 ? grossAfterLineDiscount / divider : grossAfterLineDiscount;
     const lineVat = grossAfterLineDiscount - lineNet;
     netSubtotalBeforeGeneralDiscount += lineNet;
@@ -121,7 +154,7 @@ function emptyLine(): LocalLineItem {
     measurementInfo: '',
     quantity: 1,
     unitPrice: 0,
-    vatRate: 20,
+    applyDiscount: false,
     discountType: 'PERCENT',
     discountValue: 0,
   };
@@ -159,22 +192,28 @@ export default function NewQuotePage() {
   useEffect(() => {
     if (!selectedContact?.id) {
       setBillingDraft(null);
+      setBillingBaseline(null);
       return;
     }
     setBillingLoading(true);
     api
       .get(`/contacts/${selectedContact.id}`)
       .then(({ data }) => {
-        setBillingDraft({
+        const draft: BillingFields = {
           company: data.company || '',
           billingAddress: data.billingAddress || '',
           address: data.address || '',
           taxOffice: data.taxOffice || '',
           taxNumber: data.taxNumber || '',
           identityNumber: data.identityNumber || '',
-        });
+        };
+        setBillingDraft(draft);
+        setBillingBaseline({ ...draft });
       })
-      .catch(() => setBillingDraft(null))
+      .catch(() => {
+        setBillingDraft(null);
+        setBillingBaseline(null);
+      })
       .finally(() => setBillingLoading(false));
   }, [selectedContact?.id]);
 
@@ -195,28 +234,32 @@ export default function NewQuotePage() {
   const [grandTotalOverride, setGrandTotalOverride] = useState<string>('');
   const [submitting, setSubmitting] = useState(false);
 
-  const [billingDraft, setBillingDraft] = useState<{
-    company: string;
-    billingAddress: string;
-    address: string;
-    taxOffice: string;
-    taxNumber: string;
-    identityNumber: string;
-  } | null>(null);
+  const [billingDraft, setBillingDraft] = useState<BillingFields | null>(null);
+  /** Sunucuya son kaydedilen / yüklenen firma-fatura kopyası (kayıtsız düzenleme tespiti). */
+  const [billingBaseline, setBillingBaseline] = useState<BillingFields | null>(null);
   const [billingLoading, setBillingLoading] = useState(false);
   const [billingSaving, setBillingSaving] = useState(false);
+  const [billingShake, setBillingShake] = useState(false);
 
   const [variantPick, setVariantPick] = useState<{
     product: ProductHit;
-    variants: { id: string; name: string; unitPrice: number; vatRate: number }[];
+    variants: { id: string; name: string; unitPrice: number; vatRate: number; metadata?: unknown }[];
   } | null>(null);
+
+  /** Teklifteki tüm satırlar için geçerli KDV oranı (API’ye satır başına yazılır). */
+  const [lineVatRate, setLineVatRate] = useState(20);
 
   const sym = currencySymbol(currency);
 
   const totals = useMemo(
-    () => calcTotals(lines, discountType, discountValue),
-    [lines, discountType, discountValue],
+    () => calcTotals(lines, discountType, discountValue, lineVatRate),
+    [lines, discountType, discountValue, lineVatRate],
   );
+
+  const billingDirty = useMemo(() => {
+    if (!billingDraft || !billingBaseline) return false;
+    return billingFingerprint(billingDraft) !== billingFingerprint(billingBaseline);
+  }, [billingDraft, billingBaseline]);
 
   const searchContacts = useCallback(async (q: string) => {
     if (q.length < 2) {
@@ -275,8 +318,9 @@ export default function NewQuotePage() {
 
   const finalizeProductLine = (
     p: ProductHit,
-    variant?: { id: string; name: string; unitPrice: number; vatRate: number },
+    variant?: { id: string; name: string; unitPrice: number; metadata?: unknown },
   ) => {
+    const measureHint = variant ? measurementHintFromVariantMetadata(variant.metadata) : '';
     setLines((prev) => [
       ...prev,
       {
@@ -287,10 +331,10 @@ export default function NewQuotePage() {
         name: variant ? variant.name : String(p.name ?? ''),
         description: p.description || undefined,
         colorFabricInfo: '',
-        measurementInfo: '',
+        measurementInfo: measureHint,
         quantity: 1,
         unitPrice: variant ? variant.unitPrice : p.unitPrice,
-        vatRate: variant ? variant.vatRate : p.vatRate,
+        applyDiscount: false,
         discountType: 'PERCENT',
         discountValue: 0,
       },
@@ -355,6 +399,12 @@ export default function NewQuotePage() {
       toast.error('Lütfen bir kişi seçin');
       return;
     }
+    if (billingDirty) {
+      toast.error('Firma / fatura bilgilerini kaydedin veya değişiklikleri sıfırlayın.');
+      setBillingShake(true);
+      window.setTimeout(() => setBillingShake(false), 450);
+      return;
+    }
     const validLines = lines.filter((l) => String(l.name ?? '').trim() !== '');
     if (!validLines.length) {
       toast.error('En az bir ürün satırı ekleyin');
@@ -384,9 +434,9 @@ export default function NewQuotePage() {
           description: l.description || undefined,
           quantity: l.quantity,
           unitPrice: l.unitPrice,
-          vatRate: Math.round(l.vatRate),
-          discountType: l.discountType,
-          discountValue: l.discountValue || 0,
+          vatRate: Math.round(lineVatRate),
+          discountType: l.applyDiscount ? l.discountType : 'PERCENT',
+          discountValue: l.applyDiscount ? l.discountValue || 0 : 0,
           colorFabricInfo: String(l.colorFabricInfo ?? '').trim() || undefined,
           measurementInfo: String(l.measurementInfo ?? '').trim() || undefined,
         })),
@@ -415,6 +465,7 @@ export default function NewQuotePage() {
         taxNumber: billingDraft.taxNumber.trim() || null,
         identityNumber: billingDraft.identityNumber.trim() || null,
       });
+      setBillingBaseline({ ...billingDraft });
       toast.success('Firma bilgileri kaydedildi (PDF ve muhasebe için)');
     } catch {
       toast.error('Firma bilgileri kaydedilemedi');
@@ -551,24 +602,53 @@ export default function NewQuotePage() {
           </section>
 
           {selectedContact && (
-            <section className="bg-white rounded-xl border border-amber-100 shadow-sm p-5 space-y-3">
-              <div className="flex items-center justify-between gap-2">
-                <h2 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+            <section
+              className={cn(
+                'bg-white rounded-xl border shadow-sm p-5 space-y-3 transition-[box-shadow,border-color]',
+                billingShake && 'animate-crm-shake ring-2 ring-red-500 border-red-400',
+                !billingShake && billingDirty && 'border-amber-400 ring-1 ring-amber-200/80',
+                !billingShake && !billingDirty && 'border-amber-100',
+              )}
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h2 className="text-sm font-semibold text-gray-900 flex items-center gap-2 flex-wrap">
                   <Building2 className="w-4 h-4 text-amber-700" />
                   Firma / fatura bilgileri
+                  {billingDirty ? (
+                    <span className="text-[10px] font-semibold uppercase tracking-wide text-red-600 bg-red-50 px-2 py-0.5 rounded-full">
+                      Kaydedilmedi
+                    </span>
+                  ) : null}
                 </h2>
-                <button
-                  type="button"
-                  onClick={() => void saveBilling()}
-                  disabled={billingLoading || billingSaving || !billingDraft}
-                  className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-amber-600 text-white hover:bg-amber-700 disabled:opacity-50 inline-flex items-center gap-1"
-                >
-                  {billingSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
-                  Kaydet
-                </button>
+                <div className="flex items-center gap-2">
+                  {billingDirty ? (
+                    <button
+                      type="button"
+                      onClick={() => billingBaseline && setBillingDraft({ ...billingBaseline })}
+                      className="text-xs font-medium text-gray-600 hover:text-gray-900 px-2 py-1.5 rounded-lg border border-gray-200 bg-white"
+                    >
+                      Sıfırla
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    onClick={() => void saveBilling()}
+                    disabled={billingLoading || billingSaving || !billingDraft || !billingDirty}
+                    className={cn(
+                      'text-xs font-semibold px-3 py-1.5 rounded-lg text-white inline-flex items-center gap-1 disabled:opacity-50',
+                      billingDirty ? 'bg-amber-600 hover:bg-amber-700' : 'bg-gray-300 cursor-not-allowed',
+                    )}
+                  >
+                    {billingSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+                    Kaydet
+                  </button>
+                </div>
               </div>
               <p className="text-[11px] text-gray-500">
                 Teklif PDF’inde müşteri bloğunda ve sipariş / muhasebe ekranlarında kullanılır.
+                {billingDirty ? (
+                  <span className="text-red-600 font-medium"> Kayıtsız değişiklik varken teklif oluşturulamaz.</span>
+                ) : null}
               </p>
               {billingLoading || !billingDraft ? (
                 <div className="flex items-center gap-2 text-xs text-gray-400 py-2">
@@ -691,22 +771,36 @@ export default function NewQuotePage() {
                 + Boş satır
               </button>
             </div>
-            <p className="px-5 pt-3 text-[11px] text-gray-500">
-              Ürün seçili satırlarda birim fiyat ve KDV, XML’den gelen değer olarak kilitlidir; sadece indirim düzenlenir.
-            </p>
+            <div className="px-5 pt-3 flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-2 sm:gap-4">
+              <label className="flex items-center gap-2 text-xs text-gray-700">
+                <span className="font-medium text-gray-600 shrink-0">KDV oranı (tüm satırlar)</span>
+                <select
+                  value={lineVatRate}
+                  onChange={(e) => setLineVatRate(Number(e.target.value))}
+                  className="px-2 py-1.5 border border-gray-200 rounded-lg text-xs font-medium bg-white focus:outline-none focus:border-whatsapp"
+                >
+                  {LINE_VAT_OPTIONS.map((v) => (
+                    <option key={v} value={v}>
+                      %{v}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <p className="text-[11px] text-gray-500 sm:flex-1 min-w-0">
+                Birim fiyat KDV dahil düzenlenir. Satır indirimi yalnızca aşağıdaki kutudan işaretlenirse geçerlidir (% veya TL).
+              </p>
+            </div>
             <div className="overflow-x-auto w-full min-w-0">
-              <table className="w-full text-xs min-w-[900px]">
+                <table className="w-full text-xs min-w-[780px]">
                 <thead>
                   <tr className="bg-gray-50/90 text-gray-500 font-semibold uppercase tracking-wide text-[10px]">
-                    <th className="text-left px-2 py-2 w-14">Görsel</th>
+                    <th className="text-left px-2 py-2 w-20 sm:w-24">Görsel</th>
                     <th className="text-left px-3 py-2 w-[18%]">Ürün</th>
                     <th className="text-left px-2 py-2 w-[14%]">Renk/Kumaş</th>
                     <th className="text-left px-2 py-2 w-[12%]">Ölçü</th>
                     <th className="text-left px-2 py-2 w-16">Miktar</th>
-                    <th className="text-left px-2 py-2 w-24">Birim Fiyat (KDV Dahil)</th>
-                    <th className="text-left px-2 py-2 w-14">KDV %</th>
-                    <th className="text-left px-2 py-2 w-24">İndirim</th>
-                    <th className="text-left px-2 py-2 w-20">Değer</th>
+                    <th className="text-left px-2 py-2 w-28">Birim (KDV dahil)</th>
+                    <th className="text-left px-2 py-2 w-40">Satır indirimi</th>
                     <th className="text-right px-3 py-2 w-24">Satır Toplamı</th>
                     <th className="w-10" />
                   </tr>
@@ -714,8 +808,8 @@ export default function NewQuotePage() {
                 <tbody className="divide-y divide-gray-100">
                   {lines.map((line, idx) => (
                     <tr key={line.key} className="align-top">
-                      <td className="px-2 py-2 w-14">
-                        <div className="w-11 h-11 rounded-lg border border-gray-100 bg-gray-50 overflow-hidden shrink-0">
+                      <td className="px-2 py-2 w-16">
+                        <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-lg border border-gray-100 bg-gray-50 overflow-hidden shrink-0">
                           {line.lineImageUrl ? (
                             // eslint-disable-next-line @next/next/no-img-element
                             <img
@@ -785,54 +879,57 @@ export default function NewQuotePage() {
                           min={0}
                           step={0.01}
                           value={line.unitPrice}
-                          disabled={!!line.productId}
                           onChange={(e) =>
                             updateLine(line.key, { unitPrice: parseFloat(e.target.value) || 0 })
                           }
-                          className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm tabular-nums disabled:bg-gray-50 disabled:text-gray-500"
-                        />
-                      </td>
-                      <td className="px-2 py-2">
-                        <input
-                          type="number"
-                          min={0}
-                          max={100}
-                          step={1}
-                          value={line.vatRate}
-                          disabled={!!line.productId}
-                          onChange={(e) =>
-                            updateLine(line.key, { vatRate: parseFloat(e.target.value) || 0 })
-                          }
-                          className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm disabled:bg-gray-50 disabled:text-gray-500"
-                        />
-                      </td>
-                      <td className="px-2 py-2">
-                        <select
-                          value={line.discountType}
-                          onChange={(e) =>
-                            updateLine(line.key, {
-                              discountType: e.target.value as DiscountType,
-                            })
-                          }
-                          className="w-full px-1 py-1.5 border border-gray-200 rounded-lg text-[11px] font-medium bg-white"
-                        >
-                          <option value="PERCENT">%</option>
-                          <option value="AMOUNT">TL</option>
-                        </select>
-                      </td>
-                      <td className="px-2 py-2">
-                        <input
-                          type="number"
-                          min={0}
-                          step={0.01}
-                          value={line.discountValue}
-                          onChange={(e) =>
-                            updateLine(line.key, {
-                              discountValue: parseFloat(e.target.value) || 0,
-                            })
-                          }
                           className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm tabular-nums"
                         />
+                      </td>
+                      <td className="px-2 py-2">
+                        <div className="flex flex-col gap-1.5 min-w-0">
+                          <label className="inline-flex items-center gap-2 text-[11px] font-medium text-gray-700">
+                            <input
+                              type="checkbox"
+                              checked={line.applyDiscount}
+                              onChange={(e) =>
+                                updateLine(line.key, {
+                                  applyDiscount: e.target.checked,
+                                  ...(e.target.checked ? {} : { discountValue: 0, discountType: 'PERCENT' }),
+                                })
+                              }
+                              className="rounded border-gray-300 text-whatsapp focus:ring-whatsapp shrink-0"
+                            />
+                            İndirim uygula
+                          </label>
+                          {line.applyDiscount ? (
+                            <div className="flex gap-1 items-center">
+                              <select
+                                value={line.discountType}
+                                onChange={(e) =>
+                                  updateLine(line.key, {
+                                    discountType: e.target.value as DiscountType,
+                                  })
+                                }
+                                className="w-14 shrink-0 px-1 py-1 border border-gray-200 rounded-lg text-[11px] font-medium bg-white"
+                              >
+                                <option value="PERCENT">%</option>
+                                <option value="AMOUNT">TL</option>
+                              </select>
+                              <input
+                                type="number"
+                                min={0}
+                                step={0.01}
+                                value={line.discountValue}
+                                onChange={(e) =>
+                                  updateLine(line.key, {
+                                    discountValue: parseFloat(e.target.value) || 0,
+                                  })
+                                }
+                                className="min-w-0 flex-1 px-2 py-1 border border-gray-200 rounded-lg text-sm tabular-nums"
+                              />
+                            </div>
+                          ) : null}
+                        </div>
                       </td>
                       <td className="px-3 py-2 text-right text-sm font-semibold text-gray-800 tabular-nums">
                         {sym}

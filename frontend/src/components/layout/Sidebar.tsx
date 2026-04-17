@@ -20,6 +20,7 @@ import {
   ChevronDown,
   ChevronRight,
   Inbox,
+  MessagesSquare,
   MessageCircleReply,
   Clock,
   UserX,
@@ -47,6 +48,7 @@ interface SubItem {
   href: string;
   label: string;
   icon: any;
+  key?: string;
   param?: string;
   adminOnly?: boolean;
   /** Yalnızca AGENT rolünde göster */
@@ -74,10 +76,11 @@ const menuItems: MenuItem[] = [
     icon: MessageSquare,
     menuKey: 'inbox',
     children: [
-      { href: '/inbox', label: 'Gelen kutusu', icon: Inbox },
-      { href: '/inbox?filter=unanswered', label: 'Cevapsızlar', icon: Clock, param: 'unanswered' },
-      { href: '/inbox?filter=answered', label: 'Cevaplananlar', icon: MessageCircleReply, param: 'answered' },
-      { href: '/inbox?filter=followup', label: 'Takiptekiler', icon: CalendarCheck, param: 'followup' },
+      { href: '/inbox', label: 'Gelen kutusu', icon: Inbox, key: 'inbox_main' },
+      { href: '/inbox/groups', label: 'Gruplar', icon: MessagesSquare, key: 'groups' },
+      { href: '/inbox?filter=unanswered', label: 'Cevapsızlar', icon: Clock, key: 'unanswered', param: 'unanswered' },
+      { href: '/inbox?filter=answered', label: 'Cevaplananlar', icon: MessageCircleReply, key: 'answered', param: 'answered' },
+      { href: '/inbox?filter=followup', label: 'Takiptekiler', icon: CalendarCheck, key: 'followup', param: 'followup' },
     ],
   },
   { href: '/contacts', label: 'Kişiler', icon: Users, menuKey: 'contacts' },
@@ -89,8 +92,8 @@ const menuItems: MenuItem[] = [
     icon: ClipboardList,
     menuKey: 'quotes',
     children: [
-      { href: '/quotes', label: 'Teklif Listesi', icon: ClipboardList },
-      { href: '/quotes/new', label: 'Yeni Teklif', icon: Receipt, adminOnly: true },
+      { href: '/quotes', label: 'Teklif Listesi', icon: ClipboardList, key: 'quotes_list' },
+      { href: '/quotes/new', label: 'Yeni Teklif', icon: Receipt, key: 'quotes_new', adminOnly: true },
     ],
   },
   { href: '/orders', label: 'Siparişler', icon: Truck, menuKey: 'orders' },
@@ -101,7 +104,7 @@ const menuItems: MenuItem[] = [
     accountantVisible: true,
     menuKey: 'accounting',
     children: [
-      { href: '/accounting/invoices', label: 'Faturalar', icon: Receipt },
+      { href: '/accounting/invoices', label: 'Faturalar', icon: Receipt, key: 'accounting_invoices' },
     ],
   },
   { href: '/tasks', label: 'Görevler', icon: CalendarCheck, menuKey: 'tasks' },
@@ -113,12 +116,12 @@ const menuItems: MenuItem[] = [
     adminOnly: true,
     menuKey: 'admin',
     children: [
-      { href: '/inbox?filter=unassigned', label: 'Atanmamış', icon: UserX, param: 'unassigned' },
-      { href: '/leads?status=LOST', label: 'Kaçırılan Müşteriler', icon: TrendingDown },
-      { href: '/admin/history', label: 'Konuşma Geçmişi', icon: History },
-      { href: '/admin/templates', label: 'Mesaj Şablonları', icon: FileText },
-      { href: '/admin/auto-reply', label: 'Otomatik Yanıt', icon: Zap },
-      { href: '/admin/audit-log', label: 'Aktivite Logu', icon: Activity },
+      { href: '/inbox?filter=unassigned', label: 'Atanmamış', icon: UserX, key: 'unassigned', param: 'unassigned' },
+      { href: '/leads?status=LOST', label: 'Kaçırılan Müşteriler', icon: TrendingDown, key: 'lost_leads' },
+      { href: '/admin/history', label: 'Konuşma Geçmişi', icon: History, key: 'admin_history' },
+      { href: '/admin/templates', label: 'Mesaj Şablonları', icon: FileText, key: 'admin_templates' },
+      { href: '/admin/auto-reply', label: 'Otomatik Yanıt', icon: Zap, key: 'admin_auto_reply' },
+      { href: '/admin/audit-log', label: 'Aktivite Logu', icon: Activity, key: 'admin_audit_log' },
     ],
   },
   { href: '/reports', label: 'Raporlar', icon: BarChart3, adminOnly: true, menuKey: 'reports' },
@@ -132,11 +135,11 @@ const menuItems: MenuItem[] = [
     superOnly: true,
     menuKey: 'superadmin',
     children: [
-      { href: '/superadmin', label: 'Genel Bakış', icon: LayoutDashboard },
-      { href: '/superadmin/users', label: 'Kullanıcılar', icon: Users },
-      { href: '/superadmin/plans', label: 'Paketler', icon: Package },
-      { href: '/superadmin/tickets', label: 'Destek Talepleri', icon: LifeBuoy },
-      { href: '/superadmin/system', label: 'Sistem Sağlığı', icon: Activity },
+      { href: '/superadmin', label: 'Genel Bakış', icon: LayoutDashboard, key: 'sa_overview' },
+      { href: '/superadmin/users', label: 'Kullanıcılar', icon: Users, key: 'sa_users' },
+      { href: '/superadmin/plans', label: 'Paketler', icon: Package, key: 'sa_plans' },
+      { href: '/superadmin/tickets', label: 'Destek Talepleri', icon: LifeBuoy, key: 'sa_tickets' },
+      { href: '/superadmin/system', label: 'Sistem Sağlığı', icon: Activity, key: 'sa_system' },
     ],
   },
 ];
@@ -154,6 +157,8 @@ export default function Sidebar() {
   const [ecommerceMenuVisible, setEcommerceMenuVisible] = useState(false);
   /** Sunucudan gelen izinli menü anahtarları; null = filtre yok (yüklenemedi veya süper admin) */
   const [allowedMenuKeys, setAllowedMenuKeys] = useState<Set<string> | null>(null);
+  const [orderedMenuKeys, setOrderedMenuKeys] = useState<string[] | null>(null);
+  const [submenuOrder, setSubmenuOrder] = useState<Record<string, string[]>>({});
   const [menuVisibilityEpoch, setMenuVisibilityEpoch] = useState(0);
 
   const refreshMenuVisibility = useCallback(() => {
@@ -166,9 +171,14 @@ export default function Sidebar() {
       .then(({ data }) => {
         if (Array.isArray(data?.allowedKeys)) {
           setAllowedMenuKeys(new Set(data.allowedKeys));
+          setOrderedMenuKeys(data.allowedKeys);
         }
       })
       .catch(() => setAllowedMenuKeys(null));
+    api
+      .get<{ suborder?: Record<string, string[]> }>('/organizations/my/menu-suborder')
+      .then(({ data }) => setSubmenuOrder(data?.suborder || {}))
+      .catch(() => setSubmenuOrder({}));
   }, [isSuperAdmin]);
 
   useEffect(() => {
@@ -215,6 +225,14 @@ export default function Sidebar() {
     if (!isSuperAdmin && allowedMenuKeys) {
       filtered = filtered.filter((item) => allowedMenuKeys.has(item.menuKey));
     }
+    if (!isSuperAdmin && orderedMenuKeys?.length) {
+      const orderIndex = new Map(orderedMenuKeys.map((k, i) => [k, i]));
+      filtered = [...filtered].sort((a, b) => {
+        const ia = orderIndex.has(a.menuKey) ? (orderIndex.get(a.menuKey) as number) : 10_000;
+        const ib = orderIndex.has(b.menuKey) ? (orderIndex.get(b.menuKey) as number) : 10_000;
+        return ia - ib;
+      });
+    }
     const showEcommerce =
       !isSuperAdmin &&
       isAdmin &&
@@ -229,8 +247,8 @@ export default function Sidebar() {
         adminOnly: true,
         menuKey: 'ecommerce',
         children: [
-          { href: '/ecommerce/products', label: 'Ürünler', icon: Package },
-          { href: '/ecommerce/orders', label: 'Siparişler', icon: ShoppingBag },
+          { href: '/ecommerce/products', label: 'Ürünler', icon: Package, key: 'ecom_products' },
+          { href: '/ecommerce/orders', label: 'Siparişler', icon: ShoppingBag, key: 'ecom_orders' },
         ],
       };
       if (idx >= 0) {
@@ -239,8 +257,23 @@ export default function Sidebar() {
         filtered = [...filtered, ecommerceBlock];
       }
     }
-    return filtered;
-  }, [isAdmin, isSuperAdmin, isAccountant, ecommerceMenuVisible, allowedMenuKeys]);
+    return filtered.map((item) => {
+      if (!item.children?.length) return item;
+      const desired = submenuOrder[item.menuKey] || [];
+      if (!desired.length) return item;
+      const idx = new Map(desired.map((k, i) => [k, i]));
+      return {
+        ...item,
+        children: [...item.children].sort((a, b) => {
+          const ka = a.key || a.href;
+          const kb = b.key || b.href;
+          const ia = idx.has(ka) ? (idx.get(ka) as number) : 10_000;
+          const ib = idx.has(kb) ? (idx.get(kb) as number) : 10_000;
+          return ia - ib;
+        }),
+      };
+    });
+  }, [isAdmin, isSuperAdmin, isAccountant, ecommerceMenuVisible, allowedMenuKeys, orderedMenuKeys, submenuOrder]);
 
   const getInitialExpanded = () => {
     const active: string[] = [];
