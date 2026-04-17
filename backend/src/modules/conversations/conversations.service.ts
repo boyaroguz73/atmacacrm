@@ -1,10 +1,12 @@
-import { Inject, Injectable, NotFoundException, forwardRef } from '@nestjs/common';
+import { Inject, Injectable, Logger, NotFoundException, forwardRef } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   OrgSessionScopeUser,
   whereConversationsForOrg,
 } from '../../common/org-session-scope';
 import { WahaService } from '../waha/waha.service';
+import { ContactsService } from '../contacts/contacts.service';
+import { canonicalContactPhone } from '../../common/contact-phone';
 
 function isWeakGroupLabel(name: string | null | undefined): boolean {
   const t = (name ?? '').trim();
@@ -15,10 +17,13 @@ function isWeakGroupLabel(name: string | null | undefined): boolean {
 
 @Injectable()
 export class ConversationsService {
+  private readonly logger = new Logger(ConversationsService.name);
+
   constructor(
     private prisma: PrismaService,
     @Inject(forwardRef(() => WahaService))
     private readonly wahaService: WahaService,
+    private readonly contactsService: ContactsService,
   ) {}
 
   async findOrCreate(contactId: string, sessionId: string) {
@@ -220,20 +225,42 @@ export class ConversationsService {
 
   /** Teklif sayfası gömülü chat: kişiye ait son görüşme (herhangi bir oturum). */
   async findLatestByContactId(contactId: string) {
-    return this.prisma.conversation.findFirst({
-      where: { contactId },
-      include: {
-        contact: { include: { lead: true } },
-        session: { select: { id: true, name: true, phone: true, organizationId: true } },
-        assignments: {
-          where: { unassignedAt: null },
-          include: {
-            user: { select: { id: true, name: true, avatar: true } },
-          },
+    const include = {
+      contact: { include: { lead: true } },
+      session: { select: { id: true, name: true, phone: true, organizationId: true } },
+      assignments: {
+        where: { unassignedAt: null },
+        include: {
+          user: { select: { id: true, name: true, avatar: true } },
         },
       },
+    } as const;
+
+    let conv = await this.prisma.conversation.findFirst({
+      where: { contactId },
+      include,
       orderBy: { lastMessageAt: 'desc' },
     });
+    if (
+      conv &&
+      !conv.isGroup &&
+      conv.session?.name &&
+      conv.contact?.phone &&
+      !conv.contact.phone.startsWith('lid:') &&
+      !conv.contact.phone.startsWith('group:')
+    ) {
+      await this.enrichDmContactFromWaha(
+        conv.contactId,
+        conv.session.name,
+        conv.contact.organizationId,
+      );
+      conv = await this.prisma.conversation.findFirst({
+        where: { contactId },
+        include,
+        orderBy: { lastMessageAt: 'desc' },
+      });
+    }
+    return conv;
   }
 
   async findById(id: string) {
@@ -299,6 +326,38 @@ export class ConversationsService {
         ? groupMeta.size
         : undefined;
 
+    if (
+      !conversation.isGroup &&
+      conversation.session?.name &&
+      conversation.contact?.phone &&
+      !conversation.contact.phone.startsWith('lid:') &&
+      !conversation.contact.phone.startsWith('group:')
+    ) {
+      try {
+        await this.enrichDmContactFromWaha(
+          conversation.contactId,
+          conversation.session.name,
+          conversation.contact.organizationId,
+        );
+        const refreshed = await this.prisma.conversation.findUnique({
+          where: { id: conversation.id },
+          include: {
+            contact: { include: { lead: true } },
+            session: true,
+            assignments: {
+              where: { unassignedAt: null },
+              include: {
+                user: { select: { id: true, name: true, avatar: true } },
+              },
+            },
+          },
+        });
+        if (refreshed) conversation = refreshed;
+      } catch (e: any) {
+        this.logger.debug(`Kişi zenginleştirme atlandı (${conversation.id}): ${e?.message}`);
+      }
+    }
+
     return {
       ...conversation,
       isGroup: conversation.isGroup ?? false,
@@ -308,6 +367,70 @@ export class ConversationsService {
         ? { groupParticipantCount }
         : {}),
     };
+  }
+
+  /**
+   * Bireysel DM: telefonu 90… kanonik forma çeker, isim ve profil fotoğrafını WAHA’dan doldurur (grup/LID hariç).
+   */
+  private async enrichDmContactFromWaha(
+    contactId: string,
+    sessionName: string,
+    organizationId: string | null,
+  ): Promise<void> {
+    const row = await this.prisma.contact.findUnique({ where: { id: contactId } });
+    if (!row) return;
+    const p = row.phone;
+    if (!p || p.startsWith('lid:') || p.startsWith('group:')) return;
+
+    const merged = await this.contactsService.findOrCreate(
+      p,
+      undefined,
+      organizationId,
+    );
+    const waDigits =
+      this.contactsService.digitsForWahaProfile(merged.phone) ||
+      canonicalContactPhone(merged.phone) ||
+      '';
+    if (!waDigits) return;
+
+    const effectiveId = merged.id;
+
+    const current = await this.prisma.contact.findUnique({ where: { id: effectiveId } });
+    if (!current) return;
+
+    if (!current.name?.trim() && !current.surname?.trim()) {
+      const details = await this.wahaService.getContactDetails(
+        sessionName,
+        `${waDigits}@c.us`,
+      );
+      const waName = (
+        details?.name ||
+        details?.pushname ||
+        details?.shortName ||
+        ''
+      ).trim();
+      if (waName) {
+        await this.prisma.contact.update({
+          where: { id: effectiveId },
+          data: { name: waName },
+        });
+      }
+    }
+
+    const afterName = await this.prisma.contact.findUnique({
+      where: { id: effectiveId },
+      select: { avatarUrl: true },
+    });
+    if (!afterName?.avatarUrl) {
+      const picUrl = await this.wahaService.getProfilePicture(sessionName, waDigits);
+      if (picUrl) {
+        await this.contactsService.fetchAndSaveProfilePicture(
+          effectiveId,
+          waDigits,
+          picUrl,
+        );
+      }
+    }
   }
 
   async markAsRead(id: string) {

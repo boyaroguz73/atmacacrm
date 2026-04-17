@@ -215,9 +215,15 @@ export class WahaWebhookHandler {
           return;
         }
 
+        const displayName =
+          msg.pushName ||
+          msg._data?.notifyName ||
+          msg.notifyName ||
+          undefined;
+
         contact = await this.contactsService.findOrCreate(
           phone,
-          undefined,
+          displayName,
           waSession.organizationId,
         );
 

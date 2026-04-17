@@ -65,19 +65,22 @@ export class ContactsService {
     });
 
     if (existing) {
-      const updates: { phone?: string; organizationId?: string } = {};
-      
+      const updates: { phone?: string; organizationId?: string; name?: string } = {};
+
       if (existing.phone !== primary) {
         updates.phone = primary;
       }
-      
-      // pushName ASLA kullanılmıyor - isim yalnızca manuel güncellenebilir
-      
+
+      const nm = name?.trim();
+      if (nm && !existing.name?.trim() && !existing.surname?.trim()) {
+        updates.name = nm;
+      }
+
       // organizationId boşsa ve yeni değer varsa güncelle
       if (!existing.organizationId && organizationId) {
         updates.organizationId = organizationId;
       }
-      
+
       if (Object.keys(updates).length > 0) {
         try {
           return await this.prisma.contact.update({
@@ -91,8 +94,6 @@ export class ContactsService {
       return this.prisma.contact.findUniqueOrThrow({ where: { id: existing.id } });
     }
 
-    // pushName kullanmıyoruz - yeni kişi için isim boş bırakılır
-    // Frontend'de isim yoksa telefon numarası gösterilecek
     return this.prisma.contact.create({
       data: { 
         phone: primary, 

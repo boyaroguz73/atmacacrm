@@ -646,6 +646,55 @@ export class WahaService implements OnModuleInit {
     return null;
   }
 
+  /**
+   * WAHA Contacts: isim / pushname (sohbet açılışında eksik kişi bilgisini tamamlamak için).
+   */
+  async getContactDetails(
+    sessionName: string,
+    chatId: string,
+  ): Promise<{
+    name?: string | null;
+    pushname?: string | null;
+    shortName?: string | null;
+    number?: string | null;
+  } | null> {
+    const id = /@(c\.us|g\.us|lid)$/i.test(String(chatId))
+      ? String(chatId).trim()
+      : `${String(chatId).replace(/\D/g, '')}@c.us`;
+    if (!id || id === '@c.us') return null;
+
+    const endpoints = [
+      {
+        url: `/api/contacts`,
+        params: { contactId: id, session: sessionName },
+      },
+      {
+        url: `/api/${encodeURIComponent(sessionName)}/contacts`,
+        params: { contactId: id },
+      },
+    ];
+
+    for (const ep of endpoints) {
+      try {
+        const response = await this.http.get(ep.url, {
+          params: ep.params,
+          timeout: 12000,
+        });
+        const d = response.data;
+        if (d && typeof d === 'object') {
+          return d;
+        }
+      } catch (error: any) {
+        const status = error.response?.status;
+        if (status === 404) continue;
+        this.logger.debug(
+          `Kişi detayı alınamadı: ${ep.url} ${id} - ${error.message}`,
+        );
+      }
+    }
+    return null;
+  }
+
   async getChatMessages(
     sessionName: string,
     chatId: string,

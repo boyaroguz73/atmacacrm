@@ -276,14 +276,20 @@ export class ConversationsController {
 
     if (!conversation.contact.avatarUrl) {
       try {
-        const picUrl = await this.wahaService.getProfilePicture(
-          conversation.session.name,
-          conversation.contact.phone,
-        );
+        const waDigits =
+          this.contactsService.digitsForWahaProfile(conversation.contact.phone) ||
+          canonicalContactPhone(conversation.contact.phone) ||
+          '';
+        const picUrl = waDigits
+          ? await this.wahaService.getProfilePicture(
+              conversation.session.name,
+              waDigits,
+            )
+          : null;
         if (picUrl) {
           await this.contactsService.fetchAndSaveProfilePicture(
             conversation.contact.id,
-            conversation.contact.phone,
+            waDigits,
             picUrl,
           );
         }
