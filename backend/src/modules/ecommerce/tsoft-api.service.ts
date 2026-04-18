@@ -91,14 +91,28 @@ export class TsoftApiService {
     }
   }
 
+  /**
+   * REST1 login yanıtında `data` bazen tek obje, bazen `[{ token, expirationTime, ... }]` dizisi gelir.
+   */
+  private loginDataRow(body: Record<string, unknown>): Record<string, unknown> {
+    const d = body['data'];
+    if (Array.isArray(d) && d.length > 0 && d[0] != null && typeof d[0] === 'object') {
+      return d[0] as Record<string, unknown>;
+    }
+    if (d != null && typeof d === 'object' && !Array.isArray(d)) {
+      return d as Record<string, unknown>;
+    }
+    return body;
+  }
+
   private extractTokenFromLoginBody(body: Record<string, unknown>): string | null {
-    const inner = (body?.data as Record<string, unknown>) || body;
-    const deep = inner?.data as Record<string, unknown> | undefined;
+    const row = this.loginDataRow(body);
+    const deep = row?.data as Record<string, unknown> | undefined;
     const result = body?.result as Record<string, unknown> | undefined;
     const candidates = [
-      inner?.token,
-      inner?.access_token,
-      inner?.accessToken,
+      row?.token,
+      row?.access_token,
+      row?.accessToken,
       body?.token,
       body?.access_token,
       body?.accessToken,
@@ -251,11 +265,18 @@ export class TsoftApiService {
       const token = this.extractTokenFromLoginBody(body);
       if (token) {
         this.rateLimitedUntil.delete(organizationId);
-        const inner = (body?.data as Record<string, unknown>) || body;
+        const inner = this.loginDataRow(body);
         let expiresAt: number;
         const expTimeStr = inner?.expirationTime ?? body?.expirationTime;
         if (typeof expTimeStr === 'string' && expTimeStr.length > 5) {
-          const parsed = new Date(expTimeStr).getTime();
+          let parsed = new Date(expTimeStr).getTime();
+          if (!Number.isFinite(parsed)) {
+            const m = expTimeStr.match(/^(\d{2})-(\d{2})-(\d{4})\s+(\d{2}):(\d{2}):(\d{2})$/);
+            if (m) {
+              const [, dd, mm, yyyy, hh, mi, ss] = m;
+              parsed = new Date(`${yyyy}-${mm}-${dd}T${hh}:${mi}:${ss}`).getTime();
+            }
+          }
           expiresAt = Number.isFinite(parsed) && parsed > now ? parsed : now + 3600_000;
         } else {
           const ttlSec = Number(inner?.expires_in) || Number(body?.expires_in) || 3600;
