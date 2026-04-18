@@ -904,17 +904,24 @@ export class WahaService implements OnModuleInit {
   ): Promise<any> {
     const encodedChatId = encodeURIComponent(chatId);
     const encodedMsgId = encodeURIComponent(messageId);
-    const attempts: Array<{ path: string; payload: Record<string, unknown> }> = [
+    const attempts: Array<{ method: 'put' | 'post'; path: string; payload: Record<string, unknown> }> = [
       {
+        method: 'put',
         path: `/api/${sessionName}/chats/${encodedChatId}/messages/${encodedMsgId}/reaction`,
         payload: { reaction: emoji },
       },
-      // Bazı WAHA sürümlerinde legacy endpoint adı farklı.
       {
+        method: 'post',
+        path: `/api/${sessionName}/chats/${encodedChatId}/messages/${encodedMsgId}/reaction`,
+        payload: { reaction: emoji },
+      },
+      {
+        method: 'post',
         path: '/api/sendReaction',
         payload: { session: sessionName, chatId, messageId, reaction: emoji },
       },
       {
+        method: 'post',
         path: '/api/reaction',
         payload: { session: sessionName, chatId, messageId, reaction: emoji },
       },
@@ -923,7 +930,9 @@ export class WahaService implements OnModuleInit {
     let lastError: any = null;
     for (const a of attempts) {
       try {
-        const response = await this.http.post(a.path, a.payload);
+        const response = a.method === 'put'
+          ? await this.http.put(a.path, a.payload)
+          : await this.http.post(a.path, a.payload);
         return response.data;
       } catch (err: any) {
         lastError = err;
@@ -932,8 +941,7 @@ export class WahaService implements OnModuleInit {
           typeof err?.response?.data === 'string'
             ? err.response.data
             : JSON.stringify(err?.response?.data || '');
-        // endpoint yoksa bir sonraki denemeye geç; diğer hataları da son denemeye kadar topla.
-        if (status === 404 || body.includes('Cannot POST')) continue;
+        if (status === 404 || body.includes('Cannot POST') || body.includes('Cannot PUT')) continue;
       }
     }
 
