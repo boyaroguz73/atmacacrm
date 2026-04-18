@@ -429,6 +429,13 @@ export class ConversationsService {
     const current = await this.prisma.contact.findUnique({ where: { id: effectiveId } });
     if (!current) return;
 
+    // DB-first: İsim gerçekse VE avatar varsa WAHA'ya hiç sorma
+    const nameAlreadyReal = !isFallbackContactName(current.name, current.phone);
+    if (nameAlreadyReal && current.avatarUrl) {
+      this.logger.debug(`Zenginleştirme atlandı (DB yeterli): ${current.phone}`);
+      return;
+    }
+
     const details = await this.wahaService.getContactDetails(
       sessionName,
       `${waDigits}@c.us`,
@@ -448,7 +455,7 @@ export class ConversationsService {
     const phoneFallbackName = formatPhoneDisplay(current.phone || waDigits);
 
     const shouldReplaceName =
-      isFallbackContactName(current.name, current.phone) ||
+      !nameAlreadyReal ||
       // WAHA'da name alanı generic/rehber etiketi olabilir; pushname varsa onu tercih et.
       (!!waPush &&
         !!current.name?.trim() &&
@@ -463,11 +470,7 @@ export class ConversationsService {
       });
     }
 
-    const afterName = await this.prisma.contact.findUnique({
-      where: { id: effectiveId },
-      select: { avatarUrl: true },
-    });
-    if (!afterName?.avatarUrl) {
+    if (!current.avatarUrl) {
       const picUrl = await this.wahaService.getProfilePicture(sessionName, waDigits);
       if (picUrl) {
         await this.contactsService.fetchAndSaveProfilePicture(

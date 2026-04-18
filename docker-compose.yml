@@ -16,11 +16,17 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
 
   redis:
     image: redis:7-alpine
     container_name: crm-redis
     restart: unless-stopped
+    command: redis-server --maxmemory 128mb --maxmemory-policy allkeys-lru
     ports:
       - "6379:6379"
     volumes:
@@ -30,6 +36,11 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
 
   # Özel imaj: sunucuda önce `docker login` (Docker Hub kullanıcı + PAT), sonra `docker compose pull waha`
   waha:
@@ -42,15 +53,20 @@ services:
       WHATSAPP_DEFAULT_ENGINE: WEBJS
       WAHA_DASHBOARD_ENABLED: "true"
       WHATSAPP_RESTART_ALL_SESSIONS: "true"
-      WAHA_LOG_LEVEL: info
+      WAHA_LOG_LEVEL: warn
       WAHA_API_KEY: ${WAHA_API_KEY:-}
       WAHA_NO_API_KEY: ${WAHA_NO_API_KEY:-true}
-      # Panel: https://waha.devlike.pro/docs/how-to/dashboard/ (Plus’ta geçerli)
+      # Panel: https://waha.devlike.pro/docs/how-to/dashboard/ (Plus'ta geçerli)
       WAHA_DASHBOARD_USERNAME: ${WAHA_DASHBOARD_USERNAME:-admin}
       WAHA_DASHBOARD_PASSWORD: ${WAHA_DASHBOARD_PASSWORD:-}
       WAHA_DASHBOARD_NO_PASSWORD: "${WAHA_DASHBOARD_NO_PASSWORD:-false}"
     volumes:
       - waha_data:/app/.sessions
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
 
   backend:
     build:
@@ -62,6 +78,7 @@ services:
       - "4000:4000"
     environment:
       NODE_ENV: ${NODE_ENV:-production}
+      NODE_OPTIONS: "--max-old-space-size=768"
       DATABASE_URL: postgresql://crm_user:${POSTGRES_PASSWORD:-crm_secret_password}@postgres:5432/whatsapp_crm
       REDIS_HOST: redis
       REDIS_PORT: "6379"
@@ -72,8 +89,8 @@ services:
       WAHA_WEBHOOK_URL: ${WAHA_WEBHOOK_URL:-http://backend:4000/api/waha/webhook}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
       PORT: "4000"
-      SYNC_CHAT_LIMIT: ${SYNC_CHAT_LIMIT:-99999}
-      SYNC_MESSAGE_LIMIT: ${SYNC_MESSAGE_LIMIT:-99999}
+      SYNC_CHAT_LIMIT: ${SYNC_CHAT_LIMIT:-1000}
+      SYNC_MESSAGE_LIMIT: ${SYNC_MESSAGE_LIMIT:-200}
       SYNC_TIMEOUT_MS: ${SYNC_TIMEOUT_MS:-60000}
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
@@ -95,6 +112,11 @@ services:
         condition: service_healthy
       waha:
         condition: service_started
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
 
   frontend:
     build:
@@ -108,10 +130,16 @@ services:
     ports:
       - "3000:3000"
     environment:
+      NODE_OPTIONS: "--max-old-space-size=256"
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:4000/api}
       NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL:-http://localhost:4000}
     depends_on:
       - backend
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
 
 volumes:
   postgres_data:

@@ -42,7 +42,7 @@ export class WahaService implements OnModuleInit {
     this.http = axios.create({
       baseURL,
       headers: apiKey ? { 'X-Api-Key': apiKey } : {},
-      timeout: 3000000000000,
+      timeout: 30_000,
     });
 
     this.webhookUrl = this.config.get(
@@ -560,17 +560,21 @@ export class WahaService implements OnModuleInit {
     caption?: string,
   ) {
     try {
-      const response = await this.http.post('/api/sendImage', {
-        session: sessionName,
-        chatId,
-        file: {
-          mimetype: file.mimetype,
-          data: file.data,
-          filename: file.filename,
-          ...(file.width && file.height ? { width: file.width, height: file.height } : {}),
+      const response = await this.http.post(
+        '/api/sendImage',
+        {
+          session: sessionName,
+          chatId,
+          file: {
+            mimetype: file.mimetype,
+            data: file.data,
+            filename: file.filename,
+            ...(file.width && file.height ? { width: file.width, height: file.height } : {}),
+          },
+          caption: caption || '',
         },
-        caption: caption || '',
-      });
+        { timeout: 120_000 },
+      );
       return response.data;
     } catch (error: any) {
       const detail = error.response?.data
@@ -588,12 +592,16 @@ export class WahaService implements OnModuleInit {
     caption?: string,
   ) {
     try {
-      const response = await this.http.post('/api/sendFile', {
-        session: sessionName,
-        chatId,
-        file,
-        caption: caption || '',
-      });
+      const response = await this.http.post(
+        '/api/sendFile',
+        {
+          session: sessionName,
+          chatId,
+          file,
+          caption: caption || '',
+        },
+        { timeout: 120_000 },
+      );
       return response.data;
     } catch (error: any) {
       const detail = error.response?.data
@@ -935,7 +943,7 @@ export class WahaService implements OnModuleInit {
     try {
       const response = await this.http.get(
         `/api/files/${sessionName}/${fileId}`,
-        { responseType: 'arraybuffer', timeout: 3000000000 },
+        { responseType: 'arraybuffer', timeout: 120_000 },
       );
       const contentType =
         response.headers['content-type'] || 'application/octet-stream';

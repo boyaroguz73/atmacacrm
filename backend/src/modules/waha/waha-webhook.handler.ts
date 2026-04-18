@@ -212,6 +212,11 @@ export class WahaWebhookHandler {
           } catch {}
         }
 
+        // pushName yoksa ve isim hâlâ fallback ise, WAHA'dan bir kez async çek
+        if (!displayName && isFallbackContactName(contact.name, contact.phone)) {
+          this.fetchAndSaveName(sessionName, phone, contact.id).catch(() => {});
+        }
+
         if (!contact.avatarUrl) {
           this.fetchAndSaveAvatar(sessionName, phone, contact.id).catch(() => {});
         }
@@ -251,6 +256,11 @@ export class WahaWebhookHandler {
               data: { name: displayName.trim() },
             });
           } catch { /* unique constraint — mevcut kaydı koru */ }
+        }
+
+        // pushName yoksa ve isim hâlâ fallback ise, WAHA'dan bir kez async çek
+        if (!displayName && isFallbackContactName(contact.name, contact.phone)) {
+          this.fetchAndSaveName(sessionName, phone, contact.id).catch(() => {});
         }
 
         if (!contact.avatarUrl) {
@@ -377,7 +387,10 @@ export class WahaWebhookHandler {
       // ─────────────────────────────────────────────────────────────
       if (!isFromMe && !isGroup) {
         if (!fullConversation.assignments?.length) {
-          await this.conversationsService.autoAssignRoundRobin(conversation.id);
+          await this.conversationsService.autoAssignRoundRobin(
+            conversation.id,
+            waSession.organizationId ?? undefined,
+          );
         }
 
         const msgCount = await this.prisma.message.count({
@@ -621,6 +634,31 @@ export class WahaWebhookHandler {
     } catch (err: any) {
       this.logger.error(`Failed to download media from ${url}: ${err.message}`);
       return undefined;
+    }
+  }
+
+  private async fetchAndSaveName(
+    sessionName: string,
+    phone: string,
+    contactId: string,
+  ) {
+    try {
+      const details = await this.wahaService.getContactDetails(sessionName, `${phone}@c.us`);
+      const name = (
+        details?.pushname ||
+        details?.name ||
+        (details as any)?.notify ||
+        (details as any)?.verifiedName ||
+        ''
+      ).trim();
+      if (name && !isFallbackContactName(name, phone)) {
+        await this.prisma.contact
+          .update({ where: { id: contactId }, data: { name } })
+          .catch(() => {});
+        this.logger.debug(`İsim WAHA'dan alındı: ${phone} → ${name}`);
+      }
+    } catch (err: any) {
+      this.logger.debug(`İsim alınamadı (${phone}): ${err.message}`);
     }
   }
 

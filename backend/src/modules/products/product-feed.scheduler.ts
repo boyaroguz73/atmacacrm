@@ -9,6 +9,7 @@ import { DEFAULT_PRODUCT_XML_FEED_URL } from './product-feed.constants';
 @Injectable()
 export class ProductFeedScheduler {
   private readonly logger = new Logger(ProductFeedScheduler.name);
+  private running = false;
 
   constructor(
     private readonly config: ConfigService,
@@ -20,6 +21,19 @@ export class ProductFeedScheduler {
   /** Her saat başı (dakika 0, saniye 0) */
   @Cron('0 0 * * * *')
   async runHourly(): Promise<void> {
+    if (this.running) {
+      this.logger.warn('Önceki ürün XML senkronu hâlâ çalışıyor, bu tur atlandı.');
+      return;
+    }
+    this.running = true;
+    try {
+      await this._runHourly();
+    } finally {
+      this.running = false;
+    }
+  }
+
+  private async _runHourly(): Promise<void> {
     const fromEnv = this.config.get<string>('PRODUCT_XML_FEED_URL')?.trim();
     const orgs = await this.prisma.organization.findMany({ select: { id: true } });
     const targets =

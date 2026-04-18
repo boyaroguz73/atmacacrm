@@ -7,7 +7,7 @@ import {
   ConnectedSocket,
   MessageBody,
 } from '@nestjs/websockets';
-import { Logger } from '@nestjs/common';
+import { Logger, OnModuleDestroy } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
@@ -28,23 +28,27 @@ import {
   },
   namespace: '/chat',
 })
-export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
+export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, OnModuleDestroy {
   @WebSocketServer()
   server: Server;
 
   private readonly logger = new Logger(ChatGateway.name);
-  
+
   /** Event deduplication cache - waMessageId -> timestamp */
   private readonly emittedMessages = new Map<string, number>();
   private readonly DEDUP_TTL_MS = 10000; // 10 saniye
+  private readonly dedupCleanupTimer: ReturnType<typeof setInterval>;
 
   constructor(
     private jwtService: JwtService,
     private configService: ConfigService,
     private prisma: PrismaService,
   ) {
-    // Her dakika eski cache entry'lerini temizle
-    setInterval(() => this.cleanupDedupCache(), 60000);
+    this.dedupCleanupTimer = setInterval(() => this.cleanupDedupCache(), 60000);
+  }
+
+  onModuleDestroy() {
+    clearInterval(this.dedupCleanupTimer);
   }
 
   private cleanupDedupCache() {
