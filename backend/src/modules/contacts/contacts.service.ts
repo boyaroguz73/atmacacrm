@@ -252,6 +252,30 @@ export class ContactsService {
           },
           orderBy: { lastMessageAt: 'desc' },
         },
+        quotes: {
+          select: {
+            id: true,
+            quoteNumber: true,
+            status: true,
+            grandTotal: true,
+            currency: true,
+            createdAt: true,
+          },
+          orderBy: { createdAt: 'desc' },
+          take: 20,
+        },
+        orders: {
+          select: {
+            id: true,
+            orderNumber: true,
+            status: true,
+            grandTotal: true,
+            currency: true,
+            createdAt: true,
+          },
+          orderBy: { createdAt: 'desc' },
+          take: 20,
+        },
       },
     });
     if (!contact) throw new NotFoundException('Kişi bulunamadı');

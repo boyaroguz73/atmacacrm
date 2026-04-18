@@ -190,6 +190,33 @@ export class TsoftApiService {
     return r.token;
   }
 
+  /**
+   * REST1 API login — eski T-Soft sürümleri bu format kullanır.
+   * POST {baseUrl}/rest1/auth/login/{username}  body: pass=<password>
+   */
+  private async tryRest1Login(
+    baseUrl: string,
+    username: string,
+    password: string,
+  ): Promise<{ res: AxiosResponse; apiRoot: string } | null> {
+    const encodedUser = encodeURIComponent(username);
+    const loginPath = `/rest1/auth/login/${encodedUser}`;
+    this.logger.debug(`T-Soft REST1 login deneniyor: ${baseUrl}${loginPath}`);
+    try {
+      const http = this.client(baseUrl);
+      const form = new URLSearchParams();
+      form.set('pass', password);
+      const r = await http.post(loginPath, form.toString(), {
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      });
+      if (r.status < 400) return { res: r, apiRoot: baseUrl };
+      this.logger.debug(`T-Soft REST1 login HTTP ${r.status}`);
+    } catch (e: any) {
+      this.logger.debug(`T-Soft REST1 login ağ hatası: ${e?.message}`);
+    }
+    return null;
+  }
+
   private async performLogin(organizationId: string): Promise<string> {
     const now = Date.now();
     const cfg = await this.loadConfig(organizationId);
@@ -227,6 +254,15 @@ export class TsoftApiService {
           this.logger.debug(`T-Soft login 404, panel kökü deneniyor: ${panelRoot}/api/v3/admin/auth/login`);
           apiRoot = panelRoot;
           res = await postLogin(panelRoot);
+        }
+      }
+
+      // v3 login 404 döndüyse REST1 API'yi dene
+      if (res.status === 404) {
+        const rest1 = await this.tryRest1Login(cfg.baseUrl, cfg.apiEmail, cfg.apiPassword);
+        if (rest1) {
+          res = rest1.res;
+          apiRoot = rest1.apiRoot;
         }
       }
     } catch (err) {
@@ -304,12 +340,21 @@ export class TsoftApiService {
     this.rateLimitedUntil.delete(organizationId);
 
     const inner = (body?.data as Record<string, unknown>) || body;
-    const ttlSec =
-      Number(inner?.expires_in) ||
-      Number(inner?.expiresIn) ||
-      Number(body?.expires_in) ||
-      3600;
-    const expiresAt = now + Math.max(60, ttlSec) * 1000;
+
+    // REST1: expirationTime = tarih string; v3: expires_in = saniye
+    let expiresAt: number;
+    const expTimeStr = inner?.expirationTime ?? body?.expirationTime;
+    if (typeof expTimeStr === 'string' && expTimeStr.length > 5) {
+      const parsed = new Date(expTimeStr).getTime();
+      expiresAt = Number.isFinite(parsed) && parsed > now ? parsed : now + 3600_000;
+    } else {
+      const ttlSec =
+        Number(inner?.expires_in) ||
+        Number(inner?.expiresIn) ||
+        Number(body?.expires_in) ||
+        3600;
+      expiresAt = now + Math.max(60, ttlSec) * 1000;
+    }
     this.tokenCache.set(organizationId, { token, expiresAt, apiRoot });
     return token;
   }
@@ -361,6 +406,36 @@ export class TsoftApiService {
     } else {
       const s = await probe(cfg.baseUrl);
       if (s === 404) await probe(`${cfg.baseUrl}/panel`);
+    }
+
+    // REST1 API de dene (eski T-Soft sürümleri)
+    {
+      const encodedUser = encodeURIComponent(cfg.apiEmail);
+      const rest1Url = `${cfg.baseUrl}/rest1/auth/login/${encodedUser}`;
+      try {
+        const http = this.client(cfg.baseUrl);
+        const form = new URLSearchParams();
+        form.set('pass', cfg.apiPassword);
+        const r = await http.post(`/rest1/auth/login/${encodedUser}`, form.toString(), {
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        });
+        const b = (r.data || {}) as Record<string, unknown>;
+        const tokenShapeOk =
+          r.status >= 200 && r.status < 300 && !!this.extractTokenFromLoginBody(b);
+        attempts.push({
+          loginUrl: rest1Url,
+          httpStatus: r.status,
+          message: this.summarizeTsoftError(r.status, r.data),
+          tokenShapeOk,
+        });
+      } catch (e: any) {
+        attempts.push({
+          loginUrl: rest1Url,
+          httpStatus: 0,
+          message: `Ağ hatası: ${e?.message || 'bağlantı yok'}`,
+          tokenShapeOk: false,
+        });
+      }
     }
 
     const last = attempts[attempts.length - 1];

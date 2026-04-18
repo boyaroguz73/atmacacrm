@@ -12,7 +12,9 @@ import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
-  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    bodyParser: false,
+  });
   const config = app.get(ConfigService);
 
   const uploadsDir = join(process.cwd(), 'uploads');
@@ -61,6 +63,15 @@ async function bootstrap() {
   });
 
   app.useStaticAssets(uploadsDir, { prefix: '/uploads/' });
+
+  // Upload route'larını logla (body parser'dan ÖNCE — request ulaştı mı?)
+  app.use((req: any, _res: any, next: any) => {
+    if (req.url && req.url.includes('upload-pdf')) {
+      logger.log(`[UPLOAD-REQ] ${req.method} ${req.url} content-type=${req.headers['content-type'] || 'YOK'} content-length=${req.headers['content-length'] || 'YOK'}`);
+    }
+    next();
+  });
+
   // WAHA webhook payload'ları (özellikle medya/base64) default body limitini aşabilir.
   app.use('/api/waha/webhook', expressJson({ limit: '50mb' }));
   app.use('/api/waha/webhook', expressUrlencoded({ extended: true, limit: '50mb' }));

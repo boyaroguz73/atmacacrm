@@ -488,11 +488,9 @@ export class MessagesService implements OnModuleInit {
     const unitPrice = Number(product.unitPrice ?? 0);
     const price = `${unitPrice.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ${product.currency}`;
     const siteLink = (product.productUrl || '').trim();
-    const vatRate = Math.round(Number(product.vatRate ?? 20));
     const caption = [
       product.name,
       `Fiyat (KDV Dahil): ${price}`,
-      Number.isFinite(vatRate) ? `KDV oranı: %${vatRate}` : '',
       siteLink ? `Ürün Linki: ${siteLink}` : '',
     ]
       .filter(Boolean)

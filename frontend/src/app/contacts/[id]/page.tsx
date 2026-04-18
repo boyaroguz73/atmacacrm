@@ -19,6 +19,10 @@ import {
   MapPin,
   Globe,
   StickyNote,
+  FileText,
+  ShoppingCart,
+  AlertTriangle,
+  Clock,
 } from 'lucide-react';
 import ContactAvatar from '@/components/ui/ContactAvatar';
 import EcommerceCustomerBadge from '@/components/ui/EcommerceCustomerBadge';
@@ -40,6 +44,24 @@ type Conv = {
   assignments: Assignment[];
 };
 
+type QuoteRow = {
+  id: string;
+  quoteNumber: number;
+  status: string;
+  grandTotal: number;
+  currency: string;
+  createdAt: string;
+};
+
+type OrderRow = {
+  id: string;
+  orderNumber: number;
+  status: string;
+  grandTotal: number;
+  currency: string;
+  createdAt: string;
+};
+
 type ContactDetail = {
   id: string;
   phone: string;
@@ -58,8 +80,18 @@ type ContactDetail = {
   tags: string[];
   avatarUrl: string | null;
   metadata?: unknown;
-  lead: { id: string; status: string; value?: number | null; source?: string | null; notes?: string | null } | null;
+  lead: {
+    id: string;
+    status: string;
+    value?: number | null;
+    source?: string | null;
+    notes?: string | null;
+    lossReason?: string | null;
+    closedAt?: string | null;
+  } | null;
   conversations: Conv[];
+  quotes?: QuoteRow[];
+  orders?: OrderRow[];
 };
 
 function getMetaText(metadata: unknown, key: string): string {
@@ -572,24 +604,48 @@ export default function ContactDetailPage() {
         <div className="p-6 space-y-4 border-b border-gray-100 bg-gray-50/40">
           <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Potansiyel müşteri</h2>
           {contact.lead ? (
-            <div className="flex flex-wrap items-center gap-3">
-              <label className="text-sm text-gray-600">
-                Durum:
-                <select
-                  className="ml-2 px-3 py-2 border border-gray-200 rounded-lg bg-white text-sm"
-                  value={contact.lead.status}
-                  onChange={(e) => updateLeadStatus(e.target.value)}
-                >
-                  {LEAD_STATUSES.map((s) => (
-                    <option key={s.value} value={s.value}>
-                      {s.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <Link href="/leads" className="text-sm text-whatsapp hover:underline">
-                Huniye git
-              </Link>
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center gap-3">
+                <label className="text-sm text-gray-600">
+                  Durum:
+                  <select
+                    className="ml-2 px-3 py-2 border border-gray-200 rounded-lg bg-white text-sm"
+                    value={contact.lead.status}
+                    onChange={(e) => updateLeadStatus(e.target.value)}
+                  >
+                    {LEAD_STATUSES.map((s) => (
+                      <option key={s.value} value={s.value}>
+                        {s.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <Link href="/leads" className="text-sm text-whatsapp hover:underline">
+                  Huniye git
+                </Link>
+              </div>
+              {contact.lead.status === 'LOST' && contact.lead.lossReason && (
+                <div className="rounded-xl border border-red-100 bg-red-50/70 p-3 text-sm">
+                  <div className="flex items-start gap-2">
+                    <AlertTriangle className="w-4 h-4 text-red-500 mt-0.5 shrink-0" />
+                    <div>
+                      <p className="font-semibold text-red-800">Kayıp nedeni</p>
+                      <p className="text-red-700 whitespace-pre-wrap mt-1">{contact.lead.lossReason}</p>
+                      {contact.lead.closedAt && (
+                        <p className="text-red-400 text-xs mt-1">
+                          {new Date(contact.lead.closedAt).toLocaleDateString('tr-TR')}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+              {contact.lead.notes && (
+                <p className="text-sm text-gray-600 border-t border-gray-100 pt-2">
+                  <span className="text-gray-400 text-xs uppercase font-semibold">Lead notu:</span>{' '}
+                  {contact.lead.notes}
+                </p>
+              )}
             </div>
           ) : (
             <button
@@ -603,8 +659,11 @@ export default function ContactDetailPage() {
         </div>
 
         {(primaryConv || isAdmin) && (
-          <div className="p-6 space-y-3">
-            <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Görüşme</h2>
+          <div className="p-6 space-y-3 border-b border-gray-100">
+            <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide flex items-center gap-2">
+              <MessageSquare className="w-4 h-4 text-gray-400" />
+              Görüşme
+            </h2>
             {primaryConv ? (
               <>
                 <p className="text-sm text-gray-600">
@@ -615,6 +674,13 @@ export default function ContactDetailPage() {
                     </span>
                   )}
                 </p>
+                {primaryConv.lastMessageAt && (
+                  <p className="text-xs text-gray-400 flex items-center gap-1">
+                    <Clock className="w-3 h-3" />
+                    Son mesaj: {new Date(primaryConv.lastMessageAt).toLocaleDateString('tr-TR')}{' '}
+                    {new Date(primaryConv.lastMessageAt).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}
+                  </p>
+                )}
                 {isAdmin && agents.length > 0 && (
                   <label className="block text-sm text-gray-600 max-w-md">
                     Temsilci ata
@@ -642,6 +708,103 @@ export default function ContactDetailPage() {
             )}
           </div>
         )}
+
+        {/* Teklifler */}
+        <div className="p-6 space-y-3 border-b border-gray-100">
+          <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide flex items-center gap-2">
+            <FileText className="w-4 h-4 text-gray-400" />
+            Teklifler
+            {(contact.quotes?.length ?? 0) > 0 && (
+              <span className="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full font-medium">
+                {contact.quotes!.length}
+              </span>
+            )}
+          </h2>
+          {contact.quotes && contact.quotes.length > 0 ? (
+            <div className="space-y-2">
+              {contact.quotes.map((q) => (
+                <Link
+                  key={q.id}
+                  href={`/quotes/${q.id}`}
+                  className="flex items-center justify-between p-3 rounded-xl bg-white border border-gray-100 hover:border-blue-200 hover:bg-blue-50/30 transition-colors"
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm font-semibold text-gray-800">#{q.quoteNumber}</span>
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                      q.status === 'ACCEPTED' ? 'bg-green-50 text-green-700'
+                        : q.status === 'REJECTED' ? 'bg-red-50 text-red-600'
+                        : q.status === 'SENT' ? 'bg-blue-50 text-blue-600'
+                        : 'bg-gray-50 text-gray-600'
+                    }`}>
+                      {q.status === 'DRAFT' ? 'Taslak' : q.status === 'SENT' ? 'Gönderildi'
+                        : q.status === 'ACCEPTED' ? 'Kabul' : q.status === 'REJECTED' ? 'Red'
+                        : q.status}
+                    </span>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm font-semibold text-gray-900">
+                      {q.grandTotal.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} {q.currency}
+                    </p>
+                    <p className="text-xs text-gray-400">
+                      {new Date(q.createdAt).toLocaleDateString('tr-TR')}
+                    </p>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-gray-500">Bu kişiye henüz teklif gönderilmemiş.</p>
+          )}
+        </div>
+
+        {/* Siparişler */}
+        <div className="p-6 space-y-3">
+          <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide flex items-center gap-2">
+            <ShoppingCart className="w-4 h-4 text-gray-400" />
+            Siparişler
+            {(contact.orders?.length ?? 0) > 0 && (
+              <span className="text-xs bg-green-50 text-green-600 px-2 py-0.5 rounded-full font-medium">
+                {contact.orders!.length}
+              </span>
+            )}
+          </h2>
+          {contact.orders && contact.orders.length > 0 ? (
+            <div className="space-y-2">
+              {contact.orders.map((o) => (
+                <Link
+                  key={o.id}
+                  href={`/orders/${o.id}`}
+                  className="flex items-center justify-between p-3 rounded-xl bg-white border border-gray-100 hover:border-green-200 hover:bg-green-50/30 transition-colors"
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm font-semibold text-gray-800">#{o.orderNumber}</span>
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                      o.status === 'DELIVERED' ? 'bg-green-50 text-green-700'
+                        : o.status === 'CANCELLED' ? 'bg-red-50 text-red-600'
+                        : o.status === 'PROCESSING' ? 'bg-yellow-50 text-yellow-700'
+                        : o.status === 'SHIPPED' ? 'bg-blue-50 text-blue-600'
+                        : 'bg-gray-50 text-gray-600'
+                    }`}>
+                      {o.status === 'PENDING' ? 'Bekliyor' : o.status === 'PROCESSING' ? 'İşleniyor'
+                        : o.status === 'SHIPPED' ? 'Kargoda' : o.status === 'DELIVERED' ? 'Teslim'
+                        : o.status === 'CANCELLED' ? 'İptal' : o.status}
+                    </span>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm font-semibold text-gray-900">
+                      {o.grandTotal.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} {o.currency}
+                    </p>
+                    <p className="text-xs text-gray-400">
+                      {new Date(o.createdAt).toLocaleDateString('tr-TR')}
+                    </p>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-gray-500">Bu kişinin henüz siparişi yok.</p>
+          )}
+        </div>
       </div>
     </div>
   );

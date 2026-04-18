@@ -1,10 +1,11 @@
 import {
-  Controller, Get, Post, Patch, Delete, Param, Body, Query, Res,
+  Controller, Get, Post, Patch, Delete, Param, Body, Query, Res, Logger,
   UseGuards, UseInterceptors, UploadedFile, BadRequestException, NotFoundException,
 } from '@nestjs/common';
 import { Response } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
+import { SkipThrottle } from '@nestjs/throttler';
 import { AccountingService } from './accounting.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
@@ -45,6 +46,7 @@ const deliveryPdfStorage = diskStorage({
 @Roles('ADMIN', 'ACCOUNTANT')
 @Controller('accounting')
 export class AccountingController {
+  private readonly logger = new Logger(AccountingController.name);
   constructor(private accountingService: AccountingService) {}
 
   @Get('summary')
@@ -133,6 +135,7 @@ export class AccountingController {
   }
 
   @Post('delivery-notes/:id/upload-pdf')
+  @SkipThrottle()
   @UseInterceptors(FileInterceptor('file', {
     storage: deliveryPdfStorage,
     limits: { fileSize: 10 * 1024 * 1024 },
@@ -145,6 +148,7 @@ export class AccountingController {
     @Param('id') id: string,
     @UploadedFile() file: Express.Multer.File,
   ) {
+    this.logger.log(`İrsaliye PDF yükleme isteği: deliveryNoteId=${id}, file=${file?.originalname || 'YOK'}, size=${file?.size || 0}`);
     if (!file) throw new BadRequestException('Dosya yüklenmedi');
     const url = `/uploads/delivery-notes/${file.filename}`;
     return this.accountingService.uploadDeliveryNotePdf(id, url);
@@ -222,6 +226,7 @@ export class AccountingController {
   }
 
   @Post('invoices/:id/upload-pdf')
+  @SkipThrottle()
   @UseInterceptors(FileInterceptor('file', {
     storage: pdfStorage,
     limits: { fileSize: 10 * 1024 * 1024 },
@@ -231,6 +236,7 @@ export class AccountingController {
     },
   }))
   async uploadPdf(@Param('id') id: string, @UploadedFile() file: Express.Multer.File) {
+    this.logger.log(`Fatura PDF yükleme isteği: invoiceId=${id}, file=${file?.originalname || 'YOK'}, size=${file?.size || 0}`);
     if (!file) throw new BadRequestException('Dosya yüklenmedi');
     const url = `/uploads/invoices/${file.filename}`;
     return this.accountingService.uploadPdf(id, url);

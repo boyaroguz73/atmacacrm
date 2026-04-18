@@ -514,17 +514,28 @@ function AccountingInvoicesContent() {
     }
   };
 
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+
   const uploadPdf = async (inv: InvoiceRow, file: File) => {
     if (!file.name.toLowerCase().endsWith('.pdf')) {
       toast.error('Yalnızca PDF dosyası seçin');
       return;
     }
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error('PDF dosyası en fazla 10 MB olabilir');
+      return;
+    }
     setDetailBusy(true);
+    setUploadProgress(0);
     try {
       const fd = new FormData();
       fd.append('file', file);
       const { data } = await api.post(`/accounting/invoices/${inv.id}/upload-pdf`, fd, {
         timeout: 120_000,
+        headers: { 'Content-Type': 'multipart/form-data' },
+        onUploadProgress: (e) => {
+          if (e.total) setUploadProgress(Math.round((e.loaded * 100) / e.total));
+        },
       });
       const merged = normalizeInvoiceRow({
         ...inv,
@@ -533,10 +544,19 @@ function AccountingInvoicesContent() {
       if (merged) refreshDetailInList(merged);
       toast.success('PDF yüklendi');
       fetchInvoices();
-    } catch (err) {
-      toast.error(getApiErrorMessage(err, 'PDF yüklenemedi'));
+    } catch (err: any) {
+      const code = err?.code || '';
+      const status = err?.response?.status;
+      if (code === 'ECONNABORTED' || code === 'ERR_NETWORK') {
+        toast.error('Sunucuya bağlanılamadı veya zaman aşımı. Bağlantıyı kontrol edin.');
+      } else if (status === 413) {
+        toast.error('PDF çok büyük — sunucu reddetti');
+      } else {
+        toast.error(getApiErrorMessage(err, 'PDF yüklenemedi'));
+      }
     } finally {
       setDetailBusy(false);
+      setUploadProgress(null);
       if (pdfInputRef.current) pdfInputRef.current.value = '';
     }
   };
@@ -1082,7 +1102,7 @@ function AccountingInvoicesContent() {
                   className="inline-flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold border border-gray-200 bg-white hover:bg-gray-50 shadow-sm disabled:opacity-50"
                 >
                   <Upload className="w-4 h-4" />
-                  PDF Yükle
+                  {uploadProgress !== null ? `Yükleniyor %${uploadProgress}` : 'PDF Yükle'}
                 </button>
                 <button
                   type="button"
