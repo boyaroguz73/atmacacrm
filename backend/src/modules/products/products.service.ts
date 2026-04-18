@@ -4,6 +4,8 @@ import { Prisma, ProductFeedSource } from '@prisma/client';
 import { XMLParser } from 'fast-xml-parser';
 import axios from 'axios';
 import { randomUUID } from 'crypto';
+import { join, extname as pathExtname } from 'path';
+import { existsSync, mkdirSync, writeFileSync } from 'fs';
 import { splitSearchTokens } from '../../common/search-tokens';
 
 function normalizeText(v: unknown): string {
@@ -210,8 +212,51 @@ export type XmlSyncOptions = {
 @Injectable()
 export class ProductsService {
   private readonly logger = new Logger(ProductsService.name);
+  private readonly productImagesDir = join(process.cwd(), 'uploads', 'products');
 
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService) {
+    if (!existsSync(this.productImagesDir)) {
+      mkdirSync(this.productImagesDir, { recursive: true });
+    }
+  }
+
+  /**
+   * Harici URL'den görseli indirir, uploads/products/ altına kaydeder.
+   * Zaten yerel bir yol ise veya indirme başarısız olursa orijinal URL'yi döner.
+   */
+  private async downloadImageToLocal(remoteUrl: string, sku: string): Promise<string> {
+    if (!remoteUrl || remoteUrl.startsWith('/uploads/') || remoteUrl.startsWith('uploads/')) {
+      return remoteUrl;
+    }
+    try {
+      const lower = remoteUrl.toLowerCase();
+      const ext = lower.includes('.png') ? '.png'
+        : lower.includes('.webp') ? '.webp'
+        : lower.includes('.gif') ? '.gif'
+        : '.jpg';
+      const safeSku = sku.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 80);
+      const filename = `${safeSku}${ext}`;
+      const fullPath = join(this.productImagesDir, filename);
+
+      if (existsSync(fullPath)) {
+        return `/uploads/products/${filename}`;
+      }
+
+      const res = await axios.get<ArrayBuffer>(remoteUrl, {
+        responseType: 'arraybuffer',
+        timeout: 30_000,
+        maxContentLength: 12 * 1024 * 1024,
+        validateStatus: (s) => s >= 200 && s < 400,
+        headers: { 'User-Agent': 'AtmacaCRM-ProductSync/1.0' },
+      });
+      writeFileSync(fullPath, Buffer.from(res.data));
+      this.logger.debug(`Ürün görseli yerele kaydedildi: ${filename} (${sku})`);
+      return `/uploads/products/${filename}`;
+    } catch (e: any) {
+      this.logger.warn(`Ürün görseli indirilemedi (${sku}): ${e?.message}`);
+      return remoteUrl;
+    }
+  }
 
   async findAll(params: {
     search?: string;
@@ -405,7 +450,10 @@ export class ProductsService {
       const descriptionRaw = field(item, 'description', 'g:description') || null;
       const description = impDesc ? descriptionRaw : null;
       const productUrl = field(item, 'link', 'g:link') || null;
-      const imageUrlFromFeed = impImg ? resolvePrimaryImageUrl(item) : null;
+      const imageUrlFromFeedRaw = impImg ? resolvePrimaryImageUrl(item) : null;
+      const imageUrlFromFeed = impImg && imageUrlFromFeedRaw
+        ? await this.downloadImageToLocal(imageUrlFromFeedRaw, sku || `item${i}`)
+        : imageUrlFromFeedRaw;
       const googleCondition = impMerch ? field(item, 'condition', 'g:condition') || null : null;
       const googleAvailability = field(item, 'availability', 'g:availability') || null;
       const googleIdentifierExists = impMerch
@@ -442,7 +490,12 @@ export class ProductsService {
       const isActive = googleAvailability ? activeFromAvailability(googleAvailability) : true;
       const itemVat = resolveVatRateFromFeedItem(item, vatDefault);
 
-      const additionalImages = impImg ? collectAdditionalImages(item) : [];
+      const additionalImagesRaw = impImg ? collectAdditionalImages(item) : [];
+      const additionalImages: string[] = [];
+      for (let ai = 0; ai < additionalImagesRaw.length; ai++) {
+        const localPath = await this.downloadImageToLocal(additionalImagesRaw[ai], `${sku || `item${i}`}_add${ai}`);
+        additionalImages.push(localPath);
+      }
       const additionalImagesJson = (impImg ? additionalImages : []) as Prisma.InputJsonValue;
 
       if (!sku || !name) {

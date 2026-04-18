@@ -17,9 +17,9 @@ export class ProductFeedScheduler {
     private readonly orgService: OrganizationsService,
   ) {}
 
-  /** Her saat başı (dakika 0, saniye 0) */
-  @Cron('0 0 * * * *')
-  async runHourly(): Promise<void> {
+  /** Her gün 03:00'te (gece yarısından sonra, düşük trafik) */
+  @Cron('0 0 3 * * *')
+  async runDaily(): Promise<void> {
     const fromEnv = this.config.get<string>('PRODUCT_XML_FEED_URL')?.trim();
     const orgs = await this.prisma.organization.findMany({ select: { id: true } });
     const targets =
