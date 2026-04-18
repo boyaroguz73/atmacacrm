@@ -80,7 +80,29 @@ export function formatPhone(phone: string | null | undefined): string {
     return `+90 ${rest.slice(0, 3)} ${rest.slice(3, 6)} ${rest.slice(6, 8)} ${rest.slice(8)}`;
   }
 
+  if (d.length >= 10 && d.length <= 15) {
+    const cc = _guessCC(d);
+    if (cc > 0) {
+      const country = d.slice(0, cc);
+      const rest = d.slice(cc);
+      return `+${country} ${rest.replace(/(\d{3})(?=\d)/g, '$1 ').trim()}`;
+    }
+  }
+
   return `+${d}`;
+}
+
+const _CC1 = new Set(['1','7']);
+const _CC2 = new Set([
+  '20','27','30','31','32','33','34','36','39','40','41','43','44','45',
+  '46','47','48','49','51','52','53','54','55','56','57','58','60','61',
+  '62','63','64','65','66','81','82','84','86','91','92','93','94','95',
+  '98',
+]);
+function _guessCC(digits: string): number {
+  if (_CC1.has(digits[0])) return 1;
+  if (_CC2.has(digits.slice(0, 2))) return 2;
+  return 3;
 }
 
 export function formatTime(date: string | Date): string {

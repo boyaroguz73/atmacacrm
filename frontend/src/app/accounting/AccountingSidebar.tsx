@@ -94,8 +94,7 @@ export default function AccountingSidebar() {
             <LayoutDashboard className="h-5 w-5" />
           </div>
           <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Muhasebe</p>
-            <p className="text-sm font-bold text-gray-900">İşletme modülü</p>
+            <p className="text-sm font-bold text-gray-900">Muhasebe</p>
           </div>
         </div>
 

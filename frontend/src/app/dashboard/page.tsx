@@ -1,18 +1,22 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import api from '@/lib/api';
 import Link from 'next/link';
+import DateRangePicker from '@/components/ui/DateRangePicker';
 import {
   MessageSquare,
   Users,
   Target,
   TrendingUp,
-  ArrowDown,
-  ArrowUp,
+  TrendingDown,
   BarChart3,
   Clock,
+  ShoppingBag,
+  Wallet,
+  UserPlus,
+  Loader2,
 } from 'lucide-react';
 import { LEAD_STATUS_LABELS, LEAD_STATUS_COLORS } from '@/lib/constants';
 
@@ -23,6 +27,7 @@ interface DashboardData {
   activeConversations: number;
   unansweredConversations: number;
   totalContacts: number;
+  newContactsInPeriod: number;
   totalLeads: number;
   conversionRate: number;
   leadsByStatus: { status: string; count: number; totalValue: number }[];
@@ -34,6 +39,8 @@ interface DashboardData {
     messagesToday: number;
     activeAssignments: number;
   }[];
+  orders: { count: number; sumGrandTotal: number };
+  cash: { income: number; expense: number; net: number };
 }
 
 const statusLabels = LEAD_STATUS_LABELS;
@@ -44,12 +51,35 @@ interface AccWidgetState {
   invoices: { id: string; invoiceNumber: number; dueDate?: string | null; status: string; grandTotal: number }[];
 }
 
+function fmtTry(n: number | undefined | null) {
+  if (n == null || Number.isNaN(n)) return '—';
+  return new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY', maximumFractionDigits: 0 }).format(n);
+}
+
 export default function DashboardPage() {
   const router = useRouter();
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [accWidgets, setAccWidgets] = useState<AccWidgetState | null>(null);
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+
+  const fetchData = useCallback(async (from: string, to: string) => {
+    setLoading(true);
+    setError(false);
+    try {
+      const params: Record<string, string> = {};
+      if (from) params.from = `${from}T00:00:00`;
+      if (to) params.to = `${to}T23:59:59`;
+      const res = await api.get('/dashboard/overview', { params });
+      setData(res.data);
+    } catch {
+      setError(true);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     try {
@@ -63,12 +93,8 @@ export default function DashboardPage() {
       }
     } catch {}
 
-    api
-      .get('/dashboard/overview')
-      .then((res) => setData(res.data))
-      .catch(() => setError(true))
-      .finally(() => setLoading(false));
-  }, [router]);
+    fetchData(dateFrom, dateTo);
+  }, [router, dateFrom, dateTo, fetchData]);
 
   useEffect(() => {
     if (!data) return;
@@ -101,9 +127,7 @@ export default function DashboardPage() {
             if (raw && JSON.parse(raw).role === 'ACCOUNTANT') {
               setAccWidgets({ tasks: [], invoices: [] });
             }
-          } catch {
-            /* ignore */
-          }
+          } catch {}
         }
       }
     })();
@@ -112,10 +136,10 @@ export default function DashboardPage() {
     };
   }, [data]);
 
-  if (loading) {
+  if (loading && !data) {
     return (
       <div className="flex items-center justify-center h-full">
-        <div className="w-8 h-8 border-4 border-whatsapp border-t-transparent rounded-full animate-spin" />
+        <Loader2 className="w-8 h-8 text-whatsapp animate-spin" />
       </div>
     );
   }
@@ -125,7 +149,7 @@ export default function DashboardPage() {
       <div className="flex flex-col items-center justify-center h-full gap-3">
         <p className="text-gray-500 text-sm">Veriler yüklenemedi</p>
         <button
-          onClick={() => { setError(false); setLoading(true); api.get('/dashboard/overview').then((r) => setData(r.data)).catch(() => setError(true)).finally(() => setLoading(false)); }}
+          onClick={() => fetchData(dateFrom, dateTo)}
           className="px-4 py-2 bg-whatsapp text-white rounded-lg text-sm hover:bg-green-600"
         >
           Tekrar Dene
@@ -136,7 +160,7 @@ export default function DashboardPage() {
 
   const statCards = [
     {
-      label: 'Bugünkü Mesajlar',
+      label: 'Mesajlar',
       value: data.totalMessagesToday,
       icon: MessageSquare,
       color: 'bg-blue-500',
@@ -150,10 +174,11 @@ export default function DashboardPage() {
       sub: `${data.unansweredConversations} cevaplanmamış`,
     },
     {
-      label: 'Toplam Kişi',
+      label: 'Kişiler',
       value: data.totalContacts,
       icon: Users,
       color: 'bg-purple-500',
+      sub: data.newContactsInPeriod > 0 ? `+${data.newContactsInPeriod} yeni` : undefined,
     },
     {
       label: 'Potansiyel Müşteri',
@@ -162,15 +187,36 @@ export default function DashboardPage() {
       color: 'bg-orange-500',
       sub: `%${data.conversionRate} dönüşüm`,
     },
+    {
+      label: 'Siparişler',
+      value: data.orders.count,
+      icon: ShoppingBag,
+      color: 'bg-indigo-500',
+      sub: fmtTry(data.orders.sumGrandTotal),
+      href: '/orders',
+    },
+    {
+      label: 'Kasa',
+      value: fmtTry(data.cash.net),
+      icon: data.cash.net >= 0 ? TrendingUp : TrendingDown,
+      color: data.cash.net >= 0 ? 'bg-emerald-500' : 'bg-red-500',
+      sub: `Giriş: ${fmtTry(data.cash.income)} · Çıkış: ${fmtTry(data.cash.expense)}`,
+      href: '/accounting/cash',
+    },
   ];
 
   return (
     <div className="p-6 space-y-6">
-      <div>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <h1 className="text-2xl font-bold text-gray-900">Gösterge Paneli</h1>
-        <p className="text-gray-500 text-sm mt-1">
-          WhatsApp CRM genel görünüm
-        </p>
+        <div className="flex items-center gap-3">
+          {loading && <Loader2 className="w-4 h-4 text-gray-400 animate-spin" />}
+          <DateRangePicker
+            from={dateFrom}
+            to={dateTo}
+            onChange={(f, t) => { setDateFrom(f); setDateTo(t); }}
+          />
+        </div>
       </div>
 
       {accWidgets != null && (
@@ -228,32 +274,35 @@ export default function DashboardPage() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
-        {statCards.map((card) => (
-          <div
-            key={card.label}
-            className="bg-white rounded-xl border border-gray-100 p-5 shadow-sm"
-          >
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-sm text-gray-500 font-medium">
-                  {card.label}
-                </p>
-                <p className="text-3xl font-bold mt-1 text-gray-900">
-                  {card.value.toLocaleString()}
-                </p>
-                {card.sub && (
-                  <p className="text-xs text-gray-400 mt-1">{card.sub}</p>
-                )}
-              </div>
-              <div
-                className={`${card.color} w-11 h-11 rounded-xl flex items-center justify-center`}
-              >
-                <card.icon className="w-5 h-5 text-white" />
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        {statCards.map((card) => {
+          const inner = (
+            <div className="bg-white rounded-xl border border-gray-100 p-5 shadow-sm hover:shadow-md transition-shadow">
+              <div className="flex items-start justify-between">
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">
+                    {card.label}
+                  </p>
+                  <p className="text-2xl font-bold mt-1 text-gray-900 tabular-nums">
+                    {typeof card.value === 'number' ? card.value.toLocaleString() : card.value}
+                  </p>
+                  {card.sub && (
+                    <p className="text-[11px] text-gray-400 mt-1">{card.sub}</p>
+                  )}
+                </div>
+                <div
+                  className={`${card.color} w-10 h-10 rounded-xl flex items-center justify-center shrink-0`}
+                >
+                  <card.icon className="w-5 h-5 text-white" />
+                </div>
               </div>
             </div>
-          </div>
-        ))}
+          );
+          if ('href' in card && card.href) {
+            return <Link key={card.label} href={card.href} className="block">{inner}</Link>;
+          }
+          return <div key={card.label}>{inner}</div>;
+        })}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -261,28 +310,35 @@ export default function DashboardPage() {
           <h2 className="text-lg font-semibold text-gray-900 mb-4">
             Potansiyel Müşteri Durumu
           </h2>
-          <div className="space-y-3">
-            {data.leadsByStatus.map((item) => (
-              <div key={item.status} className="flex items-center gap-3">
-                <span
-                  className={`px-2.5 py-1 rounded-full text-xs font-medium ${statusColors[item.status] || 'bg-gray-100 text-gray-700'}`}
-                >
-                  {statusLabels[item.status] || item.status}
-                </span>
-                <div className="flex-1 bg-gray-100 rounded-full h-2">
-                  <div
-                    className="bg-whatsapp h-2 rounded-full transition-all"
-                    style={{
-                      width: `${Math.min(100, (item.count / Math.max(data.totalLeads, 1)) * 100)}%`,
-                    }}
-                  />
+          {data.leadsByStatus.length === 0 ? (
+            <p className="text-gray-400 text-sm">Kayıt yok</p>
+          ) : (
+            <div className="space-y-3">
+              {data.leadsByStatus.map((item) => (
+                <div key={item.status} className="flex items-center gap-3">
+                  <span
+                    className={`px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap ${statusColors[item.status] || 'bg-gray-100 text-gray-700'}`}
+                  >
+                    {statusLabels[item.status] || item.status}
+                  </span>
+                  <div className="flex-1 bg-gray-100 rounded-full h-2">
+                    <div
+                      className="bg-whatsapp h-2 rounded-full transition-all"
+                      style={{
+                        width: `${Math.min(100, (item.count / Math.max(data.totalLeads, 1)) * 100)}%`,
+                      }}
+                    />
+                  </div>
+                  <div className="text-right shrink-0">
+                    <span className="text-sm font-semibold text-gray-700">{item.count}</span>
+                    {item.totalValue > 0 && (
+                      <span className="text-[10px] text-gray-400 ml-1">({fmtTry(item.totalValue)})</span>
+                    )}
+                  </div>
                 </div>
-                <span className="text-sm font-semibold text-gray-700 w-8 text-right">
-                  {item.count}
-                </span>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
 
         <div className="bg-white rounded-xl border border-gray-100 p-6 shadow-sm">
@@ -292,13 +348,13 @@ export default function DashboardPage() {
           {data.agentStats.length === 0 ? (
             <p className="text-gray-400 text-sm">Henüz temsilci bulunmuyor</p>
           ) : (
-            <div className="space-y-4">
+            <div className="space-y-3">
               {data.agentStats.map((agent) => (
                 <div
                   key={agent.id}
                   className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg"
                 >
-                  <div className="w-10 h-10 bg-whatsapp/10 rounded-full flex items-center justify-center font-bold text-whatsapp">
+                  <div className="w-10 h-10 bg-whatsapp/10 rounded-full flex items-center justify-center font-bold text-whatsapp shrink-0">
                     {agent.name.charAt(0)}
                   </div>
                   <div className="flex-1 min-w-0">
@@ -310,10 +366,10 @@ export default function DashboardPage() {
                     </p>
                   </div>
                   <div className="text-right">
-                    <p className="text-lg font-bold text-gray-900">
+                    <p className="text-lg font-bold text-gray-900 tabular-nums">
                       {agent.messagesToday}
                     </p>
-                    <p className="text-xs text-gray-400">bugün mesaj</p>
+                    <p className="text-[10px] text-gray-400">mesaj</p>
                   </div>
                 </div>
               ))}

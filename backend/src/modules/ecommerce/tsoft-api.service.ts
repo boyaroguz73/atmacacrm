@@ -472,6 +472,10 @@ export class TsoftApiService {
     const token = options?.skipAuth ? undefined : await this.getBearerToken(organizationId);
     const apiRoot = this.resolveApiRoot(organizationId, cfg);
     const http = this.client(apiRoot, token);
+
+    const fullUrl = `${apiRoot}${path}`;
+    this.logger.debug(`[TSOFT-API] ${method} ${fullUrl} params=${JSON.stringify(options?.params || {})}`);
+
     const res = await http.request<T>({
       method,
       url: path,
@@ -479,7 +483,10 @@ export class TsoftApiService {
       data: options?.data,
     });
 
+    this.logger.debug(`[TSOFT-API] ${method} ${fullUrl} → HTTP ${res.status} (${typeof res.data === 'object' ? JSON.stringify(res.data)?.slice(0, 200) : String(res.data).slice(0, 200)})`);
+
     if (res.status === 401) {
+      this.logger.warn(`[TSOFT-API] 401 — token yenileniyor...`);
       this.clearTokenCache(organizationId);
       const retryToken = await this.getBearerToken(organizationId);
       const http2 = this.client(this.resolveApiRoot(organizationId, cfg), retryToken);
@@ -489,6 +496,7 @@ export class TsoftApiService {
         params: options?.params,
         data: options?.data,
       });
+      this.logger.debug(`[TSOFT-API] Retry ${method} ${fullUrl} → HTTP ${res2.status}`);
       if (res2.status >= 400) {
         throw new BadRequestException(
           `T-Soft API hatası (${res2.status}): ${JSON.stringify(res2.data)?.slice(0, 300)}`,
@@ -498,6 +506,7 @@ export class TsoftApiService {
     }
 
     if (res.status >= 400) {
+      this.logger.error(`[TSOFT-API] Hata ${method} ${fullUrl}: HTTP ${res.status} — ${JSON.stringify(res.data)?.slice(0, 500)}`);
       throw new BadRequestException(
         `T-Soft API hatası (${res.status}): ${JSON.stringify(res.data)?.slice(0, 300)}`,
       );

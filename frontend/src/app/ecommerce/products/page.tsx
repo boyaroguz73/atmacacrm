@@ -52,17 +52,7 @@ export default function EcommerceProductsPage() {
           <Package className="w-7 h-7 text-orange-500" />
           E-Ticaret Ürünleri
         </h1>
-        <p className="text-sm text-gray-500 mt-1">
-          T-Soft mağazanızdaki ürün listesi.{' '}
-          <a
-            href="https://developer.tsoft.com.tr/docs/api/product/"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-orange-600 hover:underline"
-          >
-            Ürün API dokümantasyonu
-          </a>
-        </p>
+        
       </div>
 
       <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
@@ -120,14 +110,7 @@ export default function EcommerceProductsPage() {
         </div>
       </div>
 
-      {process.env.NODE_ENV === 'development' && Boolean(raw) ? (
-        <details className="text-xs text-gray-400">
-          <summary className="cursor-pointer">Ham yanıt (geliştirici)</summary>
-          <pre className="mt-2 p-3 bg-gray-900 text-gray-100 rounded-lg overflow-auto max-h-64">
-            {JSON.stringify(raw, null, 2)}
-          </pre>
-        </details>
-      ) : null}
+      
     </div>
   );
 }

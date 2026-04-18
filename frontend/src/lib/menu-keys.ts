@@ -2,7 +2,6 @@
 export const MENU_KEYS = [
   'dashboard',
   'inbox',
-  'groups',
   'contacts',
   'leads',
   'products',
@@ -17,13 +16,13 @@ export const MENU_KEYS = [
   'settings',
   'support',
   'ecommerce',
-  'superadmin',
 ] as const;
+
+export type MenuKey = (typeof MENU_KEYS)[number];
 
 export const MENU_KEY_LABELS: Record<string, string> = {
   dashboard: 'Gösterge Paneli',
   inbox: 'Mesajlar',
-  groups: 'Gruplar',
   contacts: 'Kişiler',
   leads: 'Potansiyel Müşteriler',
   products: 'Ürünler',
@@ -38,7 +37,49 @@ export const MENU_KEY_LABELS: Record<string, string> = {
   settings: 'Ayarlar',
   support: 'Destek',
   ecommerce: 'E-Ticaret',
-  superadmin: 'SaaS Panel',
+};
+
+export const MENU_KEY_DESCRIPTIONS: Record<string, string> = {
+  dashboard: 'İstatistikler, KPI ve genel bakış',
+  inbox: 'WhatsApp mesajlaşma ve sohbet',
+  contacts: 'Müşteri rehberi',
+  leads: 'Satış hunisi ve potansiyel müşteriler',
+  products: 'Ürün kataloğu ve varyantlar',
+  quotes: 'Teklif oluşturma ve yönetimi',
+  orders: 'Sipariş takibi',
+  accounting: 'Fatura, kasa ve muhasebe',
+  tasks: 'Görev ve yapılacaklar',
+  calendar: 'Takvim ve randevu',
+  admin: 'Şablonlar, otomatik yanıt, log',
+  reports: 'Performans ve satış raporları',
+  integrations: 'T-Soft ve diğer entegrasyonlar',
+  settings: 'Sistem ve organizasyon ayarları',
+  support: 'Destek talebi oluşturma',
+  ecommerce: 'E-ticaret ürün ve siparişleri',
+};
+
+/**
+ * Menünün hangi rollere varsayılan olarak kısıtlı olduğu.
+ * Boş dizi = herkes görebilir, ['ADMIN'] = sadece admin varsayılan.
+ * Bu sadece UI göstergesi; asıl filtre Sidebar.tsx'teki role flag'lerden gelir.
+ */
+export const MENU_KEY_DEFAULT_ROLES: Record<string, string[]> = {
+  dashboard: ['ADMIN'],
+  inbox: [],
+  contacts: [],
+  leads: [],
+  products: ['ADMIN'],
+  quotes: [],
+  orders: [],
+  accounting: ['ADMIN', 'ACCOUNTANT'],
+  tasks: [],
+  calendar: [],
+  admin: ['ADMIN'],
+  reports: ['ADMIN'],
+  integrations: ['ADMIN'],
+  settings: ['ADMIN'],
+  support: ['ADMIN'],
+  ecommerce: ['ADMIN'],
 };
 
 export const MENU_CHILD_KEYS: Record<string, { key: string; label: string }[]> = {
@@ -67,12 +108,5 @@ export const MENU_CHILD_KEYS: Record<string, { key: string; label: string }[]> =
   ecommerce: [
     { key: 'ecom_products', label: 'Ürünler' },
     { key: 'ecom_orders', label: 'Siparişler' },
-  ],
-  superadmin: [
-    { key: 'sa_overview', label: 'Genel Bakış' },
-    { key: 'sa_users', label: 'Kullanıcılar' },
-    { key: 'sa_plans', label: 'Paketler' },
-    { key: 'sa_tickets', label: 'Destek Talepleri' },
-    { key: 'sa_system', label: 'Sistem Sağlığı' },
   ],
 };

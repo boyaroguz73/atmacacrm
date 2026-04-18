@@ -3,13 +3,14 @@
 import { useEffect, useState, useCallback } from 'react';
 import api from '@/lib/api';
 import toast from 'react-hot-toast';
-import { ShoppingBag, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
+import { ShoppingBag, ChevronLeft, ChevronRight, Loader2, RefreshCw, Users, Download } from 'lucide-react';
 
 export default function EcommerceOrdersPage() {
   const [rows, setRows] = useState<unknown[]>([]);
   const [raw, setRaw] = useState<unknown>(null);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState<'orders' | 'customers' | null>(null);
 
   const load = useCallback(async (p: number) => {
     setLoading(true);
@@ -29,6 +30,30 @@ export default function EcommerceOrdersPage() {
     load(page);
   }, [page, load]);
 
+  const syncOrders = async () => {
+    setSyncing('orders');
+    try {
+      const { data } = await api.post('/ecommerce/tsoft/sync-orders', {}, { timeout: 120_000 });
+      toast.success(`Sipariş senkronu: ${data.imported} aktarıldı, ${data.skippedExisting} zaten var, ${data.errors || 0} hata`);
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Sipariş senkronu başarısız');
+    } finally {
+      setSyncing(null);
+    }
+  };
+
+  const syncCustomers = async () => {
+    setSyncing('customers');
+    try {
+      const { data } = await api.post('/ecommerce/tsoft/sync-customers', {}, { timeout: 120_000 });
+      toast.success(`Müşteri senkronu: ${data.matched} eşleşti, ${data.created || 0} yeni, ${data.skipped || 0} atlandı`);
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Müşteri senkronu başarısız');
+    } finally {
+      setSyncing(null);
+    }
+  };
+
   const summarize = (r: unknown) => {
     if (!r || typeof r !== 'object') return { no: '—', status: '', total: '', date: '' };
     const o = r as Record<string, unknown>;
@@ -42,22 +67,34 @@ export default function EcommerceOrdersPage() {
 
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-          <ShoppingBag className="w-7 h-7 text-orange-500" />
-          E-Ticaret Siparişleri
-        </h1>
-        <p className="text-sm text-gray-500 mt-1">
-          T-Soft sipariş listesi.{' '}
-          <a
-            href="https://developer.tsoft.com.tr/docs/api/order/"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-orange-600 hover:underline"
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+            <ShoppingBag className="w-7 h-7 text-orange-500" />
+            E-Ticaret Siparişleri
+          </h1>
+          
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            disabled={syncing !== null}
+            onClick={syncCustomers}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:opacity-50 transition"
           >
-            Sipariş API dokümantasyonu
-          </a>
-        </p>
+            {syncing === 'customers' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Users className="w-4 h-4" />}
+            Müşteri Senkronu
+          </button>
+          <button
+            type="button"
+            disabled={syncing !== null}
+            onClick={syncOrders}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium bg-orange-50 text-orange-700 hover:bg-orange-100 disabled:opacity-50 transition"
+          >
+            {syncing === 'orders' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+            Sipariş Aktar
+          </button>
+        </div>
       </div>
 
       <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
@@ -125,14 +162,7 @@ export default function EcommerceOrdersPage() {
         </div>
       </div>
 
-      {process.env.NODE_ENV === 'development' && Boolean(raw) ? (
-        <details className="text-xs text-gray-400">
-          <summary className="cursor-pointer">Ham yanıt (geliştirici)</summary>
-          <pre className="mt-2 p-3 bg-gray-900 text-gray-100 rounded-lg overflow-auto max-h-64">
-            {JSON.stringify(raw, null, 2)}
-          </pre>
-        </details>
-      ) : null}
+      
     </div>
   );
 }

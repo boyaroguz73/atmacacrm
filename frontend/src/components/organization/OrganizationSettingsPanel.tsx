@@ -18,8 +18,20 @@ import {
   LayoutGrid,
   ArrowUp,
   ArrowDown,
+  Eye,
+  EyeOff,
+  ChevronDown,
+  ChevronRight,
+  Shield,
+  Users as UsersIcon,
 } from 'lucide-react';
-import { MENU_CHILD_KEYS, MENU_KEYS, MENU_KEY_LABELS } from '@/lib/menu-keys';
+import {
+  MENU_CHILD_KEYS,
+  MENU_KEYS,
+  MENU_KEY_LABELS,
+  MENU_KEY_DESCRIPTIONS,
+  MENU_KEY_DEFAULT_ROLES,
+} from '@/lib/menu-keys';
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL?.replace('/api', '') || 'http://localhost:3002';
 
@@ -610,133 +622,220 @@ export default function OrganizationSettingsPanel({
       </div>
 
       {isTenantAdmin ? (
-        <div className="bg-white border rounded-xl p-5 space-y-4">
-          <div className="flex items-center gap-2">
-            <LayoutGrid className="w-5 h-5 text-gray-400" />
-            <div>
-              <h2 className="text-lg font-semibold text-gray-900">Menü görünürlüğü</h2>
-              <p className="text-xs text-gray-500 mt-0.5">
-                Rol başına hangi ana menü modüllerinin görüneceğini seçin. Boş liste göndermek varsayılanlara döner.
-              </p>
+        <div className="bg-white border rounded-xl p-5 space-y-5">
+          {/* Başlık */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <LayoutGrid className="w-5 h-5 text-gray-400" />
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">Menü Görünürlüğü ve Sırası</h2>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Her rol için hangi modüllerin görüneceğini ve sırasını belirleyin.
+                </p>
+              </div>
             </div>
+            <button
+              type="button"
+              onClick={() => void saveMenuVisibility()}
+              disabled={menuSaving}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-gray-900 text-white text-sm font-medium hover:bg-gray-800 disabled:opacity-50 transition"
+            >
+              {menuSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+              Kaydet
+            </button>
           </div>
+
           {menuCfgLoading ? (
-            <div className="flex justify-center py-6">
+            <div className="flex justify-center py-10">
               <Loader2 className="w-6 h-6 animate-spin text-whatsapp" />
             </div>
           ) : (
             <>
-              <div className="flex flex-wrap gap-2">
-                {(['AGENT', 'ACCOUNTANT', 'ADMIN'] as MenuTab[]).map((t) => (
+              {/* Rol Sekmeleri */}
+              <div className="flex gap-1 bg-gray-100 p-1 rounded-xl">
+                {([
+                  { key: 'AGENT' as MenuTab, label: 'Temsilci', desc: 'Müşteri temsilcileri', icon: UsersIcon, color: 'blue' },
+                  { key: 'ACCOUNTANT' as MenuTab, label: 'Muhasebe', desc: 'Muhasebe personeli', icon: CreditCard, color: 'emerald' },
+                  { key: 'ADMIN' as MenuTab, label: 'Yönetici', desc: 'Tam yetki', icon: Shield, color: 'amber' },
+                ]).map((t) => (
                   <button
-                    key={t}
+                    key={t.key}
                     type="button"
-                    onClick={() => setMenuTab(t)}
-                    className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                      menuTab === t ? 'bg-whatsapp text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    onClick={() => setMenuTab(t.key)}
+                    className={`flex-1 flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
+                      menuTab === t.key
+                        ? 'bg-white text-gray-900 shadow-sm'
+                        : 'text-gray-500 hover:text-gray-700'
                     }`}
                   >
-                    {t === 'AGENT' ? 'Temsilci' : t === 'ACCOUNTANT' ? 'Muhasebe' : 'Yönetici'}
+                    <t.icon className="w-4 h-4" />
+                    <span>{t.label}</span>
+                    <span className="text-[10px] font-normal text-gray-400 hidden sm:inline">
+                      ({menuSelections[menuTab === t.key ? t.key : menuTab].length === 0 && menuTab !== t.key
+                        ? 'varsayılan'
+                        : `${menuSelections[t.key].length} modül`})
+                    </span>
                   </button>
                 ))}
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-64 overflow-y-auto border border-gray-100 rounded-lg p-3">
-                {MENU_KEYS.filter((k) => k !== 'superadmin').map((key) => {
-                  const checked = menuSelections[menuTab].includes(key);
-                  return (
-                    <label
-                      key={`${menuTab}-${key}`}
-                      className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        onChange={() => toggleMenuKey(key)}
-                        className="rounded border-gray-300 text-whatsapp focus:ring-whatsapp"
-                      />
-                      <span>{MENU_KEY_LABELS[key] || key}</span>
-                    </label>
-                  );
-                })}
+
+              {/* Bilgi notu */}
+              <div className="bg-blue-50/60 border border-blue-100 rounded-lg px-3 py-2 text-xs text-blue-700 flex items-start gap-2">
+                <Eye className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                <span>
+                  <strong>{menuTab === 'AGENT' ? 'Temsilci' : menuTab === 'ACCOUNTANT' ? 'Muhasebe' : 'Yönetici'}</strong> rolündeki
+                  kullanıcılar aşağıda işaretli modülleri görecek.
+                  {menuSelections[menuTab].length === 0 && ' Liste boş olursa varsayılan menü uygulanır.'}
+                </span>
               </div>
-              <div className="border border-gray-100 rounded-lg p-3 space-y-3">
-                <p className="text-xs font-semibold text-gray-600">Üst menü sırası ({menuTab})</p>
-                <div className="space-y-2 max-h-56 overflow-y-auto">
-                  {menuSelections[menuTab].map((key, idx) => (
-                    <div key={`sort-${menuTab}-${key}`} className="flex items-center justify-between rounded-lg border border-gray-100 px-3 py-2">
-                      <span className="text-sm text-gray-700">{MENU_KEY_LABELS[key] || key}</span>
-                      <div className="flex items-center gap-1">
+
+              {/* Birleşik görünürlük + sıralama listesi */}
+              <div className="border border-gray-100 rounded-xl divide-y divide-gray-50">
+                {(() => {
+                  const selected = menuSelections[menuTab];
+                  const unselected = MENU_KEYS.filter((k) => !selected.includes(k));
+                  const allKeys = [...selected, ...unselected];
+
+                  return allKeys.map((key, idx) => {
+                    const isEnabled = selected.includes(key);
+                    const enabledIdx = selected.indexOf(key);
+                    const defaultRoles = MENU_KEY_DEFAULT_ROLES[key] || [];
+                    const hasChildren = !!MENU_CHILD_KEYS[key]?.length;
+
+                    return (
+                      <div
+                        key={`${menuTab}-${key}`}
+                        className={`flex items-center gap-3 px-4 py-3 transition-colors ${
+                          isEnabled ? 'bg-white' : 'bg-gray-50/60'
+                        }`}
+                      >
+                        {/* Toggle */}
                         <button
                           type="button"
-                          onClick={() => moveTopMenu(key, -1)}
-                          disabled={idx === 0}
-                          className="p-1.5 rounded border border-gray-200 disabled:opacity-40"
+                          onClick={() => toggleMenuKey(key)}
+                          className={`shrink-0 w-9 h-5 rounded-full transition-colors relative ${
+                            isEnabled ? 'bg-whatsapp' : 'bg-gray-300'
+                          }`}
                         >
-                          <ArrowUp className="w-3.5 h-3.5" />
+                          <span
+                            className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${
+                              isEnabled ? 'left-[18px]' : 'left-0.5'
+                            }`}
+                          />
                         </button>
-                        <button
-                          type="button"
-                          onClick={() => moveTopMenu(key, 1)}
-                          disabled={idx === menuSelections[menuTab].length - 1}
-                          className="p-1.5 rounded border border-gray-200 disabled:opacity-40"
-                        >
-                          <ArrowDown className="w-3.5 h-3.5" />
-                        </button>
+
+                        {/* Label + desc */}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className={`text-sm font-medium ${isEnabled ? 'text-gray-900' : 'text-gray-400'}`}>
+                              {MENU_KEY_LABELS[key] || key}
+                            </span>
+                            {defaultRoles.length > 0 && (
+                              <span className="inline-flex text-[9px] font-semibold px-1.5 py-0.5 rounded bg-amber-50 text-amber-600 uppercase tracking-wide">
+                                {defaultRoles.includes('ADMIN') && defaultRoles.includes('ACCOUNTANT')
+                                  ? 'Yönetici / Muhasebe'
+                                  : defaultRoles.includes('ADMIN')
+                                    ? 'Yönetici'
+                                    : 'Muhasebe'}
+                              </span>
+                            )}
+                            {hasChildren && (
+                              <span className="text-[9px] text-gray-400 font-medium">
+                                +{MENU_CHILD_KEYS[key].length} alt menü
+                              </span>
+                            )}
+                          </div>
+                          {MENU_KEY_DESCRIPTIONS[key] && (
+                            <p className={`text-[11px] mt-0.5 ${isEnabled ? 'text-gray-500' : 'text-gray-300'}`}>
+                              {MENU_KEY_DESCRIPTIONS[key]}
+                            </p>
+                          )}
+                        </div>
+
+                        {/* Sıralama ok butonları (sadece etkin olanlar) */}
+                        {isEnabled && (
+                          <div className="flex items-center gap-0.5 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => moveTopMenu(key, -1)}
+                              disabled={enabledIdx === 0}
+                              className="p-1 rounded hover:bg-gray-100 disabled:opacity-20 transition"
+                              title="Yukarı taşı"
+                            >
+                              <ArrowUp className="w-3.5 h-3.5 text-gray-500" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => moveTopMenu(key, 1)}
+                              disabled={enabledIdx === selected.length - 1}
+                              className="p-1 rounded hover:bg-gray-100 disabled:opacity-20 transition"
+                              title="Aşağı taşı"
+                            >
+                              <ArrowDown className="w-3.5 h-3.5 text-gray-500" />
+                            </button>
+                          </div>
+                        )}
                       </div>
-                    </div>
-                  ))}
-                </div>
+                    );
+                  });
+                })()}
               </div>
-              <div className="border border-gray-100 rounded-lg p-3 space-y-3">
-                <p className="text-xs font-semibold text-gray-600">Alt menü sırası</p>
-                {Object.entries(MENU_CHILD_KEYS).map(([parentKey, children]) => {
-                  const ordered = (menuSuborder[parentKey] || children.map((c) => c.key))
-                    .filter((k) => children.some((c) => c.key === k));
-                  if (!ordered.length) return null;
-                  return (
-                    <div key={`sub-${parentKey}`} className="border border-gray-100 rounded-lg p-2">
-                      <p className="text-xs font-medium text-gray-600 mb-2">{MENU_KEY_LABELS[parentKey] || parentKey}</p>
-                      <div className="space-y-1">
-                        {ordered.map((childKey, idx) => {
-                          const childLabel = children.find((c) => c.key === childKey)?.label || childKey;
-                          return (
-                            <div key={`${parentKey}-${childKey}`} className="flex items-center justify-between px-2 py-1 rounded bg-gray-50">
-                              <span className="text-xs text-gray-700">{childLabel}</span>
-                              <div className="flex items-center gap-1">
-                                <button
-                                  type="button"
-                                  onClick={() => moveSubMenu(parentKey, childKey, -1)}
-                                  disabled={idx === 0}
-                                  className="p-1 rounded border border-gray-200 disabled:opacity-40"
-                                >
-                                  <ArrowUp className="w-3 h-3" />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => moveSubMenu(parentKey, childKey, 1)}
-                                  disabled={idx === ordered.length - 1}
-                                  className="p-1 rounded border border-gray-200 disabled:opacity-40"
-                                >
-                                  <ArrowDown className="w-3 h-3" />
-                                </button>
-                              </div>
+
+              {/* Alt menü sırası — sadece etkin ve alt menüsü olanlar */}
+              {(() => {
+                const selected = menuSelections[menuTab];
+                const parentsWithChildren = selected.filter((k) => MENU_CHILD_KEYS[k]?.length);
+                if (!parentsWithChildren.length) return null;
+                return (
+                  <div className="space-y-3">
+                    <p className="text-xs font-semibold text-gray-600 flex items-center gap-1.5">
+                      <ChevronRight className="w-3.5 h-3.5" />
+                      Alt menü sırası
+                    </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {parentsWithChildren.map((parentKey) => {
+                        const children = MENU_CHILD_KEYS[parentKey] || [];
+                        const ordered = (menuSuborder[parentKey] || children.map((c) => c.key))
+                          .filter((k) => children.some((c) => c.key === k));
+                        if (!ordered.length) return null;
+                        return (
+                          <div key={`sub-${parentKey}`} className="border border-gray-100 rounded-lg p-3">
+                            <p className="text-xs font-semibold text-gray-700 mb-2">{MENU_KEY_LABELS[parentKey] || parentKey}</p>
+                            <div className="space-y-1">
+                              {ordered.map((childKey, idx) => {
+                                const childLabel = children.find((c) => c.key === childKey)?.label || childKey;
+                                return (
+                                  <div key={`${parentKey}-${childKey}`} className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-gray-50 hover:bg-gray-100 transition">
+                                    <span className="text-xs text-gray-700">{childLabel}</span>
+                                    <div className="flex items-center gap-0.5">
+                                      <button
+                                        type="button"
+                                        onClick={() => moveSubMenu(parentKey, childKey, -1)}
+                                        disabled={idx === 0}
+                                        className="p-0.5 rounded hover:bg-white disabled:opacity-20 transition"
+                                      >
+                                        <ArrowUp className="w-3 h-3 text-gray-500" />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => moveSubMenu(parentKey, childKey, 1)}
+                                        disabled={idx === ordered.length - 1}
+                                        className="p-0.5 rounded hover:bg-white disabled:opacity-20 transition"
+                                      >
+                                        <ArrowDown className="w-3 h-3 text-gray-500" />
+                                      </button>
+                                    </div>
+                                  </div>
+                                );
+                              })}
                             </div>
-                          );
-                        })}
-                      </div>
+                          </div>
+                        );
+                      })}
                     </div>
-                  );
-                })}
-              </div>
-              <button
-                type="button"
-                onClick={() => void saveMenuVisibility()}
-                disabled={menuSaving}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-gray-900 text-white text-sm font-medium hover:bg-gray-800 disabled:opacity-50"
-              >
-                {menuSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                Menü ayarlarını kaydet
-              </button>
+                  </div>
+                );
+              })()}
             </>
           )}
         </div>

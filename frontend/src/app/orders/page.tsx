@@ -37,6 +37,8 @@ interface OrderItemRow {
 interface SalesOrder {
   id: string;
   orderNumber: number;
+  externalId?: string | null;
+  source?: string;
   quoteId: string | null;
   status: OrderStatus;
   currency: string;
@@ -313,7 +315,12 @@ export default function OrdersPage() {
                     className="border-b border-gray-50 hover:bg-green-50/30 transition-colors cursor-pointer"
                   >
                     <td className="px-5 py-3 font-mono text-xs font-semibold text-gray-900">
-                      {formatOrderNo(order.orderNumber)}
+                      <span className="flex items-center gap-1.5">
+                        {formatOrderNo(order.orderNumber)}
+                        {order.source === 'TSOFT' && (
+                          <span className="inline-flex text-[9px] font-bold px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700 uppercase tracking-wide">Site</span>
+                        )}
+                      </span>
                       <PanelEditedBadge at={order.panelEditedAt} />
                     </td>
                     <td className="px-5 py-3">

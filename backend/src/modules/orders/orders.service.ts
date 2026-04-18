@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { PdfService } from '../pdf/pdf.service';
 import { OrderStatus, DiscountType } from '@prisma/client';
 import { splitSearchTokens } from '../../common/search-tokens';
+import { AuditLogService } from '../audit-log/audit-log.service';
 
 @Injectable()
 export class OrdersService {
@@ -25,6 +26,7 @@ export class OrdersService {
   constructor(
     private prisma: PrismaService,
     private pdfService: PdfService,
+    private auditLog: AuditLogService,
   ) {}
 
   private readonly includeRelations = {
@@ -201,7 +203,7 @@ export class OrdersService {
       data.notes?.trim() || null,
     ].filter(Boolean).join('\n\n') || undefined;
 
-    return this.prisma.salesOrder.create({
+    const order = await this.prisma.salesOrder.create({
       data: {
         contactId: data.contactId,
         createdById: userId,
@@ -231,15 +233,30 @@ export class OrdersService {
       },
       include: this.includeRelations,
     });
+    this.auditLog.log({
+      userId,
+      action: 'CREATE',
+      entity: 'SalesOrder',
+      entityId: order.id,
+      details: { grandTotal: order.grandTotal, itemCount: items.length },
+    });
+    return order;
   }
 
   async updateStatus(id: string, status: OrderStatus) {
-    await this.findById(id);
-    return this.prisma.salesOrder.update({
+    const prev = await this.findById(id);
+    const order = await this.prisma.salesOrder.update({
       where: { id },
       data: { status, panelEditedAt: new Date() },
       include: this.includeRelations,
     });
+    this.auditLog.log({
+      action: 'UPDATE',
+      entity: 'SalesOrder',
+      entityId: id,
+      details: { from: prev.status, to: status },
+    });
+    return order;
   }
 
   async updateMeta(

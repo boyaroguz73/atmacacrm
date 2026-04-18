@@ -13,8 +13,12 @@ export class DashboardController {
   constructor(private dashboardService: DashboardService) {}
 
   @Get('overview')
-  getOverview(@CurrentUser() user: { role: string; organizationId?: string }) {
-    return this.dashboardService.getOverview(requireOrgId(user));
+  getOverview(
+    @CurrentUser() user: { role: string; organizationId?: string },
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    return this.dashboardService.getOverview(requireOrgId(user), from, to);
   }
 
   @Get('agent-performance')

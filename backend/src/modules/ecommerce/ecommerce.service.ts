@@ -9,6 +9,7 @@ import {
 import type { CreateTsoftSiteCustomerPayload } from './tsoft.types';
 
 const TSOFT_LABEL = 'T-Soft Site Müşterisi';
+const TSOFT_SOURCE = 'TSOFT';
 
 /** Başarılı veya yapılandırma eksik: periyodik yenileme */
 const STATUS_CACHE_MS_DEFAULT = 120_000;
@@ -120,57 +121,94 @@ export class EcommerceService {
   }
 
   /**
-   * T-Soft müşterilerini çeker; CRM kişileriyle telefon eşleşmesi olanlara metadata yazar.
+   * T-Soft müşterilerini çeker; eşleşen CRM kişilerini günceller, eşleşmeyenleri oluşturur.
    */
   async syncTsoftCustomers(organizationId: string) {
+    this.logger.log(`[TSOFT-SYNC-CUSTOMERS] Başlatılıyor orgId=${organizationId}`);
     const customers = await this.tsoftApi.fetchAllCustomers(organizationId);
-    const phoneToExternal = new Map<string, string>();
+    this.logger.log(`[TSOFT-SYNC-CUSTOMERS] T-Soft'tan ${customers.length} müşteri çekildi`);
 
-    for (const c of customers) {
-      const mobile = (c.mobilePhone as string) || (c.customerPhone as string) || '';
-      const key = normalizeTsoftPhone(mobile);
-      if (!key) continue;
-      const id = c.id != null ? String(c.id) : '';
-      if (id) phoneToExternal.set(key, id);
+    if (customers.length > 0) {
+      this.logger.debug(`[TSOFT-SYNC-CUSTOMERS] İlk müşteri örneği: ${JSON.stringify(customers[0]).slice(0, 500)}`);
     }
 
-    const contacts = await this.prisma.contact.findMany({
+    const existingContacts = await this.prisma.contact.findMany({
       where: { organizationId },
       select: { id: true, phone: true, metadata: true },
     });
-
-    let matched = 0;
-    for (const contact of contacts) {
-      const key = normalizeComparablePhone(contact.phone);
-      const externalId = phoneToExternal.get(key);
-      if (!externalId) continue;
-
-      const prev =
-        contact.metadata && typeof contact.metadata === 'object'
-          ? (contact.metadata as Record<string, unknown>)
-          : {};
-      const next = {
-        ...prev,
-        ecommerce: {
-          provider: 'tsoft',
-          externalId,
-          label: TSOFT_LABEL,
-          syncedAt: new Date().toISOString(),
-        },
-      };
-
-      await this.prisma.contact.update({
-        where: { id: contact.id },
-        data: { metadata: next as object },
-      });
-      matched++;
+    const phoneToContact = new Map<string, typeof existingContacts[0]>();
+    for (const c of existingContacts) {
+      phoneToContact.set(normalizeComparablePhone(c.phone), c);
     }
 
-    return {
-      matched,
-      tsoftCustomerCount: customers.length,
-      crmContactCount: contacts.length,
-    };
+    let matched = 0;
+    let created = 0;
+    let skipped = 0;
+
+    for (const cust of customers) {
+      const mobile = String(cust.mobilePhone || cust.customerPhone || cust.phone || '').trim();
+      const normalizedPhone = normalizeTsoftPhone(mobile);
+      if (!normalizedPhone) {
+        skipped++;
+        continue;
+      }
+      const externalId = cust.id != null ? String(cust.id) : '';
+      if (!externalId) { skipped++; continue; }
+
+      const existing = phoneToContact.get(normalizedPhone);
+      const ecommerceMeta = {
+        provider: 'tsoft',
+        externalId,
+        label: TSOFT_LABEL,
+        syncedAt: new Date().toISOString(),
+      };
+
+      if (existing) {
+        const prev = existing.metadata && typeof existing.metadata === 'object'
+          ? (existing.metadata as Record<string, unknown>) : {};
+        await this.prisma.contact.update({
+          where: { id: existing.id },
+          data: { metadata: { ...prev, ecommerce: ecommerceMeta } as object },
+        });
+        matched++;
+      } else {
+        try {
+          const name = String(cust.name || cust.firstName || '').trim() || null;
+          const surname = String(cust.surname || cust.lastName || '').trim() || null;
+          const email = String(cust.email || '').trim() || null;
+          const company = String(cust.company || cust.companyName || '').trim() || null;
+          const city = String(cust.city || cust.cityName || '').trim() || null;
+          const address = String(cust.address || '').trim() || null;
+
+          const newContact = await this.prisma.contact.create({
+            data: {
+              phone: normalizedPhone,
+              name,
+              surname,
+              email,
+              company,
+              city,
+              address,
+              source: TSOFT_SOURCE,
+              organizationId,
+              metadata: { ecommerce: ecommerceMeta } as object,
+            },
+          });
+          phoneToContact.set(normalizedPhone, { id: newContact.id, phone: newContact.phone, metadata: newContact.metadata });
+          created++;
+          this.logger.debug(`[TSOFT-SYNC-CUSTOMERS] Yeni kişi oluşturuldu: ${normalizedPhone} → ${name} ${surname}`);
+        } catch (e: any) {
+          if (e?.code === 'P2002') {
+            matched++;
+          } else {
+            this.logger.warn(`[TSOFT-SYNC-CUSTOMERS] Kişi oluşturma hatası (${normalizedPhone}): ${e?.message}`);
+          }
+        }
+      }
+    }
+
+    this.logger.log(`[TSOFT-SYNC-CUSTOMERS] Sonuç: ${matched} eşleşti, ${created} yeni oluşturuldu, ${skipped} atlandı (telefon yok)`);
+    return { matched, created, skipped, tsoftCustomerCount: customers.length, crmContactCount: existingContacts.length };
   }
 
   private mergeEcommerceMeta(
@@ -198,6 +236,219 @@ export class EcommerceService {
       throw new BadRequestException('T-Soft yanıtında müşteri ID bulunamadı');
     }
     return String(id);
+  }
+
+  /**
+   * T-Soft siparişlerini çeker ve CRM SalesOrder tablosuna yazar.
+   */
+  async syncTsoftOrders(organizationId: string, userId: string) {
+    this.logger.log(`[TSOFT-SYNC-ORDERS] Başlatılıyor orgId=${organizationId}`);
+
+    let allOrders: Record<string, unknown>[] = [];
+    for (let page = 1; page <= 50; page++) {
+      const { rows } = await this.tsoftApi.listOrders(organizationId, page, 100);
+      this.logger.debug(`[TSOFT-SYNC-ORDERS] Sayfa ${page}: ${rows.length} sipariş`);
+      if (!rows.length) break;
+      for (const r of rows) {
+        if (r && typeof r === 'object') allOrders.push(r as Record<string, unknown>);
+      }
+      if (rows.length < 100) break;
+    }
+
+    this.logger.log(`[TSOFT-SYNC-ORDERS] T-Soft'tan toplam ${allOrders.length} sipariş çekildi`);
+    if (allOrders.length > 0) {
+      this.logger.debug(`[TSOFT-SYNC-ORDERS] İlk sipariş örneği: ${JSON.stringify(allOrders[0]).slice(0, 1000)}`);
+    }
+
+    let imported = 0;
+    let skippedExisting = 0;
+    let errors = 0;
+
+    for (const raw of allOrders) {
+      const tsoftId = String(raw.id ?? raw.orderId ?? raw.order_id ?? '').trim();
+      if (!tsoftId) {
+        this.logger.warn(`[TSOFT-SYNC-ORDERS] Sipariş ID bulunamadı: ${JSON.stringify(raw).slice(0, 300)}`);
+        errors++;
+        continue;
+      }
+
+      const externalId = `tsoft_${tsoftId}`;
+
+      const existing = await this.prisma.salesOrder.findUnique({ where: { externalId } });
+      if (existing) {
+        skippedExisting++;
+        continue;
+      }
+
+      try {
+        const customerPhone = String(
+          raw.customerPhone || raw.customer_phone || raw.mobilePhone ||
+          raw.phone || raw.billingPhone || raw.shipping_phone || '',
+        ).trim();
+        const customerEmail = String(raw.customerEmail || raw.customer_email || raw.email || '').trim();
+        const customerName = String(raw.customerName || raw.customer_name || raw.name || raw.firstName || '').trim();
+        const customerSurname = String(raw.customerSurname || raw.customer_surname || raw.surname || raw.lastName || '').trim();
+
+        const normalizedPhone = normalizeTsoftPhone(customerPhone);
+        if (!normalizedPhone && !customerEmail) {
+          this.logger.warn(`[TSOFT-SYNC-ORDERS] Sipariş ${tsoftId}: Müşteri telefonu/e-postası yok, atlanıyor`);
+          errors++;
+          continue;
+        }
+
+        let contact = normalizedPhone
+          ? await this.prisma.contact.findUnique({ where: { phone: normalizedPhone } })
+          : null;
+
+        if (!contact && customerEmail) {
+          contact = await this.prisma.contact.findFirst({
+            where: { email: customerEmail, organizationId },
+          });
+        }
+
+        if (!contact && normalizedPhone) {
+          contact = await this.prisma.contact.create({
+            data: {
+              phone: normalizedPhone,
+              name: customerName || null,
+              surname: customerSurname || null,
+              email: customerEmail || null,
+              source: TSOFT_SOURCE,
+              organizationId,
+              metadata: {
+                ecommerce: {
+                  provider: 'tsoft',
+                  externalId: String(raw.customerId || raw.customer_id || tsoftId),
+                  label: TSOFT_LABEL,
+                  syncedAt: new Date().toISOString(),
+                },
+              } as object,
+            },
+          });
+          this.logger.debug(`[TSOFT-SYNC-ORDERS] Sipariş ${tsoftId} için yeni kişi oluşturuldu: ${normalizedPhone}`);
+        }
+
+        if (!contact) {
+          this.logger.warn(`[TSOFT-SYNC-ORDERS] Sipariş ${tsoftId}: Kişi oluşturulamadı/bulunamadı`);
+          errors++;
+          continue;
+        }
+
+        const grandTotal = Number(raw.grandTotal ?? raw.total ?? raw.orderTotal ?? raw.totalPrice ?? 0);
+        const currency = String(raw.currency || raw.currencyCode || 'TRY').trim().toUpperCase();
+        const shippingAddress = String(raw.shippingAddress || raw.shipping_address || raw.address || '').trim() || null;
+        const orderNotes = String(raw.notes || raw.orderNote || raw.customerNote || '').trim() || null;
+        const tsoftStatus = String(raw.status || raw.orderStatus || raw.statusName || '').trim().toLowerCase();
+
+        let crmStatus: 'PENDING' | 'PROCESSING' | 'SHIPPED' | 'DELIVERED' | 'CANCELLED' = 'PENDING';
+        if (tsoftStatus.includes('iptal') || tsoftStatus.includes('cancel')) crmStatus = 'CANCELLED';
+        else if (tsoftStatus.includes('teslim') || tsoftStatus.includes('deliver') || tsoftStatus.includes('complet')) crmStatus = 'DELIVERED';
+        else if (tsoftStatus.includes('kargo') || tsoftStatus.includes('ship')) crmStatus = 'SHIPPED';
+        else if (tsoftStatus.includes('hazırla') || tsoftStatus.includes('process') || tsoftStatus.includes('onay')) crmStatus = 'PROCESSING';
+
+        const orderItems = this.extractOrderItems(raw);
+
+        const subtotal = orderItems.reduce((s, i) => s + i.lineTotal, 0);
+        const vatTotal = Math.max(0, grandTotal - subtotal);
+
+        const orderDate = raw.createdAt || raw.created_at || raw.orderDate || raw.order_date;
+        const parsedDate = orderDate ? new Date(String(orderDate)) : new Date();
+        const validDate = Number.isFinite(parsedDate.getTime()) ? parsedDate : new Date();
+
+        await this.prisma.salesOrder.create({
+          data: {
+            externalId,
+            source: TSOFT_SOURCE,
+            contactId: contact.id,
+            createdById: userId,
+            status: crmStatus,
+            currency,
+            subtotal: Math.round(subtotal * 100) / 100,
+            vatTotal: Math.round(vatTotal * 100) / 100,
+            grandTotal: Math.round(grandTotal * 100) / 100,
+            shippingAddress,
+            notes: orderNotes ? `[Site Siparişi #${tsoftId}] ${orderNotes}` : `[Site Siparişi #${tsoftId}]`,
+            createdAt: validDate,
+            items: {
+              create: orderItems.map((item) => ({
+                name: item.name,
+                quantity: item.quantity,
+                unitPrice: item.unitPrice,
+                vatRate: item.vatRate,
+                lineTotal: item.lineTotal,
+                isFromStock: true,
+              })),
+            },
+          },
+        });
+
+        imported++;
+        this.logger.debug(`[TSOFT-SYNC-ORDERS] Sipariş aktarıldı: T-Soft #${tsoftId} → CRM (${crmStatus}), ${orderItems.length} kalem, ${grandTotal} ${currency}`);
+      } catch (e: any) {
+        if (e?.code === 'P2002') {
+          skippedExisting++;
+        } else {
+          this.logger.error(`[TSOFT-SYNC-ORDERS] Sipariş ${tsoftId} aktarım hatası: ${e?.message}`);
+          errors++;
+        }
+      }
+    }
+
+    this.logger.log(`[TSOFT-SYNC-ORDERS] Sonuç: ${imported} aktarıldı, ${skippedExisting} zaten var, ${errors} hata`);
+    return { imported, skippedExisting, errors, totalFetched: allOrders.length };
+  }
+
+  private extractOrderItems(raw: Record<string, unknown>): Array<{
+    name: string; quantity: number; unitPrice: number; vatRate: number; lineTotal: number;
+  }> {
+    const items: Array<{ name: string; quantity: number; unitPrice: number; vatRate: number; lineTotal: number }> = [];
+
+    const candidates = [
+      raw.items, raw.orderItems, raw.order_items, raw.products,
+      raw.details, raw.orderDetails, raw.order_details, raw.lines,
+    ];
+    let list: unknown[] = [];
+    for (const c of candidates) {
+      if (Array.isArray(c) && c.length > 0) { list = c; break; }
+      if (c && typeof c === 'object' && !Array.isArray(c)) {
+        const inner = c as Record<string, unknown>;
+        if (Array.isArray(inner.data)) { list = inner.data; break; }
+        if (Array.isArray(inner.items)) { list = inner.items; break; }
+      }
+    }
+
+    if (list.length === 0) {
+      const grandTotal = Number(raw.grandTotal ?? raw.total ?? 0);
+      if (grandTotal > 0) {
+        items.push({
+          name: `Site Siparişi #${raw.id || '?'}`,
+          quantity: 1,
+          unitPrice: grandTotal,
+          vatRate: 20,
+          lineTotal: grandTotal,
+        });
+      }
+      return items;
+    }
+
+    for (const row of list) {
+      if (!row || typeof row !== 'object') continue;
+      const r = row as Record<string, unknown>;
+      const name = String(r.name || r.productName || r.product_name || r.title || 'Ürün').trim();
+      const quantity = Math.max(1, Number(r.quantity || r.qty || r.amount || 1));
+      const unitPrice = Number(r.unitPrice || r.unit_price || r.price || r.salePrice || 0);
+      const lineTotal = Number(r.lineTotal || r.total || r.subTotal || r.rowTotal || (unitPrice * quantity));
+      const vatRate = Math.round(Number(r.vatRate || r.vat_rate || r.taxRate || r.tax_rate || 20));
+      items.push({
+        name,
+        quantity,
+        unitPrice: Math.round(unitPrice * 100) / 100,
+        vatRate: Number.isFinite(vatRate) ? vatRate : 20,
+        lineTotal: Math.round(lineTotal * 100) / 100,
+      });
+    }
+
+    return items;
   }
 
   async createTsoftCustomerFromContact(

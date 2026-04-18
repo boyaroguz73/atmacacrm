@@ -30,6 +30,8 @@ export const SOURCES = [
   { value: 'Web Sitesi', label: 'Web Sitesi' },
   { value: 'Referans', label: 'Referans' },
   { value: 'Sosyal Medya', label: 'Sosyal Medya' },
+  { value: 'Eski Müşteri', label: 'Eski Müşteri' },
+  { value: 'Mağaza Müşterisi', label: 'Mağaza Müşterisi' },
   { value: 'Diğer', label: 'Diğer' },
 ];
 

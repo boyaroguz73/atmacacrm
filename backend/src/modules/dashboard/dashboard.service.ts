@@ -13,7 +13,10 @@ export class DashboardService {
     return orgId ? { session: { organizationId: orgId } } : {};
   }
 
-  async getOverview(organizationId?: string) {
+  async getOverview(organizationId?: string, from?: string, to?: string) {
+    const dateRange = this.parseDateRange(from, to);
+    const dateFilter = dateRange ? { createdAt: dateRange } : {};
+
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
@@ -23,27 +26,35 @@ export class DashboardService {
     const leadFilter = organizationId
       ? { contact: { organizationId } }
       : {};
-    const agentFilter = organizationId ? { organizationId } : {};
+    const orderFilter: any = organizationId
+      ? { contact: { organizationId }, ...dateFilter }
+      : { ...dateFilter };
+
+    const msgDateFilter = dateRange
+      ? { createdAt: dateRange, ...mf }
+      : { createdAt: { gte: today }, ...mf };
 
     const [
-      totalMessagesToday,
-      incomingMessagesToday,
-      outgoingMessagesToday,
+      totalMessages,
+      incomingMessages,
+      outgoingMessages,
       activeConversations,
       unansweredConversations,
       totalContacts,
+      newContactsInPeriod,
       totalLeads,
       leadsByStatus,
       agentStats,
+      orderAgg,
+      cashIncome,
+      cashExpense,
     ] = await Promise.all([
+      this.prisma.message.count({ where: msgDateFilter }),
       this.prisma.message.count({
-        where: { createdAt: { gte: today }, ...mf },
+        where: { ...msgDateFilter, direction: 'INCOMING' },
       }),
       this.prisma.message.count({
-        where: { createdAt: { gte: today }, direction: 'INCOMING', ...mf },
-      }),
-      this.prisma.message.count({
-        where: { createdAt: { gte: today }, direction: 'OUTGOING', ...mf },
+        where: { ...msgDateFilter, direction: 'OUTGOING' },
       }),
       this.prisma.conversation.count({
         where: { isClosed: false, isArchived: false, ...cf },
@@ -57,14 +68,27 @@ export class DashboardService {
         },
       }),
       this.prisma.contact.count({ where: contactFilter }),
+      this.prisma.contact.count({
+        where: { ...contactFilter, ...(dateRange ? { createdAt: dateRange } : {}) },
+      }),
       this.prisma.lead.count({ where: leadFilter }),
       this.prisma.lead.groupBy({
         by: ['status'],
-        where: leadFilter,
+        where: {
+          ...leadFilter,
+          ...(dateRange ? { createdAt: dateRange } : {}),
+        },
         _count: { id: true },
         _sum: { value: true },
       }),
-      this.getAgentPerformance(organizationId),
+      this.getAgentPerformance(organizationId, dateRange),
+      this.prisma.salesOrder.aggregate({
+        where: orderFilter,
+        _sum: { grandTotal: true },
+        _count: { id: true },
+      }),
+      this.safeCashAggregate(organizationId, 'INCOME', dateRange),
+      this.safeCashAggregate(organizationId, 'EXPENSE', dateRange),
     ]);
 
     const wonLeads = leadsByStatus.find((l) => l.status === 'WON');
@@ -78,12 +102,13 @@ export class DashboardService {
         : 0;
 
     return {
-      totalMessagesToday,
-      incomingMessagesToday,
-      outgoingMessagesToday,
+      totalMessagesToday: totalMessages,
+      incomingMessagesToday: incomingMessages,
+      outgoingMessagesToday: outgoingMessages,
       activeConversations,
       unansweredConversations,
       totalContacts,
+      newContactsInPeriod,
       totalLeads,
       conversionRate: Math.round(conversionRate * 100) / 100,
       leadsByStatus: leadsByStatus.map((l) => ({
@@ -92,10 +117,47 @@ export class DashboardService {
         totalValue: l._sum.value || 0,
       })),
       agentStats,
+      orders: {
+        count: orderAgg._count.id,
+        sumGrandTotal: orderAgg._sum.grandTotal || 0,
+      },
+      cash: {
+        income: cashIncome,
+        expense: cashExpense,
+        net: cashIncome - cashExpense,
+      },
     };
   }
 
-  async getAgentPerformance(organizationId?: string) {
+  private parseDateRange(from?: string, to?: string) {
+    if (!from && !to) return null;
+    const range: any = {};
+    if (from) range.gte = new Date(from);
+    if (to) range.lte = new Date(to);
+    return range;
+  }
+
+  private async safeCashAggregate(
+    organizationId?: string,
+    type?: string,
+    dateRange?: any,
+  ): Promise<number> {
+    try {
+      const where: any = {};
+      if (organizationId) where.organizationId = organizationId;
+      if (type) where.type = type;
+      if (dateRange) where.date = dateRange;
+      const agg = await (this.prisma as any).cashEntry.aggregate({
+        where,
+        _sum: { amount: true },
+      });
+      return agg._sum.amount || 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  async getAgentPerformance(organizationId?: string, dateRange?: any) {
     const agentWhere: any = { role: 'AGENT', isActive: true };
     if (organizationId) agentWhere.organizationId = organizationId;
 
@@ -117,12 +179,14 @@ export class DashboardService {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
+    const msgFilter = dateRange || { gte: today };
+
     const agentStats = await Promise.all(
       agents.map(async (agent) => {
         const messagesToday = await this.prisma.message.count({
           where: {
             sentById: agent.id,
-            createdAt: { gte: today },
+            createdAt: msgFilter,
           },
         });
 

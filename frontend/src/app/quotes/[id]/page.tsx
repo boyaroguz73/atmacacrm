@@ -712,9 +712,7 @@ export default function QuoteDetailPage() {
                     ))}
                   </select>
                 </label>
-                <p className="text-[11px] text-gray-500 sm:flex-1 min-w-0">
-                  Birim fiyat KDV dahil düzenlenir. Satır indirimi yalnızca işaretlenirse geçerlidir.
-                </p>
+                <div className="sm:flex-1 min-w-0" />
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-xs min-w-[900px]">

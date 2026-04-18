@@ -165,7 +165,7 @@ export class OrganizationsService {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
     const o = raw as Record<string, unknown>;
     const out: MenuVisibilityOverrides = {};
-    for (const role of ['AGENT', 'ACCOUNTANT', 'ADMIN', 'SUPERADMIN'] as const) {
+    for (const role of ['AGENT', 'ACCOUNTANT', 'ADMIN'] as const) {
       const v = o[role];
       if (Array.isArray(v)) {
         const arr = v.filter((x): x is string => typeof x === 'string');
@@ -191,7 +191,6 @@ export class OrganizationsService {
             AGENT: effectiveMenuKeys('AGENT', overrides),
             ACCOUNTANT: effectiveMenuKeys('ACCOUNTANT', overrides),
             ADMIN: effectiveMenuKeys('ADMIN', overrides),
-            SUPERADMIN: effectiveMenuKeys('SUPERADMIN', overrides),
           },
         };
       });
@@ -205,7 +204,7 @@ export class OrganizationsService {
     if (!org) throw new NotFoundException('Organizasyon bulunamadı');
     const prev = this.parseSettings(org.settings);
     const mergedOverrides: Record<string, string[]> = {};
-    for (const role of ['AGENT', 'ACCOUNTANT', 'ADMIN', 'SUPERADMIN'] as const) {
+    for (const role of ['AGENT', 'ACCOUNTANT', 'ADMIN'] as const) {
       if (body[role] !== undefined) {
         mergedOverrides[role] = sanitizeMenuKeys(body[role] ?? []);
       }
@@ -224,7 +223,6 @@ export class OrganizationsService {
         AGENT: effectiveMenuKeys('AGENT', overrides),
         ACCOUNTANT: effectiveMenuKeys('ACCOUNTANT', overrides),
         ADMIN: effectiveMenuKeys('ADMIN', overrides),
-        SUPERADMIN: effectiveMenuKeys('SUPERADMIN', overrides),
       },
     };
   }

@@ -17,6 +17,7 @@ export interface Contact {
   city?: string | null;
   address?: string | null;
   billingAddress?: string | null;
+  shippingAddress?: string | null;
   taxOffice?: string | null;
   taxNumber?: string | null;
   identityNumber?: string | null;

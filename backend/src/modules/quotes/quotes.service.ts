@@ -8,6 +8,7 @@ import { join } from 'path';
 import { readFileSync, existsSync } from 'fs';
 import { normalizeWhatsappChatId } from '../../common/whatsapp-chat-id';
 import { splitSearchTokens } from '../../common/search-tokens';
+import { AuditLogService } from '../audit-log/audit-log.service';
 
 interface CreateQuoteItem {
   productId?: string;
@@ -33,6 +34,7 @@ export class QuotesService {
     private pdfService: PdfService,
     private wahaService: WahaService,
     private mailService: MailService,
+    private auditLog: AuditLogService,
   ) {}
 
   private calcLineTotal(item: CreateQuoteItem): number {
@@ -281,6 +283,13 @@ export class QuotesService {
         },
       },
       include: this.includeRelations,
+    });
+    this.auditLog.log({
+      userId,
+      action: 'CREATE',
+      entity: 'Quote',
+      entityId: quote.id,
+      details: { grandTotal: quote.grandTotal, itemCount: data.items.length },
     });
     return quote;
   }

@@ -1,8 +1,7 @@
-/** Sidebar üst seviye anahtarları — [frontend/src/components/layout/Sidebar.tsx] ile uyumlu */
+/** Sidebar üst seviye anahtarları — [frontend/src/lib/menu-keys.ts] ile uyumlu */
 export const MENU_KEYS = [
   'dashboard',
   'inbox',
-  'groups',
   'contacts',
   'leads',
   'products',
@@ -17,13 +16,12 @@ export const MENU_KEYS = [
   'settings',
   'support',
   'ecommerce',
-  'superadmin',
 ] as const;
 
 export type MenuKey = (typeof MENU_KEYS)[number];
 
 export type MenuVisibilityOverrides = Partial<
-  Record<'AGENT' | 'ACCOUNTANT' | 'ADMIN' | 'SUPERADMIN', string[]>
+  Record<'AGENT' | 'ACCOUNTANT' | 'ADMIN', string[]>
 >;
 
 const SET_ALL = new Set<string>(MENU_KEYS);
@@ -32,11 +30,10 @@ const SET_ALL = new Set<string>(MENU_KEYS);
 export function defaultAllowedMenuKeys(role: string | undefined): Set<string> {
   const r = role ?? 'AGENT';
   if (r === 'SUPERADMIN') return new Set(SET_ALL);
-  if (r === 'ADMIN') return new Set(MENU_KEYS.filter((k) => k !== 'superadmin'));
+  if (r === 'ADMIN') return new Set(SET_ALL);
   if (r === 'ACCOUNTANT') {
     return new Set([
       'inbox',
-      'groups',
       'contacts',
       'leads',
       'quotes',
@@ -46,13 +43,12 @@ export function defaultAllowedMenuKeys(role: string | undefined): Set<string> {
       'calendar',
     ]);
   }
-  // AGENT
-  return new Set(['inbox', 'groups', 'contacts', 'leads', 'quotes', 'orders', 'tasks', 'calendar']);
+  return new Set(['inbox', 'contacts', 'leads', 'quotes', 'orders', 'tasks', 'calendar']);
 }
 
 export function sanitizeMenuKeys(input: string[] | undefined): string[] {
   if (!input?.length) return [];
-  const allowed = new Set(MENU_KEYS);
+  const allowed = new Set<string>(MENU_KEYS);
   return [...new Set(input.filter((k) => allowed.has(k as MenuKey)))];
 }
 

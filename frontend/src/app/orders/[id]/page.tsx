@@ -37,6 +37,8 @@ interface OrderItemRow {
 interface SalesOrder {
   id: string;
   orderNumber: number;
+  externalId?: string | null;
+  source?: string;
   status: OrderStatus;
   currency: string;
   grandTotal: number;
@@ -275,6 +277,9 @@ export default function OrderDetailPage() {
               <h1 className="text-lg font-bold text-gray-900 flex items-center gap-2 flex-wrap">
                 <Package className="w-5 h-5 text-whatsapp" />
                 {formatOrderNo(order.orderNumber)}
+                {order.source === 'TSOFT' && (
+                  <span className="inline-flex text-[9px] font-bold px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700 uppercase tracking-wide">Site Siparişi</span>
+                )}
                 <PanelEditedBadge at={order.panelEditedAt} />
               </h1>
               <p className="text-sm text-gray-500 mt-0.5">

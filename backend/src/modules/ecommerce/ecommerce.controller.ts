@@ -68,6 +68,13 @@ export class EcommerceController {
     return this.ecommerceService.syncTsoftCustomers(this.orgId(user));
   }
 
+  @Post('tsoft/sync-orders')
+  @UseGuards(RolesGuard)
+  @Roles('ADMIN')
+  syncTsoftOrders(@CurrentUser() user: { id: string; role?: string; organizationId?: string | null }) {
+    return this.ecommerceService.syncTsoftOrders(this.orgId(user), user.id);
+  }
+
   @Get('tsoft/products')
   @UseGuards(RolesGuard)
   @Roles('ADMIN')

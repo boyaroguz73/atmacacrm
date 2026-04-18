@@ -426,7 +426,7 @@ export default function NewQuotePage() {
 
     setSubmitting(true);
     try {
-      await api.post('/quotes', {
+      const res = await api.post('/quotes', {
         contactId: selectedContact.id,
         currency,
         discountType,
@@ -455,7 +455,7 @@ export default function NewQuotePage() {
         })),
       });
       toast.success('Teklif oluşturuldu');
-      router.push('/quotes');
+      router.push(`/quotes/${res.data.id}`);
     } catch {
       toast.error('Teklif kaydedilemedi');
     } finally {
@@ -534,7 +534,6 @@ export default function NewQuotePage() {
         </button>
         <div className="min-w-0">
           <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Yeni Teklif</h1>
-          <p className="text-sm text-gray-500 mt-1">Kişi, ürün kalemleri ve koşullar — mobilde tablo yatay kayar.</p>
         </div>
       </div>
 
@@ -784,25 +783,7 @@ export default function NewQuotePage() {
                 + Boş satır
               </button>
             </div>
-            <div className="px-5 pt-3 flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-2 sm:gap-4">
-              <label className="flex items-center gap-2 text-xs text-gray-700">
-                <span className="font-medium text-gray-600 shrink-0">KDV oranı (tüm satırlar)</span>
-                <select
-                  value={lineVatRate}
-                  onChange={(e) => setLineVatRate(Number(e.target.value))}
-                  className="px-2 py-1.5 border border-gray-200 rounded-lg text-xs font-medium bg-white focus:outline-none focus:border-whatsapp"
-                >
-                  {lineVatSelectOptions.map((v) => (
-                    <option key={v} value={v}>
-                      %{v}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <p className="text-[11px] text-gray-500 sm:flex-1 min-w-0">
-                Birim fiyat KDV dahil düzenlenir. Satır indirimi yalnızca aşağıdaki kutudan işaretlenirse geçerlidir (% veya TL).
-              </p>
-            </div>
+            
             <div className="overflow-x-auto w-full min-w-0">
                 <table className="w-full text-xs min-w-[780px]">
                 <thead>
@@ -1115,10 +1096,7 @@ export default function NewQuotePage() {
                 className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-whatsapp tabular-nums bg-white"
               />
             </div>
-            <p className="text-[11px] text-gray-400 leading-relaxed">
-              Tutarlar seçilen para birimine göre gösterilir. Kayıt sonrası teklif listesine
-              yönlendirilirsiniz.
-            </p>
+            
             </div>
           <div className="flex flex-col gap-2">
             <button

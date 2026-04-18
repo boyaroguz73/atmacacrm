@@ -3,12 +3,14 @@ import { PrismaService } from '../prisma/prisma.service';
 import { LeadStatus } from '@prisma/client';
 import { TasksService } from '../tasks/tasks.service';
 import { assertLeadStatusTransition } from '../../common/lead-status-transitions';
+import { AuditLogService } from '../audit-log/audit-log.service';
 
 @Injectable()
 export class LeadsService {
   constructor(
     private prisma: PrismaService,
     private tasksService: TasksService,
+    private auditLog: AuditLogService,
   ) {}
 
   private readonly statusLabels: Record<string, string> = {
@@ -115,6 +117,15 @@ export class LeadsService {
       }
     }
 
+    this.auditLog.log({
+      userId: actingUserId ?? undefined,
+      organizationId: updated.contact.organizationId ?? undefined,
+      action: 'UPDATE',
+      entity: 'Lead',
+      entityId: params.leadId,
+      details: { from: lead.status, to: params.to },
+    });
+
     return updated;
   }
 
@@ -176,7 +187,7 @@ export class LeadsService {
     });
     if (existing) return existing;
 
-    return this.prisma.lead.create({
+    const lead = await this.prisma.lead.create({
       data: {
         contactId: targetContactId,
         status: data.status || LeadStatus.NEW,
@@ -186,6 +197,14 @@ export class LeadsService {
       },
       include: { contact: true },
     });
+    this.auditLog.log({
+      organizationId,
+      action: 'CREATE',
+      entity: 'Lead',
+      entityId: lead.id,
+      details: { contactId: targetContactId, status: lead.status },
+    });
+    return lead;
   }
 
   async findAll(params: {

@@ -20,15 +20,19 @@ import {
   isValidPhoneNumber,
 } from '../../common/contact-phone';
 import { splitSearchTokens } from '../../common/search-tokens';
+import { AuditLogService } from '../audit-log/audit-log.service';
 
 @Injectable()
 export class ContactsService {
   private readonly logger = new Logger(ContactsService.name);
 
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private auditLog: AuditLogService,
+  ) {}
 
   async findOrCreate(phone: string, name?: string, organizationId?: string | null) {
-    const raw = String(phone ?? '').trim();
+    const raw = String(phone ?? '').trim().replace(/@[cgs]\.us$/i, '');
     if (raw.startsWith('group:')) {
       const existing = await this.prisma.contact.findFirst({ where: { phone: raw } });
       if (existing) {
@@ -331,7 +335,15 @@ export class ContactsService {
       if (nextBilling && !current.address) patch.address = nextBilling;
     }
 
-    return this.prisma.contact.update({ where: { id }, data: patch });
+    const updated = await this.prisma.contact.update({ where: { id }, data: patch });
+    this.auditLog.log({
+      organizationId: current.organizationId ?? undefined,
+      action: 'UPDATE',
+      entity: 'Contact',
+      entityId: id,
+      details: { name: updated.name, changedFields: Object.keys(data) },
+    });
+    return updated;
   }
 
   async addTag(id: string, tag: string) {
@@ -354,6 +366,13 @@ export class ContactsService {
     const contact = await this.prisma.contact.findUnique({ where: { id } });
     if (!contact) throw new NotFoundException('Kişi bulunamadı');
     await this.prisma.contact.delete({ where: { id } });
+    this.auditLog.log({
+      organizationId: contact.organizationId ?? undefined,
+      action: 'DELETE',
+      entity: 'Contact',
+      entityId: id,
+      details: { name: contact.name, phone: contact.phone },
+    });
     return { message: 'Kişi silindi' };
   }
 

@@ -149,12 +149,16 @@ export function canonicalContactPhone(phone: string): string {
  * Veritabanında eşleşme için olası anahtarlar (eski 0555 / 555 kayıtları)
  */
 export function contactPhoneLookupKeys(phone: string): string[] {
-  const canonical = canonicalContactPhone(phone);
-  const raw = String(phone ?? '').replace(/\D/g, '');
+  const cleaned = String(phone ?? '').replace(/@[cgs]\.us$/i, '');
+  const canonical = canonicalContactPhone(cleaned);
+  const raw = String(cleaned).replace(/\D/g, '');
   const keys = new Set<string>();
   
   if (canonical) keys.add(canonical);
   if (raw && raw !== canonical) keys.add(raw);
+  
+  // Eski kayıtlarda @c.us ile saklanmış olabilir
+  if (canonical) keys.add(`${canonical}@c.us`);
   
   // TR numarası ise alternatif formatları ekle
   if (canonical.startsWith('90') && canonical.length === 12) {
@@ -235,11 +239,30 @@ export function formatPhoneDisplay(phone: string | null | undefined): string {
     return `+90 ${rest.slice(0, 3)} ${rest.slice(3, 6)} ${rest.slice(6, 8)} ${rest.slice(8)}`;
   }
   
-  // Diğer uluslararası numaralar
+  // Diğer uluslararası numaralar — ülke kodunu ayır
   if (digits.length >= 10 && digits.length <= 15) {
+    const cc = guessCountryCodeLength(digits);
+    if (cc > 0) {
+      const country = digits.slice(0, cc);
+      const rest = digits.slice(cc);
+      return `+${country} ${rest.replace(/(\d{3})(?=\d)/g, '$1 ').trim()}`;
+    }
     return `+${digits}`;
   }
   
-  // Geçersiz uzunluk - olduğu gibi göster
   return phone;
+}
+
+const CC1 = new Set(['1','7']);
+const CC2 = new Set([
+  '20','27','30','31','32','33','34','36','39','40','41','43','44','45',
+  '46','47','48','49','51','52','53','54','55','56','57','58','60','61',
+  '62','63','64','65','66','81','82','84','86','91','92','93','94','95',
+  '98',
+]);
+
+function guessCountryCodeLength(digits: string): number {
+  if (CC1.has(digits[0])) return 1;
+  if (CC2.has(digits.slice(0, 2))) return 2;
+  return 3;
 }

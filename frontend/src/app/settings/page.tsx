@@ -452,8 +452,7 @@ export default function SettingsPage() {
                 Profil Fotoğraflarını Güncelle
               </p>
               <p className="text-xs text-gray-400 mt-0.5">
-                Yalnızca fotoğrafı <strong>olmayan</strong> kişiler için WhatsApp&apos;tan indirir.
-                Aynı kişi için disk&apos;te tek dosya tutulur.
+                Fotoğrafı olmayan kişiler için güncelleme yapar.
               </p>
               <label className="flex items-center gap-2 mt-2 text-xs text-gray-600 cursor-pointer select-none">
                 <input
@@ -488,34 +487,33 @@ export default function SettingsPage() {
             </button>
           </div>
 
-          <div className="flex items-center justify-between p-4 bg-red-50 rounded-xl border border-red-100">
+          <div className="flex items-center justify-between p-4 bg-amber-50 rounded-xl border border-amber-100">
             <div>
-              <p className="font-medium text-sm text-red-800">Tüm Avatarları Sıfırla</p>
-              <p className="text-xs text-red-500 mt-0.5">
-                DB&apos;deki tüm avatar kayıtlarını temizler ve disk&apos;teki dosyaları siler.
-                Bir sonraki senkronda telefon numarasına göre yeniden indirilir.
-                <strong> Disk doluysa bunu çalıştır.</strong>
+              <p className="font-medium text-sm text-amber-800">Kişi Fotoğraflarını Sıfırla ve Güncelle</p>
+              <p className="text-xs text-amber-600 mt-0.5">
+                Tüm fotoğrafları temizler ve yeniden indirir.
               </p>
             </div>
             <button
               onClick={async () => {
-                if (!confirm('Tüm avatar dosyaları silinecek. Emin misiniz?')) return;
+                if (!confirm('Tüm kişi fotoğrafları sıfırlanacak ve yeniden indirilecek. Devam edilsin mi?')) return;
                 const btn = document.getElementById('reset-avatars-btn');
                 if (btn) btn.setAttribute('disabled', 'true');
                 try {
-                  const { data } = await api.post('/contacts/reset-all-avatars', {});
-                  toast.success(data.message || 'Avatarlar sıfırlandı');
+                  await api.post('/contacts/reset-all-avatars', {});
+                  const { data } = await api.post('/contacts/refresh-all-avatars', { force: true });
+                  toast.success(data.message || 'Fotoğraflar sıfırlandı ve güncelleme başlatıldı');
                 } catch (err) {
-                  toast.error(getApiErrorMessage(err, 'Sıfırlama başarısız'));
+                  toast.error(getApiErrorMessage(err, 'İşlem başarısız'));
                 } finally {
                   if (btn) btn.removeAttribute('disabled');
                 }
               }}
               id="reset-avatars-btn"
-              className="flex-shrink-0 flex items-center gap-2 px-4 py-2 bg-red-100 text-red-700 rounded-lg text-xs font-medium hover:bg-red-200 transition-colors disabled:opacity-50"
+              className="flex-shrink-0 flex items-center gap-2 px-4 py-2 bg-amber-100 text-amber-700 rounded-lg text-xs font-medium hover:bg-amber-200 transition-colors disabled:opacity-50"
             >
-              <Trash2 className="w-4 h-4" />
-              Sıfırla
+              <ImageIcon className="w-4 h-4" />
+              Sıfırla ve Güncelle
             </button>
           </div>
         </div>

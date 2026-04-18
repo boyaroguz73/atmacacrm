@@ -812,6 +812,10 @@ model QuoteItem {
 model SalesOrder {
   id                    String      @id @default(uuid())
   orderNumber           Int         @unique @default(autoincrement())
+  /// T-Soft / harici sipariş ID'si (tekil; upsert için)
+  externalId            String?     @unique
+  /// Siparişin kaynağı: MANUAL | TSOFT
+  source                String      @default("MANUAL")
   quoteId               String?     @unique
   contactId             String
   createdById           String

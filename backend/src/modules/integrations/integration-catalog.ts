@@ -16,7 +16,7 @@ export const INTEGRATION_CATALOG: IntegrationDef[] = [
   {
     key: 'whatsapp',
     name: 'WhatsApp',
-    description: 'WhatsApp Business API ile müşterilerinizle iletişim kurun. QR kod ile hızlı bağlantı.',
+    description: 'WhatsApp mesajlaşma kanalı',
     category: 'messaging',
     featureFlag: 'whatsapp',
     icon: 'whatsapp',
