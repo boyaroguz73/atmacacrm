@@ -482,6 +482,31 @@ export class MessagesService implements OnModuleInit {
       });
     }
 
+    // Yerel dosya ise (örn. /uploads/products/xxx.jpg) doğrudan disk'ten oku, HTTP yapmaya gerek yok
+    const isLocalUploadUrl =
+      url.startsWith('/uploads/') || url.startsWith('uploads/');
+    if (isLocalUploadUrl) {
+      const localFile = join(process.cwd(), url.startsWith('/') ? url.slice(1) : url);
+      if (existsSync(localFile)) {
+        this.logger.debug(`Ürün görseli yerel dosyadan okunuyor: ${localFile}`);
+        const mediaUrl = url.startsWith('/') ? url : `/${url}`;
+        try {
+          return await this.sendMedia({
+            conversationId,
+            sessionName,
+            chatId,
+            mediaUrl,
+            caption,
+            sentById,
+          });
+        } catch (e: any) {
+          this.logger.warn(`Yerel ürün görseli gönderilemedi: ${e?.message}`);
+          return this.sendText({ conversationId, sessionName, chatId, body: caption, sentById });
+        }
+      }
+      this.logger.warn(`Yerel ürün görseli dosyası bulunamadı: ${localFile}`);
+    }
+
     const dir = join(process.cwd(), 'uploads', 'product-shares');
     mkdirSync(dir, { recursive: true });
     const lower = url.toLowerCase();
@@ -490,10 +515,12 @@ export class MessagesService implements OnModuleInit {
     const filename = `${uuid()}${ext}`;
     const fullPath = join(dir, filename);
 
+    this.logger.debug(`Ürün görseli indiriliyor: productId=${productId} url=${url}`);
+
     try {
       const res = await axios.get<ArrayBuffer>(url, {
         responseType: 'arraybuffer',
-        timeout: 90_000,
+        timeout: 30_000,
         maxContentLength: 12 * 1024 * 1024,
         validateStatus: (s) => s >= 200 && s < 400,
         headers: { 'User-Agent': 'AtmacaCRM-ProductShare/1.0' },
@@ -505,7 +532,7 @@ export class MessagesService implements OnModuleInit {
           ? `${e.message}${e.response ? ` (HTTP ${e.response.status})` : ''}`
           : e?.message || String(e);
       this.logger.warn(
-        `Ürün görseli indirilemedi, metin fallback kullanılacak. productId=${productId} error=${msg}`,
+        `Ürün görseli indirilemedi, metin fallback kullanılacak. productId=${productId} url=${url} error=${msg}`,
       );
       return this.sendText({
         conversationId,
