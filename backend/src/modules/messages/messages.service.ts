@@ -186,6 +186,11 @@ export class MessagesService implements OnModuleInit {
     return { sessionName, fileIds: [...new Set(rawCandidates)] };
   }
 
+  private isBackfillExhausted(meta: Record<string, any> | undefined): boolean {
+    if (!meta) return false;
+    return meta.backfillFailed === true;
+  }
+
   private async backfillConversationMedia(messages: any[]) {
     const backfillable = new Set(['AUDIO', 'VIDEO', 'IMAGE', 'DOCUMENT']);
     const pool: any[] = [];
@@ -193,6 +198,11 @@ export class MessagesService implements OnModuleInit {
 
     for (const m of messages) {
       if (!m?.waMessageId || !m.mediaType || !backfillable.has(String(m.mediaType))) continue;
+      const meta = m.metadata && typeof m.metadata === 'object'
+        ? (m.metadata as Record<string, any>)
+        : undefined;
+      if (this.isBackfillExhausted(meta)) continue;
+
       const sessionName = m.session?.name ? String(m.session.name) : '';
       const mediaUrl = String(m.mediaUrl || '').trim();
 
@@ -231,7 +241,22 @@ export class MessagesService implements OnModuleInit {
             break;
           }
         }
-        if (!hit) continue;
+        if (!hit) {
+          const prevMeta =
+            m.metadata && typeof m.metadata === 'object' ? (m.metadata as Record<string, any>) : {};
+          await this.prisma.message.update({
+            where: { id: m.id },
+            data: {
+              metadata: {
+                ...prevMeta,
+                backfillFailed: true,
+                backfillFailedAt: new Date().toISOString(),
+                fileIdTried: fileIds,
+              } as any,
+            },
+          });
+          continue;
+        }
 
         const inferredExt = this.extFromDownloaded(hit.downloaded, hit.fileId);
         const localName = `${uuid()}${inferredExt}`;
@@ -244,6 +269,7 @@ export class MessagesService implements OnModuleInit {
         const nextMeta = {
           ...prevMeta,
           source: 'media_backfill',
+          backfillFailed: false,
           originalMediaUrl: String(m.mediaUrl || '') || prevMeta.originalMediaUrl || null,
           originalMimeType:
             hit.downloaded.mimetype || m.mediaMimeType || prevMeta.originalMimeType || null,
