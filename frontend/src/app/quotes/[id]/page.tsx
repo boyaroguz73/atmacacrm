@@ -25,6 +25,7 @@ import {
 import toast from 'react-hot-toast';
 import { useAuthStore } from '@/store/auth';
 import { QuoteEmbeddedChat } from '@/components/quotes/QuoteEmbeddedChat';
+import { MeasurementLineCell } from '@/components/quotes/MeasurementLineCell';
 
 function toDateInputValue(iso: string | null | undefined): string {
   if (!iso) return '';
@@ -42,7 +43,7 @@ const STATUS_BADGE: Record<string, { label: string; cls: string }> = {
   EXPIRED: { label: 'Süresi Doldu', cls: 'bg-amber-50 text-amber-600' },
 };
 
-type PaymentModeUI = 'FULL' | 'DEPOSIT_50';
+type PaymentModeUI = 'FULL' | 'DEPOSIT_50' | 'CUSTOM';
 type DiscountType = 'PERCENT' | 'AMOUNT';
 type OrderPaymentModeUI = 'FULL' | 'DEPOSIT_50' | 'CUSTOM';
 
@@ -80,7 +81,7 @@ interface SupplierHit {
   name: string;
 }
 
-type ConvertSource = 'STOCK' | 'SUPPLIER' | 'EXISTING_CUSTOMER';
+type ConvertSource = 'STOCK' | 'SUPPLIER';
 
 interface ConvertItemSource {
   quoteItemId: string;
@@ -218,6 +219,7 @@ export default function QuoteDetailPage() {
   // Accept modal
   const [showAcceptModal, setShowAcceptModal] = useState(false);
   const [acceptPaymentMode, setAcceptPaymentMode] = useState<PaymentModeUI>('FULL');
+  const [acceptCustomPaymentAmount, setAcceptCustomPaymentAmount] = useState<string>('');
 
   // WhatsApp gönderim onay modalı
   const [showSendConfirm, setShowSendConfirm] = useState(false);
@@ -234,6 +236,11 @@ export default function QuoteDetailPage() {
     () => calcTotals(lines, discountType, discountValue, lineVatRate),
     [lines, discountType, discountValue, lineVatRate],
   );
+
+  const lineVatSelectOptions = useMemo(() => {
+    const s = new Set<number>([...LINE_VAT_OPTIONS, lineVatRate]);
+    return Array.from(s).sort((a, b) => a - b);
+  }, [lineVatRate]);
 
   const displayGrandTotal = grandTotalOverride && parseFloat(grandTotalOverride) > 0 
     ? parseFloat(grandTotalOverride) 
@@ -322,8 +329,15 @@ export default function QuoteDetailPage() {
 
   const finalizeProductLine = (
     p: ProductHit,
-    variant?: { id: string; name: string; unitPrice: number; metadata?: unknown },
+    variant?: { id: string; name: string; unitPrice: number; metadata?: unknown; vatRate?: number },
   ) => {
+    const vat =
+      variant?.vatRate != null && Number.isFinite(Number(variant.vatRate))
+        ? Math.round(Number(variant.vatRate))
+        : p.vatRate != null && Number.isFinite(Number(p.vatRate))
+          ? Math.round(Number(p.vatRate))
+          : null;
+    if (vat != null) setLineVatRate(vat);
     const measureHint = variant ? measurementHintFromVariantMetadata(variant.metadata) : '';
     setLines((prev) => [
       ...prev,
@@ -473,9 +487,6 @@ export default function QuoteDetailPage() {
           next.supplierId = '';
           next.supplierOrderNo = '';
         }
-        if (patch.source === 'EXISTING_CUSTOMER') {
-          next.supplierId = '';
-        }
         return next;
       }),
     );
@@ -485,20 +496,27 @@ export default function QuoteDetailPage() {
     for (const src of convertItemSources) {
       const item = (quote?.items || []).find((x: any) => String(x.id) === src.quoteItemId);
       const itemName = item?.name || 'Kalem';
-      if (src.source === 'SUPPLIER' && (!src.supplierId || !src.supplierOrderNo.trim())) {
-        toast.error(`${itemName} için tedarikçi ve sipariş no zorunlu`);
+      if (src.source === 'SUPPLIER' && !src.supplierId) {
+        toast.error(`${itemName} için tedarikçi seçimi zorunlu`);
         return;
       }
-      if (src.source === 'EXISTING_CUSTOMER' && !src.supplierOrderNo.trim()) {
-        toast.error(`${itemName} için eski müşteri referansı zorunlu`);
+      if (src.source === 'SUPPLIER' && !src.supplierOrderNo.trim()) {
+        toast.error(`${itemName} için tedarikçi sipariş no zorunlu`);
         return;
       }
     }
     if (
       convertPaymentMode === 'CUSTOM' &&
-      (!(Number(convertCustomPaymentValue) > 0) || Number(convertCustomPaymentValue) > 100)
+      !(Number(convertCustomPaymentValue) > 0)
     ) {
-      toast.error('Özel ödeme yüzdesi 0-100 arasında olmalıdır');
+      toast.error('Özel ödeme tutarı 0’dan büyük olmalıdır');
+      return;
+    }
+    if (
+      convertPaymentMode === 'CUSTOM' &&
+      Number(convertCustomPaymentValue) > Number(quote?.grandTotal || 0)
+    ) {
+      toast.error('Özel ödeme tutarı teklif toplamını aşamaz');
       return;
     }
     setActionLoading(convertManual ? 'convert-manual' : 'convert');
@@ -529,11 +547,17 @@ export default function QuoteDetailPage() {
   };
 
   const confirmAccept = async () => {
+    if (acceptPaymentMode === 'CUSTOM' && !(Number(acceptCustomPaymentAmount) > 0)) {
+      toast.error('Özel ödeme tutarı 0’dan büyük olmalıdır');
+      return;
+    }
     setActionLoading('accept');
     try {
       await api.patch(`/quotes/${id}/status`, {
         status: 'ACCEPTED',
-        paymentMode: acceptPaymentMode,
+        paymentMode: acceptPaymentMode === 'DEPOSIT_50' ? 'DEPOSIT_50' : 'FULL',
+        partialPaymentAmount:
+          acceptPaymentMode === 'CUSTOM' ? Number(acceptCustomPaymentAmount) || undefined : undefined,
         documentKind,
       });
       toast.success('Teklif kabul edildi');
@@ -685,7 +709,7 @@ export default function QuoteDetailPage() {
                     onChange={(e) => setLineVatRate(Number(e.target.value))}
                     className="px-2 py-1.5 border border-gray-200 rounded-lg text-xs font-medium bg-white focus:outline-none focus:border-whatsapp"
                   >
-                    {LINE_VAT_OPTIONS.map((v) => (
+                    {lineVatSelectOptions.map((v) => (
                       <option key={v} value={v}>
                         %{v}
                       </option>
@@ -757,13 +781,10 @@ export default function QuoteDetailPage() {
                           />
                         </td>
                         <td className="px-2 py-2">
-                          <input
+                          <MeasurementLineCell
+                            productId={line.productId}
                             value={line.measurementInfo ?? ''}
-                            onChange={(e) =>
-                              updateLine(line.key, { measurementInfo: e.target.value })
-                            }
-                            placeholder="Ölçü"
-                            className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-whatsapp"
+                            onChange={(next) => updateLine(line.key, { measurementInfo: next })}
                           />
                         </td>
                         <td className="px-2 py-2">
@@ -1103,6 +1124,29 @@ export default function QuoteDetailPage() {
                 <input
                   type="radio"
                   name="pay"
+                  checked={acceptPaymentMode === 'CUSTOM'}
+                  onChange={() => setAcceptPaymentMode('CUSTOM')}
+                />
+                <div className="w-full">
+                  <p className="font-medium text-gray-900">Özel miktar</p>
+                  <p className="text-xs text-gray-500">Ön ödeme tutarını kendiniz belirleyin</p>
+                  {acceptPaymentMode === 'CUSTOM' ? (
+                    <input
+                      type="number"
+                      min={0}
+                      step={0.01}
+                      value={acceptCustomPaymentAmount}
+                      onChange={(e) => setAcceptCustomPaymentAmount(e.target.value)}
+                      placeholder="Örn: 15000"
+                      className="mt-2 px-3 py-2 border border-gray-200 rounded-lg text-sm w-full md:w-56"
+                    />
+                  ) : null}
+                </div>
+              </label>
+              <label className="flex items-center gap-3 p-3 rounded-xl border border-gray-200 cursor-pointer hover:bg-gray-50">
+                <input
+                  type="radio"
+                  name="pay"
                   checked={acceptPaymentMode === 'DEPOSIT_50'}
                   onChange={() => setAcceptPaymentMode('DEPOSIT_50')}
                 />
@@ -1221,18 +1265,17 @@ export default function QuoteDetailPage() {
                       checked={convertPaymentMode === 'CUSTOM'}
                       onChange={() => setConvertPaymentMode('CUSTOM')}
                     />
-                    Özel yüzde
+                    Özel miktar
                   </label>
                 </div>
                 {convertPaymentMode === 'CUSTOM' ? (
                   <input
                     type="number"
                     min={0}
-                    max={100}
-                    step={1}
+                    step={0.01}
                     value={convertCustomPaymentValue}
                     onChange={(e) => setConvertCustomPaymentValue(e.target.value)}
-                    placeholder="Örn: 30"
+                    placeholder="Örn: 15000"
                     className="px-3 py-2 border border-gray-200 rounded-lg text-sm w-full md:w-48"
                   />
                 ) : null}
@@ -1255,7 +1298,6 @@ export default function QuoteDetailPage() {
                       >
                         <option value="STOCK">Stoktan</option>
                         <option value="SUPPLIER">Tedarikçi</option>
-                        <option value="EXISTING_CUSTOMER">Eski müşteri</option>
                       </select>
                       <select
                         value={src.supplierId}
@@ -1273,13 +1315,11 @@ export default function QuoteDetailPage() {
                       <input
                         type="text"
                         value={src.supplierOrderNo}
-                        disabled={src.source === 'STOCK'}
+                        disabled={src.source !== 'SUPPLIER' || !src.supplierId}
                         onChange={(e) =>
                           updateConvertSource(String(item.id), { supplierOrderNo: e.target.value })
                         }
-                        placeholder={
-                          src.source === 'EXISTING_CUSTOMER' ? 'Müşteri referansı' : 'Sipariş no'
-                        }
+                        placeholder="Sipariş no (opsiyonel)"
                         className="px-3 py-2 border border-gray-200 rounded-lg text-sm disabled:bg-gray-50 disabled:text-gray-400"
                       />
                     </div>
@@ -1492,7 +1532,11 @@ export default function QuoteDetailPage() {
               <div className="pt-2 border-t text-xs text-gray-600 space-y-1">
                 <p>
                   <span className="text-gray-500">Ödeme: </span>
-                  {quote.paymentMode === 'DEPOSIT_50' ? '%50 ön ödeme' : 'Tam ödeme'}
+                  {quote.partialPaymentAmount && Number(quote.partialPaymentAmount) > 0
+                    ? `Özel miktar (${fmtNum(Number(quote.partialPaymentAmount))} ${quote.currency})`
+                    : quote.paymentMode === 'DEPOSIT_50'
+                      ? '%50 ön ödeme'
+                      : 'Tam ödeme'}
                 </p>
                 {quote.acceptedAt && (
                   <p>

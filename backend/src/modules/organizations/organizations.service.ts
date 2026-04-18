@@ -274,6 +274,60 @@ export class OrganizationsService {
     return { suborder: next };
   }
 
+  getDefaultLocationSettings(organizationId: string) {
+    return this.prisma.organization
+      .findUnique({
+        where: { id: organizationId },
+        select: { settings: true },
+      })
+      .then((org) => {
+        const prev = this.parseSettings(org?.settings ?? null);
+        const loc = (prev.defaultLocation as Record<string, unknown> | undefined) ?? {};
+        return {
+          latitude: typeof loc.latitude === 'number' ? loc.latitude : null,
+          longitude: typeof loc.longitude === 'number' ? loc.longitude : null,
+          title: typeof loc.title === 'string' ? loc.title : '',
+          address: typeof loc.address === 'string' ? loc.address : '',
+        };
+      });
+  }
+
+  async patchDefaultLocationSettings(
+    organizationId: string,
+    body: {
+      latitude?: number | null;
+      longitude?: number | null;
+      title?: string | null;
+      address?: string | null;
+    },
+  ) {
+    const org = await this.prisma.organization.findUnique({
+      where: { id: organizationId },
+      select: { settings: true },
+    });
+    if (!org) throw new NotFoundException('Organizasyon bulunamadı');
+    const prev = this.parseSettings(org.settings);
+    const cur = (prev.defaultLocation as Record<string, unknown> | undefined) ?? {};
+    const nextLoc: Record<string, unknown> = {
+      ...cur,
+      ...body,
+      title: (body.title ?? (cur.title as string) ?? '').toString().trim(),
+      address: (body.address ?? (cur.address as string) ?? '').toString().trim(),
+    };
+    if (typeof nextLoc.latitude !== 'number' || !Number.isFinite(nextLoc.latitude)) {
+      nextLoc.latitude = null;
+    }
+    if (typeof nextLoc.longitude !== 'number' || !Number.isFinite(nextLoc.longitude)) {
+      nextLoc.longitude = null;
+    }
+    const nextSettings = { ...prev, defaultLocation: nextLoc };
+    await this.prisma.organization.update({
+      where: { id: organizationId },
+      data: { settings: nextSettings as Prisma.InputJsonValue },
+    });
+    return this.getDefaultLocationSettings(organizationId);
+  }
+
   async getOrganizationDashboard(organizationId: string) {
     const [users, sessions, contacts, conversations, messages] =
       await Promise.all([

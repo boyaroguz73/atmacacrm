@@ -11,13 +11,13 @@ export class OrdersService {
   private formatPaymentNote(payment?: {
     mode?: 'FULL' | 'DEPOSIT_50' | 'CUSTOM';
     customValue?: number | null;
-  }): string | null {
+  }, currency: string = 'TRY'): string | null {
     if (!payment?.mode || payment.mode === 'FULL') return 'Ödeme planı: Tam ödeme.';
     if (payment.mode === 'DEPOSIT_50') {
       return 'Ödeme planı: %50 ön ödeme (kalan tutar teslim öncesi tahsil edilecek).';
     }
     if (payment.mode === 'CUSTOM' && payment.customValue != null && payment.customValue > 0) {
-      return `Ödeme planı: Özel ön ödeme (%${payment.customValue}).`;
+      return `Ödeme planı: Özel ön ödeme (${payment.customValue} ${currency}).`;
     }
     return null;
   }
@@ -154,18 +154,26 @@ export class OrdersService {
     }[];
   }) {
     if (!data.items?.length) throw new BadRequestException('En az bir kalem gerekli');
+    if (
+      data.payment?.mode === 'CUSTOM' &&
+      data.payment.customValue != null &&
+      !(data.payment.customValue > 0)
+    ) {
+      throw new BadRequestException('Özel ödeme tutarı 0’dan büyük olmalıdır');
+    }
 
     let subtotal = 0; // KDV hariç toplam
     let vatTotal = 0;
     let grossTotal = 0;
     const items = data.items.map((item) => {
       const isFromStock = !!item.isFromStock;
-      const supplierId = item.supplierId || null;
-      const supplierOrderNo = item.supplierOrderNo?.trim() || null;
+      const supplierId = isFromStock ? null : item.supplierId || null;
+      const supplierOrderNo = isFromStock ? null : item.supplierOrderNo?.trim() || null;
+      if (!isFromStock && !supplierId) {
+        throw new BadRequestException(`${item.name} için tedarikçi seçimi zorunludur`);
+      }
       if (!isFromStock && !supplierOrderNo) {
-        throw new BadRequestException(
-          `${item.name || 'Kalem'} için stok dışı seçimde sipariş no/referans zorunludur`,
-        );
+        throw new BadRequestException(`${item.name} için tedarikçi sipariş no zorunludur`);
       }
       const lineGross = item.quantity * item.unitPrice;
       const divider = 1 + (item.vatRate / 100);
@@ -183,7 +191,14 @@ export class OrdersService {
       };
     });
 
-    const paymentNote = this.formatPaymentNote(data.payment);
+    const paymentNote = this.formatPaymentNote(data.payment, data.currency || 'TRY');
+    if (
+      data.payment?.mode === 'CUSTOM' &&
+      data.payment.customValue != null &&
+      data.payment.customValue > Math.round(grossTotal * 100) / 100
+    ) {
+      throw new BadRequestException('Özel ödeme tutarı sipariş toplamını aşamaz');
+    }
     const normalizedNotes = [
       paymentNote,
       data.notes?.trim() || null,

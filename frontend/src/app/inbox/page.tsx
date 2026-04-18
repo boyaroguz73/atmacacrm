@@ -24,6 +24,7 @@ export default function InboxPage() {
     updateMessageStatus,
     updateMessageReactions,
     updateMessageEdit,
+    updateMessageDeleted,
   } = useChatStore();
 
   const inboxLoadedOnce = useRef(false);
@@ -94,6 +95,9 @@ export default function InboxPage() {
     socket.on('message:edited', (data: any) => {
       updateMessageEdit(data.messageId, data.body);
     });
+    socket.on('message:deleted', (data: any) => {
+      if (data?.messageId) updateMessageDeleted(data.messageId);
+    });
 
     return () => {
       socket.off('conversation:updated');
@@ -101,9 +105,10 @@ export default function InboxPage() {
       socket.off('message:status');
       socket.off('message:reaction');
       socket.off('message:edited');
+      socket.off('message:deleted');
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filter]);
+  }, [filter, updateMessageDeleted]);
 
   return (
     <div className="flex h-full min-h-0">

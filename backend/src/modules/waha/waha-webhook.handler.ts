@@ -126,7 +126,13 @@ export class WahaWebhookHandler {
         // ─────────────────────────────────────────────────────────────
         
         // Grup için participant bilgisini al (mesajı gönderen kişi)
-        const rawParticipant = msg.author || msg.participant || msg._data?.author || msg._data?.participant;
+        const rawParticipant =
+          msg.author ||
+          msg.participant ||
+          msg._data?.author ||
+          msg._data?.participant ||
+          // Bazı event payload'larında author yok, from içinde kişi JID'si gelebiliyor.
+          ((msg.from && msg.from !== chatId && String(msg.from).includes('@')) ? msg.from : null);
         participantPhone = extractPhoneFromParticipant(rawParticipant);
         participantName =
           msg.pushName ||
@@ -303,6 +309,8 @@ export class WahaWebhookHandler {
           (typeof msg.id?._serialized === 'string' && msg.id._serialized) ||
           (typeof msg.id?.id === 'string' && msg.id.id) ||
           (typeof msg.id === 'string' && msg.id) ||
+          (typeof msg.key?.id === 'string' && msg.key.id) ||
+          (typeof msg.key?.id?._serialized === 'string' && msg.key.id._serialized) ||
           '';
         const thumbnailBase64 =
           (typeof msg.media?.preview === 'string' && msg.media.preview) ||
@@ -381,9 +389,36 @@ export class WahaWebhookHandler {
       const direction = isFromMe ? MessageDirection.OUTGOING : MessageDirection.INCOMING;
       
       const isVcard = msg.type === 'vcard' || msg.type === 'multi_vcard' || /^BEGIN:VCARD/i.test(String(msg.body || ''));
+      const isLocation = msg.type === 'location' || msg.type === 'live_location';
       const vcardInfo = isVcard ? parseVcardPayload(msg.body || msg._data?.body || '') : null;
+      const latRaw = msg.lat ?? msg.latitude ?? msg._data?.lat ?? msg._data?.latitude ?? msg.location?.latitude;
+      const lngRaw = msg.lng ?? msg.longitude ?? msg._data?.lng ?? msg._data?.longitude ?? msg.location?.longitude;
+      const lat = Number(latRaw);
+      const lng = Number(lngRaw);
+      const hasCoords = Number.isFinite(lat) && Number.isFinite(lng);
+      const locationTitle =
+        (typeof msg.loc === 'string' && msg.loc.trim()) ||
+        (typeof msg._data?.loc === 'string' && msg._data.loc.trim()) ||
+        (typeof msg.location?.name === 'string' && msg.location.name.trim()) ||
+        null;
+      const locationAddress =
+        (typeof msg.body === 'string' && msg.body.trim()) ||
+        (typeof msg._data?.body === 'string' && msg._data.body.trim()) ||
+        (typeof msg.location?.address === 'string' && msg.location.address.trim()) ||
+        null;
+      const mapsUrl = hasCoords ? `https://maps.google.com/?q=${lat},${lng}` : null;
       const mergedMeta = {
         ...(mediaMeta || {}),
+        ...(isLocation
+          ? {
+              kind: 'location',
+              latitude: hasCoords ? lat : null,
+              longitude: hasCoords ? lng : null,
+              title: locationTitle,
+              address: locationAddress,
+              mapsUrl,
+            }
+          : {}),
         ...(isVcard
           ? {
               kind: 'vcard',
@@ -394,6 +429,8 @@ export class WahaWebhookHandler {
       };
       const bodyPreview = isVcard
         ? `👤 ${vcardInfo?.contactName || 'Kişi kartı'}${vcardInfo?.contactPhone ? ` (${vcardInfo.contactPhone})` : ''}`
+        : isLocation
+          ? `📍 ${locationTitle || locationAddress || (hasCoords ? `${lat}, ${lng}` : 'Konum')}`
         : (msg.body || (mediaType ? `📎 ${mediaType}` : ''));
 
       const messageData: any = {

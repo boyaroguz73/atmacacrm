@@ -186,6 +186,12 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
     { jid: string; phone: string | null; role: string; contactId: string | null; name: string | null }[]
   >([]);
   const [groupParticipantsLoading, setGroupParticipantsLoading] = useState(false);
+  const [defaultLocation, setDefaultLocation] = useState<{
+    latitude: number | null;
+    longitude: number | null;
+    title?: string;
+    address?: string;
+  } | null>(null);
 
   useEffect(() => {
     setMounted(true);
@@ -260,6 +266,17 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
         if (u.id) setCurrentUserId(String(u.id));
       }
     } catch {}
+    api
+      .get('/organizations/my/default-location')
+      .then(({ data }) => {
+        setDefaultLocation({
+          latitude: Number.isFinite(Number(data?.latitude)) ? Number(data.latitude) : null,
+          longitude: Number.isFinite(Number(data?.longitude)) ? Number(data.longitude) : null,
+          title: typeof data?.title === 'string' ? data.title : '',
+          address: typeof data?.address === 'string' ? data.address : '',
+        });
+      })
+      .catch(() => setDefaultLocation(null));
   }, []);
 
   useEffect(() => {
@@ -545,6 +562,37 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
   };
 
   const handleSendLocation = async () => {
+    const sendPayload = async (lat: number, lng: number, title?: string, address?: string) => {
+      await api.post('/messages/send-location', {
+        conversationId: activeConversation.id,
+        sessionName: activeConversation.session.name,
+        chatId,
+        latitude: lat,
+        longitude: lng,
+        title: title || 'Konum',
+        address,
+      });
+    };
+
+    if (
+      defaultLocation &&
+      Number.isFinite(Number(defaultLocation.latitude)) &&
+      Number.isFinite(Number(defaultLocation.longitude))
+    ) {
+      try {
+        await sendPayload(
+          Number(defaultLocation.latitude),
+          Number(defaultLocation.longitude),
+          defaultLocation.title || 'Sabit Konum',
+          defaultLocation.address || undefined,
+        );
+        toast.success('Sabit konum gönderildi');
+        return;
+      } catch (err: any) {
+        toast.error(getApiErrorMessage(err, 'Sabit konum gönderilemedi'));
+      }
+    }
+
     const raw = window.prompt(
       'Konum girin: "lat,lng" veya Google Maps linki',
       '',
@@ -560,15 +608,7 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
       return;
     }
     try {
-      await api.post('/messages/send-location', {
-        conversationId: activeConversation.id,
-        sessionName: activeConversation.session.name,
-        chatId,
-        latitude: lat,
-        longitude: lng,
-        title: 'Konum',
-        address: value.startsWith('http') ? value : undefined,
-      });
+      await sendPayload(lat, lng, 'Konum', value.startsWith('http') ? value : undefined);
       toast.success('Konum gönderildi');
     } catch (err: any) {
       toast.error(getApiErrorMessage(err, 'Konum gönderilemedi'));
@@ -592,6 +632,25 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
 
   const isVcardMessage = (msg: Message) =>
     msg.metadata?.kind === 'vcard' || /^BEGIN:VCARD/i.test(String(msg.body || ''));
+  const locationInfo = (msg: Message) => {
+    const m = (msg.metadata || {}) as any;
+    const lat = Number(m.latitude);
+    const lng = Number(m.longitude);
+    const hasCoords = Number.isFinite(lat) && Number.isFinite(lng);
+    const title = typeof m.title === 'string' ? m.title.trim() : '';
+    const address = typeof m.address === 'string' ? m.address.trim() : '';
+    const urlFromMeta = typeof m.mapsUrl === 'string' ? m.mapsUrl.trim() : '';
+    const urlFromBody = String(msg.body || '').match(/https?:\/\/(?:www\.)?(?:google\.[^/\s]+\/maps|maps\.app\.goo\.gl)[^\s]*/i)?.[0] || '';
+    const mapsUrl = hasCoords
+      ? `https://maps.google.com/?q=${lat},${lng}`
+      : (urlFromMeta || urlFromBody || '');
+    const isLocation =
+      m.kind === 'location' ||
+      hasCoords ||
+      !!mapsUrl ||
+      /^📍/.test(String(msg.body || '').trim());
+    return { isLocation, hasCoords, lat, lng, title, address, mapsUrl };
+  };
 
   const quickEmojis = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
 
@@ -647,6 +706,44 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
     } catch {
       toast.error('Dosya indirilemedi');
     }
+  };
+
+  const inferDownloadFilename = (msg: Message, url: string): string => {
+    const named = String(msg.body || '').trim();
+    if (named && /\.[a-z0-9]{2,8}$/i.test(named)) return named;
+
+    const meta = msg.metadata as Record<string, unknown> | undefined;
+    const metaName =
+      typeof meta?.filename === 'string'
+        ? meta.filename.trim()
+        : typeof meta?.originalFilename === 'string'
+          ? String(meta.originalFilename).trim()
+          : '';
+    if (metaName && /\.[a-z0-9]{2,8}$/i.test(metaName)) return metaName;
+
+    const mime =
+      String(msg.mediaMimeType || msg.metadata?.originalMimeType || '').toLowerCase().trim();
+    const looksPdf =
+      mime.includes('pdf') || /\.pdf(\?|$)/i.test(url.split('?')[0] || '');
+    if (looksPdf) {
+      const bodyText = String(msg.body || '');
+      const tkl = bodyText.match(/TKL-(\d+)/i);
+      if (tkl) return `Teklif-${tkl[1]}.pdf`;
+      const ftr = bodyText.match(/FTR-(\d+)/i);
+      if (ftr) return `Fatura-${ftr[1]}.pdf`;
+    }
+    if (mime.includes('pdf')) return `dosya-${msg.id}.pdf`;
+    if (mime.startsWith('audio/')) {
+      if (mime.includes('mpeg')) return `ses-${msg.id}.mp3`;
+      if (mime.includes('mp4')) return `ses-${msg.id}.m4a`;
+      return `ses-${msg.id}.ogg`;
+    }
+    if (mime.startsWith('video/')) return `video-${msg.id}.mp4`;
+    if (mime.startsWith('image/')) return `gorsel-${msg.id}.jpg`;
+
+    const tail = url.split('/').pop() || '';
+    if (tail && /\.[a-z0-9]{2,8}$/i.test(tail)) return tail;
+    return `dosya-${msg.id}`;
   };
 
   return (
@@ -832,6 +929,15 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
                   msg.mediaType === 'IMAGE' ||
                   mediaUrlResolved?.match(/\.(jpg|jpeg|png|gif|webp)(\?|$)/i);
                 const isImageMessage = !!(mediaUrlResolved && isImage);
+                const replyPreview =
+                  msg.metadata?.replyToBody?.trim() ||
+                  (msg.metadata?.replyToMediaType ? `📎 ${msg.metadata.replyToMediaType}` : '');
+                const isDeletedMessage = !!msg.metadata?.deleted;
+                const loc = locationInfo(msg);
+                /** Webhook sadece "📎 AUDIO" yazdıysa gerçek metin yok say */
+                const isMediaTypeOnlyPlaceholder =
+                  !!msg.mediaType &&
+                  /^📎\s*(AUDIO|VIDEO|IMAGE|DOCUMENT)$/i.test(String(msg.body || '').trim());
 
                 return (
                   <div
@@ -845,7 +951,9 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
                       className={cn(
                         'relative',
                         isImageMessage
-                          ? 'w-full max-w-[min(92vw,720px)] sm:max-w-[min(85vw,800px)]'
+                          ? isOutgoing
+                            ? 'w-full max-w-[min(90vw,700px)] sm:max-w-[min(82vw,760px)]'
+                            : 'w-full max-w-[min(90vw,700px)] sm:max-w-[min(82vw,760px)]'
                           : 'max-w-[65%]',
                       )}
                     >
@@ -959,9 +1067,14 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
                           />
                         </div>
                       )}
+                      {msg.mediaType === 'AUDIO' && !mediaUrlResolved && (
+                        <div className="mb-1 text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-2 py-1.5">
+                          🎵 Ses dosyası sunucuya alınamadı. Sohbeti kapatıp tekrar açın veya sayfayı yenileyin.
+                        </div>
+                      )}
                       {msg.mediaType === 'AUDIO' && mediaUrlResolved && (
                         <div className="mb-1">
-                          <audio controls className="max-w-[240px] h-10">
+                          <audio controls className="max-w-[min(280px,85vw)] h-10" preload="metadata">
                             <source src={mediaUrlResolved} type={msg.mediaMimeType || 'audio/ogg'} />
                             Tarayıcınız ses oynatmayı desteklemiyor.
                           </audio>
@@ -969,7 +1082,9 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
                       )}
                       {mediaUrlResolved && !isImage && msg.mediaType && msg.mediaType !== 'AUDIO' && (
                         <button
-                          onClick={() => handleDownload(mediaUrlResolved, msg.body || undefined)}
+                          onClick={() =>
+                            handleDownload(mediaUrlResolved, inferDownloadFilename(msg, mediaUrlResolved))
+                          }
                           className="flex items-center gap-2 p-2.5 bg-gray-50 rounded-lg mb-1 hover:bg-gray-100 transition-colors border border-gray-100 w-full text-left"
                         >
                           <div className={cn(
@@ -991,7 +1106,37 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
                           </div>
                         </button>
                       )}
-                      {isVcardMessage(msg) ? (
+                      {replyPreview ? (
+                        <div className="mb-2 border-l-2 border-green-400 bg-green-50/70 rounded-r-md px-2 py-1">
+                          <div className="text-[10px] font-semibold text-green-700">Yanıtlanan mesaj</div>
+                          <div className="text-xs text-gray-700 truncate">{replyPreview}</div>
+                        </div>
+                      ) : null}
+                      {loc.isLocation ? (
+                        <div className="rounded-lg border border-green-200 bg-green-50 p-2.5 space-y-1.5">
+                          <div className="flex items-center gap-1.5 text-xs font-semibold text-green-700">
+                            <MapPin className="w-3.5 h-3.5" />
+                            Konum
+                          </div>
+                          {loc.title ? <div className="text-sm font-medium text-gray-800">{loc.title}</div> : null}
+                          {loc.address ? <div className="text-xs text-gray-600 break-all">{loc.address}</div> : null}
+                          {loc.hasCoords ? (
+                            <div className="text-[11px] text-gray-500">
+                              {loc.lat.toFixed(6)}, {loc.lng.toFixed(6)}
+                            </div>
+                          ) : null}
+                          {loc.mapsUrl ? (
+                            <a
+                              href={loc.mapsUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-flex text-xs text-green-700 hover:text-green-800 underline"
+                            >
+                              Haritada aç
+                            </a>
+                          ) : null}
+                        </div>
+                      ) : isVcardMessage(msg) ? (
                         <div className="rounded-lg border border-gray-200 bg-gray-50 p-2.5">
                           <div className="text-xs text-gray-500">Kişi kartı</div>
                           <div className="text-sm font-semibold text-gray-800">
@@ -1001,14 +1146,16 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
                             <div className="text-xs text-gray-600">{formatPhone(msg.metadata.contactPhone)}</div>
                           ) : null}
                         </div>
-                      ) : msg.body ? (
+                      ) : msg.body && !isMediaTypeOnlyPlaceholder ? (
                         <div>
                           <p className="text-sm text-gray-800 whitespace-pre-wrap break-all [overflow-wrap:anywhere]">
-                            {renderMessageBody(
-                              isLikelyEncodedPayload(msg.body) && !expandedMessages.has(msg.id)
-                                ? `${msg.body.slice(0, 420)}...`
-                                : msg.body,
-                            )}
+                            {isDeletedMessage
+                              ? 'Bu mesaj silindi'
+                              : renderMessageBody(
+                                  isLikelyEncodedPayload(msg.body) && !expandedMessages.has(msg.id)
+                                    ? `${msg.body.slice(0, 420)}...`
+                                    : msg.body,
+                                )}
                           </p>
                           {isLikelyEncodedPayload(msg.body) && (
                             <button

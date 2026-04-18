@@ -98,10 +98,13 @@ export class MessagesService {
       orderBy: { timestamp: 'desc' },
       take: limit,
       ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
-      include: { sentBy: { select: { id: true, name: true } } },
+      include: {
+        sentBy: { select: { id: true, name: true } },
+        session: { select: { name: true } },
+      },
     });
 
-    if (!cursor && messages.length > 0) {
+    if (messages.length > 0) {
       await this.backfillConversationMedia(messages);
     }
 
@@ -111,18 +114,52 @@ export class MessagesService {
     };
   }
 
+  /** WAHA /api/files URL veya boş mediaUrl için yerel dosyaya indir (ses/video vb.). */
+  private extFromDownloaded(downloaded: { filename?: string; mimetype?: string }, fileId: string): string {
+    const fromName = extname(downloaded.filename || '') || extname(fileId);
+    if (fromName) return fromName;
+    const mt = (downloaded.mimetype || '').split(';')[0].trim();
+    const map: Record<string, string> = {
+      'image/jpeg': '.jpg',
+      'image/png': '.png',
+      'image/gif': '.gif',
+      'image/webp': '.webp',
+      'video/mp4': '.mp4',
+      'audio/ogg': '.ogg',
+      'audio/opus': '.ogg',
+      'audio/mpeg': '.mp3',
+      'audio/mp4': '.m4a',
+      'application/pdf': '.pdf',
+    };
+    return map[mt] || (downloaded.mimetype?.startsWith('audio/') ? '.ogg' : '.bin');
+  }
+
   private async backfillConversationMedia(messages: any[]) {
-    const candidates = messages
-      .filter((m) => {
-        const mediaUrl = String(m.mediaUrl || '');
-        return (
-          !!m.mediaType &&
-          !!m.waMessageId &&
-          mediaUrl.includes('/api/files/') &&
-          !mediaUrl.includes('/uploads/')
-        );
-      })
-      .slice(0, 8);
+    const backfillable = new Set(['AUDIO', 'VIDEO', 'IMAGE', 'DOCUMENT']);
+    const pool: any[] = [];
+    const seen = new Set<string>();
+
+    for (const m of messages) {
+      if (!m?.waMessageId || !m.mediaType || !backfillable.has(String(m.mediaType))) continue;
+      const sessionName = m.session?.name ? String(m.session.name) : '';
+      const mediaUrl = String(m.mediaUrl || '').trim();
+
+      const fromApiFiles =
+        mediaUrl.includes('/api/files/') && !mediaUrl.includes('/uploads/');
+      const missingLocal =
+        !mediaUrl ||
+        (!mediaUrl.includes('/uploads/') && !mediaUrl.startsWith('http'));
+
+      if (fromApiFiles || (missingLocal && sessionName)) {
+        const key = m.id;
+        if (!seen.has(key)) {
+          seen.add(key);
+          pool.push(m);
+        }
+      }
+    }
+
+    const candidates = pool.slice(0, 14);
     if (candidates.length === 0) return;
 
     mkdirSync(this.mediaBackfillDir, { recursive: true });
@@ -133,18 +170,16 @@ export class MessagesService {
         const match = mediaUrl.match(/\/api\/files\/([^/]+)\/([^/?#]+)/i);
         const sessionFromUrl = match?.[1] ? decodeURIComponent(match[1]) : null;
         const fileIdFromUrl = match?.[2] ? decodeURIComponent(match[2]) : null;
-        const sessionName = sessionFromUrl || '';
+        const sessionName =
+          sessionFromUrl || (m.session?.name ? String(m.session.name) : '');
         const fileId = fileIdFromUrl || String(m.waMessageId || '');
         if (!sessionName || !fileId) continue;
 
         const downloaded = await this.wahaService.downloadFile(sessionName, fileId);
         if (!downloaded?.data?.length) continue;
 
-        const inferredExt =
-          extname(downloaded.filename || '') ||
-          extname(fileId) ||
-          (downloaded.mimetype?.startsWith('image/') ? '.jpg' : '');
-        const localName = `${uuid()}${inferredExt || ''}`;
+        const inferredExt = this.extFromDownloaded(downloaded, fileId);
+        const localName = `${uuid()}${inferredExt}`;
         const fullPath = join(this.mediaBackfillDir, localName);
         writeFileSync(fullPath, downloaded.data);
 
@@ -154,16 +189,21 @@ export class MessagesService {
         const nextMeta = {
           ...prevMeta,
           source: 'media_backfill',
-          originalMediaUrl: mediaUrl,
-          originalMimeType: downloaded.mimetype || prevMeta.originalMimeType || null,
+          originalMediaUrl: mediaUrl || prevMeta.originalMediaUrl || null,
+          originalMimeType: downloaded.mimetype || m.mediaMimeType || prevMeta.originalMimeType || null,
           backfilledAt: new Date().toISOString(),
         };
 
         await this.prisma.message.update({
           where: { id: m.id },
-          data: { mediaUrl: newMediaUrl, metadata: nextMeta as any },
+          data: {
+            mediaUrl: newMediaUrl,
+            mediaMimeType: downloaded.mimetype || m.mediaMimeType || undefined,
+            metadata: nextMeta as any,
+          },
         });
         m.mediaUrl = newMediaUrl;
+        m.mediaMimeType = downloaded.mimetype || m.mediaMimeType;
         m.metadata = nextMeta;
       } catch (err: any) {
         this.logger.debug(`Medya backfill atlandı (${m?.id}): ${err?.message}`);
@@ -340,9 +380,11 @@ export class MessagesService {
     const unitPrice = Number(product.unitPrice ?? 0);
     const price = `${unitPrice.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ${product.currency}`;
     const siteLink = (product.productUrl || '').trim();
+    const vatRate = Math.round(Number(product.vatRate ?? 20));
     const caption = [
       product.name,
       `Fiyat (KDV Dahil): ${price}`,
+      Number.isFinite(vatRate) ? `KDV oranı: %${vatRate}` : '',
       siteLink ? `Ürün Linki: ${siteLink}` : '',
     ]
       .filter(Boolean)
@@ -539,6 +581,12 @@ export class MessagesService {
       body,
       status: MessageStatus.SENT,
       sentById,
+      metadata: {
+        replyToMessageId: quotedMessage.id,
+        replyToWaMessageId: quotedMessage.waMessageId,
+        replyToBody: quotedMessage.body || null,
+        replyToMediaType: quotedMessage.mediaType || null,
+      },
     });
 
     this.emitAndUpdateList(conversationId, message, body);
@@ -568,8 +616,19 @@ export class MessagesService {
       throw new BadRequestException(errMsg || 'Mesaj silinemedi');
     }
 
-    // Mesajı veritabanından sil
-    await this.prisma.message.delete({ where: { id: messageId } });
+    // Mesajı satırdan kaldırmak yerine "silindi" durumuna geçir (UI'da görünür kalsın).
+    await this.prisma.message.update({
+      where: { id: messageId },
+      data: {
+        body: 'Bu mesaj silindi',
+        mediaType: null,
+        mediaUrl: null,
+        metadata: {
+          ...((message.metadata as any) || {}),
+          deleted: true,
+        } as any,
+      },
+    });
 
     // Socket ile bildir
     this.chatGateway.server
@@ -585,8 +644,10 @@ export class MessagesService {
     sessionName: string;
     chatId: string;
     emoji: string;
+    userId?: string;
+    userName?: string;
   }) {
-    const { messageId, sessionName, chatId, emoji } = params;
+    const { messageId, sessionName, chatId, emoji, userId, userName } = params;
     
     const message = await this.prisma.message.findUnique({ where: { id: messageId } });
     if (!message) throw new NotFoundException('Mesaj bulunamadı');
@@ -602,6 +663,28 @@ export class MessagesService {
       throw new BadRequestException(errMsg || 'Tepki gönderilemedi');
     }
 
+    const existing = (message.reactions as any[]) || [];
+    const senderKey = userId ? `user:${userId}` : `self:${sessionName}`;
+    const displayName = userName?.trim() || 'Siz';
+    const next = [...existing];
+    const idx = next.findIndex((r: any) => r?.sender === senderKey);
+    if (!emoji) {
+      if (idx >= 0) next.splice(idx, 1);
+    } else {
+      const item = { emoji, sender: senderKey, senderName: displayName, timestamp: Date.now() };
+      if (idx >= 0) next[idx] = item;
+      else next.push(item);
+    }
+    const updated = await this.prisma.message.update({
+      where: { id: messageId },
+      data: { reactions: next.length ? (next as any) : null },
+      select: { id: true, waMessageId: true, reactions: true, conversationId: true },
+    });
+    this.chatGateway.server.to(`conversation:${message.conversationId}`).emit('message:reaction', {
+      messageId: updated.id,
+      waMessageId: updated.waMessageId,
+      reactions: updated.reactions || [],
+    });
     return { success: true };
   }
 
@@ -634,6 +717,7 @@ export class MessagesService {
 
     const waMessageId = this.extractWaMessageId(waResponse);
     const locationText = title || address || `📍 ${latitude}, ${longitude}`;
+    const mapsUrl = `https://maps.google.com/?q=${latitude},${longitude}`;
     
     const message = await this.persistMessage({
       conversationId,
@@ -643,7 +727,14 @@ export class MessagesService {
       body: locationText,
       status: MessageStatus.SENT,
       sentById,
-      mediaType: 'DOCUMENT',
+      metadata: {
+        kind: 'location',
+        latitude,
+        longitude,
+        title: title || null,
+        address: address || null,
+        mapsUrl,
+      },
     });
 
     this.emitAndUpdateList(conversationId, message, locationText);

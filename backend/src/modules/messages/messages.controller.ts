@@ -162,12 +162,15 @@ export class MessagesController {
   sendReaction(
     @Param('messageId') messageId: string,
     @Body() body: { sessionName: string; chatId: string; emoji: string },
+    @CurrentUser() user: { id: string; name?: string },
   ) {
     return this.messagesService.sendReaction({
       messageId,
       sessionName: body.sessionName,
       chatId: body.chatId,
       emoji: body.emoji,
+      userId: user.id,
+      userName: user.name,
     });
   }
 

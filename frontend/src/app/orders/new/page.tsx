@@ -16,7 +16,7 @@ interface LocalLineItem {
   unitPrice: number;
   vatRate: number;
   isFromStock: boolean;
-  sourceType?: 'STOCK' | 'SUPPLIER' | 'EXISTING_CUSTOMER';
+  sourceType?: 'STOCK' | 'SUPPLIER';
   supplierId?: string;
   supplierOrderNo?: string;
 }
@@ -204,12 +204,12 @@ export default function NewOrderPage() {
     const validLines = lines.filter((l) => l.name.trim() && l.quantity > 0 && l.unitPrice > 0);
     for (const l of validLines) {
       const sourceType = l.sourceType || (l.isFromStock ? 'STOCK' : 'SUPPLIER');
-      if (sourceType === 'SUPPLIER' && (!l.supplierId || !l.supplierOrderNo?.trim())) {
-        toast.error(`${l.name || 'Kalem'} için tedarikçi ve sipariş no zorunlu`);
+      if (sourceType === 'SUPPLIER' && !l.supplierId) {
+        toast.error(`${l.name || 'Kalem'} için tedarikçi seçimi zorunlu`);
         return;
       }
-      if (sourceType === 'EXISTING_CUSTOMER' && !l.supplierOrderNo?.trim()) {
-        toast.error(`${l.name || 'Kalem'} için eski müşteri referansı zorunlu`);
+      if (sourceType === 'SUPPLIER' && !l.supplierOrderNo?.trim()) {
+        toast.error(`${l.name || 'Kalem'} için tedarikçi sipariş no zorunlu`);
         return;
       }
     }
@@ -219,8 +219,12 @@ export default function NewOrderPage() {
     }
     if (paymentMode === 'CUSTOM') {
       const custom = Number(customPaymentValue);
-      if (!(custom > 0) || custom > 100) {
-        toast.error('Özel ödeme yüzdesi 0-100 arasında olmalı');
+      if (!(custom > 0)) {
+        toast.error('Özel ödeme tutarı 0’dan büyük olmalı');
+        return;
+      }
+      if (custom > totals.grandTotal) {
+        toast.error('Özel ödeme tutarı sipariş toplamını aşamaz');
         return;
       }
     }
@@ -418,22 +422,19 @@ export default function NewOrderPage() {
                     <select
                       value={line.sourceType || (line.isFromStock ? 'STOCK' : 'SUPPLIER')}
                       onChange={(e) => {
-                        const nextSource = e.target.value as 'STOCK' | 'SUPPLIER' | 'EXISTING_CUSTOMER';
+                        const nextSource = e.target.value as 'STOCK' | 'SUPPLIER';
                         updateLine(line.key, {
                           sourceType: nextSource,
                           isFromStock: nextSource === 'STOCK',
                           ...(nextSource === 'STOCK'
                             ? { supplierId: '', supplierOrderNo: '' }
-                            : nextSource === 'EXISTING_CUSTOMER'
-                              ? { supplierId: '' }
-                              : {}),
+                            : {}),
                         });
                       }}
                       className="w-full px-2 py-1.5 rounded border border-gray-200 text-sm"
                     >
                       <option value="STOCK">Stoktan</option>
                       <option value="SUPPLIER">Tedarikçi</option>
-                      <option value="EXISTING_CUSTOMER">Eski müşteri</option>
                     </select>
                   </td>
                   <td className="px-3 py-2">
@@ -452,9 +453,9 @@ export default function NewOrderPage() {
                   <td className="px-3 py-2">
                     <input
                       value={line.supplierOrderNo || ''}
-                      disabled={(line.sourceType || (line.isFromStock ? 'STOCK' : 'SUPPLIER')) === 'STOCK'}
+                      disabled={(line.sourceType || (line.isFromStock ? 'STOCK' : 'SUPPLIER')) !== 'SUPPLIER' || !line.supplierId}
                       onChange={(e) => updateLine(line.key, { supplierOrderNo: e.target.value })}
-                      placeholder={(line.sourceType || (line.isFromStock ? 'STOCK' : 'SUPPLIER')) === 'EXISTING_CUSTOMER' ? 'Müşteri referansı' : 'Sipariş no'}
+                      placeholder="Sipariş no (opsiyonel)"
                       className="w-full px-2 py-1.5 rounded border border-gray-200 text-sm disabled:bg-gray-100"
                     />
                   </td>
@@ -504,18 +505,17 @@ export default function NewOrderPage() {
                   checked={paymentMode === 'CUSTOM'}
                   onChange={() => setPaymentMode('CUSTOM')}
                 />
-                Özel yüzde
+                Özel miktar
               </label>
             </div>
             {paymentMode === 'CUSTOM' ? (
               <input
                 type="number"
                 min={0}
-                max={100}
-                step={1}
+                step={0.01}
                 value={customPaymentValue}
                 onChange={(e) => setCustomPaymentValue(e.target.value)}
-                placeholder="Örn: 30"
+                placeholder="Örn: 15000"
                 className="w-full md:w-56 px-3 py-2 rounded-lg border border-gray-200 text-sm bg-white"
               />
             ) : null}

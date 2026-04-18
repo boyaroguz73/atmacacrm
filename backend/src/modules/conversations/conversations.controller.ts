@@ -198,6 +198,19 @@ export class ConversationsController {
     return this.conversationsService.assign(id, userId);
   }
 
+  @Get(':id/assignments')
+  async getAssignments(
+    @Param('id') id: string,
+    @CurrentUser()
+    user: { role: string; organizationId?: string | null },
+  ) {
+    const conversation = await this.conversationsService.findById(id, {
+      skipContactEnrichment: true,
+    });
+    assertConversationBelongsToOrg(conversation, user);
+    return this.conversationsService.getAssignmentHistory(id);
+  }
+
   @Post(':id/auto-assign')
   @UseGuards(RolesGuard)
   @Roles('ADMIN')

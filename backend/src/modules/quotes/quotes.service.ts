@@ -667,7 +667,7 @@ export class QuotesService {
       };
       itemSources?: Array<{
         quoteItemId?: string;
-        source: 'STOCK' | 'SUPPLIER' | 'EXISTING_CUSTOMER';
+        source: 'STOCK' | 'SUPPLIER';
         supplierId?: string | null;
         supplierOrderNo?: string | null;
       }>;
@@ -683,6 +683,20 @@ export class QuotesService {
 
     const noteParts: string[] = [];
     const requestedPaymentMode = options?.payment?.mode;
+    if (
+      requestedPaymentMode === 'CUSTOM' &&
+      options?.payment?.customValue != null &&
+      !(options.payment.customValue > 0)
+    ) {
+      throw new BadRequestException('Özel ödeme tutarı 0’dan büyük olmalıdır');
+    }
+    if (
+      requestedPaymentMode === 'CUSTOM' &&
+      options?.payment?.customValue != null &&
+      options.payment.customValue > quote.grandTotal
+    ) {
+      throw new BadRequestException('Özel ödeme tutarı teklif toplamını aşamaz');
+    }
     if (requestedPaymentMode === 'DEPOSIT_50') {
       noteParts.push('Ödeme planı: %50 ön ödeme (kalan tutar teslim öncesi tahsil edilecek).');
     } else if (
@@ -690,7 +704,7 @@ export class QuotesService {
       options?.payment?.customValue != null &&
       options.payment.customValue > 0
     ) {
-      noteParts.push(`Ödeme planı: Özel ön ödeme (%${options.payment.customValue}).`);
+      noteParts.push(`Ödeme planı: Özel ön ödeme (${options.payment.customValue} ${quote.currency}).`);
     } else if (quote.paymentMode === QuotePaymentMode.DEPOSIT_50) {
       noteParts.push('Ödeme planı: %50 ön ödeme (kalan tutar teslim öncesi tahsil edilecek).');
     } else {
@@ -708,15 +722,11 @@ export class QuotesService {
     const orderItemCreates = quote.items.map((item) => {
       const cfg = sourceByItemId.get(String(item.id));
       const source = cfg?.source || 'STOCK';
-      if (source === 'SUPPLIER') {
-        if (!cfg?.supplierId || !cfg?.supplierOrderNo?.trim()) {
-          throw new BadRequestException(`${item.name} için tedarikçi ve sipariş no zorunludur`);
-        }
+      if (source === 'SUPPLIER' && !cfg?.supplierId) {
+        throw new BadRequestException(`${item.name} için tedarikçi seçimi zorunludur`);
       }
-      if (source === 'EXISTING_CUSTOMER') {
-        if (!cfg?.supplierOrderNo?.trim()) {
-          throw new BadRequestException(`${item.name} için eski müşteri referansı/sipariş no zorunludur`);
-        }
+      if (source === 'SUPPLIER' && !cfg?.supplierOrderNo?.trim()) {
+        throw new BadRequestException(`${item.name} için tedarikçi sipariş no zorunludur`);
       }
       return {
         productId: item.productId,
@@ -727,10 +737,7 @@ export class QuotesService {
         lineTotal: item.lineTotal,
         isFromStock: source === 'STOCK',
         supplierId: source === 'SUPPLIER' ? cfg?.supplierId || null : null,
-        supplierOrderNo:
-          source === 'SUPPLIER' || source === 'EXISTING_CUSTOMER'
-            ? cfg?.supplierOrderNo?.trim() || null
-            : null,
+        supplierOrderNo: source === 'SUPPLIER' ? cfg?.supplierOrderNo?.trim() || null : null,
       };
     });
 

@@ -888,19 +888,30 @@ export class WahaService implements OnModuleInit {
     emoji: string,
   ): Promise<any> {
     try {
-      const response = await this.http.post('/api/reaction', {
-        session: sessionName,
-        chatId,
-        messageId,
-        reaction: emoji,
-      });
+      const encodedChatId = encodeURIComponent(chatId);
+      const encodedMsgId = encodeURIComponent(messageId);
+      const response = await this.http.post(
+        `/api/${sessionName}/chats/${encodedChatId}/messages/${encodedMsgId}/reaction`,
+        { reaction: emoji },
+      );
       return response.data;
     } catch (error: any) {
-      const detail = error.response?.data
-        ? JSON.stringify(error.response.data)
-        : error.message;
-      this.logger.error(`Tepki gönderilemedi: ${messageId} - ${detail}`);
-      throw error;
+      // Eski WAHA sürümleri için legacy endpoint fallback
+      try {
+        const legacy = await this.http.post('/api/reaction', {
+          session: sessionName,
+          chatId,
+          messageId,
+          reaction: emoji,
+        });
+        return legacy.data;
+      } catch (legacyError: any) {
+        const detail = legacyError.response?.data
+          ? JSON.stringify(legacyError.response.data)
+          : legacyError.message;
+        this.logger.error(`Tepki gönderilemedi: ${messageId} - ${detail}`);
+        throw legacyError;
+      }
     }
   }
 

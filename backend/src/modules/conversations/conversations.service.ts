@@ -577,6 +577,17 @@ export class ConversationsService {
     });
   }
 
+  async getAssignmentHistory(conversationId: string) {
+    return this.prisma.assignment.findMany({
+      where: { conversationId },
+      orderBy: { assignedAt: 'desc' },
+      include: {
+        user: { select: { id: true, name: true, avatar: true } },
+      },
+      take: 25,
+    });
+  }
+
   async autoAssignRoundRobin(conversationId: string, organizationId?: string) {
     const agentWhere: any = { role: 'AGENT', isActive: true };
     if (organizationId) agentWhere.organizationId = organizationId;

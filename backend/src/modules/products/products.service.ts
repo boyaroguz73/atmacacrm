@@ -38,6 +38,57 @@ function parseGoogleMoney(raw: string): { amount: number; currency: string } {
   return { amount: Number.isFinite(amount) ? amount : 0, currency };
 }
 
+function clampVatPercent(n: number): number {
+  if (!Number.isFinite(n)) return 20;
+  return Math.max(0, Math.min(100, Math.round(n)));
+}
+
+function parseLoosePercent(raw: string): number | null {
+  const s = raw.trim().replace(/\s+/g, '');
+  if (!s) return null;
+  const m = s.match(/^(\d+(?:[.,]\d+)?)%?$/);
+  if (!m) return null;
+  const n = parseFloat(m[1].replace(',', '.'));
+  if (!Number.isFinite(n)) return null;
+  return clampVatPercent(n);
+}
+
+/**
+ * Feed öğesinden KDV; alan yoksa org/akış varsayılanı. Böylece DB’deki product.vatRate
+ * teklif, sipariş ve WhatsApp paylaşımı için tek kaynak olur.
+ */
+function resolveVatRateFromFeedItem(item: Record<string, unknown>, fallback: number): number {
+  const fb = clampVatPercent(fallback);
+  const keys = [
+    'tax_rate',
+    'g:tax_rate',
+    'vat_rate',
+    'g:vat_rate',
+    'kdv',
+    'g:kdv',
+    'vat_rate_percent',
+    'g:vat_rate_percent',
+    'tax_percent',
+    'g:tax_percent',
+  ];
+  for (const k of keys) {
+    const t = field(item, k);
+    if (t) {
+      const p = parseLoosePercent(t);
+      if (p != null) return p;
+    }
+  }
+  const label0 = field(item, 'custom_label_0', 'g:custom_label_0');
+  if (label0) {
+    const m = label0.match(/kdv\s*[:%]?\s*(\d+(?:[.,]\d+)?)/i);
+    if (m) {
+      const p = parseLoosePercent(m[1]);
+      if (p != null) return p;
+    }
+  }
+  return fb;
+}
+
 function saleWindowActive(rangeRaw: string | null | undefined, now: Date): boolean {
   const s = (rangeRaw ?? '').trim();
   if (!s) return true;
@@ -389,6 +440,7 @@ export class ProductsService {
 
       const stock = googleAvailability ? stockFromAvailability(googleAvailability) : null;
       const isActive = googleAvailability ? activeFromAvailability(googleAvailability) : true;
+      const itemVat = resolveVatRateFromFeedItem(item, vatDefault);
 
       const additionalImages = impImg ? collectAdditionalImages(item) : [];
       const additionalImagesJson = (impImg ? additionalImages : []) as Prisma.InputJsonValue;
@@ -428,7 +480,7 @@ export class ProductsService {
               unit: 'Adet',
               unitPrice: 0,
               currency,
-              vatRate: vatDefault,
+              vatRate: itemVat,
               stock: null,
               isActive: true,
               productFeedSource: ProductFeedSource.XML,
@@ -444,6 +496,7 @@ export class ProductsService {
               category: category ?? undefined,
               productUrl: productUrl ?? undefined,
               xmlSyncedAt: now,
+              vatRate: itemVat,
               ...(impDesc ? { description: description ?? undefined } : {}),
               ...(impImg && imageUrlFromFeed ? { imageUrl: imageUrlFromFeed } : {}),
             },
@@ -467,7 +520,7 @@ export class ProductsService {
               name,
               unitPrice,
               currency,
-              vatRate: vatDefault,
+              vatRate: itemVat,
               stock,
               isActive,
             },
@@ -475,7 +528,7 @@ export class ProductsService {
               name,
               unitPrice,
               currency,
-              vatRate: vatDefault,
+              vatRate: itemVat,
               stock,
               isActive,
             },
@@ -520,7 +573,7 @@ export class ProductsService {
           unit: 'Adet',
           unitPrice,
           currency,
-          vatRate: vatDefault,
+          vatRate: itemVat,
           stock,
           isActive,
           productFeedSource: ProductFeedSource.XML,
@@ -557,7 +610,7 @@ export class ProductsService {
           googleAvailability,
           googleProductType: googleProductType || undefined,
           xmlSyncedAt: now,
-          vatRate: vatDefault,
+          vatRate: itemVat,
         };
         if (impDesc) updateData.description = description;
         if (impImg) updateData.imageUrl = imageUrl ?? undefined;
@@ -623,7 +676,7 @@ export class ProductsService {
                 name: variantName,
                 unitPrice: vPrice,
                 currency: vCur,
-                vatRate: vatDefault,
+                vatRate: itemVat,
                 stock,
                 isActive,
                 metadata,
@@ -632,7 +685,7 @@ export class ProductsService {
                 name: variantName,
                 unitPrice: vPrice,
                 currency: vCur,
-                vatRate: vatDefault,
+                vatRate: itemVat,
                 stock,
                 isActive,
                 metadata,

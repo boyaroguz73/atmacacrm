@@ -1,6 +1,14 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type FormEvent,
+  Suspense,
+} from 'react';
 import api, { getApiErrorMessage } from '@/lib/api';
 import { formatPhone, backendPublicUrl } from '@/lib/utils';
 import toast from 'react-hot-toast';
@@ -17,6 +25,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import PanelEditedBadge from '@/components/ui/PanelEditedBadge';
+import { useRouter, useSearchParams } from 'next/navigation';
 
 const LIMIT = 15;
 
@@ -323,8 +332,26 @@ function normalizeInvoiceRow(raw: unknown): InvoiceRow | null {
   };
 }
 
-export default function AccountingInvoicesPage() {
+function AccountingInvoicesContent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [tab, setTab] = useState<'invoices' | 'pending'>('invoices');
+
+  useLayoutEffect(() => {
+    const t = searchParams.get('tab');
+    if (t === 'pending') setTab('pending');
+    else setTab('invoices');
+  }, [searchParams]);
+
+  const setTabAndUrl = useCallback(
+    (next: 'invoices' | 'pending') => {
+      setTab(next);
+      const path =
+        next === 'pending' ? '/accounting/invoices?tab=pending' : '/accounting/invoices';
+      router.replace(path, { scroll: false });
+    },
+    [router],
+  );
 
   const [invoices, setInvoices] = useState<InvoiceRow[]>([]);
   /** API toplam kayıt sayısı; yoksa null (Sonraki, sayfa metni tahmine dayanır) */
@@ -345,6 +372,8 @@ export default function AccountingInvoicesPage() {
   const [showSendForm, setShowSendForm] = useState(false);
   const [sendTemplateBody, setSendTemplateBody] = useState('');
   const [showSendConfirm, setShowSendConfirm] = useState(false);
+  const [showPdfUploadConfirm, setShowPdfUploadConfirm] = useState(false);
+  const [pendingPdfFile, setPendingPdfFile] = useState<File | null>(null);
   const pdfInputRef = useRef<HTMLInputElement>(null);
   const [dueEdit, setDueEdit] = useState('');
   const [notesEdit, setNotesEdit] = useState('');
@@ -535,6 +564,19 @@ export default function AccountingInvoicesPage() {
     }
   };
 
+  const confirmPdfUpload = async () => {
+    if (!detail || !pendingPdfFile) {
+      setShowPdfUploadConfirm(false);
+      setPendingPdfFile(null);
+      return;
+    }
+    const inv = detail;
+    const file = pendingPdfFile;
+    setShowPdfUploadConfirm(false);
+    setPendingPdfFile(null);
+    await uploadPdf(inv, file);
+  };
+
   const deleteInvoice = async (inv: InvoiceRow) => {
     if (String(inv.status).toUpperCase() !== 'PENDING') {
       toast.error('Sadece beklemedeki faturalar silinebilir');
@@ -583,7 +625,7 @@ export default function AccountingInvoicesPage() {
       <div className="flex rounded-xl bg-gray-100/80 p-1 shadow-sm border border-gray-100 max-w-md">
         <button
           type="button"
-          onClick={() => setTab('invoices')}
+          onClick={() => setTabAndUrl('invoices')}
           className={`flex-1 py-2.5 text-sm font-semibold rounded-lg transition-all ${
             tab === 'invoices'
               ? 'bg-white text-whatsapp shadow-sm border border-gray-100'
@@ -594,7 +636,7 @@ export default function AccountingInvoicesPage() {
         </button>
         <button
           type="button"
-          onClick={() => setTab('pending')}
+          onClick={() => setTabAndUrl('pending')}
           className={`flex-1 py-2.5 text-sm font-semibold rounded-lg transition-all ${
             tab === 'pending'
               ? 'bg-white text-whatsapp shadow-sm border border-gray-100'
@@ -1031,7 +1073,14 @@ export default function AccountingInvoicesPage() {
                   className="hidden"
                   onChange={(e) => {
                     const f = e.target.files?.[0];
-                    if (f) void uploadPdf(detail, f);
+                    if (pdfInputRef.current) pdfInputRef.current.value = '';
+                    if (!f) return;
+                    if (!f.name.toLowerCase().endsWith('.pdf')) {
+                      toast.error('Yalnızca PDF dosyası seçin');
+                      return;
+                    }
+                    setPendingPdfFile(f);
+                    setShowPdfUploadConfirm(true);
                   }}
                 />
                 <button
@@ -1125,6 +1174,46 @@ export default function AccountingInvoicesPage() {
                 </div>
               )}
 
+              {showPdfUploadConfirm && (
+                <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/40">
+                  <div className="bg-white rounded-2xl shadow-xl max-w-sm w-full p-6 space-y-4">
+                    <div className="text-center">
+                      <div className="w-14 h-14 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                        <Upload className="w-7 h-7 text-amber-700" />
+                      </div>
+                      <h2 className="text-lg font-bold text-gray-900">PDF yükleme</h2>
+                      <p className="text-sm text-gray-600 mt-2">
+                        Seçilen PDF bu faturanın belgesi olarak kaydedilecek. Devam etmek istiyor musunuz?
+                      </p>
+                      {pendingPdfFile ? (
+                        <p className="text-xs text-gray-500 mt-2 font-mono break-all">{pendingPdfFile.name}</p>
+                      ) : null}
+                    </div>
+                    <div className="flex gap-3 pt-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowPdfUploadConfirm(false);
+                          setPendingPdfFile(null);
+                        }}
+                        className="flex-1 px-4 py-2.5 rounded-xl text-sm font-medium bg-red-50 text-red-600 hover:bg-red-100 transition-colors"
+                      >
+                        Vazgeç
+                      </button>
+                      <button
+                        type="button"
+                        disabled={detailBusy}
+                        onClick={() => void confirmPdfUpload()}
+                        className="flex-1 px-4 py-2.5 rounded-xl text-sm font-medium bg-whatsapp text-white hover:opacity-95 disabled:opacity-50 transition-colors inline-flex items-center justify-center gap-2"
+                      >
+                        {detailBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                        Evet, yükle
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <div>
                 <label className="text-xs font-semibold text-gray-600 block mb-1.5">Durum değiştir</label>
                 <select
@@ -1155,5 +1244,19 @@ export default function AccountingInvoicesPage() {
         </div>
       ) : null}
     </div>
+  );
+}
+
+export default function AccountingInvoicesPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex justify-center py-20">
+          <Loader2 className="w-8 h-8 text-whatsapp animate-spin" />
+        </div>
+      }
+    >
+      <AccountingInvoicesContent />
+    </Suspense>
   );
 }

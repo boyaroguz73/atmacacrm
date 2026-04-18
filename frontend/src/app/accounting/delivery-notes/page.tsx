@@ -1,9 +1,10 @@
 'use client';
 
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import api, { getApiErrorMessage } from '@/lib/api';
 import toast from 'react-hot-toast';
-import { Loader2, Package, Plus, Upload } from 'lucide-react';
+import Link from 'next/link';
+import { CalendarRange, Loader2, Package, Plus, Upload } from 'lucide-react';
 import { backendPublicUrl } from '@/lib/utils';
 
 interface Row {
@@ -26,6 +27,13 @@ export default function DeliveryNotesPage() {
   const [orderId, setOrderId] = useState('');
   const [notes, setNotes] = useState('');
   const [uploadingId, setUploadingId] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
+  const [dateFrom, setDateFrom] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 30);
+    return d.toISOString().slice(0, 10);
+  });
+  const [dateTo, setDateTo] = useState(() => new Date().toISOString().slice(0, 10));
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -84,17 +92,102 @@ export default function DeliveryNotesPage() {
   };
 
   const base = backendPublicUrl();
+  const filteredRows = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const from = dateFrom ? new Date(`${dateFrom}T00:00:00`) : null;
+    const to = dateTo ? new Date(`${dateTo}T23:59:59`) : null;
+    return rows.filter((r) => {
+      const shipped = new Date(r.shippedAt);
+      if (from && shipped < from) return false;
+      if (to && shipped > to) return false;
+      if (!q) return true;
+      return (
+        String(r.noteNumber).includes(q) ||
+        String(r.order?.orderNumber ?? '').includes(q) ||
+        String(r.order?.contact?.name ?? '').toLowerCase().includes(q)
+      );
+    });
+  }, [rows, search, dateFrom, dateTo]);
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+      <div className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Muhasebe / Lojistik</p>
+            <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
           <Package className="w-8 h-8 text-whatsapp" />
           İrsaliyeler
         </h1>
-        <p className="text-sm text-gray-500 mt-1">
-          Siparişe bağlı sevk kaydı; kalem özeti siparişten alınır. PDF’i manuel yükleyebilirsiniz.
-        </p>
+            <p className="text-sm text-gray-500 mt-1">
+              Sevk kayıtlarını tarih ve sipariş odaklı takip edin, PDF tamamlama durumunu buradan yönetin.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Link
+              href="/accounting/invoices?tab=pending"
+              className="inline-flex items-center rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+            >
+              Fatura bekleyenler
+            </Link>
+            <Link
+              href="/orders"
+              className="inline-flex items-center rounded-lg bg-whatsapp px-3 py-2 text-sm font-semibold text-white hover:bg-whatsapp/90"
+            >
+              Sipariş listesi
+            </Link>
+          </div>
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-gray-100 bg-white p-4 shadow-sm">
+        <div className="flex items-center gap-2 mb-3">
+          <CalendarRange className="w-4 h-4 text-gray-500" />
+          <p className="text-sm font-semibold text-gray-800">Filtreler</p>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          <div>
+            <label className="text-xs text-gray-500 block mb-1">Ara (irsaliye/sipariş/müşteri)</label>
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm"
+              placeholder="IRS no, sipariş no veya müşteri"
+            />
+          </div>
+          <div>
+            <label className="text-xs text-gray-500 block mb-1">Başlangıç</label>
+            <input
+              type="date"
+              value={dateFrom}
+              onChange={(e) => setDateFrom(e.target.value)}
+              className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm"
+            />
+          </div>
+          <div>
+            <label className="text-xs text-gray-500 block mb-1">Bitiş</label>
+            <input
+              type="date"
+              value={dateTo}
+              onChange={(e) => setDateTo(e.target.value)}
+              className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm"
+            />
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              const d = new Date();
+              const from = new Date();
+              from.setDate(from.getDate() - 30);
+              setDateTo(d.toISOString().slice(0, 10));
+              setDateFrom(from.toISOString().slice(0, 10));
+              setSearch('');
+            }}
+            className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 self-end"
+          >
+            Son 30 gün
+          </button>
+        </div>
       </div>
 
       <form
@@ -148,14 +241,14 @@ export default function DeliveryNotesPage() {
                 </tr>
               </thead>
               <tbody>
-                {rows.length === 0 ? (
+                {filteredRows.length === 0 ? (
                   <tr>
                     <td colSpan={6} className="px-4 py-8 text-center text-gray-400">
-                      Henüz irsaliye yok
+                      Filtreye uyan irsaliye yok
                     </td>
                   </tr>
                 ) : (
-                  rows.map((r) => (
+                  filteredRows.map((r) => (
                     <tr key={r.id} className="border-t border-gray-50">
                       <td className="px-4 py-2.5 font-mono text-xs">IRS-{String(r.noteNumber).padStart(5, '0')}</td>
                       <td className="px-4 py-2.5 whitespace-nowrap">

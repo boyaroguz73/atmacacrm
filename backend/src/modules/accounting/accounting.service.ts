@@ -542,6 +542,8 @@ export class AccountingService {
   async getDashboardSummary() {
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
 
     const [
       invoiceTotal,
@@ -552,6 +554,9 @@ export class AccountingService {
       ledgerOverdue,
       deliveryNotesRecent,
       invoicesMissingPdf,
+      unpaidReceivablesAgg,
+      overdueInvoicesAgg,
+      pendingBillingAmountAgg,
     ] = await Promise.all([
       this.prisma.accountingInvoice.count(),
       this.prisma.accountingInvoice.groupBy({
@@ -591,6 +596,32 @@ export class AccountingService {
           uploadedPdfUrl: null,
         },
       }),
+      this.prisma.accountingInvoice.aggregate({
+        where: {
+          status: { in: ['PENDING' as any, 'SENT' as any, 'OVERDUE' as any] },
+        },
+        _sum: { grandTotal: true },
+        _count: { _all: true },
+      }),
+      this.prisma.accountingInvoice.aggregate({
+        where: {
+          OR: [
+            { status: 'OVERDUE' as any },
+            {
+              status: { in: ['SENT' as any, 'PENDING' as any] },
+              dueDate: { lt: startOfToday },
+            },
+          ],
+        },
+        _sum: { grandTotal: true },
+      }),
+      this.prisma.salesOrder.aggregate({
+        where: {
+          status: { in: ['DELIVERED' as any, 'PROCESSING' as any] },
+          invoice: null,
+        },
+        _sum: { grandTotal: true },
+      }),
     ]);
 
     const statusMap = Object.fromEntries(
@@ -609,6 +640,13 @@ export class AccountingService {
       ledgerEntriesWithOverdueDueDate: ledgerOverdue,
       deliveryNotesShippedLast30Days: deliveryNotesRecent,
       invoicesWithoutPdf: invoicesMissingPdf,
+      /** Açık faturalar (ödenmemiş / iptal değil) — tahsilat bekleyen tutar */
+      unpaidReceivablesAmount: unpaidReceivablesAgg._sum.grandTotal ?? 0,
+      unpaidInvoiceCount: unpaidReceivablesAgg._count._all,
+      /** Vadesi geçmiş veya OVERDUE statülü faturaların tutarı */
+      overdueAmount: overdueInvoicesAgg._sum.grandTotal ?? 0,
+      /** Faturalanmayı bekleyen siparişlerin toplam tutarı */
+      pendingBillingAmount: pendingBillingAmountAgg._sum.grandTotal ?? 0,
     };
   }
 }

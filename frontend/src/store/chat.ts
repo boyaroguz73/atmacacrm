@@ -82,6 +82,16 @@ export interface Message {
     contactName?: string | null;
     contactPhone?: string | null;
     vcard?: string | null;
+    replyToMessageId?: string | null;
+    replyToWaMessageId?: string | null;
+    replyToBody?: string | null;
+    replyToMediaType?: string | null;
+    deleted?: boolean;
+    latitude?: number | null;
+    longitude?: number | null;
+    title?: string | null;
+    address?: string | null;
+    mapsUrl?: string | null;
   } | null;
   sentBy: { id: string; name: string } | null;
   /** Grup mesajlarında gönderenin telefon numarası */
@@ -139,6 +149,7 @@ interface ChatState {
   updateMessageStatus: (messageId: string, status: string) => void;
   updateMessageReactions: (messageId: string, reactions: Reaction[]) => void;
   updateMessageEdit: (messageId: string, body: string) => void;
+  updateMessageDeleted: (messageId: string) => void;
 }
 
 export const useChatStore = create<ChatState>((set, get) => ({
@@ -613,6 +624,21 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set((state) => ({
       messages: state.messages.map((m) =>
         m.id === messageId ? { ...m, body, isEdited: true } : m,
+      ),
+    }));
+  },
+  updateMessageDeleted: (messageId) => {
+    set((state) => ({
+      messages: state.messages.map((m) =>
+        m.id === messageId
+          ? {
+              ...m,
+              body: 'Bu mesaj silindi',
+              mediaType: null,
+              mediaUrl: null,
+              metadata: { ...(m.metadata || {}), deleted: true },
+            }
+          : m,
       ),
     }));
   },

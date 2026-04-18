@@ -42,6 +42,7 @@ import {
   ClipboardList,
   Calculator,
   Truck,
+  Warehouse,
 } from 'lucide-react';
 
 interface SubItem {
@@ -122,6 +123,7 @@ const menuItems: MenuItem[] = [
       { href: '/admin/templates', label: 'Mesaj Şablonları', icon: FileText, key: 'admin_templates' },
       { href: '/admin/auto-reply', label: 'Otomatik Yanıt', icon: Zap, key: 'admin_auto_reply' },
       { href: '/admin/audit-log', label: 'Aktivite Logu', icon: Activity, key: 'admin_audit_log' },
+      { href: '/admin/suppliers', label: 'Tedarikçiler', icon: Warehouse, key: 'admin_suppliers' },
     ],
   },
   { href: '/reports', label: 'Raporlar', icon: BarChart3, adminOnly: true, menuKey: 'reports' },

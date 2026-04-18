@@ -136,7 +136,7 @@ export class QuotesController {
       };
       itemSources?: Array<{
         quoteItemId?: string;
-        source: 'STOCK' | 'SUPPLIER' | 'EXISTING_CUSTOMER';
+        source: 'STOCK' | 'SUPPLIER';
         supplierId?: string | null;
         supplierOrderNo?: string | null;
       }>;

@@ -27,8 +27,9 @@ import {
   MessageSquare,
   Send,
   Store,
-    Loader2,
-    ClipboardList,
+  Loader2,
+  ClipboardList,
+  History,
   } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { LEAD_STATUSES, LEAD_STATUS_LABELS, LEAD_STATUS_COLORS, SOURCES } from '@/lib/constants';
@@ -84,6 +85,7 @@ export default function ContactPanel({
   const [agents, setAgents] = useState<any[]>([]);
   const [notes, setNotes] = useState<any[]>([]);
   const [noteText, setNoteText] = useState('');
+  const [assignmentHistory, setAssignmentHistory] = useState<any[]>([]);
 
   const [openSections, setOpenSections] = useState({
     info: true,
@@ -142,11 +144,21 @@ export default function ContactPanel({
     }
   }, [conversationId, internalChatEnabled]);
 
+  const fetchAssignmentHistory = useCallback(async () => {
+    try {
+      const { data } = await api.get(`/conversations/${conversationId}/assignments`);
+      setAssignmentHistory(Array.isArray(data) ? data : []);
+    } catch {
+      setAssignmentHistory([]);
+    }
+  }, [conversationId]);
+
   useEffect(() => {
     fetchContact();
     fetchAgents();
     fetchNotes();
-  }, [fetchContact, fetchAgents, fetchNotes]);
+    fetchAssignmentHistory();
+  }, [fetchContact, fetchAgents, fetchNotes, fetchAssignmentHistory]);
 
   /** Gelen kutusundan gelen güncel telefon / avatar / isim */
   useEffect(() => {
@@ -771,6 +783,27 @@ export default function ContactPanel({
                   <span className="text-xs text-blue-700 font-medium">
                     Atanan: {assignments[0].user.name}
                   </span>
+                </div>
+              )}
+
+              {assignmentHistory.length > 1 && (
+                <div className="rounded-lg border border-gray-100 bg-gray-50 p-2.5">
+                  <div className="flex items-center gap-1.5 mb-1.5 text-[11px] font-semibold text-gray-600 uppercase tracking-wide">
+                    <History className="w-3.5 h-3.5" />
+                    Eski Atamalar
+                  </div>
+                  <div className="space-y-1.5 max-h-28 overflow-y-auto pr-1">
+                    {assignmentHistory.slice(1).map((a: any) => (
+                      <div key={a.id} className="text-xs text-gray-600 flex items-start justify-between gap-2">
+                        <span className="truncate">{a.user?.name || '—'}</span>
+                        <span className="shrink-0 text-[10px] text-gray-400">
+                          {a.unassignedAt
+                            ? new Date(a.unassignedAt).toLocaleDateString('tr-TR')
+                            : new Date(a.assignedAt).toLocaleDateString('tr-TR')}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
 

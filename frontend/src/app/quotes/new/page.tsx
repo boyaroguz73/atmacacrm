@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import api from '@/lib/api';
 import { cn, formatPhone, rewriteMediaUrlForClient } from '@/lib/utils';
 import { QuoteEmbeddedChat } from '@/components/quotes/QuoteEmbeddedChat';
+import { MeasurementLineCell } from '@/components/quotes/MeasurementLineCell';
 import toast from 'react-hot-toast';
 import {
   ArrowLeft,
@@ -256,6 +257,11 @@ export default function NewQuotePage() {
     [lines, discountType, discountValue, lineVatRate],
   );
 
+  const lineVatSelectOptions = useMemo(() => {
+    const s = new Set<number>([...LINE_VAT_OPTIONS, lineVatRate]);
+    return Array.from(s).sort((a, b) => a - b);
+  }, [lineVatRate]);
+
   const billingDirty = useMemo(() => {
     if (!billingDraft || !billingBaseline) return false;
     return billingFingerprint(billingDraft) !== billingFingerprint(billingBaseline);
@@ -318,8 +324,15 @@ export default function NewQuotePage() {
 
   const finalizeProductLine = (
     p: ProductHit,
-    variant?: { id: string; name: string; unitPrice: number; metadata?: unknown },
+    variant?: { id: string; name: string; unitPrice: number; metadata?: unknown; vatRate?: number },
   ) => {
+    const vat =
+      variant?.vatRate != null && Number.isFinite(Number(variant.vatRate))
+        ? Math.round(Number(variant.vatRate))
+        : p.vatRate != null && Number.isFinite(Number(p.vatRate))
+          ? Math.round(Number(p.vatRate))
+          : null;
+    if (vat != null) setLineVatRate(vat);
     const measureHint = variant ? measurementHintFromVariantMetadata(variant.metadata) : '';
     setLines((prev) => [
       ...prev,
@@ -779,7 +792,7 @@ export default function NewQuotePage() {
                   onChange={(e) => setLineVatRate(Number(e.target.value))}
                   className="px-2 py-1.5 border border-gray-200 rounded-lg text-xs font-medium bg-white focus:outline-none focus:border-whatsapp"
                 >
-                  {LINE_VAT_OPTIONS.map((v) => (
+                  {lineVatSelectOptions.map((v) => (
                     <option key={v} value={v}>
                       %{v}
                     </option>
@@ -852,13 +865,10 @@ export default function NewQuotePage() {
                         />
                       </td>
                       <td className="px-2 py-2">
-                        <input
+                        <MeasurementLineCell
+                          productId={line.productId}
                           value={line.measurementInfo ?? ''}
-                          onChange={(e) =>
-                            updateLine(line.key, { measurementInfo: e.target.value })
-                          }
-                          placeholder="Örn. 180×200"
-                          className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-whatsapp"
+                          onChange={(next) => updateLine(line.key, { measurementInfo: next })}
                         />
                       </td>
                       <td className="px-2 py-2">

@@ -122,6 +122,29 @@ export class OrganizationsController {
     return this.orgService.patchMenuSuborder(orgId, body);
   }
 
+  @Get('my/default-location')
+  @Roles('AGENT', 'ADMIN', 'SUPERADMIN')
+  async getMyDefaultLocation(@Req() req: any) {
+    const orgId = await this.resolveMyOrgId(req);
+    return this.orgService.getDefaultLocationSettings(orgId);
+  }
+
+  @Patch('my/default-location')
+  @Roles('ADMIN')
+  async patchMyDefaultLocation(
+    @Req() req: any,
+    @Body()
+    body: {
+      latitude?: number | null;
+      longitude?: number | null;
+      title?: string | null;
+      address?: string | null;
+    },
+  ) {
+    const orgId = await this.resolveMyOrgId(req);
+    return this.orgService.patchDefaultLocationSettings(orgId, body);
+  }
+
   @Get('my/product-feed')
   @Roles('ADMIN', 'SUPERADMIN')
   async getMyProductFeed(@Req() req: any) {

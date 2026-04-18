@@ -58,6 +58,10 @@ export default function OrganizationSettingsPanel({
   const [billingName, setBillingName] = useState('');
   const [billingAddress, setBillingAddress] = useState('');
   const [taxNumber, setTaxNumber] = useState('');
+  const [defaultLat, setDefaultLat] = useState('');
+  const [defaultLng, setDefaultLng] = useState('');
+  const [defaultLocationTitle, setDefaultLocationTitle] = useState('Mağaza Konumu');
+  const [defaultLocationAddress, setDefaultLocationAddress] = useState('');
   const [showBillingGuardWarning, setShowBillingGuardWarning] = useState(false);
   const [billingGuardShakeKey, setBillingGuardShakeKey] = useState(0);
   const [initialFormState, setInitialFormState] = useState({
@@ -174,6 +178,29 @@ export default function OrganizationSettingsPanel({
       setBillingName(data.billingName || '');
       setBillingAddress(data.billingAddress || '');
       setTaxNumber(data.taxNumber || '');
+      try {
+        const { data: loc } = await api.get('/organizations/my/default-location');
+        setDefaultLat(
+          typeof loc?.latitude === 'number' && Number.isFinite(loc.latitude)
+            ? String(loc.latitude)
+            : '',
+        );
+        setDefaultLng(
+          typeof loc?.longitude === 'number' && Number.isFinite(loc.longitude)
+            ? String(loc.longitude)
+            : '',
+        );
+        setDefaultLocationTitle(
+          typeof loc?.title === 'string' && loc.title.trim()
+            ? loc.title.trim()
+            : 'Mağaza Konumu',
+        );
+        setDefaultLocationAddress(
+          typeof loc?.address === 'string' ? loc.address : '',
+        );
+      } catch {
+        // Opsiyonel ayar: yüklenemezse sessizce boş kalır.
+      }
       setInitialFormState({
         name: (data.name || '').trim(),
         primaryColor: (data.primaryColor || '#25D366').trim(),
@@ -206,6 +233,14 @@ export default function OrganizationSettingsPanel({
         billingName: billingName.trim() || null,
         billingAddress: billingAddress.trim() || null,
         taxNumber: taxNumber.trim() || null,
+      });
+      const lat = Number(defaultLat);
+      const lng = Number(defaultLng);
+      await api.patch('/organizations/my/default-location', {
+        latitude: Number.isFinite(lat) ? lat : null,
+        longitude: Number.isFinite(lng) ? lng : null,
+        title: defaultLocationTitle.trim() || 'Mağaza Konumu',
+        address: defaultLocationAddress.trim() || null,
       });
 
       updateOrganization({
@@ -537,6 +572,60 @@ export default function OrganizationSettingsPanel({
               value={taxNumber}
               onChange={(e) => setTaxNumber(e.target.value)}
               placeholder="1234567890"
+              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-whatsapp/20"
+            />
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-white border rounded-xl p-5">
+        <div className="flex items-center gap-2 mb-4">
+          <LayoutGrid className="w-5 h-5 text-gray-400" />
+          <h2 className="text-lg font-semibold text-gray-900">Sabit Konum</h2>
+        </div>
+        <p className="text-xs text-gray-500 mb-4">
+          Sohbet ekranındaki konum gönderme butonu, önce bu koordinatları kullanır.
+        </p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Latitude</label>
+            <input
+              type="number"
+              step="any"
+              value={defaultLat}
+              onChange={(e) => setDefaultLat(e.target.value)}
+              placeholder="41.0082"
+              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-whatsapp/20"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Longitude</label>
+            <input
+              type="number"
+              step="any"
+              value={defaultLng}
+              onChange={(e) => setDefaultLng(e.target.value)}
+              placeholder="28.9784"
+              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-whatsapp/20"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Başlık</label>
+            <input
+              type="text"
+              value={defaultLocationTitle}
+              onChange={(e) => setDefaultLocationTitle(e.target.value)}
+              placeholder="Mağaza Konumu"
+              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-whatsapp/20"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Adres (opsiyonel)</label>
+            <input
+              type="text"
+              value={defaultLocationAddress}
+              onChange={(e) => setDefaultLocationAddress(e.target.value)}
+              placeholder="Açık adres"
               className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-whatsapp/20"
             />
           </div>
