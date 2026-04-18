@@ -78,6 +78,17 @@ export class EcommerceController {
     return this.ecommerceService.syncTsoftCustomers(this.orgId(user));
   }
 
+  /** CRM siparişlerinden e-ticaret ekranında seçim listesi (organizasyon dahil). */
+  @Get('tsoft/crm-orders-picklist')
+  @UseGuards(RolesGuard)
+  @Roles('ADMIN')
+  listCrmOrdersPicklist(
+    @CurrentUser() user: { role?: string; organizationId?: string | null },
+    @Query('limit') limit = '25',
+  ) {
+    return this.ecommerceService.listCrmOrdersPicklist(this.orgId(user), parseInt(limit, 10) || 25);
+  }
+
   @Post('tsoft/sync-orders')
   @UseGuards(RolesGuard)
   @Roles('ADMIN')

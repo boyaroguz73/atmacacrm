@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import Link from 'next/link';
 import api from '@/lib/api';
 import toast from 'react-hot-toast';
 import {
@@ -9,7 +10,7 @@ import {
   ChevronRight,
   Loader2,
   RefreshCw,
-  Pencil,
+  ExternalLink,
   Trash2,
   Plus,
   X,
@@ -41,7 +42,6 @@ export default function EcommerceProductsPage() {
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
 
-  const [edit, setEdit] = useState<CatalogRow | null>(null);
   const [creating, setCreating] = useState(false);
 
   const load = useCallback(async (p: number, q: string) => {
@@ -93,7 +93,6 @@ export default function EcommerceProductsPage() {
         params: { deleteOnSite: deleteOnSite ? 'true' : 'false' },
       });
       toast.success('Silindi');
-      setEdit(null);
       await load(page, search);
     } catch (err: unknown) {
       const e = err as { response?: { data?: { message?: string } } };
@@ -110,7 +109,7 @@ export default function EcommerceProductsPage() {
             E-Ticaret Ürünleri (CRM katalog)
           </h1>
           <p className="text-sm text-gray-500 mt-1">
-            T-Soft detay senkronu (görseller hariç) veritabanına yazılır; düzenleme ve silme siteyle uyumludur.
+            Mağaza ürünleri burada saklanır (görseller hariç). Satıra tıklayarak tüm alanları görüp düzenleyebilirsiniz.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -169,17 +168,29 @@ export default function EcommerceProductsPage() {
               <thead>
                 <tr className="border-b border-gray-100 bg-gray-50/50 text-left text-xs font-semibold text-gray-500 uppercase">
                   <th className="px-4 py-3">Ürün</th>
+                  <th className="px-4 py-3 hidden md:table-cell max-w-[200px]">Özet</th>
                   <th className="px-4 py-3">Kod</th>
                   <th className="px-4 py-3 text-right">Satış</th>
                   <th className="px-4 py-3 text-right">Stok</th>
                   <th className="px-4 py-3">Durum</th>
-                  <th className="px-4 py-3 w-28" />
+                  <th className="px-4 py-3 w-24" />
                 </tr>
               </thead>
               <tbody>
                 {items.map((r) => (
                   <tr key={r.id} className="border-b border-gray-50 hover:bg-gray-50/40">
-                    <td className="px-4 py-3 font-medium text-gray-900">{r.productName}</td>
+                    <td className="px-4 py-3 font-medium text-gray-900">
+                      <Link
+                        href={`/ecommerce/products/${r.id}`}
+                        className="text-orange-700 hover:underline inline-flex items-center gap-1"
+                      >
+                        {r.productName}
+                        <ExternalLink className="w-3.5 h-3.5 opacity-50" />
+                      </Link>
+                    </td>
+                    <td className="px-4 py-3 text-gray-500 text-xs hidden md:table-cell max-w-[200px] truncate" title={r.shortDescription || ''}>
+                      {r.shortDescription ? r.shortDescription.replace(/<[^>]+>/g, '').slice(0, 80) : '—'}
+                    </td>
                     <td className="px-4 py-3 text-gray-500 text-xs font-mono">{r.productCode}</td>
                     <td className="px-4 py-3 text-right text-gray-700">
                       {r.sellingPrice != null ? `${r.sellingPrice} ${r.currency}` : '—'}
@@ -192,15 +203,7 @@ export default function EcommerceProductsPage() {
                         {r.isActive ? 'Aktif' : 'Pasif'}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-right space-x-1">
-                      <button
-                        type="button"
-                        onClick={() => setEdit(r)}
-                        className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded bg-blue-50 text-blue-700 hover:bg-blue-100"
-                      >
-                        <Pencil className="w-3.5 h-3.5" />
-                        Düzenle
-                      </button>
+                    <td className="px-4 py-3 text-right">
                       <button
                         type="button"
                         onClick={() => deleteRow(r)}
@@ -242,17 +245,11 @@ export default function EcommerceProductsPage() {
         </div>
       </div>
 
-      {(creating || edit) && (
+      {creating && (
         <ProductFormModal
-          mode={creating ? 'create' : 'edit'}
-          initial={edit}
-          onClose={() => {
-            setCreating(false);
-            setEdit(null);
-          }}
+          onClose={() => setCreating(false)}
           onSaved={async () => {
             setCreating(false);
-            setEdit(null);
             await load(page, search);
           }}
         />
@@ -261,30 +258,19 @@ export default function EcommerceProductsPage() {
   );
 }
 
-function ProductFormModal({
-  mode,
-  initial,
-  onClose,
-  onSaved,
-}: {
-  mode: 'create' | 'edit';
-  initial: CatalogRow | null;
-  onClose: () => void;
-  onSaved: () => Promise<void>;
-}) {
+function ProductFormModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => Promise<void> }) {
   const [saving, setSaving] = useState(false);
-  const [productCode, setProductCode] = useState(initial?.productCode || '');
-  const [productName, setProductName] = useState(initial?.productName || '');
-  const [sellingPrice, setSellingPrice] = useState(String(initial?.sellingPrice ?? ''));
-  const [currency, setCurrency] = useState(initial?.currency || 'TL');
-  const [stock, setStock] = useState(String(initial?.stock ?? '0'));
-  const [vatRate, setVatRate] = useState(String(initial?.vatRate ?? '20'));
-  const [isActive, setIsActive] = useState(initial?.isActive !== false);
-  const [barcode, setBarcode] = useState(initial?.barcode || '');
-  const [brand, setBrand] = useState(initial?.brand || '');
-  const [shortDescription, setShortDescription] = useState(initial?.shortDescription || '');
-  const [detailsText, setDetailsText] = useState(initial?.detailsText || '');
-  const [pushToSite, setPushToSite] = useState(true);
+  const [productCode, setProductCode] = useState('');
+  const [productName, setProductName] = useState('');
+  const [sellingPrice, setSellingPrice] = useState('');
+  const [currency, setCurrency] = useState('TL');
+  const [stock, setStock] = useState('0');
+  const [vatRate, setVatRate] = useState('20');
+  const [isActive, setIsActive] = useState(true);
+  const [barcode, setBarcode] = useState('');
+  const [brand, setBrand] = useState('');
+  const [shortDescription, setShortDescription] = useState('');
+  const [detailsText, setDetailsText] = useState('');
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -295,41 +281,24 @@ function ProductFormModal({
         toast.error('Geçerli bir satış fiyatı girin');
         return;
       }
-      if (mode === 'create') {
-        if (!productCode.trim() || !productName.trim()) {
-          toast.error('Ürün kodu ve adı zorunludur');
-          return;
-        }
-        await api.post('/ecommerce/tsoft/catalog', {
-          productCode: productCode.trim(),
-          productName: productName.trim(),
-          sellingPrice: sp,
-          currency: currency || 'TL',
-          stock: stock === '' ? 0 : parseInt(stock, 10) || 0,
-          vatRate: vatRate === '' ? 20 : parseInt(vatRate, 10) || 20,
-          isActive,
-          barcode: barcode.trim() || undefined,
-          brand: brand.trim() || undefined,
-          shortDescription: shortDescription.trim() || undefined,
-          detailsText: detailsText.trim() || undefined,
-        });
-        toast.success('Ürün oluşturuldu');
-      } else if (initial) {
-        await api.patch(`/ecommerce/tsoft/catalog/${initial.id}`, {
-          productName: productName.trim(),
-          sellingPrice: sp,
-          stock: stock === '' ? null : parseInt(stock, 10),
-          vatRate: vatRate === '' ? null : parseInt(vatRate, 10),
-          currency: currency || 'TRY',
-          isActive,
-          barcode: barcode.trim() || null,
-          brand: brand.trim() || null,
-          shortDescription: shortDescription.trim() || null,
-          detailsText: detailsText.trim() || null,
-          pushToSite,
-        });
-        toast.success('Güncellendi');
+      if (!productCode.trim() || !productName.trim()) {
+        toast.error('Ürün kodu ve adı zorunludur');
+        return;
       }
+      await api.post('/ecommerce/tsoft/catalog', {
+        productCode: productCode.trim(),
+        productName: productName.trim(),
+        sellingPrice: sp,
+        currency: currency || 'TL',
+        stock: stock === '' ? 0 : parseInt(stock, 10) || 0,
+        vatRate: vatRate === '' ? 20 : parseInt(vatRate, 10) || 20,
+        isActive,
+        barcode: barcode.trim() || undefined,
+        brand: brand.trim() || undefined,
+        shortDescription: shortDescription.trim() || undefined,
+        detailsText: detailsText.trim() || undefined,
+      });
+      toast.success('Ürün oluşturuldu');
       await onSaved();
     } catch (err: unknown) {
       const e = err as { response?: { data?: { message?: string } } };
@@ -343,25 +312,21 @@ function ProductFormModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
       <div className="bg-white rounded-xl shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-          <h2 className="font-semibold text-gray-900">
-            {mode === 'create' ? 'Yeni ürün' : 'Ürünü düzenle'}
-          </h2>
+          <h2 className="font-semibold text-gray-900">Yeni ürün</h2>
           <button type="button" onClick={onClose} className="text-gray-400 hover:text-gray-700">
             <X className="w-5 h-5" />
           </button>
         </div>
         <form onSubmit={submit} className="p-5 space-y-3 text-sm">
-          {mode === 'create' && (
-            <label className="block">
-              <span className="text-gray-600 text-xs">Ürün kodu</span>
-              <input
-                required
-                className="mt-1 w-full px-3 py-2 rounded-lg border border-gray-200"
-                value={productCode}
-                onChange={(e) => setProductCode(e.target.value)}
-              />
-            </label>
-          )}
+          <label className="block">
+            <span className="text-gray-600 text-xs">Ürün kodu</span>
+            <input
+              required
+              className="mt-1 w-full px-3 py-2 rounded-lg border border-gray-200"
+              value={productCode}
+              onChange={(e) => setProductCode(e.target.value)}
+            />
+          </label>
           <label className="block">
             <span className="text-gray-600 text-xs">Ürün adı</span>
             <input
@@ -411,12 +376,6 @@ function ProductFormModal({
             <input type="checkbox" checked={isActive} onChange={(e) => setIsActive(e.target.checked)} />
             <span>Aktif</span>
           </label>
-          {mode === 'edit' && (
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" checked={pushToSite} onChange={(e) => setPushToSite(e.target.checked)} />
-              <span>Değişiklikleri T-Soft sitesine yaz</span>
-            </label>
-          )}
           <label className="block">
             <span className="text-gray-600 text-xs">Barkod</span>
             <input

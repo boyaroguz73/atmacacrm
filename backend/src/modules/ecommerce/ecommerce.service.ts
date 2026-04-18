@@ -26,6 +26,11 @@ import { OrdersService } from '../orders/orders.service';
 const TSOFT_LABEL = 'T-Soft Site Müşterisi';
 const TSOFT_SOURCE = 'TSOFT';
 
+/** Bir seferde T-Soft’tan en fazla bu kadar müşteri aktarılır (API + performans). */
+const TSOFT_SYNC_CUSTOMERS_MAX = 100;
+/** Sipariş aktarımında üst sınır (çok kayıtta zaman aşımı önleme). */
+const TSOFT_SYNC_ORDERS_MAX = 500;
+
 /** Başarılı veya yapılandırma eksik: periyodik yenileme */
 const STATUS_CACHE_MS_DEFAULT = 120_000;
 /** T-Soft login gerçekten denendi ve başarısız: 429 / gereksiz yükü azaltmak için uzun bekleme */
@@ -138,12 +143,38 @@ export class EcommerceService {
   }
 
   /**
+   * Org için WORKING WhatsApp oturumu varsa kişiyle boş sohbet kaydı açar (inbox’ta görünür).
+   */
+  private async ensureWhatsappConversationForContact(organizationId: string, contactId: string) {
+    let session = await this.prisma.whatsappSession.findFirst({
+      where: { organizationId, status: 'WORKING' },
+      orderBy: { createdAt: 'asc' },
+      select: { id: true },
+    });
+    if (!session) {
+      session = await this.prisma.whatsappSession.findFirst({
+        where: { status: 'WORKING', organizationId: null },
+        orderBy: { createdAt: 'asc' },
+        select: { id: true },
+      });
+    }
+    if (!session) return;
+    await this.prisma.conversation.upsert({
+      where: { contactId_sessionId: { contactId, sessionId: session.id } },
+      update: {},
+      create: { contactId, sessionId: session.id },
+    });
+  }
+
+  /**
    * T-Soft müşterilerini çeker; eşleşen CRM kişilerini günceller, eşleşmeyenleri oluşturur.
+   * En fazla {@link TSOFT_SYNC_CUSTOMERS_MAX} kayıt (REST1 ilk sayfa).
    */
   async syncTsoftCustomers(organizationId: string) {
     this.logger.log(`[TSOFT-SYNC-CUSTOMERS] Başlatılıyor orgId=${organizationId}`);
-    const customers = await this.tsoftApi.fetchAllCustomers(organizationId);
-    this.logger.log(`[TSOFT-SYNC-CUSTOMERS] T-Soft'tan ${customers.length} müşteri çekildi`);
+    const { rows } = await this.tsoftApi.listCustomersPage(organizationId, 1, TSOFT_SYNC_CUSTOMERS_MAX);
+    const customers = rows;
+    this.logger.log(`[TSOFT-SYNC-CUSTOMERS] T-Soft'tan ${customers.length} müşteri çekildi (üst sınır ${TSOFT_SYNC_CUSTOMERS_MAX})`);
 
     if (customers.length > 0) {
       this.logger.debug(`[TSOFT-SYNC-CUSTOMERS] İlk müşteri örneği: ${JSON.stringify(customers[0]).slice(0, 500)}`);
@@ -191,6 +222,7 @@ export class EcommerceService {
           where: { id: existing.id },
           data: { metadata: { ...prev, ecommerce: ecommerceMeta } as object },
         });
+        await this.ensureWhatsappConversationForContact(organizationId, existing.id);
         matched++;
       } else {
         try {
@@ -223,6 +255,7 @@ export class EcommerceService {
             },
           });
           phoneToContact.set(normalizedPhone, { id: newContact.id, phone: newContact.phone, metadata: newContact.metadata });
+          await this.ensureWhatsappConversationForContact(organizationId, newContact.id);
           created++;
           this.logger.debug(`[TSOFT-SYNC-CUSTOMERS] Yeni kişi oluşturuldu: ${normalizedPhone} → ${name} ${surname}`);
         } catch (e: any) {
@@ -236,7 +269,14 @@ export class EcommerceService {
     }
 
     this.logger.log(`[TSOFT-SYNC-CUSTOMERS] Sonuç: ${matched} eşleşti, ${created} yeni oluşturuldu, ${skipped} atlandı (telefon yok)`);
-    return { matched, created, skipped, tsoftCustomerCount: customers.length, crmContactCount: existingContacts.length };
+    return {
+      matched,
+      created,
+      skipped,
+      tsoftCustomerCount: customers.length,
+      crmContactCount: existingContacts.length,
+      maxPerSync: TSOFT_SYNC_CUSTOMERS_MAX,
+    };
   }
 
   private mergeEcommerceMeta(
@@ -279,17 +319,21 @@ export class EcommerceService {
     this.logger.log(`[TSOFT-SYNC-ORDERS] Başlatılıyor orgId=${organizationId}`);
 
     let allOrders: Record<string, unknown>[] = [];
-    for (let page = 1; page <= 50; page++) {
+    for (let page = 1; page <= 50 && allOrders.length < TSOFT_SYNC_ORDERS_MAX; page++) {
       const { rows } = await this.tsoftApi.listOrders(organizationId, page, 100);
       this.logger.debug(`[TSOFT-SYNC-ORDERS] Sayfa ${page}: ${rows.length} sipariş`);
       if (!rows.length) break;
-      for (const r of rows) {
+      const remaining = TSOFT_SYNC_ORDERS_MAX - allOrders.length;
+      const chunk = rows.slice(0, Math.max(0, remaining));
+      for (const r of chunk) {
         if (r && typeof r === 'object') allOrders.push(r as Record<string, unknown>);
       }
       if (rows.length < 100) break;
     }
 
-    this.logger.log(`[TSOFT-SYNC-ORDERS] T-Soft'tan toplam ${allOrders.length} sipariş çekildi`);
+    this.logger.log(
+      `[TSOFT-SYNC-ORDERS] T-Soft'tan toplam ${allOrders.length} sipariş çekildi (üst sınır ${TSOFT_SYNC_ORDERS_MAX})`,
+    );
     if (allOrders.length > 0) {
       this.logger.debug(`[TSOFT-SYNC-ORDERS] İlk sipariş örneği: ${JSON.stringify(allOrders[0]).slice(0, 1000)}`);
     }
@@ -368,6 +412,7 @@ export class EcommerceService {
             },
           });
           this.logger.debug(`[TSOFT-SYNC-ORDERS] Sipariş ${tsoftCode} için yeni kişi oluşturuldu: ${normalizedPhone}`);
+          await this.ensureWhatsappConversationForContact(organizationId, contact.id);
         }
 
         if (!contact) {
@@ -462,7 +507,41 @@ export class EcommerceService {
     }
 
     this.logger.log(`[TSOFT-SYNC-ORDERS] Sonuç: ${imported} aktarıldı, ${skippedExisting} zaten var, ${errors} hata`);
-    return { imported, skippedExisting, errors, totalFetched: allOrders.length };
+    return {
+      imported,
+      skippedExisting,
+      errors,
+      totalFetched: allOrders.length,
+      maxPerSync: TSOFT_SYNC_ORDERS_MAX,
+    };
+  }
+
+  /** E-ticaret ekranında CRM siparişi seçmek için (organizasyon filtresi). */
+  async listCrmOrdersPicklist(organizationId: string, limit = 25) {
+    const take = Math.min(50, Math.max(1, limit));
+    const orders = await this.prisma.salesOrder.findMany({
+      where: { contact: { organizationId } },
+      orderBy: { createdAt: 'desc' },
+      take,
+      select: {
+        id: true,
+        orderNumber: true,
+        grandTotal: true,
+        currency: true,
+        status: true,
+        source: true,
+        tsoftSiteOrderId: true,
+        createdAt: true,
+        contact: {
+          select: {
+            name: true,
+            surname: true,
+            phone: true,
+          },
+        },
+      },
+    });
+    return { orders };
   }
 
   private extractOrderItems(raw: Record<string, unknown>): Array<{
@@ -695,6 +774,10 @@ export class EcommerceService {
       detailsText?: string | null;
       brand?: string | null;
       barcode?: string | null;
+      buyingPrice?: number | null;
+      model?: string | null;
+      categoryCode?: string | null;
+      categoryName?: string | null;
       pushToSite?: boolean;
     },
   ) {
@@ -711,11 +794,19 @@ export class EcommerceService {
           ? String(existing.vatRate)
           : '20';
 
+    const listPriceVal = dto.listPrice !== undefined ? dto.listPrice : existing.listPrice;
+    const buyingPriceVal = dto.buyingPrice !== undefined ? dto.buyingPrice : existing.buyingPrice;
+    const modelVal = dto.model !== undefined ? dto.model : existing.model;
+    const catCodeVal = dto.categoryCode !== undefined ? dto.categoryCode : existing.categoryCode;
+    const catNameVal = dto.categoryName !== undefined ? dto.categoryName : existing.categoryName;
+
     if (dto.pushToSite !== false) {
       await this.tsoftApi.updateProducts(organizationId, {
         ProductCode: existing.productCode,
         ProductName: productName,
         SellingPrice: sellingPrice,
+        ListPrice: listPriceVal ?? '',
+        BuyingPrice: buyingPriceVal ?? '',
         Stock: stock ?? 0,
         StockUnit: 'Adet',
         Currency: currency,
@@ -723,6 +814,9 @@ export class EcommerceService {
         IsActive: isActive,
         Barcode: dto.barcode ?? existing.barcode ?? '',
         Brand: dto.brand ?? existing.brand ?? '',
+        Model: modelVal ?? '',
+        DefaultCategoryCode: catCodeVal ?? '',
+        CategoryName: catNameVal ?? '',
         ShortDescription: dto.shortDescription ?? existing.shortDescription ?? '',
         Details: dto.detailsText ?? existing.detailsText ?? '',
       });
@@ -734,6 +828,7 @@ export class EcommerceService {
         productName,
         sellingPrice,
         listPrice: dto.listPrice !== undefined ? dto.listPrice : existing.listPrice,
+        buyingPrice: dto.buyingPrice !== undefined ? dto.buyingPrice : existing.buyingPrice,
         stock,
         vatRate: dto.vatRate !== undefined ? dto.vatRate : existing.vatRate,
         currency,
@@ -742,6 +837,9 @@ export class EcommerceService {
         detailsText: dto.detailsText !== undefined ? dto.detailsText : existing.detailsText,
         brand: dto.brand !== undefined ? dto.brand : existing.brand,
         barcode: dto.barcode !== undefined ? dto.barcode : existing.barcode,
+        model: dto.model !== undefined ? dto.model : existing.model,
+        categoryCode: dto.categoryCode !== undefined ? dto.categoryCode : existing.categoryCode,
+        categoryName: dto.categoryName !== undefined ? dto.categoryName : existing.categoryName,
         syncedAt: new Date(),
       },
     });

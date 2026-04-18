@@ -108,6 +108,24 @@ export class UpdateTsoftCatalogDto {
   @IsString()
   barcode?: string | null;
 
+  @IsOptional()
+  @ValidateIf((_, v) => v !== null && v !== undefined)
+  @Type(() => Number)
+  @IsNumber()
+  buyingPrice?: number | null;
+
+  @IsOptional()
+  @IsString()
+  model?: string | null;
+
+  @IsOptional()
+  @IsString()
+  categoryCode?: string | null;
+
+  @IsOptional()
+  @IsString()
+  categoryName?: string | null;
+
   /** false ise yalnızca CRM kaydı güncellenir (isteğe bağlı) */
   @IsOptional()
   @IsBoolean()
