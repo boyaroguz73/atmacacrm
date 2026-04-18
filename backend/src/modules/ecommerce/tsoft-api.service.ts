@@ -291,6 +291,18 @@ export class TsoftApiService {
         this.logger.log(`T-Soft REST1 login başarılı (org=${organizationId})`);
         return token;
       }
+      // REST1 HTTP 200 + success:true ama token parse edilemediyse v3'e düşmeyin (çoğu kurulumda v3 → 403 HTML)
+      if (rest1.res.status >= 200 && rest1.res.status < 400) {
+        const b = (rest1.res.data || {}) as Record<string, unknown>;
+        if (b['success'] === true && !this.extractTokenFromLoginBody(b)) {
+          this.logger.error(
+            `T-Soft REST1: success=true fakat token çıkarılamadı. Yanıt örneği: ${JSON.stringify(rest1.res.data)?.slice(0, 400)}`,
+          );
+          throw new BadRequestException(
+            'T-Soft REST1 giriş yanıtında token okunamadı. Backend sürümünü güncelleyin (rest1 auth data[] formatı) veya T-Soft yanıt formatını kontrol edin.',
+          );
+        }
+      }
     }
 
     // REST1 başarısız → v3 API dene (fallback)
@@ -358,7 +370,11 @@ export class TsoftApiService {
 
     if (res.status >= 400) {
       const hint = this.summarizeTsoftError(res.status, res.data);
-      throw new BadRequestException(`T-Soft giriş hatası (HTTP ${res.status}): ${hint}`);
+      const v3Note =
+        res.status === 403
+          ? ' Bu mağazada v3 admin API genelde WAF ile engellenir; yalnızca REST1 kullanılmalı. Backend güncel mi ve REST1 token parse çalışıyor mu kontrol edin.'
+          : '';
+      throw new BadRequestException(`T-Soft giriş hatası (HTTP ${res.status}): ${hint}${v3Note}`);
     }
 
     const token = this.extractTokenFromLoginBody(body);
