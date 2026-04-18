@@ -395,10 +395,9 @@ export default function ProductsPage() {
         {isAdmin ? (
           <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5 space-y-4">
             <div>
-              <h2 className="text-sm font-semibold text-gray-900">Google Shopping XML</h2>
+              <h2 className="text-sm font-semibold text-gray-900">Ürün XML Senkronizasyonu</h2>
               <p className="text-xs text-gray-500 mt-1">
-                Akış URL’si ve varsayılan KDV burada saklanır. &quot;XML senkron&quot; bu ayarları kullanır; ortam değişkeni yalnızca URL
-                boşsa yedek olarak devreye girer.
+                T-Soft veya Google Shopping XML akışından ürünleri çeker. Alt ürünler (varyantlar) otomatik eşlenir.
               </p>
             </div>
             {feedLoading || !productFeed ? (

@@ -107,6 +107,7 @@ export default function NewOrderPage() {
   const [suppliers, setSuppliers] = useState<SupplierHit[]>([]);
   const [paymentMode, setPaymentMode] = useState<OrderPaymentModeUI>('FULL');
   const [customPaymentValue, setCustomPaymentValue] = useState('');
+  const [sendToTsoft, setSendToTsoft] = useState(false);
 
   const totals = useMemo(() => calcTotals(lines), [lines]);
 
@@ -232,6 +233,7 @@ export default function NewOrderPage() {
         shippingAddress: shippingAddress.trim() || null,
         notes: notes.trim() || null,
         expectedDeliveryDate: expectedDeliveryDate ? new Date(expectedDeliveryDate).toISOString() : null,
+        sendToTsoft,
         payment: {
           mode: paymentMode,
           customValue: paymentMode === 'CUSTOM' ? Number(customPaymentValue) || undefined : undefined,
@@ -540,7 +542,16 @@ export default function NewOrderPage() {
           </div>
         </div>
 
-        <div className="flex justify-end">
+        <div className="flex items-center justify-between gap-4">
+          <label className="inline-flex items-center gap-2 text-sm text-gray-700 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={sendToTsoft}
+              onChange={(e) => setSendToTsoft(e.target.checked)}
+              className="rounded border-gray-300 text-whatsapp focus:ring-whatsapp"
+            />
+            Siteye de gönderilsin
+          </label>
           <button
             type="button"
             onClick={() => void submit()}

@@ -4,6 +4,7 @@ import { PdfService } from '../pdf/pdf.service';
 import { OrderStatus, DiscountType } from '@prisma/client';
 import { splitSearchTokens } from '../../common/search-tokens';
 import { AuditLogService } from '../audit-log/audit-log.service';
+import { TsoftApiService } from '../ecommerce/tsoft-api.service';
 
 @Injectable()
 export class OrdersService {
@@ -27,6 +28,7 @@ export class OrdersService {
     private prisma: PrismaService,
     private pdfService: PdfService,
     private auditLog: AuditLogService,
+    private tsoftApi: TsoftApiService,
   ) {}
 
   private readonly includeRelations = {
@@ -140,6 +142,8 @@ export class OrdersService {
     shippingAddress?: string;
     notes?: string;
     expectedDeliveryDate?: string;
+    sendToTsoft?: boolean;
+    organizationId?: string;
     payment?: {
       mode?: 'FULL' | 'DEPOSIT_50' | 'CUSTOM';
       customValue?: number | null;
@@ -240,7 +244,82 @@ export class OrdersService {
       entityId: order.id,
       details: { grandTotal: order.grandTotal, itemCount: items.length },
     });
+
+    if (data.sendToTsoft && data.organizationId) {
+      try {
+        await this.pushOrderToTsoft(order, data.organizationId);
+        this.logger.log(`Sipariş T-Soft'a gönderildi: #${order.orderNumber}`);
+      } catch (e: any) {
+        this.logger.warn(`Sipariş T-Soft'a gönderilemedi: ${e?.message}`);
+      }
+    }
+
     return order;
+  }
+
+  private async pushOrderToTsoft(order: any, organizationId: string) {
+    const contact = order.contact;
+    const orderItems = order.items || [];
+
+    const tsoftProducts: Record<string, unknown>[] = [];
+    for (const item of orderItems) {
+      const product = item.product;
+      const entry: Record<string, unknown> = {
+        ProductCode: product?.sku || item.name,
+        Quantity: item.quantity,
+        OrderNote: '',
+      };
+      tsoftProducts.push(entry);
+    }
+
+    const orderCode = `CRM-${String(order.orderNumber).padStart(5, '0')}`;
+    const customerName = [contact?.name, contact?.surname].filter(Boolean).join(' ') || 'CRM Müşteri';
+    const nameParts = customerName.split(' ');
+    const firstName = nameParts[0] || '';
+    const lastName = nameParts.slice(1).join(' ') || '';
+
+    const currencyMap: Record<string, string> = { TRY: 'TL', USD: 'USD', EUR: 'EUR', GBP: 'GBP' };
+    const tsoftCurrency = currencyMap[order.currency] || order.currency;
+
+    const tsoftOrder: Record<string, unknown> = {
+      OrderCode: orderCode,
+      Currency: tsoftCurrency,
+      OrderStatusId: '1',
+      OrderTotalPrice: String(order.grandTotal),
+      GeneralOrderNote: order.notes || `CRM Sipariş #${order.orderNumber}`,
+      OrderDate: new Date().toISOString().replace('T', ' ').slice(0, 19),
+
+      InvoiceName: customerName,
+      InvoiceTitle: contact?.company || customerName,
+      InvoiceMobile: contact?.phone || '',
+      InvoiceCity: '',
+      InvoiceTown: '',
+      InvoiceAddress: contact?.billingAddress || contact?.address || '-',
+      InvoiceCountry: 'Türkiye',
+      InvoiceTaxOffice: contact?.taxOffice || '',
+      InvoiceTaxNumber: contact?.taxNumber || '',
+      InvoiceIdentityNumber: contact?.identityNumber || '',
+
+      DeliveryName: customerName,
+      DeliveryTitle: contact?.company || customerName,
+      DeliveryMobile: contact?.phone || '',
+      DeliveryCity: '',
+      DeliveryTown: '',
+      DeliveryAddress: order.shippingAddress || contact?.address || '-',
+      DeliveryCountry: 'Türkiye',
+
+      ...Object.fromEntries(
+        tsoftProducts.flatMap((p, i) => [
+          [`ProductCode[${i}]`, p.ProductCode],
+          [`Quantity[${i}]`, p.Quantity],
+          [`OrderNote[${i}]`, p.OrderNote || ''],
+        ]),
+      ),
+    };
+
+    const result = await this.tsoftApi.createOrder(organizationId, tsoftOrder);
+    this.logger.debug(`T-Soft sipariş yanıtı: ${JSON.stringify(result)?.slice(0, 500)}`);
+    return result;
   }
 
   async updateStatus(id: string, status: OrderStatus) {

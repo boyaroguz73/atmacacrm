@@ -46,8 +46,12 @@ export class OrdersController {
 
   @Post()
   @Roles('AGENT')
-  create(@CurrentUser('id') userId: string, @Body() body: any) {
-    return this.ordersService.create(userId, body);
+  create(
+    @CurrentUser('id') userId: string,
+    @CurrentUser('organizationId') organizationId: string,
+    @Body() body: any,
+  ) {
+    return this.ordersService.create(userId, { ...body, organizationId });
   }
 
   @Patch(':id/status')

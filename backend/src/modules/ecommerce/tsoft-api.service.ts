@@ -520,6 +520,17 @@ export class TsoftApiService {
     return this.unwrapRest1List(raw);
   }
 
+  async createOrder(
+    organizationId: string,
+    orderData: Record<string, unknown>,
+  ): Promise<unknown> {
+    return this.rest1RequestWithData(
+      organizationId,
+      '/rest1/order2/createOrders',
+      orderData,
+    );
+  }
+
   // ─── Customer endpoints ───────────────────────────────────────────────
 
   async listCustomersPage(organizationId: string, page = 1, limit = 100) {

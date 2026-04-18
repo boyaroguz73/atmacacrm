@@ -62,9 +62,10 @@ function parseLoosePercent(raw: string): number | null {
 function resolveVatRateFromFeedItem(item: Record<string, unknown>, fallback: number): number {
   const fb = clampVatPercent(fallback);
   const keys = [
+    'vat',
+    'vat_rate',
     'tax_rate',
     'g:tax_rate',
-    'vat_rate',
     'g:vat_rate',
     'kdv',
     'g:kdv',
@@ -102,6 +103,69 @@ function saleWindowActive(rangeRaw: string | null | undefined, now: Date): boole
   return now >= start && now <= end;
 }
 
+/** T-Soft native <images><img_item> → image URL dizisi */
+function extractTsoftImages(item: Record<string, unknown>): string[] {
+  const imgs = item.images;
+  if (!imgs || typeof imgs !== 'object') return [];
+  const box = imgs as Record<string, unknown>;
+  const raw = box.img_item;
+  if (!raw) return [];
+  const arr = Array.isArray(raw) ? raw : [raw];
+  return arr.map((x) => normalizeText(x)).filter(Boolean);
+}
+
+/**
+ * T-Soft native XML <product> öğesini Google Shopping benzeri yapıya dönüştürür.
+ * Böylece mevcut işleme döngüsü her iki formatı da işleyebilir.
+ */
+function normalizeTsoftNativeItem(item: Record<string, unknown>): Record<string, unknown> {
+  const wsCode = normalizeText(item.ws_code);
+  const code = normalizeText(item.code);
+  const sku = wsCode || (code ? `T${code}` : '');
+  const name = normalizeText(item.name);
+  const currency = normalizeText(item.currency) || 'TL';
+  const currencyNormalized = currency === 'TL' ? 'TRY' : currency;
+
+  const priceList = normalizeText(item.price_list);
+  const priceSpecial = normalizeText(item.price_special);
+  const vat = normalizeText(item.vat);
+  const stock = normalizeText(item.stock);
+  const stockNum = stock ? parseInt(stock, 10) : 0;
+
+  const images = extractTsoftImages(item);
+  const primaryImage = images[0] || null;
+  const additionalImages = images.slice(1);
+
+  const normalized: Record<string, unknown> = {
+    id: sku,
+    title: name,
+    description: normalizeText(item.detail) || null,
+    link: normalizeText(item.product_link) || null,
+    image_link: primaryImage,
+    additional_image_link: additionalImages.length > 0 ? additionalImages : undefined,
+    price: priceList ? `${priceList} ${currencyNormalized}` : undefined,
+    sale_price: priceSpecial && priceSpecial !== priceList
+      ? `${priceSpecial} ${currencyNormalized}`
+      : undefined,
+    product_type: normalizeText(item.category_path) || normalizeText(item.cat1name) || null,
+    brand: normalizeText(item.brand) || null,
+    availability: stockNum > 0 ? 'in_stock' : 'out_of_stock',
+    vat_rate: vat || null,
+    // T-Soft native kodu sakla (sipariş oluşturmada kullanılır)
+    _tsoft_code: code,
+    _tsoft_ws_code: wsCode,
+    _tsoft_unit: normalizeText(item.unit) || 'Adet',
+    _tsoft_stock: stockNum,
+  };
+
+  // Subproducts'ı olduğu gibi aktar
+  if (item.subproducts) {
+    normalized.subproducts = item.subproducts;
+  }
+
+  return normalized;
+}
+
 /** Ana görsel: image_link / g:image_link; yoksa ilk additional_image_link */
 function resolvePrimaryImageUrl(item: Record<string, unknown>): string | null {
   let main = field(item, 'image_link', 'g:image_link') || null;
@@ -127,21 +191,42 @@ function collectAdditionalImages(item: Record<string, unknown>): string[] {
   return urls;
 }
 
-function extractItems(parsed: unknown): Record<string, unknown>[] {
+type XmlFeedFormat = 'google_shopping' | 'tsoft_native';
+
+function detectFeedFormat(parsed: Record<string, unknown>): XmlFeedFormat {
+  if (parsed.products && typeof parsed.products === 'object') return 'tsoft_native';
+  return 'google_shopping';
+}
+
+function extractItems(parsed: unknown): { items: Record<string, unknown>[]; format: XmlFeedFormat } {
   const p = parsed as Record<string, unknown>;
+
+  // T-Soft native: <products><product>…</product></products>
+  if (p.products && typeof p.products === 'object') {
+    const box = p.products as Record<string, unknown>;
+    const products = box.product;
+    if (products == null) return { items: [], format: 'tsoft_native' };
+    const arr = Array.isArray(products)
+      ? (products as Record<string, unknown>[])
+      : [products as Record<string, unknown>];
+    return { items: arr, format: 'tsoft_native' };
+  }
+
+  // Google Shopping: <rss><channel><item>…
   const rss = (p.rss ?? p) as Record<string, unknown>;
   const channel = (rss.channel ?? rss) as Record<string, unknown>;
   const items = channel.item;
-  if (items == null) return [];
-  return Array.isArray(items) ? (items as Record<string, unknown>[]) : [items as Record<string, unknown>];
+  if (items == null) return { items: [], format: 'google_shopping' };
+  const arr = Array.isArray(items) ? (items as Record<string, unknown>[]) : [items as Record<string, unknown>];
+  return { items: arr, format: 'google_shopping' };
 }
 
-/** XML içindeki <subproducts><subproduct>… type2 …</subproduct> satırları (Ticimax / özel feed). */
 type XmlSubproductRow = {
   type2: string;
   title: string;
   priceRaw: string;
   subId: string;
+  stock: number | null;
 };
 
 function asObjectArray(v: unknown): Record<string, unknown>[] {
@@ -156,10 +241,13 @@ function mapSubproductRows(rows: Record<string, unknown>[]): XmlSubproductRow[] 
   for (const r of rows) {
     const type2 = field(r, 'type2', 'g:type2', 'Type2');
     const title = field(r, 'title', 'name', 'baslik', 'g:title', 'g:name');
-    const priceRaw = field(r, 'price', 'g:price', 'sale_price', 'g:sale_price');
-    const subId = field(r, 'id', 'g:id', 'sku', 'g:sku');
+    const priceRaw = field(r, 'price_list', 'price_list_discount', 'price', 'g:price', 'sale_price', 'g:sale_price');
+    const subId = field(r, 'code', 'id', 'g:id', 'sku', 'g:sku');
+    const wsCode = field(r, 'ws_code', 'wsCode');
+    const stockRaw = field(r, 'stock');
+    const stock = stockRaw ? parseInt(stockRaw, 10) : null;
     if (!type2 && !title && !subId && !priceRaw) continue;
-    out.push({ type2, title, priceRaw, subId });
+    out.push({ type2, title, priceRaw, subId: wsCode || subId, stock });
   }
   return out;
 }
@@ -422,7 +510,7 @@ export class ProductsService {
       removeNSPrefix: true,
       trimValues: false,
       isArray: (tagName) =>
-        ['item', 'additional_image_link', 'subproduct', 'g:subproduct'].includes(String(tagName)),
+        ['item', 'product', 'img_item', 'additional_image_link', 'subproduct', 'g:subproduct'].includes(String(tagName)),
     });
 
     let parsed: unknown;
@@ -433,7 +521,11 @@ export class ProductsService {
       throw new BadRequestException(`XML ayrıştırılamadı: ${msg}`);
     }
 
-    const items = extractItems(parsed);
+    const { items: rawItems, format } = extractItems(parsed);
+    const items = format === 'tsoft_native'
+      ? rawItems.map(normalizeTsoftNativeItem)
+      : rawItems;
+    this.logger.log(`XML format algılandı: ${format}, ${rawItems.length} ürün`);
     const now = new Date();
     const seenSkus = new Set<string>();
     const seenVariantExternalIds = new Set<string>();
@@ -483,8 +575,17 @@ export class ProductsService {
         saleWindowActive(salePriceEffectiveRange, now);
       const unitPrice = useSale && salePriceAmount != null ? salePriceAmount : listParsed.amount || saleParsed.amount || 0;
 
-      const stock = googleAvailability ? stockFromAvailability(googleAvailability) : null;
-      const isActive = googleAvailability ? activeFromAvailability(googleAvailability) : true;
+      const tsoftStock = item._tsoft_stock;
+      const stock = typeof tsoftStock === 'number'
+        ? tsoftStock
+        : googleAvailability
+          ? stockFromAvailability(googleAvailability)
+          : null;
+      const isActive = typeof tsoftStock === 'number'
+        ? tsoftStock > 0
+        : googleAvailability
+          ? activeFromAvailability(googleAvailability)
+          : true;
       const itemVat = resolveVatRateFromFeedItem(item, vatDefault);
 
       const additionalImagesRaw = impImg ? collectAdditionalImages(item) : [];
@@ -611,11 +712,12 @@ export class ProductsService {
           imageUrlFromFeed ||
           (existing?.imageUrl && String(existing.imageUrl).trim() ? String(existing.imageUrl).trim() : null);
 
+        const unit = (typeof item._tsoft_unit === 'string' && item._tsoft_unit) || 'Adet';
         const createData: any = {
           sku,
           name,
           description: impDesc ? description : null,
-          unit: 'Adet',
+          unit,
           unitPrice,
           currency,
           vatRate: itemVat,
@@ -700,6 +802,8 @@ export class ProductsService {
 
             const label = row.type2 || row.title || `Varyant ${si + 1}`;
             const variantName = `${name} — ${label}`.slice(0, 480);
+            const varStock = row.stock != null ? row.stock : stock;
+            const varActive = row.stock != null ? row.stock > 0 : isActive;
 
             const metadata: Prisma.InputJsonValue = {
               type2: row.type2 || null,
@@ -722,8 +826,8 @@ export class ProductsService {
                 unitPrice: vPrice,
                 currency: vCur,
                 vatRate: itemVat,
-                stock,
-                isActive,
+                stock: varStock,
+                isActive: varActive,
                 metadata,
               },
               update: {
@@ -731,8 +835,8 @@ export class ProductsService {
                 unitPrice: vPrice,
                 currency: vCur,
                 vatRate: itemVat,
-                stock,
-                isActive,
+                stock: varStock,
+                isActive: varActive,
                 metadata,
               },
             });
