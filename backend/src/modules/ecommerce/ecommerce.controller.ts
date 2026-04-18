@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Put,
   Param,
   Query,
   Body,
@@ -15,6 +16,8 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { EcommerceService } from './ecommerce.service';
 import { CreateTsoftCustomerDto } from './dto/create-tsoft-customer.dto';
+import { SaveTsoftAutoReplyDto } from './dto/tsoft-auto-reply.dto';
+import { CreateTsoftOrderDto } from './dto/create-tsoft-order.dto';
 
 @ApiTags('E-Commerce')
 @ApiBearerAuth()
@@ -33,16 +36,10 @@ export class EcommerceController {
     return user.organizationId;
   }
 
-  /** Kenar çubuğu ve sohbet paneli: entegrasyon görünürlüğü */
   @Get('status')
   async getStatus(@CurrentUser() user: { role?: string; organizationId?: string | null }) {
     if (user.role === 'SUPERADMIN' || !user.organizationId) {
-      return {
-        menuVisible: false,
-        healthy: false,
-        provider: null as string | null,
-        canPushCustomer: false,
-      };
+      return { menuVisible: false, healthy: false, provider: null as string | null, canPushCustomer: false };
     }
     return await this.ecommerceService.getStatus(user.organizationId);
   }
@@ -68,9 +65,16 @@ export class EcommerceController {
     return this.ecommerceService.syncTsoftCustomers(this.orgId(user));
   }
 
-  @Get('tsoft/products')
+  @Post('tsoft/sync-orders')
   @UseGuards(RolesGuard)
   @Roles('ADMIN')
+  syncTsoftOrders(@CurrentUser() user: { role?: string; organizationId?: string | null }) {
+    return this.ecommerceService.syncTsoftOrders(this.orgId(user));
+  }
+
+  @Get('tsoft/products')
+  @UseGuards(RolesGuard)
+  @Roles('ADMIN', 'AGENT')
   listProducts(
     @CurrentUser() user: { role?: string; organizationId?: string | null },
     @Query('page') page = '1',
@@ -83,10 +87,11 @@ export class EcommerceController {
     );
   }
 
-  @Get('tsoft/orders')
+  /** Canlı T-Soft sipariş listesi (ham API) */
+  @Get('tsoft/orders/live')
   @UseGuards(RolesGuard)
   @Roles('ADMIN')
-  listOrders(
+  listOrdersLive(
     @CurrentUser() user: { role?: string; organizationId?: string | null },
     @Query('page') page = '1',
     @Query('limit') limit = '50',
@@ -96,6 +101,65 @@ export class EcommerceController {
       Math.max(1, parseInt(page, 10) || 1),
       Math.min(100, Math.max(1, parseInt(limit, 10) || 50)),
     );
+  }
+
+  /** DB'den sync edilmiş sipariş listesi */
+  @Get('tsoft/synced-orders')
+  @UseGuards(RolesGuard)
+  @Roles('ADMIN', 'AGENT')
+  getSyncedOrders(
+    @CurrentUser() user: { role?: string; organizationId?: string | null },
+    @Query('page') page = '1',
+    @Query('limit') limit = '20',
+    @Query('search') search?: string,
+  ) {
+    return this.ecommerceService.getSyncedOrders(
+      this.orgId(user),
+      Math.max(1, parseInt(page, 10) || 1),
+      Math.min(100, Math.max(1, parseInt(limit, 10) || 20)),
+      search,
+    );
+  }
+
+  /** Tek sipariş detayı */
+  @Get('tsoft/synced-orders/:id')
+  @UseGuards(RolesGuard)
+  @Roles('ADMIN', 'AGENT')
+  getSyncedOrderById(
+    @CurrentUser() user: { role?: string; organizationId?: string | null },
+    @Param('id') id: string,
+  ) {
+    return this.ecommerceService.getSyncedOrderById(this.orgId(user), id);
+  }
+
+  /** T-Soft'ta yeni sipariş oluştur */
+  @Post('tsoft/orders')
+  @UseGuards(RolesGuard)
+  @Roles('ADMIN', 'AGENT')
+  createOrder(
+    @CurrentUser() user: { role?: string; organizationId?: string | null },
+    @Body() dto: CreateTsoftOrderDto,
+  ) {
+    return this.ecommerceService.createTsoftOrder(this.orgId(user), dto);
+  }
+
+  /** Otomatik yanıt şablonlarını getir */
+  @Get('tsoft/auto-reply')
+  @UseGuards(RolesGuard)
+  @Roles('ADMIN')
+  getAutoReplies(@CurrentUser() user: { role?: string; organizationId?: string | null }) {
+    return this.ecommerceService.getAutoReplies(this.orgId(user));
+  }
+
+  /** Otomatik yanıt şablonu kaydet / güncelle */
+  @Put('tsoft/auto-reply')
+  @UseGuards(RolesGuard)
+  @Roles('ADMIN')
+  saveAutoReply(
+    @CurrentUser() user: { role?: string; organizationId?: string | null },
+    @Body() dto: SaveTsoftAutoReplyDto,
+  ) {
+    return this.ecommerceService.saveAutoReply(this.orgId(user), dto.eventType, dto.template, dto.isActive);
   }
 
   @Post('tsoft/contacts/:contactId/customer')

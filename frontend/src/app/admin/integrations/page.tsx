@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import api, { getApiErrorMessage } from '@/lib/api';
 import { PLAN_LABELS } from '@/lib/constants';
 import {
@@ -30,6 +30,8 @@ import {
   Key,
   Globe,
   Bug,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -878,8 +880,114 @@ function MessagingPanel({ integration }: { integration: Integration }) {
 }
 
 /* ─────── E-commerce Panel ─────── */
+
+interface TsoftAutoReplyRow {
+  eventType: string;
+  label: string;
+  template: string;
+  isActive: boolean;
+  id: string | null;
+}
+
+const VARIABLE_HINTS = [
+  { key: '{{musteri_adi}}', desc: 'Müşteri adı soyadı' },
+  { key: '{{siparis_no}}', desc: 'Sipariş numarası' },
+  { key: '{{siparis_tutari}}', desc: 'Toplam tutar + para birimi' },
+  { key: '{{urunler}}', desc: 'Ürün listesi (ad × adet)' },
+  { key: '{{tarih}}', desc: 'Sipariş tarihi' },
+];
+
+function AutoReplyEditor({ row, onSaved }: { row: TsoftAutoReplyRow; onSaved: () => void }) {
+  const [template, setTemplate] = useState(row.template);
+  const [isActive, setIsActive] = useState(row.isActive);
+  const [saving, setSaving] = useState(false);
+  const [open, setOpen] = useState(row.isActive);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await api.put('/ecommerce/tsoft/auto-reply', { eventType: row.eventType, template, isActive });
+      toast.success('Şablon kaydedildi');
+      onSaved();
+    } catch (err: any) {
+      toast.error(getApiErrorMessage(err, 'Kaydetme başarısız'));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="border border-gray-200 rounded-xl overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setOpen((p) => !p)}
+        className="w-full flex items-center justify-between px-4 py-3 bg-white hover:bg-gray-50 transition-colors"
+      >
+        <div className="flex items-center gap-2">
+          <div className={`w-2 h-2 rounded-full ${isActive ? 'bg-green-500' : 'bg-gray-300'}`} />
+          <span className="text-sm font-medium text-gray-900">{row.label}</span>
+          <span className="text-[10px] text-gray-400 font-mono">{row.eventType}</span>
+        </div>
+        {open ? (
+          <ChevronUp className="w-4 h-4 text-gray-400" />
+        ) : (
+          <ChevronDown className="w-4 h-4 text-gray-400" />
+        )}
+      </button>
+      {open && (
+        <div className="px-4 pb-4 pt-1 space-y-3 bg-gray-50/40">
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-gray-500">Aktif</span>
+            <button onClick={() => setIsActive((p) => !p)}>
+              {isActive ? (
+                <ToggleRight className="w-9 h-5 text-orange-500" />
+              ) : (
+                <ToggleLeft className="w-9 h-5 text-gray-300" />
+              )}
+            </button>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1">Mesaj Şablonu</label>
+            <textarea
+              value={template}
+              onChange={(e) => setTemplate(e.target.value)}
+              rows={4}
+              placeholder={`Merhaba {{musteri_adi}}, {{siparis_no}} numaralı siparişiniz alındı! Toplam: {{siparis_tutari}} 🙏`}
+              className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-orange-400 resize-none bg-white"
+            />
+          </div>
+          <div className="flex flex-wrap gap-1">
+            {VARIABLE_HINTS.map((v) => (
+              <button
+                key={v.key}
+                type="button"
+                title={v.desc}
+                onClick={() => setTemplate((p) => p + v.key)}
+                className="text-[10px] font-mono px-2 py-0.5 bg-orange-50 text-orange-700 rounded border border-orange-100 hover:bg-orange-100"
+              >
+                {v.key}
+              </button>
+            ))}
+          </div>
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-500 text-white rounded-lg text-xs font-medium hover:bg-orange-600 disabled:opacity-50"
+          >
+            {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+            Kaydet
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function TsoftPanel({ integration }: { integration: Integration }) {
   const ic = integration.config || {};
+  const [tab, setTab] = useState<'connection' | 'auto-reply'>('connection');
+
+  // Connection tab state
   const [baseUrl, setBaseUrl] = useState(String(ic.baseUrl || ic.storeUrl || ''));
   const [apiEmail, setApiEmail] = useState(String(ic.apiEmail || ''));
   const [apiPassword, setApiPassword] = useState('');
@@ -888,9 +996,14 @@ function TsoftPanel({ integration }: { integration: Integration }) {
   );
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
-  const [syncing, setSyncing] = useState(false);
+  const [syncingCustomers, setSyncingCustomers] = useState(false);
+  const [syncingOrders, setSyncingOrders] = useState(false);
   const [diagnosing, setDiagnosing] = useState(false);
   const [diagnoseOut, setDiagnoseOut] = useState<string | null>(null);
+
+  // Auto-reply tab state
+  const [autoReplies, setAutoReplies] = useState<TsoftAutoReplyRow[]>([]);
+  const [loadingReplies, setLoadingReplies] = useState(false);
 
   const configSnapshot = JSON.stringify(integration.config ?? {});
   useEffect(() => {
@@ -901,17 +1014,28 @@ function TsoftPanel({ integration }: { integration: Integration }) {
     setUsePanelApi(c.pathPrefix === '/panel' || String(c.pathPrefix || '').toLowerCase() === 'panel');
   }, [integration.key, configSnapshot]);
 
+  const loadAutoReplies = useCallback(async () => {
+    setLoadingReplies(true);
+    try {
+      const { data } = await api.get('/ecommerce/tsoft/auto-reply');
+      setAutoReplies(Array.isArray(data) ? data : []);
+    } catch {
+      setAutoReplies([]);
+    } finally {
+      setLoadingReplies(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (tab === 'auto-reply') loadAutoReplies();
+  }, [tab, loadAutoReplies]);
+
   const handleSave = async () => {
     setSaving(true);
     try {
       await api.post(
         `/integrations/${integration.key}/config`,
-        {
-          baseUrl: baseUrl.trim(),
-          apiEmail: apiEmail.trim(),
-          apiPassword,
-          pathPrefix: usePanelApi ? '/panel' : '',
-        },
+        { baseUrl: baseUrl.trim(), apiEmail: apiEmail.trim(), apiPassword, pathPrefix: usePanelApi ? '/panel' : '' },
         { params: integrationOrgParams() },
       );
       toast.success('T-Soft yapılandırması kaydedildi');
@@ -934,17 +1058,31 @@ function TsoftPanel({ integration }: { integration: Integration }) {
     }
   };
 
-  const handleSync = async () => {
-    setSyncing(true);
+  const handleSyncCustomers = async () => {
+    setSyncingCustomers(true);
     try {
       const { data } = await api.post('/ecommerce/tsoft/sync-customers');
       toast.success(
-        `Eşleşen kişi: ${data.matched ?? 0} (T-Soft müşteri: ${data.tsoftCustomerCount ?? 0})`,
+        `Eşleşen: ${data.matched ?? 0}, Yeni kişi: ${data.created ?? 0} (T-Soft müşteri: ${data.tsoftCustomerCount ?? 0})`,
       );
     } catch (err: any) {
-      toast.error(getApiErrorMessage(err, 'Senkronizasyon başarısız'));
+      toast.error(getApiErrorMessage(err, 'Müşteri sync başarısız'));
     } finally {
-      setSyncing(false);
+      setSyncingCustomers(false);
+    }
+  };
+
+  const handleSyncOrders = async () => {
+    setSyncingOrders(true);
+    try {
+      const { data } = await api.post('/ecommerce/tsoft/sync-orders');
+      toast.success(
+        `${data.created ?? 0} yeni, ${data.updated ?? 0} güncellendi, ${data.autoRepliesSent ?? 0} yanıt`,
+      );
+    } catch (err: any) {
+      toast.error(getApiErrorMessage(err, 'Sipariş sync başarısız'));
+    } finally {
+      setSyncingOrders(false);
     }
   };
 
@@ -963,99 +1101,145 @@ function TsoftPanel({ integration }: { integration: Integration }) {
   };
 
   return (
-    <div className="space-y-5">
-      <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-4">
-        <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
-          <Globe className="w-4 h-4 text-orange-500" />
-          T-Soft Admin API
-        </h3>
-        <div>
-          <label className="block text-xs font-medium text-gray-500 mb-1">Mağaza kök adresi (https://…)</label>
-          <input
-            type="url"
-            value={baseUrl}
-            onChange={(e) => setBaseUrl(e.target.value)}
-            placeholder="https://magazam.com"
-            className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-orange-500"
-          />
-          <label className="mt-3 flex items-start gap-2 cursor-pointer text-xs text-gray-600">
+    <div className="space-y-4">
+      {/* Tab Bar */}
+      <div className="flex gap-1 bg-gray-100 rounded-xl p-1">
+        <button
+          onClick={() => setTab('connection')}
+          className={`flex-1 py-1.5 text-xs font-semibold rounded-lg transition-all ${
+            tab === 'connection' ? 'bg-white shadow text-gray-900' : 'text-gray-500 hover:text-gray-700'
+          }`}
+        >
+          Bağlantı & Sync
+        </button>
+        <button
+          onClick={() => setTab('auto-reply')}
+          className={`flex-1 py-1.5 text-xs font-semibold rounded-lg transition-all ${
+            tab === 'auto-reply' ? 'bg-white shadow text-gray-900' : 'text-gray-500 hover:text-gray-700'
+          }`}
+        >
+          Otomatik Yanıtlar
+        </button>
+      </div>
+
+      {/* Connection Tab */}
+      {tab === 'connection' && (
+        <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-4">
+          <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+            <Globe className="w-4 h-4 text-orange-500" />
+            T-Soft Admin API
+          </h3>
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1">Mağaza kök adresi (https://…)</label>
             <input
-              type="checkbox"
-              checked={usePanelApi}
-              onChange={(e) => setUsePanelApi(e.target.checked)}
-              className="mt-0.5 rounded border-gray-300"
+              type="url"
+              value={baseUrl}
+              onChange={(e) => setBaseUrl(e.target.value)}
+              placeholder="https://magazam.com"
+              className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-orange-500"
             />
-            <span>
-              API yolu <code className="text-gray-500">/panel</code> altında
-            </span>
-          </label>
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-gray-500 mb-1">API kullanıcı e-postası</label>
-          <input
-            type="email"
-            value={apiEmail}
-            onChange={(e) => setApiEmail(e.target.value)}
-            placeholder="api@magazam.com"
-            className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-orange-500"
-          />
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-gray-500 mb-1">API şifresi</label>
-          <input
-            type="password"
-            value={apiPassword}
-            onChange={(e) => setApiPassword(e.target.value)}
-            placeholder="Boş bırakılırsa mevcut şifre korunur"
-            className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-orange-500"
-          />
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={handleSave}
-            disabled={saving}
-            className="flex items-center gap-2 px-4 py-2.5 bg-orange-500 text-white rounded-xl text-sm font-medium hover:bg-orange-600 transition-colors disabled:opacity-50"
-          >
-            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-            Kaydet
-          </button>
-          <button
-            type="button"
-            onClick={handleTest}
-            disabled={testing}
-            className="flex items-center gap-2 px-4 py-2.5 border border-orange-200 text-orange-700 rounded-xl text-sm font-medium hover:bg-orange-50 disabled:opacity-50"
-          >
-            {testing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wifi className="w-4 h-4" />}
-            Bağlantıyı test et
-          </button>
-          <button
-            type="button"
-            onClick={handleSync}
-            disabled={syncing}
-            className="flex items-center gap-2 px-4 py-2.5 border border-gray-200 text-gray-700 rounded-xl text-sm font-medium hover:bg-gray-50 disabled:opacity-50"
-          >
-            {syncing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-            Müşterileri eşleştir
-          </button>
-          <button
-            type="button"
-            onClick={handleDiagnose}
-            disabled={diagnosing}
-            className="flex items-center gap-2 px-4 py-2.5 border border-gray-300 text-gray-600 rounded-xl text-sm font-medium hover:bg-gray-50 disabled:opacity-50"
-          >
-            {diagnosing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Bug className="w-4 h-4" />}
-            Teşhis raporu
-          </button>
-        </div>
-        {diagnoseOut ? (
-          <div className="mt-4">
+            <label className="mt-3 flex items-start gap-2 cursor-pointer text-xs text-gray-600">
+              <input
+                type="checkbox"
+                checked={usePanelApi}
+                onChange={(e) => setUsePanelApi(e.target.checked)}
+                className="mt-0.5 rounded border-gray-300"
+              />
+              <span>API yolu <code className="text-gray-500">/panel</code> altında</span>
+            </label>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1">API kullanıcı e-postası</label>
+            <input
+              type="email"
+              value={apiEmail}
+              onChange={(e) => setApiEmail(e.target.value)}
+              placeholder="api@magazam.com"
+              className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-orange-500"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1">API şifresi</label>
+            <input
+              type="password"
+              value={apiPassword}
+              onChange={(e) => setApiPassword(e.target.value)}
+              placeholder="Boş bırakılırsa mevcut şifre korunur"
+              className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-orange-500"
+            />
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={handleSave} disabled={saving}
+              className="flex items-center gap-2 px-4 py-2.5 bg-orange-500 text-white rounded-xl text-sm font-medium hover:bg-orange-600 disabled:opacity-50">
+              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+              Kaydet
+            </button>
+            <button type="button" onClick={handleTest} disabled={testing}
+              className="flex items-center gap-2 px-4 py-2.5 border border-orange-200 text-orange-700 rounded-xl text-sm font-medium hover:bg-orange-50 disabled:opacity-50">
+              {testing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wifi className="w-4 h-4" />}
+              Bağlantıyı test et
+            </button>
+          </div>
+
+          {/* Sync Actions */}
+          <div className="border-t border-gray-100 pt-4 space-y-2">
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Senkronizasyon</p>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" onClick={handleSyncCustomers} disabled={syncingCustomers}
+                className="flex items-center gap-2 px-3 py-2 border border-gray-200 text-gray-700 rounded-xl text-xs font-medium hover:bg-gray-50 disabled:opacity-50">
+                {syncingCustomers ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                Müşteri Sync
+              </button>
+              <button type="button" onClick={handleSyncOrders} disabled={syncingOrders}
+                className="flex items-center gap-2 px-3 py-2 border border-orange-200 text-orange-700 rounded-xl text-xs font-medium hover:bg-orange-50 disabled:opacity-50">
+                {syncingOrders ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ShoppingBag className="w-3.5 h-3.5" />}
+                Sipariş Sync
+              </button>
+              <button type="button" onClick={handleDiagnose} disabled={diagnosing}
+                className="flex items-center gap-2 px-3 py-2 border border-gray-300 text-gray-600 rounded-xl text-xs font-medium hover:bg-gray-50 disabled:opacity-50">
+                {diagnosing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Bug className="w-3.5 h-3.5" />}
+                Teşhis
+              </button>
+            </div>
+            <p className="text-[11px] text-gray-400">
+              Siparişler ve müşteriler her 30 dakikada otomatik sync edilir.
+            </p>
+          </div>
+
+          {diagnoseOut && (
             <pre className="text-[11px] bg-slate-900 text-slate-100 p-3 rounded-xl overflow-auto max-h-56 whitespace-pre-wrap break-all">
               {diagnoseOut}
             </pre>
+          )}
+        </div>
+      )}
+
+      {/* Auto Reply Tab */}
+      {tab === 'auto-reply' && (
+        <div className="space-y-3">
+          <div className="bg-orange-50 border border-orange-100 rounded-xl p-3">
+            <p className="text-xs text-orange-800 font-medium mb-1">Kullanılabilir değişkenler:</p>
+            <div className="flex flex-wrap gap-1">
+              {VARIABLE_HINTS.map((v) => (
+                <span key={v.key} className="text-[10px] font-mono px-1.5 py-0.5 bg-white rounded border border-orange-200 text-orange-700" title={v.desc}>
+                  {v.key}
+                </span>
+              ))}
+            </div>
           </div>
-        ) : null}
-      </div>
+
+          {loadingReplies ? (
+            <div className="flex items-center justify-center py-8 text-gray-400 gap-2">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              Yükleniyor…
+            </div>
+          ) : (
+            autoReplies.map((row) => (
+              <AutoReplyEditor key={row.eventType} row={row} onSaved={loadAutoReplies} />
+            ))
+          )}
+        </div>
+      )}
     </div>
   );
 }

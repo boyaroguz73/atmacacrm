@@ -164,6 +164,8 @@ model Organization {
   autoReplyFlows   AutoReplyFlow[]
   auditLogs        AuditLog[]
   integrations     OrgIntegration[]
+  tsoftOrders      TsoftOrder[]
+  tsoftAutoReplies TsoftAutoReply[]
 
   @@map("organizations")
 }
@@ -297,6 +299,7 @@ model Contact {
   orders             SalesOrder[]
   accountingInvoices AccountingInvoice[]
   ledgerEntries      LedgerEntry[]
+  tsoftOrders        TsoftOrder[]
 
   @@index([phone])
   @@index([organizationId])
@@ -985,4 +988,73 @@ model DeliveryNote {
 
   @@index([orderId])
   @@map("delivery_notes")
+}
+
+// ─── T-Soft Entegrasyonu ───
+
+model TsoftOrder {
+  id              String    @id @default(uuid())
+  organizationId  String
+  tsoftId         String
+  orderNumber     String?
+  status          String    @default("Yeni")
+  customerName    String?
+  customerEmail   String?
+  customerPhone   String?
+  billingAddress  Json?
+  shippingAddress Json?
+  currency        String    @default("TRY")
+  subtotal        Float     @default(0)
+  shippingTotal   Float     @default(0)
+  grandTotal      Float     @default(0)
+  notes           String?
+  tsoftCreatedAt  DateTime?
+  contactId       String?
+  sentAutoReply   Boolean   @default(false)
+  rawData         Json?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  contact      Contact?      @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  items        TsoftOrderItem[]
+
+  @@unique([organizationId, tsoftId])
+  @@index([organizationId, tsoftCreatedAt(sort: Desc)])
+  @@index([contactId])
+  @@index([customerPhone])
+  @@map("tsoft_orders")
+}
+
+model TsoftOrderItem {
+  id          String  @id @default(uuid())
+  orderId     String
+  tsoftItemId String?
+  name        String
+  sku         String?
+  quantity    Float   @default(1)
+  unitPrice   Float   @default(0)
+  lineTotal   Float   @default(0)
+  imageUrl    String?
+
+  order TsoftOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@map("tsoft_order_items")
+}
+
+model TsoftAutoReply {
+  id             String   @id @default(uuid())
+  organizationId String
+  eventType      String
+  template       String
+  isActive       Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, eventType])
+  @@index([organizationId])
+  @@map("tsoft_auto_replies")
 }

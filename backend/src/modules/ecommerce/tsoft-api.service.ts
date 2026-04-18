@@ -489,4 +489,27 @@ export class TsoftApiService {
       data: payload,
     });
   }
+
+  async getOrderDetail(organizationId: string, tsoftOrderId: string | number) {
+    return this.request<unknown>(organizationId, 'GET', `/api/v3/admin/orders/order/${tsoftOrderId}`);
+  }
+
+  async fetchAllOrders(organizationId: string, maxPages = 100): Promise<Record<string, unknown>[]> {
+    const all: Record<string, unknown>[] = [];
+    for (let p = 1; p <= maxPages; p++) {
+      const { rows } = await this.listOrders(organizationId, p, 100);
+      if (!rows.length) break;
+      for (const r of rows) {
+        if (r && typeof r === 'object') all.push(r as Record<string, unknown>);
+      }
+      if (rows.length < 100) break;
+    }
+    return all;
+  }
+
+  async createOrder(organizationId: string, payload: Record<string, unknown>) {
+    return this.request<unknown>(organizationId, 'POST', '/api/v3/admin/orders/order', {
+      data: payload,
+    });
+  }
 }
