@@ -144,7 +144,7 @@ export class TsoftApiService {
     }
     return axios.create({
       baseURL: baseUrl,
-      timeout: 120_000,
+      timeout: 30_000,
       headers,
       validateStatus: () => true,
     });
@@ -379,26 +379,41 @@ export class TsoftApiService {
     }[] = [];
 
     const probe = async (apiRoot: string) => {
-      const http = this.client(apiRoot);
-      let r = await http.post('/api/v3/admin/auth/login', payload);
-      if (r.status === 415 || r.status === 406) {
-        const form = new URLSearchParams();
-        form.set('email', payload.email);
-        form.set('password', payload.password);
-        r = await http.post('/api/v3/admin/auth/login', form.toString(), {
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        });
-      }
-      const b = (r.data || {}) as Record<string, unknown>;
-      const tokenShapeOk =
-        r.status >= 200 && r.status < 300 && !!this.extractTokenFromLoginBody(b);
-      attempts.push({
-        loginUrl: `${apiRoot}/api/v3/admin/auth/login`,
-        httpStatus: r.status,
-        message: this.summarizeTsoftError(r.status, r.data),
-        tokenShapeOk,
+      const http = axios.create({
+        baseURL: apiRoot,
+        timeout: 15_000,
+        headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+        validateStatus: () => true,
       });
-      return r.status;
+      try {
+        let r = await http.post('/api/v3/admin/auth/login', payload);
+        if (r.status === 415 || r.status === 406) {
+          const form = new URLSearchParams();
+          form.set('email', payload.email);
+          form.set('password', payload.password);
+          r = await http.post('/api/v3/admin/auth/login', form.toString(), {
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          });
+        }
+        const b = (r.data || {}) as Record<string, unknown>;
+        const tokenShapeOk =
+          r.status >= 200 && r.status < 300 && !!this.extractTokenFromLoginBody(b);
+        attempts.push({
+          loginUrl: `${apiRoot}/api/v3/admin/auth/login`,
+          httpStatus: r.status,
+          message: this.summarizeTsoftError(r.status, r.data),
+          tokenShapeOk,
+        });
+        return r.status;
+      } catch (e: any) {
+        attempts.push({
+          loginUrl: `${apiRoot}/api/v3/admin/auth/login`,
+          httpStatus: 0,
+          message: `Bağlantı hatası: ${e?.message || 'sunucu yanıt vermedi'}`,
+          tokenShapeOk: false,
+        });
+        return 0;
+      }
     };
 
     if (cfg.pathPrefix === '/panel') {
