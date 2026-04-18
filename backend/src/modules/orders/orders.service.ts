@@ -172,9 +172,6 @@ export class OrdersService {
       if (!isFromStock && !supplierId) {
         throw new BadRequestException(`${item.name} için tedarikçi seçimi zorunludur`);
       }
-      if (!isFromStock && !supplierOrderNo) {
-        throw new BadRequestException(`${item.name} için tedarikçi sipariş no zorunludur`);
-      }
       const lineGross = item.quantity * item.unitPrice;
       const divider = 1 + (item.vatRate / 100);
       const base = divider > 0 ? lineGross / divider : lineGross;

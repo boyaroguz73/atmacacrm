@@ -369,8 +369,6 @@ function AccountingInvoicesContent() {
 
   const [detail, setDetail] = useState<InvoiceRow | null>(null);
   const [detailBusy, setDetailBusy] = useState(false);
-  const [showSendForm, setShowSendForm] = useState(false);
-  const [sendTemplateBody, setSendTemplateBody] = useState('');
   const [showSendConfirm, setShowSendConfirm] = useState(false);
   const [showPdfUploadConfirm, setShowPdfUploadConfirm] = useState(false);
   const [pendingPdfFile, setPendingPdfFile] = useState<File | null>(null);
@@ -457,16 +455,12 @@ function AccountingInvoicesContent() {
 
   const closeDetail = () => {
     setDetail(null);
-    setShowSendForm(false);
-    setSendTemplateBody('');
     setDueEdit('');
     setNotesEdit('');
   };
 
   const openInvoiceDetail = async (inv: InvoiceRow) => {
     setDetail(inv);
-    setShowSendForm(false);
-    setSendTemplateBody('');
     setDetailBusy(true);
     try {
       const { data } = await api.get(`/accounting/invoices/${inv.id}`);
@@ -529,7 +523,9 @@ function AccountingInvoicesContent() {
     try {
       const fd = new FormData();
       fd.append('file', file);
-      const { data } = await api.post(`/accounting/invoices/${inv.id}/upload-pdf`, fd);
+      const { data } = await api.post(`/accounting/invoices/${inv.id}/upload-pdf`, fd, {
+        timeout: 120_000,
+      });
       const merged = normalizeInvoiceRow({
         ...inv,
         ...(data && typeof data === 'object' ? data : {}),
@@ -548,12 +544,8 @@ function AccountingInvoicesContent() {
   const sendInvoice = async (inv: InvoiceRow) => {
     setDetailBusy(true);
     try {
-      await api.post(`/accounting/invoices/${inv.id}/send`, {
-        ...(sendTemplateBody.trim() ? { templateBody: sendTemplateBody.trim() } : {}),
-      });
+      await api.post(`/accounting/invoices/${inv.id}/send`, {});
       toast.success('Fatura gönderildi');
-      setShowSendForm(false);
-      setSendTemplateBody('');
       fetchInvoices();
       const merged = normalizeInvoiceRow({ ...inv, status: 'SENT' });
       if (merged) refreshDetailInList(merged);
@@ -1095,7 +1087,7 @@ function AccountingInvoicesContent() {
                 <button
                   type="button"
                   disabled={detailBusy}
-                  onClick={() => setShowSendForm((s) => !s)}
+                  onClick={() => setShowSendConfirm(true)}
                   className="inline-flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold bg-whatsapp text-white shadow-sm hover:opacity-95 disabled:opacity-50"
                 >
                   <Send className="w-4 h-4" />
@@ -1110,31 +1102,6 @@ function AccountingInvoicesContent() {
                   Ödendi
                 </button>
               </div>
-
-              {showSendForm ? (
-                <div className="rounded-xl border border-whatsapp/25 bg-whatsapp/5 p-4 space-y-3">
-                  <p className="text-xs font-semibold text-gray-700">WhatsApp ile Gönder</p>
-                  <p className="text-xs text-gray-500">Sistem aktif WhatsApp oturumunu otomatik seçer.</p>
-                  <div>
-                    <label className="text-xs text-gray-500 block mb-1">Özel mesaj (isteğe bağlı)</label>
-                    <textarea
-                      value={sendTemplateBody}
-                      onChange={(e) => setSendTemplateBody(e.target.value)}
-                      rows={3}
-                      placeholder="Boş bırakılırsa otomatik mesaj gönderilir"
-                      className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-whatsapp/30 focus:border-whatsapp resize-none"
-                    />
-                  </div>
-                  <button
-                    type="button"
-                    disabled={detailBusy}
-                    onClick={() => setShowSendConfirm(true)}
-                    className="w-full py-2.5 rounded-xl text-sm font-semibold bg-whatsapp text-white shadow-sm disabled:opacity-50"
-                  >
-                    {detailBusy ? 'Gönderiliyor…' : 'WhatsApp ile Gönder'}
-                  </button>
-                </div>
-              ) : null}
 
               {/* WhatsApp Gönderim Onay Modalı */}
               {showSendConfirm && (

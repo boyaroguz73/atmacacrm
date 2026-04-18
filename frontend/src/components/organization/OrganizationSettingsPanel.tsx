@@ -58,8 +58,7 @@ export default function OrganizationSettingsPanel({
   const [billingName, setBillingName] = useState('');
   const [billingAddress, setBillingAddress] = useState('');
   const [taxNumber, setTaxNumber] = useState('');
-  const [defaultLat, setDefaultLat] = useState('');
-  const [defaultLng, setDefaultLng] = useState('');
+  const [defaultMapsUrl, setDefaultMapsUrl] = useState('');
   const [defaultLocationTitle, setDefaultLocationTitle] = useState('Mağaza Konumu');
   const [defaultLocationAddress, setDefaultLocationAddress] = useState('');
   const [showBillingGuardWarning, setShowBillingGuardWarning] = useState(false);
@@ -180,16 +179,7 @@ export default function OrganizationSettingsPanel({
       setTaxNumber(data.taxNumber || '');
       try {
         const { data: loc } = await api.get('/organizations/my/default-location');
-        setDefaultLat(
-          typeof loc?.latitude === 'number' && Number.isFinite(loc.latitude)
-            ? String(loc.latitude)
-            : '',
-        );
-        setDefaultLng(
-          typeof loc?.longitude === 'number' && Number.isFinite(loc.longitude)
-            ? String(loc.longitude)
-            : '',
-        );
+        setDefaultMapsUrl(typeof loc?.mapsUrl === 'string' ? loc.mapsUrl : '');
         setDefaultLocationTitle(
           typeof loc?.title === 'string' && loc.title.trim()
             ? loc.title.trim()
@@ -234,11 +224,10 @@ export default function OrganizationSettingsPanel({
         billingAddress: billingAddress.trim() || null,
         taxNumber: taxNumber.trim() || null,
       });
-      const lat = Number(defaultLat);
-      const lng = Number(defaultLng);
       await api.patch('/organizations/my/default-location', {
-        latitude: Number.isFinite(lat) ? lat : null,
-        longitude: Number.isFinite(lng) ? lng : null,
+        latitude: null,
+        longitude: null,
+        mapsUrl: defaultMapsUrl.trim() || null,
         title: defaultLocationTitle.trim() || 'Mağaza Konumu',
         address: defaultLocationAddress.trim() || null,
       });
@@ -581,31 +570,19 @@ export default function OrganizationSettingsPanel({
       <div className="bg-white border rounded-xl p-5">
         <div className="flex items-center gap-2 mb-4">
           <LayoutGrid className="w-5 h-5 text-gray-400" />
-          <h2 className="text-lg font-semibold text-gray-900">Sabit Konum</h2>
+          <h2 className="text-lg font-semibold text-gray-900">Sabit konum (WhatsApp)</h2>
         </div>
         <p className="text-xs text-gray-500 mb-4">
-          Sohbet ekranındaki konum gönderme butonu, önce bu koordinatları kullanır.
+          Konum gönder dediğinizde koordinat yerine Google Maps bağlantısı ve adres metin olarak paylaşılır.
         </p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Latitude</label>
+          <div className="sm:col-span-2">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Google Maps linki</label>
             <input
-              type="number"
-              step="any"
-              value={defaultLat}
-              onChange={(e) => setDefaultLat(e.target.value)}
-              placeholder="41.0082"
-              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-whatsapp/20"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Longitude</label>
-            <input
-              type="number"
-              step="any"
-              value={defaultLng}
-              onChange={(e) => setDefaultLng(e.target.value)}
-              placeholder="28.9784"
+              type="url"
+              value={defaultMapsUrl}
+              onChange={(e) => setDefaultMapsUrl(e.target.value)}
+              placeholder="https://maps.app.goo.gl/..."
               className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-whatsapp/20"
             />
           </div>
@@ -620,7 +597,7 @@ export default function OrganizationSettingsPanel({
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Adres (opsiyonel)</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Adres</label>
             <input
               type="text"
               value={defaultLocationAddress}

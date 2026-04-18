@@ -144,7 +144,7 @@ export class TsoftApiService {
     }
     return axios.create({
       baseURL: baseUrl,
-      timeout: 60000,
+      timeout: 120_000,
       headers,
       validateStatus: () => true,
     });

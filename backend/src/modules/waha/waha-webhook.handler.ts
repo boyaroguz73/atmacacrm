@@ -335,34 +335,51 @@ export class WahaWebhookHandler {
           }
         }
 
-        // 2) İkinci öncelik: messageId ile dosyayı WAHA file endpointinden çek (thumbnail yerine orijinali yakalamak için).
-        if (!mediaUrl && waMessageIdCandidate) {
-          try {
-            const byId = await this.wahaService.downloadFile(sessionName, waMessageIdCandidate);
-            if (byId?.data?.length) {
-              const dir = this.ensureUploadsDir();
-              const ext = this.getExtFromMime(byId.mimetype || mediaMimeType);
-              const filename = `${uuid()}${ext}`;
-              const filePath = join(dir, filename);
-              writeFileSync(filePath, byId.data);
-              mediaUrl = `/uploads/${filename}`;
-              mediaMimeType = byId.mimetype || mediaMimeType;
-              mediaMeta.source = 'waha_file_by_message_id';
-              mediaMeta.originalMediaUrl = mediaUrl;
-              mediaMeta.originalMimeType = mediaMimeType || null;
-              mediaMeta.originalFileSize = byId.data.length;
+        // 2) İkinci öncelik: WAHA /api/files ile (ses/ptt bazen farklı id alanlarında gelir).
+        const fileIdCandidates = [
+          waMessageIdCandidate,
+          typeof (msg.media as any)?.id === 'string' ? String((msg.media as any).id) : '',
+          typeof (msg.media as any)?.id?._serialized === 'string'
+            ? String((msg.media as any).id._serialized)
+            : '',
+          typeof (msg as any).key?.id === 'string' ? String((msg as any).key.id) : '',
+          typeof (msg as any).key?.id?._serialized === 'string'
+            ? String((msg as any).key.id._serialized)
+            : '',
+        ].filter((x): x is string => typeof x === 'string' && x.length > 0);
+
+        if (!mediaUrl) {
+          for (const fileId of [...new Set(fileIdCandidates)]) {
+            try {
+              const byId = await this.wahaService.downloadFile(sessionName, fileId);
+              if (byId?.data?.length) {
+                const dir = this.ensureUploadsDir();
+                const ext = this.getExtFromMime(byId.mimetype || mediaMimeType);
+                const filename = `${uuid()}${ext}`;
+                const filePath = join(dir, filename);
+                writeFileSync(filePath, byId.data);
+                mediaUrl = `/uploads/${filename}`;
+                mediaMimeType = byId.mimetype || mediaMimeType;
+                mediaMeta.source = 'waha_file_by_message_id';
+                mediaMeta.originalMediaUrl = mediaUrl;
+                mediaMeta.originalMimeType = mediaMimeType || null;
+                mediaMeta.originalFileSize = byId.data.length;
+                break;
+              }
+            } catch (e: any) {
+              this.logger.debug(`file-by-id media alınamadı (${fileId}): ${e?.message}`);
             }
-          } catch (e: any) {
-            this.logger.debug(`file-by-id media alınamadı (${waMessageIdCandidate}): ${e?.message}`);
           }
         }
 
-        // 3) Son fallback: base64 alanı (çoğu zaman preview/thumbnail olabilir).
+        // 3) Son fallback: sadece msg.media.data (tam boyutlu base64).
+        //    msg._data?.body image mesajlarında küçük JPEG thumbnail'dir;
+        //    fallback olarak kullanırsak düşük çözünürlüklü önizleme kaydederiz.
         if (!mediaUrl) {
-          const base64Data = msg.media?.data || msg._data?.body;
+          const base64Data = msg.media?.data;
           const looksB64 =
             typeof base64Data === 'string' &&
-            base64Data.length > 80 &&
+            base64Data.length > 2048 && // thumbnail'ler çok küçüktür; en az ~2KB base64 verisi bekliyoruz
             /^[A-Za-z0-9+/=\s]+$/.test(base64Data.replace(/\s/g, ''));
           if (base64Data && looksB64) {
             mediaUrl = await this.saveBase64Media(
@@ -370,7 +387,7 @@ export class WahaWebhookHandler {
               mediaMimeType,
             );
             if (mediaUrl) {
-              mediaMeta.source = 'base64_fallback';
+              mediaMeta.source = 'base64_fullsize';
               mediaMeta.originalMediaUrl = mediaUrl;
             }
           }
@@ -457,25 +474,40 @@ export class WahaWebhookHandler {
         }
       }
 
-      const message = await this.prisma.message.upsert({
-        where: { waMessageId },
-        create: messageData,
-        update: {
-          ...(isGroup
-            ? {
-                participantName:
-                  messageData.participantName ||
-                  undefined,
-                participantPhone:
-                  messageData.participantPhone ||
-                  undefined,
-              }
-            : {}),
-        },
-        include: {
-          sentBy: { select: { id: true, name: true } },
-        },
-      });
+      // Prisma upsert atomik değildir; WAHA aynı mesaj için `message` ve `message.any`
+      // event'lerini paralel gönderebildiğinden P2002 (unique constraint) yarışı oluşur.
+      // Bu durumu yakalayıp idempotent update'e düşüyoruz.
+      const updateData: any = {
+        ...(isGroup
+          ? {
+              participantName: messageData.participantName || undefined,
+              participantPhone: messageData.participantPhone || undefined,
+            }
+          : {}),
+      };
+      let message;
+      try {
+        message = await this.prisma.message.upsert({
+          where: { waMessageId },
+          create: messageData,
+          update: updateData,
+          include: {
+            sentBy: { select: { id: true, name: true } },
+          },
+        });
+      } catch (err: any) {
+        if (err?.code === 'P2002') {
+          message = await this.prisma.message.update({
+            where: { waMessageId },
+            data: updateData,
+            include: {
+              sentBy: { select: { id: true, name: true } },
+            },
+          });
+        } else {
+          throw err;
+        }
+      }
 
       // ─────────────────────────────────────────────────────────────
       // CONVERSATION GÜNCELLEME
@@ -707,6 +739,29 @@ export class WahaWebhookHandler {
     }
   }
 
+  /**
+   * WAHA container'ı kendi medya URL'lerini bazen `http://localhost:3000/...` olarak döndürür
+   * (kendi iç hostname'i). Backend Docker ağ içinden buna değil, WAHA_API_URL'ye gitmeli.
+   * Bu yardımcı, localhost/127.0.0.1 host'lu URL'leri WAHA_API_URL host:port ile yeniden yazar.
+   */
+  private rewriteWahaLoopbackUrl(url: string): string {
+    try {
+      const parsed = new URL(url);
+      const isLoopback =
+        parsed.hostname === 'localhost' ||
+        parsed.hostname === '127.0.0.1' ||
+        parsed.hostname === '0.0.0.0';
+      if (!isLoopback) return url;
+      const waha = new URL(this.wahaApiUrl);
+      parsed.protocol = waha.protocol;
+      parsed.hostname = waha.hostname;
+      parsed.port = waha.port;
+      return parsed.toString();
+    } catch {
+      return url;
+    }
+  }
+
   private isAllowedUrl(url: string): boolean {
     try {
       const parsed = new URL(url);
@@ -725,11 +780,15 @@ export class WahaWebhookHandler {
     mimetype?: string,
   ): Promise<string | undefined> {
     try {
-      if (!this.isAllowedUrl(url)) {
+      // WAHA kendi medya URL'lerini bazen localhost:3000 olarak gönderir; Docker ağ içinden
+      // bu URL bize gelir, WAHA'ya değil. Önce WAHA host'una yeniden yazıyoruz.
+      const rewritten = this.rewriteWahaLoopbackUrl(url);
+
+      if (!this.isAllowedUrl(rewritten)) {
         const wahaHost = new URL(this.wahaApiUrl).hostname;
-        const urlHost = new URL(url).hostname;
+        const urlHost = new URL(rewritten).hostname;
         if (urlHost !== wahaHost) {
-          this.logger.warn(`Blocked media download from: ${url}`);
+          this.logger.warn(`Blocked media download from: ${rewritten}`);
           return undefined;
         }
       }
@@ -739,13 +798,13 @@ export class WahaWebhookHandler {
       const filename = `${uuid()}${ext}`;
       const filePath = join(dir, filename);
 
-      const buf = await this.wahaService.downloadMediaBuffer(url);
+      const buf = await this.wahaService.downloadMediaBuffer(rewritten);
       if (!buf?.length) {
-        this.logger.warn(`Medya indirilemedi veya boş: ${url}`);
+        this.logger.warn(`Medya indirilemedi veya boş: ${rewritten}`);
         return undefined;
       }
       writeFileSync(filePath, buf);
-      this.logger.debug(`Downloaded media: ${filename} from ${url}`);
+      this.logger.debug(`Downloaded media: ${filename} from ${rewritten}`);
       return `/uploads/${filename}`;
     } catch (err: any) {
       this.logger.error(`Failed to download media from ${url}: ${err.message}`);

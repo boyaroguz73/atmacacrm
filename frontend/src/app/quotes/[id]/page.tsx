@@ -500,10 +500,6 @@ export default function QuoteDetailPage() {
         toast.error(`${itemName} için tedarikçi seçimi zorunlu`);
         return;
       }
-      if (src.source === 'SUPPLIER' && !src.supplierOrderNo.trim()) {
-        toast.error(`${itemName} için tedarikçi sipariş no zorunlu`);
-        return;
-      }
     }
     if (
       convertPaymentMode === 'CUSTOM' &&
@@ -717,7 +713,7 @@ export default function QuoteDetailPage() {
                   </select>
                 </label>
                 <p className="text-[11px] text-gray-500 sm:flex-1 min-w-0">
-                  Birim fiyat KDV dahil düzenlenir. Satır indirimi yalnızca işaretlenirse geçerlidir. Açıklama (sadece form) PDF’e yazdırılmaz.
+                  Birim fiyat KDV dahil düzenlenir. Satır indirimi yalnızca işaretlenirse geçerlidir.
                 </p>
               </div>
               <div className="overflow-x-auto">
@@ -728,7 +724,6 @@ export default function QuoteDetailPage() {
                       <th className="text-left px-3 py-2 w-[18%]">Ürün</th>
                       <th className="text-left px-2 py-2 w-[12%]">Renk/Kumaş</th>
                       <th className="text-left px-2 py-2 w-[10%]">Ölçü</th>
-                      <th className="text-left px-2 py-2 w-[14%]">Açıklama (sadece form)</th>
                       <th className="text-left px-2 py-2 w-16">Miktar</th>
                       <th className="text-left px-2 py-2 w-28">Birim (KDV dahil)</th>
                       <th className="text-left px-2 py-2 w-40">Satır indirimi</th>
@@ -785,14 +780,6 @@ export default function QuoteDetailPage() {
                             productId={line.productId}
                             value={line.measurementInfo ?? ''}
                             onChange={(next) => updateLine(line.key, { measurementInfo: next })}
-                          />
-                        </td>
-                        <td className="px-2 py-2">
-                          <input
-                            value={line.description || ''}
-                            onChange={(e) => updateLine(line.key, { description: e.target.value })}
-                            placeholder="Açıklama (PDF'e gitmez)"
-                            className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-whatsapp bg-amber-50/50"
                           />
                         </td>
                         <td className="px-2 py-2">
@@ -1430,7 +1417,6 @@ export default function QuoteDetailPage() {
                       <td className="px-4 py-2.5 text-gray-400">{i + 1}</td>
                       <td className="px-4 py-2.5">
                         <p className="font-medium text-gray-900">{item.name}</p>
-                        {item.description && <p className="text-xs text-gray-400">{item.description}</p>}
                       </td>
                       <td className="px-4 py-2.5 text-gray-700 text-sm">
                         {item.colorFabricInfo || '—'}

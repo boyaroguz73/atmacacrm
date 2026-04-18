@@ -208,10 +208,6 @@ export default function NewOrderPage() {
         toast.error(`${l.name || 'Kalem'} için tedarikçi seçimi zorunlu`);
         return;
       }
-      if (sourceType === 'SUPPLIER' && !l.supplierOrderNo?.trim()) {
-        toast.error(`${l.name || 'Kalem'} için tedarikçi sipariş no zorunlu`);
-        return;
-      }
     }
     if (!validLines.length) {
       toast.error('En az bir geçerli kalem girin');

@@ -517,15 +517,30 @@ export class WahaService implements OnModuleInit {
       /\/$/,
       '',
     );
-    const target = trimmed.startsWith('http')
+    let target = trimmed.startsWith('http')
       ? trimmed
       : `${base}${trimmed.startsWith('/') ? '' : '/'}${trimmed}`;
+    // Safety net: WAHA kendi host'unu localhost:3000 olarak döndürürse Docker ağ içinden
+    // erişilemez; WAHA_API_URL host'una yeniden yaz.
+    try {
+      const parsed = new URL(target);
+      const loopback = ['localhost', '127.0.0.1', '0.0.0.0'];
+      if (loopback.includes(parsed.hostname)) {
+        const waha = new URL(base || 'http://localhost:3001');
+        parsed.protocol = waha.protocol;
+        parsed.hostname = waha.hostname;
+        parsed.port = waha.port;
+        target = parsed.toString();
+      }
+    } catch {
+      // URL parse hatası — orijinal target ile devam et
+    }
     try {
       const response = await this.http.get(target, {
         responseType: 'arraybuffer',
-        timeout: 120_000,
-        maxContentLength: 50 * 1024 * 1024,
-        maxBodyLength: 50 * 1024 * 1024,
+        timeout: 180_000,
+        maxContentLength: 128 * 1024 * 1024,
+        maxBodyLength: 128 * 1024 * 1024,
       });
       return Buffer.from(response.data as ArrayBuffer);
     } catch (error: any) {
@@ -952,7 +967,13 @@ export class WahaService implements OnModuleInit {
     try {
       const response = await this.http.get(
         `/api/files/${sessionName}/${fileId}`,
-        { responseType: 'arraybuffer', timeout: this.requestTimeoutMs },
+        {
+          responseType: 'arraybuffer',
+          timeout: this.requestTimeoutMs,
+          // WhatsApp video/dosyalar 16–64 MB'a kadar olabilir; axios default buffer limiti taşmasın.
+          maxContentLength: 128 * 1024 * 1024,
+          maxBodyLength: 128 * 1024 * 1024,
+        },
       );
       const contentType =
         response.headers['content-type'] || 'application/octet-stream';

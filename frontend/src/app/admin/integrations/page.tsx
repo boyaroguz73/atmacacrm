@@ -952,7 +952,7 @@ function TsoftPanel({ integration }: { integration: Integration }) {
     setDiagnosing(true);
     setDiagnoseOut(null);
     try {
-      const { data } = await api.post('/ecommerce/tsoft/diagnose');
+      const { data } = await api.post('/ecommerce/tsoft/diagnose', {}, { timeout: 120_000 });
       setDiagnoseOut(JSON.stringify(data, null, 2));
       toast.success('Teşhis hazır');
     } catch (err: any) {

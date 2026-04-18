@@ -725,9 +725,6 @@ export class QuotesService {
       if (source === 'SUPPLIER' && !cfg?.supplierId) {
         throw new BadRequestException(`${item.name} için tedarikçi seçimi zorunludur`);
       }
-      if (source === 'SUPPLIER' && !cfg?.supplierOrderNo?.trim()) {
-        throw new BadRequestException(`${item.name} için tedarikçi sipariş no zorunludur`);
-      }
       return {
         productId: item.productId,
         name: item.name,

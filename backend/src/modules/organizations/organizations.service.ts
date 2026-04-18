@@ -286,6 +286,7 @@ export class OrganizationsService {
         return {
           latitude: typeof loc.latitude === 'number' ? loc.latitude : null,
           longitude: typeof loc.longitude === 'number' ? loc.longitude : null,
+          mapsUrl: typeof loc.mapsUrl === 'string' ? loc.mapsUrl : '',
           title: typeof loc.title === 'string' ? loc.title : '',
           address: typeof loc.address === 'string' ? loc.address : '',
         };
@@ -297,6 +298,7 @@ export class OrganizationsService {
     body: {
       latitude?: number | null;
       longitude?: number | null;
+      mapsUrl?: string | null;
       title?: string | null;
       address?: string | null;
     },
@@ -311,6 +313,12 @@ export class OrganizationsService {
     const nextLoc: Record<string, unknown> = {
       ...cur,
       ...body,
+      mapsUrl:
+        body.mapsUrl != null
+          ? String(body.mapsUrl).trim()
+          : typeof cur.mapsUrl === 'string'
+            ? cur.mapsUrl
+            : '',
       title: (body.title ?? (cur.title as string) ?? '').toString().trim(),
       address: (body.address ?? (cur.address as string) ?? '').toString().trim(),
     };

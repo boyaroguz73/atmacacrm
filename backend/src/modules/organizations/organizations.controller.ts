@@ -137,6 +137,7 @@ export class OrganizationsController {
     body: {
       latitude?: number | null;
       longitude?: number | null;
+      mapsUrl?: string | null;
       title?: string | null;
       address?: string | null;
     },

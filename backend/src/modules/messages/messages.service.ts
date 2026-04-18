@@ -11,6 +11,7 @@ import axios from 'axios';
 import { v4 as uuid } from 'uuid';
 import { lookup } from 'mime-types';
 import { normalizeWhatsappChatId } from '../../common/whatsapp-chat-id';
+import { optimizeImageBufferForWhatsapp } from '../../common/whatsapp-image';
 
 @Injectable()
 export class MessagesService {
@@ -49,17 +50,26 @@ export class MessagesService {
       sentById?: string;
       mediaUrl?: string;
       mediaType?: any;
+      mediaMimeType?: string;
       metadata?: any;
     },
   ) {
     const { waMessageId, ...rest } = data;
 
     if (waMessageId) {
+      // Yerel olarak yüklenmiş (/uploads/...) medyayı koru: webhook, aynı mesajı
+      // WhatsApp'ın yeniden-sıkıştırdığı düşük kaliteli URL ile yazmış olabilir; bu yarışı
+      // gidermek için gönderimde elimizdeki orijinal URL'i üzerine yazıyoruz.
+      const isLocalUpload =
+        typeof rest.mediaUrl === 'string' && rest.mediaUrl.includes('/uploads/');
       return this.prisma.message.upsert({
         where: { waMessageId },
         create: { ...rest, waMessageId },
         update: {
           sentById: rest.sentById || undefined,
+          ...(isLocalUpload ? { mediaUrl: rest.mediaUrl } : {}),
+          ...(isLocalUpload && rest.mediaType ? { mediaType: rest.mediaType } : {}),
+          ...(isLocalUpload && rest.mediaMimeType ? { mediaMimeType: rest.mediaMimeType } : {}),
           ...(rest.metadata ? { metadata: rest.metadata } : {}),
         },
         include: { sentBy: { select: { id: true, name: true } } },
@@ -295,15 +305,22 @@ export class MessagesService {
     const { mediaType, preview } = this.detectMediaType(mimetype);
 
     let waResponse: any;
+    let outboundMimeType = mimetype;
     try {
       if (mediaType === 'IMAGE') {
+        // Kaliteyi koru: limitler içindeyse orijinal passthrough; aşımda yüksek kaliteli JPEG.
+        // width/height WAHA'ya geçilir; WhatsApp'ın gereksiz yeniden ölçeklemesi/kırpması azalır.
+        const opt = await optimizeImageBufferForWhatsapp(fileBuffer);
+        outboundMimeType = opt.mimetype;
         waResponse = await this.wahaService.sendImage(
           sessionName,
           jid,
           {
-            mimetype,
-            data: fileBuffer.toString('base64'),
-            filename: originalFilename,
+            mimetype: opt.mimetype,
+            data: opt.base64,
+            filename: opt.filename,
+            width: opt.width,
+            height: opt.height,
           },
           caption,
         );
@@ -335,6 +352,7 @@ export class MessagesService {
       sentById,
       mediaUrl,
       mediaType: mediaType as any,
+      mediaMimeType: outboundMimeType,
     });
 
     this.emitAndUpdateList(conversationId, message, caption || preview);

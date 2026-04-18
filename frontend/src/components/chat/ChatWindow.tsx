@@ -189,6 +189,7 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
   const [defaultLocation, setDefaultLocation] = useState<{
     latitude: number | null;
     longitude: number | null;
+    mapsUrl?: string;
     title?: string;
     address?: string;
   } | null>(null);
@@ -272,6 +273,7 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
         setDefaultLocation({
           latitude: Number.isFinite(Number(data?.latitude)) ? Number(data.latitude) : null,
           longitude: Number.isFinite(Number(data?.longitude)) ? Number(data.longitude) : null,
+          mapsUrl: typeof data?.mapsUrl === 'string' ? data.mapsUrl : '',
           title: typeof data?.title === 'string' ? data.title : '',
           address: typeof data?.address === 'string' ? data.address : '',
         });
@@ -476,7 +478,9 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
       const formData = new FormData();
       formData.append('file', selectedFile);
 
-      const { data: uploadResult } = await api.post('/messages/upload', formData);
+      const { data: uploadResult } = await api.post('/messages/upload', formData, {
+        timeout: 120_000,
+      });
 
       const fullMediaUrl = `${backendPublicUrl()}${uploadResult.url}`;
 
@@ -573,6 +577,30 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
         address,
       });
     };
+
+    const maps = (defaultLocation?.mapsUrl || '').trim();
+    if (maps) {
+      const title = (defaultLocation?.title || '').trim() || 'Konum';
+      const address = (defaultLocation?.address || '').trim();
+      const body = address
+        ? `📍 ${title}\n${address}\n${maps}`
+        : `📍 ${title}\n${maps}`;
+      try {
+        setSending(true);
+        await sendMessage({
+          conversationId: activeConversation.id,
+          sessionName: activeConversation.session.name,
+          chatId,
+          body,
+        });
+        toast.success('Konum gönderildi');
+      } catch (err: any) {
+        toast.error(getApiErrorMessage(err, 'Konum gönderilemedi'));
+      } finally {
+        setSending(false);
+      }
+      return;
+    }
 
     if (
       defaultLocation &&
@@ -1074,33 +1102,67 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
                       )}
                       {msg.mediaType === 'AUDIO' && mediaUrlResolved && (
                         <div className="mb-1">
-                          <audio controls className="max-w-[min(280px,85vw)] h-10" preload="metadata">
-                            <source src={mediaUrlResolved} type={msg.mediaMimeType || 'audio/ogg'} />
-                            Tarayıcınız ses oynatmayı desteklemiyor.
-                          </audio>
+                          {(() => {
+                            const url = mediaUrlResolved.split('?')[0] || '';
+                            const ext = (url.match(/\.([a-z0-9]{2,5})$/i)?.[1] || '').toLowerCase();
+                            // WhatsApp sesleri çoğunlukla OGG/Opus (PTT) olarak gelir.
+                            // mediaMimeType boşsa uzantıya göre akıllı bir tahmin yapıyoruz.
+                            const extMime =
+                              ext === 'ogg' || ext === 'opus' ? 'audio/ogg; codecs=opus'
+                              : ext === 'mp3' ? 'audio/mpeg'
+                              : ext === 'm4a' || ext === 'mp4' || ext === 'aac' ? 'audio/mp4'
+                              : ext === 'wav' ? 'audio/wav'
+                              : ext === 'webm' ? 'audio/webm'
+                              : undefined;
+                            const primaryType =
+                              (msg.mediaMimeType && msg.mediaMimeType.toLowerCase().startsWith('audio/'))
+                                ? msg.mediaMimeType
+                                : (extMime || 'audio/ogg; codecs=opus');
+                            return (
+                              <audio
+                                controls
+                                preload="metadata"
+                                className="max-w-[min(280px,85vw)] h-10"
+                                src={mediaUrlResolved}
+                              >
+                                <source src={mediaUrlResolved} type={primaryType} />
+                                Tarayıcınız ses oynatmayı desteklemiyor.
+                              </audio>
+                            );
+                          })()}
                         </div>
                       )}
-                      {mediaUrlResolved && !isImage && msg.mediaType && msg.mediaType !== 'AUDIO' && (
+                      {msg.mediaType === 'VIDEO' && !mediaUrlResolved && (
+                        <div className="mb-1 text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-2 py-1.5">
+                          🎬 Video sunucuya alınamadı. Sohbeti kapatıp tekrar açın veya sayfayı yenileyin.
+                        </div>
+                      )}
+                      {msg.mediaType === 'VIDEO' && mediaUrlResolved && (
+                        <div className="mb-1">
+                          <video
+                            controls
+                            playsInline
+                            preload="metadata"
+                            className="block w-auto max-w-full h-auto max-h-[min(75vh,720px)] rounded-lg bg-black mx-auto"
+                          >
+                            <source src={mediaUrlResolved} type={msg.mediaMimeType || 'video/mp4'} />
+                            Tarayıcınız video oynatmayı desteklemiyor.
+                          </video>
+                        </div>
+                      )}
+                      {mediaUrlResolved && !isImage && msg.mediaType && msg.mediaType !== 'AUDIO' && msg.mediaType !== 'VIDEO' && (
                         <button
                           onClick={() =>
                             handleDownload(mediaUrlResolved, inferDownloadFilename(msg, mediaUrlResolved))
                           }
                           className="flex items-center gap-2 p-2.5 bg-gray-50 rounded-lg mb-1 hover:bg-gray-100 transition-colors border border-gray-100 w-full text-left"
                         >
-                          <div className={cn(
-                            'w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0',
-                            msg.mediaType === 'VIDEO' ? 'bg-purple-100' : 'bg-blue-100'
-                          )}>
-                            <FileText className={cn(
-                              'w-5 h-5',
-                              msg.mediaType === 'VIDEO' ? 'text-purple-600' : 'text-blue-600'
-                            )} />
+                          <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 bg-blue-100">
+                            <FileText className="w-5 h-5 text-blue-600" />
                           </div>
                           <div className="min-w-0 flex-1">
                             <span className="text-xs font-medium text-gray-700 block truncate">
-                              {msg.body && msg.body.match(/\.\w+$/)
-                                ? msg.body
-                                : msg.mediaType === 'VIDEO' ? '🎬 Video' : '📄 Belge'}
+                              {msg.body && msg.body.match(/\.\w+$/) ? msg.body : '📄 Belge'}
                             </span>
                             <span className="text-[10px] text-gray-400">İndirmek için tıklayın</span>
                           </div>
