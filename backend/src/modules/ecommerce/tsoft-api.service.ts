@@ -21,6 +21,38 @@ export class TsoftApiService {
 
   constructor(private prisma: PrismaService) {}
 
+  private buildProxyConfig(targetUrl: string): {
+    proxy?: {
+      protocol: string;
+      host: string;
+      port: number;
+      auth?: { username: string; password: string };
+    };
+  } {
+    const isHttps = targetUrl.trim().toLowerCase().startsWith('https://');
+    const raw =
+      (isHttps
+        ? process.env.HTTPS_PROXY || process.env.https_proxy || process.env.HTTP_PROXY || process.env.http_proxy
+        : process.env.HTTP_PROXY || process.env.http_proxy) || '';
+    if (!raw) return {};
+    try {
+      const u = new URL(raw);
+      const protocol = u.protocol.replace(':', '');
+      const port =
+        Number(u.port) ||
+        (u.protocol === 'https:' ? 443 : 80);
+      const auth =
+        u.username || u.password
+          ? { username: decodeURIComponent(u.username), password: decodeURIComponent(u.password) }
+          : undefined;
+      return {
+        proxy: { protocol, host: u.hostname, port, ...(auth ? { auth } : {}) },
+      };
+    } catch {
+      return {};
+    }
+  }
+
   private normalizeCredential(value: string): string {
     return String(value)
       .replace(/^\uFEFF|[\u200B\u200C\u200D\uFEFF]/g, '')
@@ -135,6 +167,7 @@ export class TsoftApiService {
       baseURL: baseUrl,
       timeout: 60_000,
       headers,
+      ...this.buildProxyConfig(baseUrl),
       validateStatus: () => true,
     });
   }

@@ -308,6 +308,38 @@ export class ProductsService {
     }
   }
 
+  private buildProxyConfig(targetUrl: string): {
+    proxy?: {
+      protocol: string;
+      host: string;
+      port: number;
+      auth?: { username: string; password: string };
+    };
+  } {
+    const isHttps = targetUrl.trim().toLowerCase().startsWith('https://');
+    const raw =
+      (isHttps
+        ? process.env.HTTPS_PROXY || process.env.https_proxy || process.env.HTTP_PROXY || process.env.http_proxy
+        : process.env.HTTP_PROXY || process.env.http_proxy) || '';
+    if (!raw) return {};
+    try {
+      const u = new URL(raw);
+      const protocol = u.protocol.replace(':', '');
+      const port =
+        Number(u.port) ||
+        (u.protocol === 'https:' ? 443 : 80);
+      const auth =
+        u.username || u.password
+          ? { username: decodeURIComponent(u.username), password: decodeURIComponent(u.password) }
+          : undefined;
+      return {
+        proxy: { protocol, host: u.hostname, port, ...(auth ? { auth } : {}) },
+      };
+    } catch {
+      return {};
+    }
+  }
+
   /**
    * Harici URL'den görseli indirir, uploads/products/ altına kaydeder.
    * Zaten yerel bir yol ise veya indirme başarısız olursa orijinal URL'yi döner.
@@ -339,6 +371,7 @@ export class ProductsService {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
           Accept: 'image/webp,image/apng,image/*,*/*;q=0.8',
         },
+        ...this.buildProxyConfig(remoteUrl),
       });
       writeFileSync(fullPath, Buffer.from(res.data));
       this.logger.debug(`Ürün görseli yerele kaydedildi: ${filename} (${sku})`);
@@ -496,6 +529,7 @@ export class ProductsService {
           Accept: 'application/xml, text/xml, */*',
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
         },
+        ...this.buildProxyConfig(feedUrl.trim()),
         validateStatus: (s) => s >= 200 && s < 400,
       });
       xml = typeof res.data === 'string' ? res.data : String(res.data);
