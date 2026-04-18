@@ -106,6 +106,15 @@ export default function ConversationList() {
     [conversations, isGroupsRoute],
   );
 
+  const lastPreview = (conv: any) => {
+    const raw = conv?.lastMessageText ? truncate(conv.lastMessageText, 45) : '';
+    if (!raw) return 'Mesaj yok';
+    const direction = String(conv?.lastMessageDirection || '');
+    if (direction === 'OUTGOING') return `Siz: ${raw}`;
+    if (direction === 'INCOMING') return `Müşteri: ${raw}`;
+    return raw;
+  };
+
   return (
     <div className="w-full md:w-96 border-r border-gray-200 bg-white flex flex-col h-full min-w-0">
       <div className="p-4 border-b border-gray-100">
@@ -231,9 +240,7 @@ export default function ConversationList() {
                 </div>
                 <div className="flex items-center justify-between mt-0.5">
                   <span className="text-xs text-gray-500 truncate">
-                    {conv.lastMessageText
-                      ? truncate(conv.lastMessageText, 45)
-                      : 'Mesaj yok'}
+                    {lastPreview(conv)}
                   </span>
                   {conv.unreadCount > 0 && (
                     <span className="bg-whatsapp text-white text-xs rounded-full w-5 h-5 flex items-center justify-center flex-shrink-0 ml-2 font-bold">

@@ -902,32 +902,46 @@ export class WahaService implements OnModuleInit {
     messageId: string,
     emoji: string,
   ): Promise<any> {
-    try {
-      const encodedChatId = encodeURIComponent(chatId);
-      const encodedMsgId = encodeURIComponent(messageId);
-      const response = await this.http.post(
-        `/api/${sessionName}/chats/${encodedChatId}/messages/${encodedMsgId}/reaction`,
-        { reaction: emoji },
-      );
-      return response.data;
-    } catch (error: any) {
-      // Eski WAHA sürümleri için legacy endpoint fallback
+    const encodedChatId = encodeURIComponent(chatId);
+    const encodedMsgId = encodeURIComponent(messageId);
+    const attempts: Array<{ path: string; payload: Record<string, unknown> }> = [
+      {
+        path: `/api/${sessionName}/chats/${encodedChatId}/messages/${encodedMsgId}/reaction`,
+        payload: { reaction: emoji },
+      },
+      // Bazı WAHA sürümlerinde legacy endpoint adı farklı.
+      {
+        path: '/api/sendReaction',
+        payload: { session: sessionName, chatId, messageId, reaction: emoji },
+      },
+      {
+        path: '/api/reaction',
+        payload: { session: sessionName, chatId, messageId, reaction: emoji },
+      },
+    ];
+
+    let lastError: any = null;
+    for (const a of attempts) {
       try {
-        const legacy = await this.http.post('/api/reaction', {
-          session: sessionName,
-          chatId,
-          messageId,
-          reaction: emoji,
-        });
-        return legacy.data;
-      } catch (legacyError: any) {
-        const detail = legacyError.response?.data
-          ? JSON.stringify(legacyError.response.data)
-          : legacyError.message;
-        this.logger.error(`Tepki gönderilemedi: ${messageId} - ${detail}`);
-        throw legacyError;
+        const response = await this.http.post(a.path, a.payload);
+        return response.data;
+      } catch (err: any) {
+        lastError = err;
+        const status = Number(err?.response?.status || 0);
+        const body =
+          typeof err?.response?.data === 'string'
+            ? err.response.data
+            : JSON.stringify(err?.response?.data || '');
+        // endpoint yoksa bir sonraki denemeye geç; diğer hataları da son denemeye kadar topla.
+        if (status === 404 || body.includes('Cannot POST')) continue;
       }
     }
+
+    const detail = lastError?.response?.data
+      ? JSON.stringify(lastError.response.data)
+      : lastError?.message || 'Bilinmeyen hata';
+    this.logger.error(`Tepki gönderilemedi: ${messageId} - ${detail}`);
+    throw lastError;
   }
 
   /** WAHA Plus - Konum gönder */
@@ -987,9 +1001,10 @@ export class WahaService implements OnModuleInit {
         filename,
       };
     } catch (error: any) {
-      this.logger.error(
-        `Dosya indirilemedi: ${sessionName}/${fileId} - ${error.message}`,
-      );
+      const status = Number(error?.response?.status || 0);
+      const msg = `Dosya indirilemedi: ${sessionName}/${fileId} - ${error.message}`;
+      if (status === 404) this.logger.debug(msg);
+      else this.logger.error(msg);
       return null;
     }
   }

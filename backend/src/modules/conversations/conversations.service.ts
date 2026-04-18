@@ -214,6 +214,11 @@ export class ConversationsService {
         include: {
           contact: { include: { lead: true } },
           session: { select: { id: true, name: true, phone: true, organizationId: true } },
+          messages: {
+            orderBy: { timestamp: 'desc' },
+            take: 1,
+            select: { direction: true },
+          },
           assignments: {
             where: { unassignedAt: null },
             include: {
@@ -228,7 +233,15 @@ export class ConversationsService {
       this.prisma.conversation.count({ where }),
     ]);
 
-    return { conversations, total, page, totalPages: Math.ceil(total / limit) };
+    return {
+      conversations: conversations.map((c: any) => ({
+        ...c,
+        lastMessageDirection: c.messages?.[0]?.direction ?? null,
+      })),
+      total,
+      page,
+      totalPages: Math.ceil(total / limit),
+    };
   }
 
   /** Teklif sayfası gömülü chat: kişiye ait son görüşme (herhangi bir oturum). */

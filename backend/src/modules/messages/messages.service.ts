@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, BadRequestException, OnModuleInit } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { WahaService } from '../waha/waha.service';
 import { ConversationsService } from '../conversations/conversations.service';
@@ -14,7 +14,7 @@ import { normalizeWhatsappChatId } from '../../common/whatsapp-chat-id';
 import { optimizeImageBufferForWhatsapp } from '../../common/whatsapp-image';
 
 @Injectable()
-export class MessagesService {
+export class MessagesService implements OnModuleInit {
   private readonly logger = new Logger(MessagesService.name);
   private readonly mediaBackfillDir = join(process.cwd(), 'uploads', 'media-backfill');
 
@@ -25,6 +25,15 @@ export class MessagesService {
     private chatGateway: ChatGateway,
     private config: ConfigService,
   ) {}
+
+  onModuleInit() {
+    // Backend restart sonrası son medya kayıtlarını tekrar dene (özellikle docker up -d backend).
+    setTimeout(() => {
+      this.backfillRecentMediaOnStartup(30).catch((err) => {
+        this.logger.warn(`Startup media backfill atlandı: ${err?.message || err}`);
+      });
+    }, 12_000);
+  }
 
   private extractWaMessageId(waResponse: any): string | null {
     if (!waResponse) return null;
@@ -144,6 +153,39 @@ export class MessagesService {
     return map[mt] || (downloaded.mimetype?.startsWith('audio/') ? '.ogg' : '.bin');
   }
 
+  private collectFileCandidates(message: any): { sessionName: string; fileIds: string[] } {
+    const mediaUrl = String(message?.mediaUrl || '').trim();
+    const fromMeta =
+      message?.metadata && typeof message.metadata === 'object'
+        ? (message.metadata as Record<string, unknown>)
+        : {};
+    const originalMediaUrl = String(fromMeta.originalMediaUrl || '').trim();
+
+    const parseApiFiles = (url: string): { session?: string; fileId?: string } => {
+      const m = url.match(/\/api\/files\/([^/]+)\/([^/?#]+)/i);
+      return {
+        session: m?.[1] ? decodeURIComponent(m[1]) : undefined,
+        fileId: m?.[2] ? decodeURIComponent(m[2]) : undefined,
+      };
+    };
+
+    const p1 = parseApiFiles(mediaUrl);
+    const p2 = parseApiFiles(originalMediaUrl);
+    const sessionName =
+      (p1.session || p2.session || String(message?.session?.name || '')).trim();
+
+    const rawCandidates = [
+      p1.fileId,
+      p2.fileId,
+      String(message?.waMessageId || ''),
+      typeof fromMeta.fileId === 'string' ? fromMeta.fileId : '',
+    ]
+      .map((x) => String(x || '').trim())
+      .filter((x) => x.length > 0);
+
+    return { sessionName, fileIds: [...new Set(rawCandidates)] };
+  }
+
   private async backfillConversationMedia(messages: any[]) {
     const backfillable = new Set(['AUDIO', 'VIDEO', 'IMAGE', 'DOCUMENT']);
     const pool: any[] = [];
@@ -176,22 +218,25 @@ export class MessagesService {
 
     for (const m of candidates) {
       try {
-        const mediaUrl = String(m.mediaUrl || '');
-        const match = mediaUrl.match(/\/api\/files\/([^/]+)\/([^/?#]+)/i);
-        const sessionFromUrl = match?.[1] ? decodeURIComponent(match[1]) : null;
-        const fileIdFromUrl = match?.[2] ? decodeURIComponent(match[2]) : null;
-        const sessionName =
-          sessionFromUrl || (m.session?.name ? String(m.session.name) : '');
-        const fileId = fileIdFromUrl || String(m.waMessageId || '');
-        if (!sessionName || !fileId) continue;
+        const { sessionName, fileIds } = this.collectFileCandidates(m);
+        if (!sessionName || fileIds.length === 0) continue;
 
-        const downloaded = await this.wahaService.downloadFile(sessionName, fileId);
-        if (!downloaded?.data?.length) continue;
+        let hit:
+          | { downloaded: { data: Buffer; mimetype: string; filename: string }; fileId: string }
+          | null = null;
+        for (const fileId of fileIds) {
+          const downloaded = await this.wahaService.downloadFile(sessionName, fileId);
+          if (downloaded?.data?.length) {
+            hit = { downloaded, fileId };
+            break;
+          }
+        }
+        if (!hit) continue;
 
-        const inferredExt = this.extFromDownloaded(downloaded, fileId);
+        const inferredExt = this.extFromDownloaded(hit.downloaded, hit.fileId);
         const localName = `${uuid()}${inferredExt}`;
         const fullPath = join(this.mediaBackfillDir, localName);
-        writeFileSync(fullPath, downloaded.data);
+        writeFileSync(fullPath, hit.downloaded.data);
 
         const newMediaUrl = `/uploads/media-backfill/${localName}`;
         const prevMeta =
@@ -199,26 +244,45 @@ export class MessagesService {
         const nextMeta = {
           ...prevMeta,
           source: 'media_backfill',
-          originalMediaUrl: mediaUrl || prevMeta.originalMediaUrl || null,
-          originalMimeType: downloaded.mimetype || m.mediaMimeType || prevMeta.originalMimeType || null,
+          originalMediaUrl: String(m.mediaUrl || '') || prevMeta.originalMediaUrl || null,
+          originalMimeType:
+            hit.downloaded.mimetype || m.mediaMimeType || prevMeta.originalMimeType || null,
           backfilledAt: new Date().toISOString(),
+          fileIdTried: fileIds,
+          fileIdResolved: hit.fileId,
         };
 
         await this.prisma.message.update({
           where: { id: m.id },
           data: {
             mediaUrl: newMediaUrl,
-            mediaMimeType: downloaded.mimetype || m.mediaMimeType || undefined,
+            mediaMimeType: hit.downloaded.mimetype || m.mediaMimeType || undefined,
             metadata: nextMeta as any,
           },
         });
         m.mediaUrl = newMediaUrl;
-        m.mediaMimeType = downloaded.mimetype || m.mediaMimeType;
+        m.mediaMimeType = hit.downloaded.mimetype || m.mediaMimeType;
         m.metadata = nextMeta;
       } catch (err: any) {
         this.logger.debug(`Medya backfill atlandı (${m?.id}): ${err?.message}`);
       }
     }
+  }
+
+  async backfillRecentMediaOnStartup(limit = 30) {
+    const recent = await this.prisma.message.findMany({
+      where: {
+        mediaType: { in: ['IMAGE', 'VIDEO', 'AUDIO'] as any },
+      },
+      orderBy: { timestamp: 'desc' },
+      take: Math.max(1, Math.min(limit, 120)),
+      include: {
+        session: { select: { name: true } },
+      },
+    });
+    if (!recent.length) return;
+    this.logger.log(`Startup media backfill: ${recent.length} kayıt kontrol ediliyor`);
+    await this.backfillConversationMedia(recent);
   }
 
   async sendText(params: {
@@ -677,6 +741,11 @@ export class MessagesService {
       const errMsg = err.response?.data?.message || err.message || '';
       if (errMsg.includes('Plus version') || errMsg.includes('not support')) {
         throw new BadRequestException('Tepki gönderme WAHA Plus gerektirir.');
+      }
+      if (String(errMsg).includes('Cannot POST /api/reaction')) {
+        throw new BadRequestException(
+          'WAHA reaction endpoint bu sürümde bulunamadı. Backend güncellendi; container yeniden build/restart sonrası tekrar deneyin.',
+        );
       }
       throw new BadRequestException(errMsg || 'Tepki gönderilemedi');
     }

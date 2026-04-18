@@ -1,4 +1,4 @@
-import sharp from 'sharp';
+import * as sharp from 'sharp';
 
 const MAX_WA_IMAGE_BYTES = 5 * 1024 * 1024; // 5 MB — WAHA / WhatsApp pratik üst sınırı
 const MAX_DIMENSION = 4096;

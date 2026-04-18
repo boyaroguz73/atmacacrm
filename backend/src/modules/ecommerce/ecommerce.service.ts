@@ -76,23 +76,16 @@ export class EcommerceService {
         };
       }
 
-      try {
-        await this.tsoftApi.getBearerToken(organizationId);
-        return {
-          menuVisible: true,
-          healthy: true,
-          provider: 'tsoft',
-          canPushCustomer: true,
-        };
-      } catch {
-        return {
-          menuVisible: false,
-          healthy: false,
-          provider: 'tsoft',
-          canPushCustomer: false,
-          tsoftAuthFailed: true,
-        };
-      }
+      // Not: /ecommerce/status çağrıları sık tetiklenir (sidebar + contact panel).
+      // Burada canlı login denemesi yapmak entegrasyon kapalı/ağ sorunlu durumda
+      // gereksiz tekrar denemelere neden olur. Status sadece yapılandırma görünürlüğünü döner;
+      // canlı doğrulama için "Bağlantıyı test et" kullanılır.
+      return {
+        menuVisible: true,
+        healthy: true,
+        provider: 'tsoft',
+        canPushCustomer: true,
+      };
     } catch (err) {
       this.logger.warn(`T-Soft durum kontrolü başarısız: ${(err as Error)?.message ?? err}`);
       return {

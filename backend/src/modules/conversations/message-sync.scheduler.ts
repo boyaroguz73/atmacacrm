@@ -1,5 +1,4 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
-import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 import { WahaService } from '../waha/waha.service';
 import { ContactsService } from '../contacts/contacts.service';
@@ -30,12 +29,8 @@ export class MessageSyncScheduler implements OnModuleInit {
     setTimeout(() => this.runStartupSync(), 15_000);
   }
 
-  @Cron('0 */5 * * * *')
-  async scheduledSync() {
-    this.logger.log('Periyodik mesaj senkronu başlıyor...');
-    await this.wahaService.ensureWebhooksRegistered();
-    await this.syncAllSessions();
-  }
+  // 5 dakikalık otomatik senkron kullanıcı talebiyle kapatıldı.
+  // Gerekirse manuel tetikleme veya tek seferlik startup sync kullanılabilir.
 
   private async runStartupSync() {
     this.logger.log('Başlangıç mesaj senkronu başlıyor...');

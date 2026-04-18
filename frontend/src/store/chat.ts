@@ -37,6 +37,7 @@ interface Conversation {
   sessionId: string;
   lastMessageAt: string;
   lastMessageText: string | null;
+  lastMessageDirection?: 'INCOMING' | 'OUTGOING' | null;
   unreadCount: number;
   contact: Contact;
   session: { id: string; name: string; phone: string | null; organizationId?: string | null };
@@ -146,7 +147,7 @@ interface ChatState {
   }) => Promise<void>;
   addMessage: (message: Message) => void;
   updateConversation: (conversation: Conversation) => void;
-  updateMessageStatus: (messageId: string, status: string) => void;
+  updateMessageStatus: (messageId: string, status: string, waMessageId?: string) => void;
   updateMessageReactions: (messageId: string, reactions: Reaction[]) => void;
   updateMessageEdit: (messageId: string, body: string) => void;
   updateMessageDeleted: (messageId: string) => void;
@@ -604,10 +605,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
     });
   },
 
-  updateMessageStatus: (messageId, status) => {
+  updateMessageStatus: (messageId, status, waMessageId) => {
     set((state) => ({
       messages: state.messages.map((m) =>
-        m.id === messageId ? { ...m, status } : m,
+        m.id === messageId || (!!waMessageId && m.waMessageId === waMessageId)
+          ? { ...m, status }
+          : m,
       ),
     }));
   },

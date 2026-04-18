@@ -85,7 +85,7 @@ export default function InboxPage() {
     });
 
     socket.on('message:status', (data: any) => {
-      updateMessageStatus(data.messageId, data.status);
+      updateMessageStatus(data.messageId, data.status, data.waMessageId);
     });
 
     socket.on('message:reaction', (data: any) => {

@@ -1765,7 +1765,9 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && !e.shiftKey) {
                       e.preventDefault();
-                      submitComposer();
+                      if (editingMessage) void handleEditMessage();
+                      else if (replyingTo) void handleSendReply();
+                      else submitComposer();
                     }
                   }}
                   placeholder="Mesaj yazın… Enter gönderir, Shift+Enter satır atlar. (/ ile şablon)"
