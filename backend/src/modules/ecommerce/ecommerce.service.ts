@@ -146,13 +146,17 @@ export class EcommerceService {
     let skipped = 0;
 
     for (const cust of customers) {
-      const mobile = String(cust.mobilePhone || cust.customerPhone || cust.phone || '').trim();
+      // REST1: Mobile, Phone — v3: mobilePhone, customerPhone, phone
+      const mobile = String(
+        cust.Mobile || cust.Phone || cust.mobilePhone || cust.customerPhone || cust.phone || '',
+      ).trim();
       const normalizedPhone = normalizeTsoftPhone(mobile);
       if (!normalizedPhone) {
         skipped++;
         continue;
       }
-      const externalId = cust.id != null ? String(cust.id) : '';
+      // REST1: CustomerId — v3: id
+      const externalId = String(cust.CustomerId ?? cust.id ?? '').trim();
       if (!externalId) { skipped++; continue; }
 
       const existing = phoneToContact.get(normalizedPhone);
@@ -173,12 +177,15 @@ export class EcommerceService {
         matched++;
       } else {
         try {
-          const name = String(cust.name || cust.firstName || '').trim() || null;
-          const surname = String(cust.surname || cust.lastName || '').trim() || null;
-          const email = String(cust.email || '').trim() || null;
-          const company = String(cust.company || cust.companyName || '').trim() || null;
-          const city = String(cust.city || cust.cityName || '').trim() || null;
-          const address = String(cust.address || '').trim() || null;
+          // REST1: Name, Surname, Email, CompanyName, City, Address
+          const name = String(cust.Name || cust.name || cust.firstName || '').trim() || null;
+          const surname = String(cust.Surname || cust.surname || cust.lastName || '').trim() || null;
+          const email = String(cust.Email || cust.email || '').trim() || null;
+          const company = String(cust.CompanyName || cust.company || cust.companyName || '').trim() || null;
+          const city = String(cust.City || cust.city || cust.cityName || '').trim() || null;
+          const address = String(cust.Address || cust.address || '').trim() || null;
+          const taxOffice = String(cust.TaxOffice || cust.taxOffice || '').trim() || null;
+          const taxNo = String(cust.TaxNo || cust.taxNo || '').trim() || null;
 
           const newContact = await this.prisma.contact.create({
             data: {
@@ -191,7 +198,11 @@ export class EcommerceService {
               address,
               source: TSOFT_SOURCE,
               organizationId,
-              metadata: { ecommerce: ecommerceMeta } as object,
+              metadata: {
+                ecommerce: ecommerceMeta,
+                taxOffice,
+                taxNo,
+              } as object,
             },
           });
           phoneToContact.set(normalizedPhone, { id: newContact.id, phone: newContact.phone, metadata: newContact.metadata });
@@ -265,7 +276,9 @@ export class EcommerceService {
     let errors = 0;
 
     for (const raw of allOrders) {
-      const tsoftId = String(raw.id ?? raw.orderId ?? raw.order_id ?? '').trim();
+      // REST1: OrderId, OrderCode — v3: id, orderId
+      const tsoftId = String(raw.OrderId ?? raw.OrderCode ?? raw.id ?? raw.orderId ?? '').trim();
+      const tsoftCode = String(raw.OrderCode ?? raw.orderCode ?? tsoftId).trim();
       if (!tsoftId) {
         this.logger.warn(`[TSOFT-SYNC-ORDERS] Sipariş ID bulunamadı: ${JSON.stringify(raw).slice(0, 300)}`);
         errors++;
@@ -281,17 +294,23 @@ export class EcommerceService {
       }
 
       try {
+        // REST1: InvoiceMobile, DeliveryMobile, CustomerName — v3: customerPhone, mobilePhone
         const customerPhone = String(
-          raw.customerPhone || raw.customer_phone || raw.mobilePhone ||
-          raw.phone || raw.billingPhone || raw.shipping_phone || '',
+          raw.InvoiceMobile || raw.DeliveryMobile || raw.InvoiceTel || raw.DeliveryTel ||
+          raw.customerPhone || raw.customer_phone || raw.mobilePhone || raw.phone || '',
         ).trim();
-        const customerEmail = String(raw.customerEmail || raw.customer_email || raw.email || '').trim();
-        const customerName = String(raw.customerName || raw.customer_name || raw.name || raw.firstName || '').trim();
-        const customerSurname = String(raw.customerSurname || raw.customer_surname || raw.surname || raw.lastName || '').trim();
+        const customerEmail = String(
+          raw.CustomerUsername || raw.customerEmail || raw.customer_email || raw.email || '',
+        ).trim();
+        // REST1: CustomerName = "Ad Soyad"
+        const fullName = String(raw.CustomerName || raw.customerName || raw.name || '').trim();
+        const nameParts = fullName.split(/\s+/);
+        const customerName = nameParts[0] || '';
+        const customerSurname = nameParts.slice(1).join(' ') || '';
 
         const normalizedPhone = normalizeTsoftPhone(customerPhone);
         if (!normalizedPhone && !customerEmail) {
-          this.logger.warn(`[TSOFT-SYNC-ORDERS] Sipariş ${tsoftId}: Müşteri telefonu/e-postası yok, atlanıyor`);
+          this.logger.warn(`[TSOFT-SYNC-ORDERS] Sipariş ${tsoftCode}: Müşteri telefonu/e-postası yok, atlanıyor`);
           errors++;
           continue;
         }
@@ -318,41 +337,61 @@ export class EcommerceService {
               metadata: {
                 ecommerce: {
                   provider: 'tsoft',
-                  externalId: String(raw.customerId || raw.customer_id || tsoftId),
+                  externalId: String(raw.CustomerId || raw.customerId || tsoftId),
                   label: TSOFT_LABEL,
                   syncedAt: new Date().toISOString(),
                 },
               } as object,
             },
           });
-          this.logger.debug(`[TSOFT-SYNC-ORDERS] Sipariş ${tsoftId} için yeni kişi oluşturuldu: ${normalizedPhone}`);
+          this.logger.debug(`[TSOFT-SYNC-ORDERS] Sipariş ${tsoftCode} için yeni kişi oluşturuldu: ${normalizedPhone}`);
         }
 
         if (!contact) {
-          this.logger.warn(`[TSOFT-SYNC-ORDERS] Sipariş ${tsoftId}: Kişi oluşturulamadı/bulunamadı`);
+          this.logger.warn(`[TSOFT-SYNC-ORDERS] Sipariş ${tsoftCode}: Kişi oluşturulamadı/bulunamadı`);
           errors++;
           continue;
         }
 
-        const grandTotal = Number(raw.grandTotal ?? raw.total ?? raw.orderTotal ?? raw.totalPrice ?? 0);
-        const currency = String(raw.currency || raw.currencyCode || 'TRY').trim().toUpperCase();
-        const shippingAddress = String(raw.shippingAddress || raw.shipping_address || raw.address || '').trim() || null;
-        const orderNotes = String(raw.notes || raw.orderNote || raw.customerNote || '').trim() || null;
-        const tsoftStatus = String(raw.status || raw.orderStatus || raw.statusName || '').trim().toLowerCase();
+        // REST1: OrderTotalPrice — v3: grandTotal, total
+        const grandTotal = Number(
+          raw.OrderTotalPrice ?? raw.grandTotal ?? raw.total ?? raw.orderTotal ?? raw.totalPrice ?? 0,
+        );
+        const currency = String(raw.Currency || raw.currency || raw.currencyCode || 'TRY').trim().toUpperCase() || 'TRY';
+
+        // REST1: DeliveryAddress — v3: shippingAddress
+        const shippingAddress = [
+          raw.DeliveryAddress || raw.DeliveryName,
+          raw.DeliveryCity,
+          raw.DeliveryTown,
+        ].filter(Boolean).join(', ') || String(raw.shippingAddress || raw.address || '').trim() || null;
+
+        const orderNotes = String(raw.OrderNote || raw.notes || raw.orderNote || raw.customerNote || '').trim() || null;
+
+        // REST1: OrderStatus (string), OrderStatusId — v3: status
+        const tsoftStatus = String(raw.OrderStatus || raw.status || raw.orderStatus || '').trim().toLowerCase();
+        const statusId = Number(raw.OrderStatusId || 0);
 
         let crmStatus: 'PENDING' | 'PROCESSING' | 'SHIPPED' | 'DELIVERED' | 'CANCELLED' = 'PENDING';
-        if (tsoftStatus.includes('iptal') || tsoftStatus.includes('cancel')) crmStatus = 'CANCELLED';
-        else if (tsoftStatus.includes('teslim') || tsoftStatus.includes('deliver') || tsoftStatus.includes('complet')) crmStatus = 'DELIVERED';
-        else if (tsoftStatus.includes('kargo') || tsoftStatus.includes('ship')) crmStatus = 'SHIPPED';
-        else if (tsoftStatus.includes('hazırla') || tsoftStatus.includes('process') || tsoftStatus.includes('onay')) crmStatus = 'PROCESSING';
+        if (tsoftStatus.includes('iptal') || tsoftStatus.includes('cancel') || statusId === 6) crmStatus = 'CANCELLED';
+        else if (tsoftStatus.includes('teslim') || tsoftStatus.includes('deliver') || tsoftStatus.includes('complet') || statusId === 5) crmStatus = 'DELIVERED';
+        else if (tsoftStatus.includes('kargo') || tsoftStatus.includes('ship') || statusId === 4) crmStatus = 'SHIPPED';
+        else if (tsoftStatus.includes('hazırla') || tsoftStatus.includes('process') || tsoftStatus.includes('onay') || statusId === 2 || statusId === 3) crmStatus = 'PROCESSING';
 
         const orderItems = this.extractOrderItems(raw);
 
         const subtotal = orderItems.reduce((s, i) => s + i.lineTotal, 0);
         const vatTotal = Math.max(0, grandTotal - subtotal);
 
-        const orderDate = raw.createdAt || raw.created_at || raw.orderDate || raw.order_date;
-        const parsedDate = orderDate ? new Date(String(orderDate)) : new Date();
+        // REST1: OrderDate veya OrderDateTimeStamp
+        const tsDate = raw.OrderDateTimeStamp || raw.OrderDate;
+        let parsedDate: Date;
+        if (typeof tsDate === 'number' || (typeof tsDate === 'string' && /^\d{10,}$/.test(tsDate))) {
+          const ts = Number(tsDate);
+          parsedDate = new Date(ts < 1e12 ? ts * 1000 : ts);
+        } else {
+          parsedDate = tsDate ? new Date(String(tsDate)) : new Date();
+        }
         const validDate = Number.isFinite(parsedDate.getTime()) ? parsedDate : new Date();
 
         await this.prisma.salesOrder.create({
@@ -367,7 +406,7 @@ export class EcommerceService {
             vatTotal: Math.round(vatTotal * 100) / 100,
             grandTotal: Math.round(grandTotal * 100) / 100,
             shippingAddress,
-            notes: orderNotes ? `[Site Siparişi #${tsoftId}] ${orderNotes}` : `[Site Siparişi #${tsoftId}]`,
+            notes: orderNotes ? `[Site Siparişi #${tsoftCode}] ${orderNotes}` : `[Site Siparişi #${tsoftCode}]`,
             createdAt: validDate,
             items: {
               create: orderItems.map((item) => ({
@@ -383,7 +422,7 @@ export class EcommerceService {
         });
 
         imported++;
-        this.logger.debug(`[TSOFT-SYNC-ORDERS] Sipariş aktarıldı: T-Soft #${tsoftId} → CRM (${crmStatus}), ${orderItems.length} kalem, ${grandTotal} ${currency}`);
+        this.logger.debug(`[TSOFT-SYNC-ORDERS] Sipariş aktarıldı: T-Soft #${tsoftCode} → CRM (${crmStatus}), ${orderItems.length} kalem, ${grandTotal} ${currency}`);
       } catch (e: any) {
         if (e?.code === 'P2002') {
           skippedExisting++;
@@ -403,9 +442,11 @@ export class EcommerceService {
   }> {
     const items: Array<{ name: string; quantity: number; unitPrice: number; vatRate: number; lineTotal: number }> = [];
 
+    // REST1: OrderDetails — v3: items, orderItems, products
     const candidates = [
+      raw.OrderDetails, raw.orderDetails,
       raw.items, raw.orderItems, raw.order_items, raw.products,
-      raw.details, raw.orderDetails, raw.order_details, raw.lines,
+      raw.details, raw.order_details, raw.lines,
     ];
     let list: unknown[] = [];
     for (const c of candidates) {
@@ -418,10 +459,10 @@ export class EcommerceService {
     }
 
     if (list.length === 0) {
-      const grandTotal = Number(raw.grandTotal ?? raw.total ?? 0);
+      const grandTotal = Number(raw.OrderTotalPrice ?? raw.grandTotal ?? raw.total ?? 0);
       if (grandTotal > 0) {
         items.push({
-          name: `Site Siparişi #${raw.id || '?'}`,
+          name: `Site Siparişi #${raw.OrderCode || raw.OrderId || raw.id || '?'}`,
           quantity: 1,
           unitPrice: grandTotal,
           vatRate: 20,
@@ -434,11 +475,18 @@ export class EcommerceService {
     for (const row of list) {
       if (!row || typeof row !== 'object') continue;
       const r = row as Record<string, unknown>;
-      const name = String(r.name || r.productName || r.product_name || r.title || 'Ürün').trim();
-      const quantity = Math.max(1, Number(r.quantity || r.qty || r.amount || 1));
-      const unitPrice = Number(r.unitPrice || r.unit_price || r.price || r.salePrice || 0);
-      const lineTotal = Number(r.lineTotal || r.total || r.subTotal || r.rowTotal || (unitPrice * quantity));
-      const vatRate = Math.round(Number(r.vatRate || r.vat_rate || r.taxRate || r.tax_rate || 20));
+      // REST1: ProductName, Quantity, SellingPrice, Vat
+      const name = String(
+        r.ProductName || r.name || r.productName || r.product_name || r.title || 'Ürün',
+      ).trim();
+      const quantity = Math.max(1, Number(r.Quantity || r.quantity || r.qty || r.amount || 1));
+      const unitPrice = Number(
+        r.SellingPrice || r.SellingPriceWithoutVat || r.unitPrice || r.unit_price || r.price || r.salePrice || 0,
+      );
+      const lineTotal = Number(
+        r.lineTotal || r.total || r.subTotal || r.rowTotal || (unitPrice * quantity),
+      );
+      const vatRate = Math.round(Number(r.Vat || r.vatRate || r.vat_rate || r.taxRate || 20));
       items.push({
         name,
         quantity,

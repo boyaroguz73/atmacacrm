@@ -948,8 +948,7 @@ export class WahaService implements OnModuleInit {
     const detail = lastError?.response?.data
       ? JSON.stringify(lastError.response.data)
       : lastError?.message || 'Bilinmeyen hata';
-    this.logger.error(`Tepki gönderilemedi: ${messageId} - ${detail}`);
-    throw lastError;
+    this.logger.warn(`Tepki gönderilemedi (WAHA bu özelliği desteklemiyor olabilir): ${messageId} - ${detail}`);
   }
 
   /** WAHA Plus - Konum gönder */

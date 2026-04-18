@@ -55,14 +55,26 @@ export default function EcommerceOrdersPage() {
   };
 
   const summarize = (r: unknown) => {
-    if (!r || typeof r !== 'object') return { no: '—', status: '', total: '', date: '' };
+    if (!r || typeof r !== 'object') return { no: '—', customer: '', status: '', total: '', date: '' };
     const o = r as Record<string, unknown>;
     return {
-      no: String(o.orderNumber ?? o.id ?? '—'),
-      status: String(o.orderStatus ?? o.status ?? ''),
-      total: o.orderTotal != null ? String(o.orderTotal) : '',
-      date: o.createDate != null ? String(o.createDate) : o.createdAt != null ? String(o.createdAt) : '',
+      no: String(o.OrderCode ?? o.OrderId ?? o.orderNumber ?? o.id ?? '—'),
+      customer: String(o.CustomerName ?? o.customerName ?? ''),
+      status: String(o.OrderStatus ?? o.orderStatus ?? o.status ?? ''),
+      total: o.OrderTotalPrice != null ? String(o.OrderTotalPrice) : o.orderTotal != null ? String(o.orderTotal) : '',
+      date: formatTsoftDate(o.OrderDate ?? o.OrderDateTimeStamp ?? o.createDate ?? o.createdAt),
     };
+  };
+
+  const formatTsoftDate = (v: unknown): string => {
+    if (!v) return '';
+    if (typeof v === 'number' || (typeof v === 'string' && /^\d{10,}$/.test(v))) {
+      const ts = Number(v);
+      const d = new Date(ts < 1e12 ? ts * 1000 : ts);
+      return d.toLocaleDateString('tr-TR');
+    }
+    const d = new Date(String(v));
+    return Number.isFinite(d.getTime()) ? d.toLocaleDateString('tr-TR') : String(v);
   };
 
   return (
@@ -109,9 +121,10 @@ export default function EcommerceOrdersPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-100 bg-gray-50/50 text-left text-xs font-semibold text-gray-500 uppercase">
-                <th className="px-5 py-3">Sipariş</th>
+                <th className="px-5 py-3">Sipariş No</th>
+                <th className="px-5 py-3">Müşteri</th>
                 <th className="px-5 py-3">Durum</th>
-                <th className="px-5 py-3">Tutar</th>
+                <th className="px-5 py-3 text-right">Tutar</th>
                 <th className="px-5 py-3">Tarih</th>
               </tr>
             </thead>
@@ -121,6 +134,7 @@ export default function EcommerceOrdersPage() {
                 return (
                   <tr key={i} className="border-b border-gray-50 hover:bg-gray-50/40">
                     <td className="px-5 py-3 font-medium text-gray-900">{s.no}</td>
+                    <td className="px-5 py-3 text-gray-700">{s.customer || '—'}</td>
                     <td className="px-5 py-3">
                       {s.status ? (
                         <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">
@@ -130,7 +144,7 @@ export default function EcommerceOrdersPage() {
                         '—'
                       )}
                     </td>
-                    <td className="px-5 py-3 text-gray-600">{s.total ? `${s.total} TL` : '—'}</td>
+                    <td className="px-5 py-3 text-gray-600 text-right">{s.total ? `${s.total} TL` : '—'}</td>
                     <td className="px-5 py-3 text-gray-500 text-xs">{s.date || '—'}</td>
                   </tr>
                 );

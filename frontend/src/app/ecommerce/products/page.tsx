@@ -32,17 +32,31 @@ export default function EcommerceProductsPage() {
   const rowLabel = (r: unknown): string => {
     if (!r || typeof r !== 'object') return '—';
     const o = r as Record<string, unknown>;
-    const name = (o.name as string) || (o.title as string);
-    const id = o.id != null ? String(o.id) : '';
-    return name || (id ? `#${id}` : '—');
+    const name = (o.ProductName as string) || (o.name as string) || (o.title as string);
+    const id = o.ProductId ?? o.id;
+    return name || (id != null ? `#${id}` : '—');
+  };
+
+  const rowId = (r: unknown): string => {
+    if (!r || typeof r !== 'object') return '—';
+    const o = r as Record<string, unknown>;
+    return String(o.ProductCode || o.ProductId || o.id || '—');
   };
 
   const rowPrice = (r: unknown): string => {
     if (!r || typeof r !== 'object') return '';
     const o = r as Record<string, unknown>;
-    const p = o.priceSale ?? o.price;
+    const p = o.SellingPrice ?? o.priceSale ?? o.price;
     if (p == null) return '';
-    return `${p} TL`;
+    const cur = o.Currency || 'TRY';
+    return `${p} ${cur}`;
+  };
+
+  const rowStock = (r: unknown): string => {
+    if (!r || typeof r !== 'object') return '';
+    const o = r as Record<string, unknown>;
+    const s = o.Stock;
+    return s != null ? String(s) : '—';
   };
 
   return (
@@ -68,18 +82,27 @@ export default function EcommerceProductsPage() {
             <thead>
               <tr className="border-b border-gray-100 bg-gray-50/50 text-left text-xs font-semibold text-gray-500 uppercase">
                 <th className="px-5 py-3">Ürün</th>
-                <th className="px-5 py-3">ID</th>
+                <th className="px-5 py-3">Kod</th>
                 <th className="px-5 py-3">Fiyat</th>
+                <th className="px-5 py-3">Stok</th>
+                <th className="px-5 py-3">Durum</th>
               </tr>
             </thead>
             <tbody>
               {rows.map((r, i) => {
                 const o = r as Record<string, unknown>;
+                const active = o.IsActive === true || o.IsActive === 'true' || o.IsActive === 1;
                 return (
                   <tr key={i} className="border-b border-gray-50 hover:bg-gray-50/40">
                     <td className="px-5 py-3 font-medium text-gray-900">{rowLabel(r)}</td>
-                    <td className="px-5 py-3 text-gray-500">{o.id != null ? String(o.id) : '—'}</td>
+                    <td className="px-5 py-3 text-gray-500 text-xs">{rowId(r)}</td>
                     <td className="px-5 py-3 text-gray-600">{rowPrice(r) || '—'}</td>
+                    <td className="px-5 py-3 text-gray-600">{rowStock(r)}</td>
+                    <td className="px-5 py-3">
+                      <span className={`text-xs px-2 py-0.5 rounded-full ${active ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                        {active ? 'Aktif' : 'Pasif'}
+                      </span>
+                    </td>
                   </tr>
                 );
               })}
