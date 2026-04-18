@@ -163,7 +163,8 @@ model Organization {
   templates        MessageTemplate[]
   autoReplyFlows   AutoReplyFlow[]
   auditLogs        AuditLog[]
-  integrations     OrgIntegration[]
+  integrations           OrgIntegration[]
+  tsoftCatalogProducts   TsoftCatalogProduct[]
 
   @@map("organizations")
 }
@@ -682,6 +683,42 @@ model Product {
   @@map("products")
 }
 
+/// T-Soft REST’ten senkronlanan site ürünü (görsel içeriği DB’de tutulmaz; yalnızca metin + JSON özet)
+model TsoftCatalogProduct {
+  id               String   @id @default(uuid())
+  organizationId String
+  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  tsoftProductId String? /// T-Soft ProductId
+  productCode    String /// Web Servis / ürün kodu
+  barcode        String?
+  productName    String
+  sellingPrice   Float?
+  listPrice      Float?
+  buyingPrice    Float?
+  currency       String   @default("TRY")
+  stock          Int?
+  vatRate        Int?
+  brand          String?
+  model          String?
+  categoryCode   String?
+  categoryName   String?
+  isActive       Boolean  @default(true)
+  shortDescription String? @db.Text
+  detailsText      String? @db.Text /// HTML’den img kaldırılmış veya düz metin
+  /// Alt ürün özeti (görsel URL’leri çıkarılmış)
+  subproductsJson  Json?
+  /// API satırının görsel alanları budanmış kopyası (opsiyonel araştırma için)
+  rawSnapshotJson  Json?
+
+  syncedAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([organizationId, productCode])
+  @@index([organizationId])
+  @@map("tsoft_catalog_products")
+}
+
 /// XML / Google Shopping varyant satırları (item_group_id altında)
 model ProductVariant {
   id         String   @id @default(uuid())
@@ -814,6 +851,8 @@ model SalesOrder {
   orderNumber           Int         @unique @default(autoincrement())
   /// T-Soft / harici sipariş ID'si (tekil; upsert için)
   externalId            String?     @unique
+  /// T-Soft sipariş numerik ID (order2 API için; OrderId)
+  tsoftSiteOrderId      String?
   /// Siparişin kaynağı: MANUAL | TSOFT
   source                String      @default("MANUAL")
   quoteId               String?     @unique

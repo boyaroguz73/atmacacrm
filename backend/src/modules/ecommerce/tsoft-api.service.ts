@@ -601,6 +601,89 @@ export class TsoftApiService {
     );
   }
 
+  /** Sipariş sil (T-Soft site) — data: sipariş numerik ID */
+  async deleteSiteOrder(organizationId: string, orderNumericId: number): Promise<unknown> {
+    return this.rest1RequestWithData(
+      organizationId,
+      '/rest1/order2/deleteOrders',
+      orderNumericId,
+    );
+  }
+
+  /**
+   * Sipariş durumu (OrderStatusId string/number — getOrderStatusList’ten)
+   * T-Soft sürümüne göre alan adları değişebilir; gerekirse uyarlanır.
+   */
+  async updateSiteOrderStatus(
+    organizationId: string,
+    payload: Record<string, unknown>,
+  ): Promise<unknown> {
+    return this.rest1RequestWithData(
+      organizationId,
+      '/rest1/order2/updateOrderStatusAs',
+      payload,
+    );
+  }
+
+  /** Ürün listesi — detay + alt ürün (senkron için) */
+  async fetchProductsDetailed(
+    organizationId: string,
+    start: number,
+    limit: number,
+  ) {
+    const raw = await this.rest1Request(organizationId, '/rest1/product/get/', {
+      start,
+      limit,
+      FetchDetails: 1,
+      FetchSubProducts: 1,
+      FetchImageUrls: 0,
+    });
+    return this.unwrapRest1List(raw);
+  }
+
+  async setProducts(organizationId: string, data: Record<string, unknown>): Promise<unknown> {
+    return this.rest1RequestWithData(organizationId, '/rest1/product/setProducts', data);
+  }
+
+  async updateProducts(organizationId: string, data: Record<string, unknown>): Promise<unknown> {
+    return this.rest1RequestWithData(organizationId, '/rest1/product/updateProducts', data);
+  }
+
+  /**
+   * Ürün sil — dokümantasyonda `data` alanı ürün web servis kodu (düz metin).
+   */
+  async deleteProductByCode(organizationId: string, productCode: string): Promise<unknown> {
+    const token = await this.getBearerToken(organizationId);
+    const cfg = await this.loadConfig(organizationId);
+    const apiRoot = this.resolveApiRoot(organizationId, cfg);
+    const form = new URLSearchParams();
+    form.set('token', token);
+    form.set('data', productCode);
+
+    const http = this.client(apiRoot);
+    const path = '/rest1/product/deleteProducts';
+    let res = await http.post(path, form.toString(), {
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    });
+
+    if (res.status === 401) {
+      this.clearTokenCache(organizationId);
+      const newToken = await this.getBearerToken(organizationId);
+      form.set('token', newToken);
+      const http2 = this.client(this.resolveApiRoot(organizationId, cfg));
+      res = await http2.post(path, form.toString(), {
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      });
+    }
+
+    if (res.status >= 400) {
+      throw new BadRequestException(
+        `T-Soft ürün silme (${res.status}): ${this.summarizeTsoftError(res.status, res.data)}`,
+      );
+    }
+    return res.data;
+  }
+
   // ─── Customer endpoints ───────────────────────────────────────────────
 
   async listCustomersPage(organizationId: string, page = 1, limit = 100) {

@@ -5,6 +5,7 @@ import { OrderStatus, DiscountType } from '@prisma/client';
 import { splitSearchTokens } from '../../common/search-tokens';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { TsoftApiService } from '../ecommerce/tsoft-api.service';
+import { extractTsoftNumericOrderIdFromApiResult } from '../ecommerce/tsoft-order.util';
 
 @Injectable()
 export class OrdersService {
@@ -254,7 +255,22 @@ export class OrdersService {
       }
     }
 
-    return order;
+    return this.findById(order.id);
+  }
+
+  /**
+   * CRM’deki siparişi T-Soft sitesinde oluşturur; dönen numerik OrderId `tsoftSiteOrderId` alanına yazılır.
+   */
+  async pushSalesOrderToTsoftSite(orderId: string, organizationId: string) {
+    const order = await this.prisma.salesOrder.findFirst({
+      where: { id: orderId, contact: { organizationId } },
+      include: this.includeRelations,
+    });
+    if (!order) throw new NotFoundException('Sipariş bulunamadı');
+    if (order.tsoftSiteOrderId) {
+      throw new BadRequestException('Bu sipariş zaten siteye gönderilmiş');
+    }
+    return this.pushOrderToTsoft(order, organizationId);
   }
 
   private async pushOrderToTsoft(order: any, organizationId: string) {
@@ -319,7 +335,18 @@ export class OrdersService {
 
     const result = await this.tsoftApi.createOrder(organizationId, tsoftOrder);
     this.logger.debug(`T-Soft sipariş yanıtı: ${JSON.stringify(result)?.slice(0, 500)}`);
-    return result;
+    const siteId = extractTsoftNumericOrderIdFromApiResult(result);
+    if (siteId) {
+      await this.prisma.salesOrder.update({
+        where: { id: order.id },
+        data: { tsoftSiteOrderId: siteId },
+      });
+    } else {
+      this.logger.warn(
+        `T-Soft sipariş yanıtında OrderId bulunamadı (CRM kaydı güncellenmedi): ${JSON.stringify(result)?.slice(0, 400)}`,
+      );
+    }
+    return { result, tsoftSiteOrderId: siteId };
   }
 
   async updateStatus(id: string, status: OrderStatus) {

@@ -1,5 +1,14 @@
-import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  NotFoundException,
+  BadRequestException,
+  Inject,
+  forwardRef,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { Prisma } from '@prisma/client';
+import { randomUUID } from 'crypto';
 import { TsoftApiService } from './tsoft-api.service';
 import {
   normalizeComparablePhone,
@@ -7,6 +16,12 @@ import {
   formatPhoneForTsoft,
 } from './phone.util';
 import type { CreateTsoftSiteCustomerPayload } from './tsoft.types';
+import { rowToCatalogDraft } from './tsoft-catalog.util';
+import {
+  extractTsoftCustomerIdFromSetCustomersResponse,
+  looksLikeTsoftSuccessResponse,
+} from './tsoft-customer.util';
+import { OrdersService } from '../orders/orders.service';
 
 const TSOFT_LABEL = 'T-Soft Site Müşterisi';
 const TSOFT_SOURCE = 'TSOFT';
@@ -33,6 +48,8 @@ export class EcommerceService {
   constructor(
     private prisma: PrismaService,
     private tsoftApi: TsoftApiService,
+    @Inject(forwardRef(() => OrdersService))
+    private readonly ordersService: OrdersService,
   ) {}
 
   async getStatus(organizationId: string): Promise<EcommerceStatusResult> {
@@ -238,15 +255,21 @@ export class EcommerceService {
     };
   }
 
-  private extractCreatedCustomerId(res: unknown): string {
-    const r = res as Record<string, unknown>;
-    const d = r?.data as Record<string, unknown> | undefined;
-    const inner = d?.data as Record<string, unknown> | undefined;
-    const id = (inner?.id ?? d?.id ?? r?.id) as string | number | undefined;
-    if (id == null || id === '') {
-      throw new BadRequestException('T-Soft yanıtında müşteri ID bulunamadı');
+  /**
+   * setCustomers REST1 yanıtı çoğunlukla `CustomerId` veya `data[]` içinde döner; yoksa başarılı ise CustomerCode (= e-posta) kullanılır.
+   */
+  private extractCreatedCustomerId(res: unknown, emailForFallback: string): string {
+    const fromApi = extractTsoftCustomerIdFromSetCustomersResponse(res);
+    if (fromApi) return fromApi;
+    if (looksLikeTsoftSuccessResponse(res) && emailForFallback.trim()) {
+      this.logger.warn(
+        `[TSOFT setCustomers] Yanıtta müşteri kimliği yok; metadata.externalId için e-posta kullanılıyor (CustomerCode ile uyumlu)`,
+      );
+      return emailForFallback.trim();
     }
-    return String(id);
+    throw new BadRequestException(
+      `T-Soft yanıtında müşteri ID bulunamadı. API gövdesi: ${JSON.stringify(res)?.slice(0, 700)}`,
+    );
   }
 
   /**
@@ -394,9 +417,14 @@ export class EcommerceService {
         }
         const validDate = Number.isFinite(parsedDate.getTime()) ? parsedDate : new Date();
 
+        const siteOid = raw.OrderId ?? raw.orderId;
+        const tsoftSiteOrderId =
+          siteOid != null && String(siteOid).trim() !== '' ? String(siteOid).trim() : null;
+
         await this.prisma.salesOrder.create({
           data: {
             externalId,
+            tsoftSiteOrderId,
             source: TSOFT_SOURCE,
             contactId: contact.id,
             createdById: userId,
@@ -551,7 +579,7 @@ export class EcommerceService {
     };
 
     const res = await this.tsoftApi.createCustomer(organizationId, payload);
-    const externalId = this.extractCreatedCustomerId(res);
+    const externalId = this.extractCreatedCustomerId(res, payload.email);
 
     const nextMeta = this.mergeEcommerceMeta(contact.metadata, {
       provider: 'tsoft',
@@ -570,5 +598,293 @@ export class EcommerceService {
     });
 
     return { ok: true, externalId, label: TSOFT_LABEL };
+  }
+
+  // ——— T-Soft katalog (DB + REST1) ———
+
+  async syncTsoftCatalog(organizationId: string) {
+    this.logger.log(`[TSOFT-CATALOG] Senkron başlıyor org=${organizationId}`);
+    let upserted = 0;
+    for (let start = 0; ; start += 100) {
+      const { rows } = await this.tsoftApi.fetchProductsDetailed(organizationId, start, 100);
+      if (!rows.length) break;
+      for (const r of rows) {
+        const row = r as Record<string, unknown>;
+        const draft = rowToCatalogDraft(organizationId, row);
+        if (!draft.productCode) continue;
+        await this.prisma.tsoftCatalogProduct.upsert({
+          where: {
+            organizationId_productCode: {
+              organizationId,
+              productCode: draft.productCode,
+            },
+          },
+          create: {
+            id: randomUUID(),
+            ...draft,
+            subproductsJson: draft.subproductsJson as Prisma.InputJsonValue | undefined,
+            rawSnapshotJson: draft.rawSnapshotJson as Prisma.InputJsonValue | undefined,
+          },
+          update: {
+            ...draft,
+            subproductsJson: draft.subproductsJson as Prisma.InputJsonValue | undefined,
+            rawSnapshotJson: draft.rawSnapshotJson as Prisma.InputJsonValue | undefined,
+            syncedAt: new Date(),
+          },
+        });
+        upserted++;
+      }
+      if (rows.length < 100) break;
+    }
+    this.logger.log(`[TSOFT-CATALOG] Tamam: ${upserted} upsert`);
+    return { upserted };
+  }
+
+  async listTsoftCatalog(
+    organizationId: string,
+    params: { page: number; limit: number; search?: string },
+  ) {
+    const { page, limit, search } = params;
+    const skip = (page - 1) * limit;
+    const where: Prisma.TsoftCatalogProductWhereInput = { organizationId };
+    const q = search?.trim();
+    if (q) {
+      where.OR = [
+        { productName: { contains: q, mode: 'insensitive' } },
+        { productCode: { contains: q, mode: 'insensitive' } },
+        { barcode: { contains: q, mode: 'insensitive' } },
+      ];
+    }
+    const [items, total] = await Promise.all([
+      this.prisma.tsoftCatalogProduct.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { updatedAt: 'desc' },
+      }),
+      this.prisma.tsoftCatalogProduct.count({ where }),
+    ]);
+    return {
+      items,
+      total,
+      page,
+      totalPages: Math.ceil(total / limit) || 1,
+    };
+  }
+
+  async getTsoftCatalogProduct(organizationId: string, id: string) {
+    const p = await this.prisma.tsoftCatalogProduct.findFirst({
+      where: { id, organizationId },
+    });
+    if (!p) throw new NotFoundException('Katalog ürünü bulunamadı');
+    return p;
+  }
+
+  async updateTsoftCatalogProduct(
+    organizationId: string,
+    id: string,
+    dto: {
+      productName?: string;
+      sellingPrice?: number;
+      listPrice?: number | null;
+      stock?: number | null;
+      vatRate?: number | null;
+      currency?: string;
+      isActive?: boolean;
+      shortDescription?: string | null;
+      detailsText?: string | null;
+      brand?: string | null;
+      barcode?: string | null;
+      pushToSite?: boolean;
+    },
+  ) {
+    const existing = await this.getTsoftCatalogProduct(organizationId, id);
+    const productName = dto.productName ?? existing.productName;
+    const sellingPrice = dto.sellingPrice ?? existing.sellingPrice ?? 0;
+    const stock = dto.stock !== undefined ? dto.stock : existing.stock;
+    const currency = dto.currency ?? existing.currency;
+    const isActive = dto.isActive ?? existing.isActive;
+    const vatStr =
+      dto.vatRate !== undefined && dto.vatRate !== null
+        ? String(dto.vatRate)
+        : existing.vatRate != null
+          ? String(existing.vatRate)
+          : '20';
+
+    if (dto.pushToSite !== false) {
+      await this.tsoftApi.updateProducts(organizationId, {
+        ProductCode: existing.productCode,
+        ProductName: productName,
+        SellingPrice: sellingPrice,
+        Stock: stock ?? 0,
+        StockUnit: 'Adet',
+        Currency: currency,
+        Vat: vatStr,
+        IsActive: isActive,
+        Barcode: dto.barcode ?? existing.barcode ?? '',
+        Brand: dto.brand ?? existing.brand ?? '',
+        ShortDescription: dto.shortDescription ?? existing.shortDescription ?? '',
+        Details: dto.detailsText ?? existing.detailsText ?? '',
+      });
+    }
+
+    return this.prisma.tsoftCatalogProduct.update({
+      where: { id: existing.id },
+      data: {
+        productName,
+        sellingPrice,
+        listPrice: dto.listPrice !== undefined ? dto.listPrice : existing.listPrice,
+        stock,
+        vatRate: dto.vatRate !== undefined ? dto.vatRate : existing.vatRate,
+        currency,
+        isActive,
+        shortDescription: dto.shortDescription !== undefined ? dto.shortDescription : existing.shortDescription,
+        detailsText: dto.detailsText !== undefined ? dto.detailsText : existing.detailsText,
+        brand: dto.brand !== undefined ? dto.brand : existing.brand,
+        barcode: dto.barcode !== undefined ? dto.barcode : existing.barcode,
+        syncedAt: new Date(),
+      },
+    });
+  }
+
+  async createTsoftCatalogProduct(
+    organizationId: string,
+    dto: {
+      productCode: string;
+      productName: string;
+      sellingPrice: number;
+      currency?: string;
+      stock?: number;
+      vatRate?: number;
+      isActive?: boolean;
+      barcode?: string;
+      brand?: string;
+      shortDescription?: string;
+      detailsText?: string;
+    },
+  ) {
+    const code = dto.productCode.trim();
+    const dup = await this.prisma.tsoftCatalogProduct.findUnique({
+      where: { organizationId_productCode: { organizationId, productCode: code } },
+    });
+    if (dup) throw new BadRequestException('Bu ürün kodu zaten kayıtlı');
+
+    await this.tsoftApi.setProducts(organizationId, {
+      ProductCode: code,
+      ProductName: dto.productName.trim(),
+      SellingPrice: dto.sellingPrice,
+      Currency: dto.currency || 'TL',
+      Stock: dto.stock ?? 0,
+      StockUnit: 'Adet',
+      Vat: String(dto.vatRate ?? 20),
+      IsActive: dto.isActive !== false,
+      Barcode: dto.barcode || '',
+      Brand: dto.brand || '',
+      ShortDescription: dto.shortDescription || '',
+      Details: dto.detailsText || '',
+    });
+
+    const draft = rowToCatalogDraft(organizationId, {
+      ProductCode: code,
+      ProductName: dto.productName.trim(),
+      SellingPrice: dto.sellingPrice,
+      Currency: dto.currency || 'TRY',
+      Stock: dto.stock ?? 0,
+      Vat: dto.vatRate ?? 20,
+      IsActive: dto.isActive !== false,
+      Barcode: dto.barcode,
+      Brand: dto.brand,
+      ShortDescription: dto.shortDescription,
+      Details: dto.detailsText,
+    });
+
+    return this.prisma.tsoftCatalogProduct.create({
+      data: {
+        id: randomUUID(),
+        ...draft,
+        subproductsJson: draft.subproductsJson as Prisma.InputJsonValue | undefined,
+        rawSnapshotJson: draft.rawSnapshotJson as Prisma.InputJsonValue | undefined,
+      },
+    });
+  }
+
+  async deleteTsoftCatalogProduct(organizationId: string, id: string, deleteOnSite: boolean) {
+    const existing = await this.getTsoftCatalogProduct(organizationId, id);
+    if (deleteOnSite) {
+      await this.tsoftApi.deleteProductByCode(organizationId, existing.productCode);
+    }
+    await this.prisma.tsoftCatalogProduct.delete({ where: { id: existing.id } });
+    return { deleted: true };
+  }
+
+  /** T-Soft sitedeki siparişi sil (numerik OrderId) */
+  async deleteTsoftSiteOrderByNumericId(organizationId: string, tsoftOrderId: number) {
+    return this.tsoftApi.deleteSiteOrder(organizationId, tsoftOrderId);
+  }
+
+  /** T-Soft sipariş durumu — OrderStatusId için önce getOrderStatusList kullanın */
+  async setTsoftSiteOrderStatus(
+    organizationId: string,
+    body: { orderNumericId: number; orderStatusId: string },
+  ) {
+    return this.tsoftApi.updateSiteOrderStatus(organizationId, {
+      OrderId: body.orderNumericId,
+      OrderStatusId: body.orderStatusId,
+    });
+  }
+
+  async listTsoftOrderStatuses(organizationId: string) {
+    return this.tsoftApi.getOrderStatusList(organizationId);
+  }
+
+  /** Kayıtlı CRM siparişini T-Soft’a gönderir (`tsoftSiteOrderId` yazılır). */
+  async pushCrmSalesOrderToTsoft(organizationId: string, salesOrderId: string) {
+    return this.ordersService.pushSalesOrderToTsoftSite(salesOrderId, organizationId);
+  }
+
+  /** CRM siparişine bağlı site siparişini T-Soft’ta siler; CRM’deki `tsoftSiteOrderId` temizlenir. */
+  async deleteTsoftSiteOrderLinkedToCrm(organizationId: string, salesOrderId: string) {
+    const o = await this.prisma.salesOrder.findFirst({
+      where: { id: salesOrderId, contact: { organizationId } },
+      select: { id: true, tsoftSiteOrderId: true },
+    });
+    if (!o) throw new NotFoundException('Sipariş bulunamadı');
+    if (!o.tsoftSiteOrderId?.trim()) {
+      throw new BadRequestException('Bu siparişin T-Soft site kimliği yok');
+    }
+    const num = Number(o.tsoftSiteOrderId);
+    if (!Number.isFinite(num)) {
+      throw new BadRequestException('Geçersiz T-Soft sipariş numarası');
+    }
+    await this.tsoftApi.deleteSiteOrder(organizationId, num);
+    await this.prisma.salesOrder.update({
+      where: { id: o.id },
+      data: { tsoftSiteOrderId: null },
+    });
+    return { ok: true, deletedSiteOrderId: num };
+  }
+
+  /** CRM’deki `tsoftSiteOrderId` ile site sipariş durumunu günceller. */
+  async setTsoftSiteOrderStatusFromCrm(
+    organizationId: string,
+    salesOrderId: string,
+    orderStatusId: string,
+  ) {
+    const o = await this.prisma.salesOrder.findFirst({
+      where: { id: salesOrderId, contact: { organizationId } },
+      select: { id: true, tsoftSiteOrderId: true },
+    });
+    if (!o) throw new NotFoundException('Sipariş bulunamadı');
+    if (!o.tsoftSiteOrderId?.trim()) {
+      throw new BadRequestException('Bu sipariş siteye bağlı değil');
+    }
+    const num = Number(o.tsoftSiteOrderId);
+    if (!Number.isFinite(num)) {
+      throw new BadRequestException('Geçersiz T-Soft sipariş numarası');
+    }
+    return this.setTsoftSiteOrderStatus(organizationId, {
+      orderNumericId: num,
+      orderStatusId,
+    });
   }
 }

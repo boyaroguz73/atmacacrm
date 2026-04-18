@@ -2,6 +2,8 @@ import {
   Controller,
   Get,
   Post,
+  Patch,
+  Delete,
   Param,
   Query,
   Body,
@@ -15,6 +17,14 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { EcommerceService } from './ecommerce.service';
 import { CreateTsoftCustomerDto } from './dto/create-tsoft-customer.dto';
+import {
+  CreateTsoftCatalogDto,
+  UpdateTsoftCatalogDto,
+  DeleteSiteOrderDto,
+  SetSiteOrderStatusDto,
+  PushSalesOrderToTsoftDto,
+  SetCrmLinkedSiteOrderStatusDto,
+} from './dto/tsoft-catalog.dto';
 
 @ApiTags('E-Commerce')
 @ApiBearerAuth()
@@ -114,5 +124,137 @@ export class EcommerceController {
     @Body() dto: CreateTsoftCustomerDto,
   ) {
     return this.ecommerceService.createTsoftCustomerFromContact(this.orgId(user), contactId, dto);
+  }
+
+  @Post('tsoft/sync-catalog')
+  @UseGuards(RolesGuard)
+  @Roles('ADMIN')
+  syncTsoftCatalog(@CurrentUser() user: { role?: string; organizationId?: string | null }) {
+    return this.ecommerceService.syncTsoftCatalog(this.orgId(user));
+  }
+
+  @Get('tsoft/catalog')
+  @UseGuards(RolesGuard)
+  @Roles('ADMIN')
+  listTsoftCatalog(
+    @CurrentUser() user: { role?: string; organizationId?: string | null },
+    @Query('page') page = '1',
+    @Query('limit') limit = '50',
+    @Query('search') search?: string,
+  ) {
+    return this.ecommerceService.listTsoftCatalog(this.orgId(user), {
+      page: Math.max(1, parseInt(page, 10) || 1),
+      limit: Math.min(100, Math.max(1, parseInt(limit, 10) || 50)),
+      search,
+    });
+  }
+
+  @Get('tsoft/catalog/:id')
+  @UseGuards(RolesGuard)
+  @Roles('ADMIN')
+  getTsoftCatalogProduct(
+    @CurrentUser() user: { role?: string; organizationId?: string | null },
+    @Param('id') id: string,
+  ) {
+    return this.ecommerceService.getTsoftCatalogProduct(this.orgId(user), id);
+  }
+
+  @Patch('tsoft/catalog/:id')
+  @UseGuards(RolesGuard)
+  @Roles('ADMIN')
+  updateTsoftCatalogProduct(
+    @CurrentUser() user: { role?: string; organizationId?: string | null },
+    @Param('id') id: string,
+    @Body() dto: UpdateTsoftCatalogDto,
+  ) {
+    return this.ecommerceService.updateTsoftCatalogProduct(this.orgId(user), id, dto);
+  }
+
+  @Post('tsoft/catalog')
+  @UseGuards(RolesGuard)
+  @Roles('ADMIN')
+  createTsoftCatalogProduct(
+    @CurrentUser() user: { role?: string; organizationId?: string | null },
+    @Body() dto: CreateTsoftCatalogDto,
+  ) {
+    return this.ecommerceService.createTsoftCatalogProduct(this.orgId(user), dto);
+  }
+
+  @Delete('tsoft/catalog/:id')
+  @UseGuards(RolesGuard)
+  @Roles('ADMIN')
+  deleteTsoftCatalogProduct(
+    @CurrentUser() user: { role?: string; organizationId?: string | null },
+    @Param('id') id: string,
+    @Query('deleteOnSite') deleteOnSite?: string,
+  ) {
+    const del = deleteOnSite === 'true' || deleteOnSite === '1';
+    return this.ecommerceService.deleteTsoftCatalogProduct(this.orgId(user), id, del);
+  }
+
+  /** T-Soft sitedeki siparişi numerik OrderId ile sil */
+  @Post('tsoft/site-orders/delete')
+  @UseGuards(RolesGuard)
+  @Roles('ADMIN')
+  deleteTsoftSiteOrder(@CurrentUser() user: { role?: string; organizationId?: string | null }, @Body() dto: DeleteSiteOrderDto) {
+    return this.ecommerceService.deleteTsoftSiteOrderByNumericId(this.orgId(user), dto.orderId);
+  }
+
+  @Post('tsoft/site-orders/status')
+  @UseGuards(RolesGuard)
+  @Roles('ADMIN')
+  setTsoftSiteOrderStatus(
+    @CurrentUser() user: { role?: string; organizationId?: string | null },
+    @Body() dto: SetSiteOrderStatusDto,
+  ) {
+    return this.ecommerceService.setTsoftSiteOrderStatus(this.orgId(user), {
+      orderNumericId: dto.orderNumericId,
+      orderStatusId: dto.orderStatusId,
+    });
+  }
+
+  @Get('tsoft/order-statuses')
+  @UseGuards(RolesGuard)
+  @Roles('ADMIN')
+  listTsoftOrderStatuses(@CurrentUser() user: { role?: string; organizationId?: string | null }) {
+    return this.ecommerceService.listTsoftOrderStatuses(this.orgId(user));
+  }
+
+  /** CRM siparişini siteye gönderir (`tsoftSiteOrderId` kaydedilir) */
+  @Post('tsoft/crm-orders/push')
+  @UseGuards(RolesGuard)
+  @Roles('ADMIN')
+  pushCrmOrderToTsoft(
+    @CurrentUser() user: { role?: string; organizationId?: string | null },
+    @Body() dto: PushSalesOrderToTsoftDto,
+  ) {
+    return this.ecommerceService.pushCrmSalesOrderToTsoft(this.orgId(user), dto.salesOrderId);
+  }
+
+  /** CRM’e bağlı site siparişini siler */
+  @Post('tsoft/crm-orders/delete-site')
+  @UseGuards(RolesGuard)
+  @Roles('ADMIN')
+  deleteTsoftSiteOrderLinkedToCrm(
+    @CurrentUser() user: { role?: string; organizationId?: string | null },
+    @Body() dto: PushSalesOrderToTsoftDto,
+  ) {
+    return this.ecommerceService.deleteTsoftSiteOrderLinkedToCrm(this.orgId(user), dto.salesOrderId);
+  }
+
+  /** CRM siparişine bağlı site siparişinin durumunu günceller */
+  @Patch('tsoft/crm-orders/:salesOrderId/site-status')
+  @UseGuards(RolesGuard)
+  @Roles('ADMIN')
+  setTsoftSiteOrderStatusForCrmOrder(
+    @CurrentUser() user: { role?: string; organizationId?: string | null },
+    @Param('salesOrderId') salesOrderId: string,
+    @Body() dto: SetCrmLinkedSiteOrderStatusDto,
+  ) {
+    return this.ecommerceService.setTsoftSiteOrderStatusFromCrm(
+      this.orgId(user),
+      salesOrderId,
+      dto.orderStatusId,
+    );
   }
 }
