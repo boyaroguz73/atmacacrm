@@ -332,10 +332,13 @@ export class ProductsService {
 
       const res = await axios.get<ArrayBuffer>(remoteUrl, {
         responseType: 'arraybuffer',
-        timeout: 30_000,
+        timeout: 60_000,
         maxContentLength: 12 * 1024 * 1024,
         validateStatus: (s) => s >= 200 && s < 400,
-        headers: { 'User-Agent': 'AtmacaCRM-ProductSync/1.0' },
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+          Accept: 'image/webp,image/apng,image/*,*/*;q=0.8',
+        },
       });
       writeFileSync(fullPath, Buffer.from(res.data));
       this.logger.debug(`Ürün görseli yerele kaydedildi: ${filename} (${sku})`);
@@ -491,7 +494,7 @@ export class ProductsService {
         maxContentLength: 50 * 1024 * 1024,
         headers: {
           Accept: 'application/xml, text/xml, */*',
-          'User-Agent': 'AtmacaCRM-ProductSync/1.0',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
         },
         validateStatus: (s) => s >= 200 && s < 400,
       });

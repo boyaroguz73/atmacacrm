@@ -126,14 +126,14 @@ export class TsoftApiService {
     const headers: Record<string, string> = {
       Accept: 'application/json',
       'Content-Type': 'application/json',
-      'User-Agent': 'Mozilla/5.0 (compatible; AtmacaCRM/1.0)',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
     };
     if (token) {
       headers.Authorization = `Bearer ${token}`;
     }
     return axios.create({
       baseURL: baseUrl,
-      timeout: 30_000,
+      timeout: 60_000,
       headers,
       validateStatus: () => true,
     });
