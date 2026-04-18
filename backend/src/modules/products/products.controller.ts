@@ -119,4 +119,12 @@ export class ProductsController {
       importMerchantMeta: feed.importMerchantMeta,
     });
   }
+
+  /** Harici URL'lere sahip tüm ürün görsellerini toplu olarak yerele indir */
+  @Post('download-images')
+  @UseGuards(RolesGuard)
+  @Roles('ADMIN', 'SUPERADMIN')
+  downloadImages() {
+    return this.productsService.downloadAllProductImages();
+  }
 }

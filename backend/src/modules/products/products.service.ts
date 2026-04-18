@@ -450,10 +450,7 @@ export class ProductsService {
       const descriptionRaw = field(item, 'description', 'g:description') || null;
       const description = impDesc ? descriptionRaw : null;
       const productUrl = field(item, 'link', 'g:link') || null;
-      const imageUrlFromFeedRaw = impImg ? resolvePrimaryImageUrl(item) : null;
-      const imageUrlFromFeed = impImg && imageUrlFromFeedRaw
-        ? await this.downloadImageToLocal(imageUrlFromFeedRaw, sku || `item${i}`)
-        : imageUrlFromFeedRaw;
+      const imageUrlFromFeed = impImg ? resolvePrimaryImageUrl(item) : null;
       const googleCondition = impMerch ? field(item, 'condition', 'g:condition') || null : null;
       const googleAvailability = field(item, 'availability', 'g:availability') || null;
       const googleIdentifierExists = impMerch
@@ -491,12 +488,7 @@ export class ProductsService {
       const itemVat = resolveVatRateFromFeedItem(item, vatDefault);
 
       const additionalImagesRaw = impImg ? collectAdditionalImages(item) : [];
-      const additionalImages: string[] = [];
-      for (let ai = 0; ai < additionalImagesRaw.length; ai++) {
-        const localPath = await this.downloadImageToLocal(additionalImagesRaw[ai], `${sku || `item${i}`}_add${ai}`);
-        additionalImages.push(localPath);
-      }
-      const additionalImagesJson = (impImg ? additionalImages : []) as Prisma.InputJsonValue;
+      const additionalImagesJson = (impImg ? additionalImagesRaw : []) as Prisma.InputJsonValue;
 
       if (!sku || !name) {
         errors.push(`Öğe ${i + 1}: id veya title eksik`);
@@ -797,5 +789,69 @@ export class ProductsService {
     );
 
     return { imported, updated, deactivated, errors };
+  }
+
+  /**
+   * Harici URL'leri olan tüm aktif ürün görsellerini topluca indirir.
+   * Zaten yerel yola sahip ürünler atlanır. İndirilen görsel DB'ye yazılır.
+   */
+  async downloadAllProductImages(): Promise<{
+    total: number;
+    downloaded: number;
+    alreadyLocal: number;
+    failed: number;
+  }> {
+    const products = await this.prisma.product.findMany({
+      where: { isActive: true },
+      select: { id: true, sku: true, imageUrl: true, additionalImages: true },
+    });
+
+    let downloaded = 0;
+    let alreadyLocal = 0;
+    let failed = 0;
+
+    for (const p of products) {
+      const url = (p.imageUrl || '').trim();
+      if (!url) continue;
+
+      if (url.startsWith('/uploads/') || url.startsWith('uploads/')) {
+        alreadyLocal++;
+        continue;
+      }
+
+      const localPath = await this.downloadImageToLocal(url, p.sku);
+      if (localPath !== url) {
+        const updateData: Record<string, unknown> = { imageUrl: localPath };
+
+        if (p.additionalImages && Array.isArray(p.additionalImages)) {
+          const localAdditional: string[] = [];
+          for (let ai = 0; ai < (p.additionalImages as string[]).length; ai++) {
+            const addUrl = (p.additionalImages as string[])[ai];
+            if (!addUrl || addUrl.startsWith('/uploads/')) {
+              localAdditional.push(addUrl);
+            } else {
+              const addLocal = await this.downloadImageToLocal(addUrl, `${p.sku}_add${ai}`);
+              localAdditional.push(addLocal);
+            }
+          }
+          updateData.additionalImages = localAdditional;
+        }
+
+        await this.prisma.product.update({
+          where: { id: p.id },
+          data: updateData as any,
+        });
+        downloaded++;
+        this.logger.debug(`Görsel indirildi: ${p.sku}`);
+      } else {
+        failed++;
+      }
+    }
+
+    this.logger.log(
+      `Toplu görsel indirme: ${downloaded} indirildi, ${alreadyLocal} zaten yerel, ${failed} başarısız (toplam ${products.length})`,
+    );
+
+    return { total: products.length, downloaded, alreadyLocal, failed };
   }
 }

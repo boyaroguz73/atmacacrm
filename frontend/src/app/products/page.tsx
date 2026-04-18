@@ -16,6 +16,7 @@ import {
   ChevronRight,
   X,
   RefreshCw,
+  ImageDown,
 } from 'lucide-react';
 
 const PAGE_SIZE = 20;
@@ -103,6 +104,7 @@ export default function ProductsPage() {
   const [saving, setSaving] = useState(false);
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [syncingXml, setSyncingXml] = useState(false);
+  const [downloadingImages, setDownloadingImages] = useState(false);
 
   type ProductFeedSettings = {
     xmlUrl: string;
@@ -310,6 +312,25 @@ export default function ProductsPage() {
     }
   };
 
+  const downloadProductImages = async () => {
+    setDownloadingImages(true);
+    try {
+      const { data } = await api.post<{
+        total: number;
+        downloaded: number;
+        alreadyLocal: number;
+        failed: number;
+      }>('/products/download-images', {}, { timeout: 300_000 });
+      toast.success(
+        `Görsel indirme: ${data.downloaded} indirildi, ${data.alreadyLocal} zaten yerel, ${data.failed} başarısız`,
+      );
+    } catch (err: unknown) {
+      toast.error(getApiErrorMessage(err, 'Görsel indirme başarısız'));
+    } finally {
+      setDownloadingImages(false);
+    }
+  };
+
   const formatMoney = (n: number, currency: string) =>
     new Intl.NumberFormat('tr-TR', {
       style: 'currency',
@@ -345,6 +366,19 @@ export default function ProductsPage() {
                   <RefreshCw className="w-4 h-4 text-whatsapp" />
                 )}
                 XML senkron
+              </button>
+              <button
+                type="button"
+                disabled={downloadingImages}
+                onClick={() => void downloadProductImages()}
+                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-gray-200 bg-white text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 disabled:opacity-50 transition-colors"
+              >
+                {downloadingImages ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <ImageDown className="w-4 h-4 text-blue-600" />
+                )}
+                Görselleri İndir
               </button>
               <button
                 type="button"

@@ -506,13 +506,13 @@ export class MessagesService implements OnModuleInit {
       });
     }
 
-    // Yerel dosya ise (örn. /uploads/products/xxx.jpg) doğrudan disk'ten oku, HTTP yapmaya gerek yok
+    // Yerel dosya ise doğrudan disk'ten gönder
     const isLocalUploadUrl =
       url.startsWith('/uploads/') || url.startsWith('uploads/');
     if (isLocalUploadUrl) {
       const localFile = join(process.cwd(), url.startsWith('/') ? url.slice(1) : url);
       if (existsSync(localFile)) {
-        this.logger.debug(`Ürün görseli yerel dosyadan okunuyor: ${localFile}`);
+        this.logger.debug(`Ürün görseli yerel dosyadan gönderiliyor: ${localFile}`);
         const mediaUrl = url.startsWith('/') ? url : `/${url}`;
         try {
           return await this.sendMedia({
@@ -531,66 +531,18 @@ export class MessagesService implements OnModuleInit {
       this.logger.warn(`Yerel ürün görseli dosyası bulunamadı: ${localFile}`);
     }
 
-    const dir = join(process.cwd(), 'uploads', 'product-shares');
-    mkdirSync(dir, { recursive: true });
-    const lower = url.toLowerCase();
-    const ext =
-      lower.includes('.png') ? '.png' : lower.includes('.webp') ? '.webp' : lower.includes('.gif') ? '.gif' : '.jpg';
-    const filename = `${uuid()}${ext}`;
-    const fullPath = join(dir, filename);
-
-    this.logger.debug(`Ürün görseli indiriliyor: productId=${productId} url=${url}`);
-
-    try {
-      const res = await axios.get<ArrayBuffer>(url, {
-        responseType: 'arraybuffer',
-        timeout: 30_000,
-        maxContentLength: 12 * 1024 * 1024,
-        validateStatus: (s) => s >= 200 && s < 400,
-        headers: { 'User-Agent': 'AtmacaCRM-ProductShare/1.0' },
-      });
-      writeFileSync(fullPath, Buffer.from(res.data));
-    } catch (e: any) {
-      const msg =
-        axios.isAxiosError(e)
-          ? `${e.message}${e.response ? ` (HTTP ${e.response.status})` : ''}`
-          : e?.message || String(e);
-      this.logger.warn(
-        `Ürün görseli indirilemedi, metin fallback kullanılacak. productId=${productId} url=${url} error=${msg}`,
-      );
-      return this.sendText({
-        conversationId,
-        sessionName,
-        chatId,
-        body: caption,
-        sentById,
-      });
-    }
-
-    const mediaUrl = `/uploads/product-shares/${filename}`;
-
-    try {
-      return await this.sendMedia({
-        conversationId,
-        sessionName,
-        chatId,
-        mediaUrl,
-        caption,
-        sentById,
-      });
-    } catch (e: any) {
-      const msg = e?.message || 'Bilinmeyen hata';
-      this.logger.warn(
-        `Ürün görseli gönderilemedi, metin fallback kullanılacak. productId=${productId} error=${msg}`,
-      );
-      return this.sendText({
-        conversationId,
-        sessionName,
-        chatId,
-        body: caption,
-        sentById,
-      });
-    }
+    // Harici URL — on-the-fly indirme yapmıyoruz, görselsiz metin gönder.
+    // Görselleri toplu indirmek için Ayarlar → "Ürün Görsellerini İndir" butonunu kullanın.
+    this.logger.warn(
+      `Ürün görseli yerel değil, metin olarak gönderiliyor. productId=${productId} url=${url.slice(0, 100)} — Görsel indirmek için "Ürün Görsellerini İndir" butonunu kullanın.`,
+    );
+    return this.sendText({
+      conversationId,
+      sessionName,
+      chatId,
+      body: caption,
+      sentById,
+    });
   }
 
   private resolveLocalPath(mediaUrl: string): string | null {
