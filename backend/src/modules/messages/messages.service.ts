@@ -12,6 +12,7 @@ import { v4 as uuid } from 'uuid';
 import { lookup } from 'mime-types';
 import { normalizeWhatsappChatId } from '../../common/whatsapp-chat-id';
 import { optimizeImageBufferForWhatsapp } from '../../common/whatsapp-image';
+import { ProductsService } from '../products/products.service';
 
 @Injectable()
 export class MessagesService implements OnModuleInit {
@@ -24,6 +25,7 @@ export class MessagesService implements OnModuleInit {
     private conversationsService: ConversationsService,
     private chatGateway: ChatGateway,
     private config: ConfigService,
+    private productsService: ProductsService,
   ) {}
 
   onModuleInit() {
@@ -469,22 +471,7 @@ export class MessagesService implements OnModuleInit {
       normalizeWhatsappChatId(`${conv.contact.phone.replace(/\D/g, '')}@c.us`);
     const product = await this.prisma.product.findUnique({ where: { id: productId } });
     if (!product) throw new NotFoundException('Ürün bulunamadı');
-    
-    // Önce imageUrl'e bak, yoksa additionalImages dizisinin ilk elemanını al
-    let url = (product.imageUrl || '').trim();
-    if (!url && product.additionalImages) {
-      try {
-        const images = Array.isArray(product.additionalImages)
-          ? product.additionalImages
-          : JSON.parse(String(product.additionalImages));
-        if (Array.isArray(images) && images.length > 0) {
-          url = (images[0] || '').trim();
-        }
-      } catch {
-        // JSON parse hatası - devam et
-      }
-    }
-    
+
     const unitPrice = Number(product.unitPrice ?? 0);
     const price = `${unitPrice.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ${product.currency}`;
     const siteLink = (product.productUrl || '').trim();
@@ -495,47 +482,26 @@ export class MessagesService implements OnModuleInit {
     ]
       .filter(Boolean)
       .join('\n');
-    if (!url) {
-      this.logger.warn(`Ürün görseli yok, metin olarak gönderiliyor: productId=${productId}`);
-      return this.sendText({
-        conversationId,
-        sessionName,
-        chatId,
-        body: caption,
-        sentById,
-      });
-    }
 
-    // Yerel dosya ise doğrudan disk'ten gönder
-    const isLocalUploadUrl =
-      url.startsWith('/uploads/') || url.startsWith('uploads/');
-    if (isLocalUploadUrl) {
-      const localFile = join(process.cwd(), url.startsWith('/') ? url.slice(1) : url);
-      if (existsSync(localFile)) {
-        this.logger.debug(`Ürün görseli yerel dosyadan gönderiliyor: ${localFile}`);
-        const mediaUrl = url.startsWith('/') ? url : `/${url}`;
-        try {
-          return await this.sendMedia({
-            conversationId,
-            sessionName,
-            chatId,
-            mediaUrl,
-            caption,
-            sentById,
-          });
-        } catch (e: any) {
-          this.logger.warn(`Yerel ürün görseli gönderilemedi: ${e?.message}`);
-          return this.sendText({ conversationId, sessionName, chatId, body: caption, sentById });
-        }
+    const localUrl = await this.productsService.ensureProductImageLocal(productId);
+    if (localUrl) {
+      const mediaUrl = localUrl.startsWith('/') ? localUrl : `/${localUrl}`;
+      try {
+        return await this.sendMedia({
+          conversationId,
+          sessionName,
+          chatId,
+          mediaUrl,
+          caption,
+          sentById,
+        });
+      } catch (e: any) {
+        this.logger.warn(`Ürün görseli gönderilemedi: ${e?.message}`);
+        return this.sendText({ conversationId, sessionName, chatId, body: caption, sentById });
       }
-      this.logger.warn(`Yerel ürün görseli dosyası bulunamadı: ${localFile}`);
     }
 
-    // Harici URL — on-the-fly indirme yapmıyoruz, görselsiz metin gönder.
-    // Görselleri toplu indirmek için Ayarlar → "Ürün Görsellerini İndir" butonunu kullanın.
-    this.logger.warn(
-      `Ürün görseli yerel değil, metin olarak gönderiliyor. productId=${productId} url=${url.slice(0, 100)} — Görsel indirmek için "Ürün Görsellerini İndir" butonunu kullanın.`,
-    );
+    this.logger.debug(`Ürün görseli yok veya indirilemedi, metin gönderiliyor: productId=${productId}`);
     return this.sendText({
       conversationId,
       sessionName,

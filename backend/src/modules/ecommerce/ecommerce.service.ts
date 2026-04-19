@@ -23,11 +23,11 @@ import {
 } from './tsoft-customer.util';
 import { OrdersService } from '../orders/orders.service';
 
-const TSOFT_LABEL = 'T-Soft Site Müşterisi';
+const TSOFT_LABEL = 'Site müşterisi';
 const TSOFT_SOURCE = 'TSOFT';
 
-/** Bir seferde T-Soft’tan en fazla bu kadar müşteri aktarılır (API + performans). */
-const TSOFT_SYNC_CUSTOMERS_MAX = 100;
+/** Müşteri senkronunda en fazla bu kadar API sayfası (REST1/v3: sayfa başına ~100 kayıt). */
+const TSOFT_SYNC_CUSTOMERS_MAX_PAGES = 50;
 /** Sipariş aktarımında üst sınır (çok kayıtta zaman aşımı önleme). */
 const TSOFT_SYNC_ORDERS_MAX = 500;
 
@@ -168,13 +168,14 @@ export class EcommerceService {
 
   /**
    * T-Soft müşterilerini çeker; eşleşen CRM kişilerini günceller, eşleşmeyenleri oluşturur.
-   * En fazla {@link TSOFT_SYNC_CUSTOMERS_MAX} kayıt (REST1 ilk sayfa).
+   * Tüm sayfalar taranır (üst sınır: {@link TSOFT_SYNC_CUSTOMERS_MAX_PAGES} sayfa).
    */
   async syncTsoftCustomers(organizationId: string) {
     this.logger.log(`[TSOFT-SYNC-CUSTOMERS] Başlatılıyor orgId=${organizationId}`);
-    const { rows } = await this.tsoftApi.listCustomersPage(organizationId, 1, TSOFT_SYNC_CUSTOMERS_MAX);
-    const customers = rows;
-    this.logger.log(`[TSOFT-SYNC-CUSTOMERS] T-Soft'tan ${customers.length} müşteri çekildi (üst sınır ${TSOFT_SYNC_CUSTOMERS_MAX})`);
+    const customers = await this.tsoftApi.fetchAllCustomers(organizationId, TSOFT_SYNC_CUSTOMERS_MAX_PAGES);
+    this.logger.log(
+      `[TSOFT-SYNC-CUSTOMERS] T-Soft'tan ${customers.length} müşteri çekildi (en fazla ${TSOFT_SYNC_CUSTOMERS_MAX_PAGES} sayfa)`,
+    );
 
     if (customers.length > 0) {
       this.logger.debug(`[TSOFT-SYNC-CUSTOMERS] İlk müşteri örneği: ${JSON.stringify(customers[0]).slice(0, 500)}`);
@@ -275,7 +276,8 @@ export class EcommerceService {
       skipped,
       tsoftCustomerCount: customers.length,
       crmContactCount: existingContacts.length,
-      maxPerSync: TSOFT_SYNC_CUSTOMERS_MAX,
+      maxPerSync: customers.length,
+      maxPagesScanned: TSOFT_SYNC_CUSTOMERS_MAX_PAGES,
     };
   }
 
@@ -637,7 +639,7 @@ export class EcommerceService {
     const meta = contact.metadata as Record<string, unknown> | null;
     const ec = meta?.ecommerce as Record<string, unknown> | undefined;
     if (ec?.provider === 'tsoft' && ec?.externalId) {
-      throw new BadRequestException('Bu kişi zaten T-Soft site müşterisi olarak işaretli');
+      throw new BadRequestException('Bu kişi zaten site müşterisi olarak işaretli');
     }
 
     const payload: CreateTsoftSiteCustomerPayload = {

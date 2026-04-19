@@ -371,10 +371,48 @@ export class PdfService {
         const softLayout = data.layout === 'order_form';
         data.items.forEach((item, idx) => {
           const imgBuf = itemImageBuffers[idx];
-          const detailExtra = (item as LineItem).lineDetail ? 16 : 0;
-          const itemH = Math.max(32, imgBuf ? 36 : 0) + detailExtra;
+          const lineDetailRaw = (item as LineItem).lineDetail
+            ? String((item as LineItem).lineDetail).trim()
+            : '';
+
+          // Kalem satırı yüksekliği: ürün adı + renk/kumaş & ölçü (çok satır) — sabit 16px taşmayı önler
+          const thumb = 22;
+          const namePadSoft = imgBuf ? 26 + 8 : 4;
+          const namePadDefault = imgBuf ? thumb + 8 : 6;
+          const nameWSoft = cols[1].w - namePadSoft - 4;
+          const nameWDefault = cols[1].w - namePadDefault - 3;
+
+          R(); doc.fontSize(9);
+          const nameHSoft = doc.heightOfString(this.t(item.name), { width: nameWSoft });
+          R(); doc.fontSize(8);
+          const nameHDefault = doc.heightOfString(this.t(item.name), { width: nameWDefault });
+
+          R(); doc.fontSize(7);
+          const detailHSoft = lineDetailRaw
+            ? doc.heightOfString(this.t(lineDetailRaw), { width: nameWSoft })
+            : 0;
+          R(); doc.fontSize(7);
+          const detailHDefault = lineDetailRaw
+            ? doc.heightOfString(this.t(lineDetailRaw), { width: nameWDefault })
+            : 0;
+
+          const itemH = softLayout
+            ? Math.max(
+                32,
+                imgBuf ? 36 : 0,
+                6 + nameHSoft + (lineDetailRaw ? 2 + detailHSoft : 0) + 8,
+              )
+            : 0;
+
+          const rowHDefault = Math.max(
+            imgBuf ? 34 : 0,
+            6 + nameHDefault + (lineDetailRaw ? 2 + detailHDefault : 0) + 6,
+            ROW_H,
+          );
+
+          const blockH = softLayout ? itemH + 6 : rowHDefault;
           // Sayfa taşması
-          if (rowY + itemH + 8 > PAGE_H - 120) {
+          if (rowY + blockH + 8 > PAGE_H - 120) {
             doc.addPage({ margin: 0 });
             doc.rect(0, 0, doc.page.width, 8).fill(primary);
             rowY = 30;
@@ -386,18 +424,21 @@ export class PdfService {
             doc.text(String(idx + 1), rx, rowY + 8, { width: cols[0].w - 4, align: 'center', lineBreak: false });
             rx += cols[0].w;
             const nameColLeft = rx;
-            const thumb = 26;
-            const namePad = imgBuf ? thumb + 8 : 4;
+            const thumbSz = 26;
+            const namePad = imgBuf ? thumbSz + 8 : 4;
             if (imgBuf) {
               try {
-                doc.image(imgBuf, nameColLeft + 2, rowY + 5, { width: thumb, height: thumb, fit: [thumb, thumb] });
+                doc.image(imgBuf, nameColLeft + 2, rowY + 5, { width: thumbSz, height: thumbSz, fit: [thumbSz, thumbSz] });
               } catch { /* gecersiz goruntu */ }
             }
             R(); doc.fontSize(9).fillColor('#222');
-            doc.text(this.t(item.name), nameColLeft + namePad, rowY + 6, { width: cols[1].w - namePad - 4, ellipsis: true, lineBreak: false });
-            if ((item as LineItem).lineDetail) {
-              doc.fontSize(7).fillColor('#666666');
-              doc.text(this.t(String((item as LineItem).lineDetail)), nameColLeft + namePad, rowY + 20, {
+            doc.text(this.t(item.name), nameColLeft + namePad, rowY + 6, {
+              width: cols[1].w - namePad - 4,
+              lineBreak: true,
+            });
+            if (lineDetailRaw) {
+              doc.fontSize(7).fillColor('#444444');
+              doc.text(this.t(lineDetailRaw), nameColLeft + namePad, rowY + 6 + nameHSoft + 2, {
                 width: cols[1].w - namePad - 4,
                 lineBreak: true,
               });
@@ -415,37 +456,36 @@ export class PdfService {
             rowY += itemH + 6;
           } else {
             if (idx % 2 === 1) {
-              doc.rect(ML, rowY, PW, ROW_H).fill('#f9f9f9');
+              doc.rect(ML, rowY, PW, rowHDefault).fill('#f9f9f9');
             }
             let rx = ML;
             R(); doc.fontSize(8).fillColor('#333');
             doc.text(String(idx + 1), rx + 3, rowY + 6, { width: cols[0].w - 6, align: 'center', lineBreak: false }); rx += cols[0].w;
             const nameColX = rx;
-            const t = 22;
-            const pad = imgBuf ? t + 8 : 6;
+            const pad = imgBuf ? thumb + 8 : 6;
             if (imgBuf) {
               try {
-                doc.image(imgBuf, nameColX + 3, rowY + 4, { width: t, height: t, fit: [t, t] });
+                doc.image(imgBuf, nameColX + 3, rowY + 4, { width: thumb, height: thumb, fit: [thumb, thumb] });
               } catch { /* */ }
             }
-            txt(this.t(item.name), nameColX + pad, rowY + 6, { size: 8, width: cols[1].w - pad - 3 });
-            if ((item as LineItem).lineDetail) {
-              txt(this.t(String((item as LineItem).lineDetail)), nameColX + pad, rowY + 18, {
-                size: 6.5,
+            R(); doc.fontSize(8).fillColor('#333333');
+            doc.text(this.t(item.name), nameColX + pad, rowY + 6, {
+              width: cols[1].w - pad - 3,
+              lineBreak: true,
+            });
+            if (lineDetailRaw) {
+              doc.fontSize(7).fillColor('#444444');
+              doc.text(this.t(lineDetailRaw), nameColX + pad, rowY + 6 + nameHDefault + 2, {
                 width: cols[1].w - pad - 3,
-                color: '#666666',
+                lineBreak: true,
               });
             }
             rx += cols[1].w;
-            const rowH = Math.max(
-              ROW_H + ((item as LineItem).lineDetail ? 16 : 0),
-              imgBuf ? 30 : 0,
-            );
             txt(String(item.quantity), rx + 3, rowY + 6, { size: 8, width: cols[2].w - 6, align: 'right' }); rx += cols[2].w;
             txt(item.unitPrice.toFixed(2), rx + 3, rowY + 6, { size: 8, width: cols[3].w - 6, align: 'right' }); rx += cols[3].w;
             txt(item.discountText ? this.t(item.discountText) : '-', rx + 3, rowY + 6, { size: 8, width: cols[4].w - 6, align: 'right' }); rx += cols[4].w;
             txt(item.lineTotal.toFixed(2), rx + 3, rowY + 6, { size: 8, width: cols[5].w - 6, align: 'right' });
-            rowY += rowH;
+            rowY += rowHDefault;
           }
         });
 

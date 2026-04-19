@@ -106,11 +106,8 @@ export default function EcommerceProductsPage() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
             <Package className="w-7 h-7 text-orange-500" />
-            E-Ticaret Ürünleri (CRM katalog)
+            E-Ticaret Ürünleri
           </h1>
-          <p className="text-sm text-gray-500 mt-1">
-            Mağaza ürünleri burada saklanır (görseller hariç). Satıra tıklayarak tüm alanları görüp düzenleyebilirsiniz.
-          </p>
         </div>
         <div className="flex flex-wrap gap-2">
           <button

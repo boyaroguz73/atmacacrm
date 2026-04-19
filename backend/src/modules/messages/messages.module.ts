@@ -4,9 +4,10 @@ import { MessagesController } from './messages.controller';
 import { WahaModule } from '../waha/waha.module';
 import { ConversationsModule } from '../conversations/conversations.module';
 import { WebsocketModule } from '../websocket/websocket.module';
+import { ProductsModule } from '../products/products.module';
 
 @Module({
-  imports: [WahaModule, ConversationsModule, WebsocketModule],
+  imports: [WahaModule, ConversationsModule, WebsocketModule, ProductsModule],
   controllers: [MessagesController],
   providers: [MessagesService],
   exports: [MessagesService],

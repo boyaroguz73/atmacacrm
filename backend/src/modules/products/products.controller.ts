@@ -38,6 +38,7 @@ export class ProductsController {
     @Query('page') page?: string,
     @Query('limit') limit?: string,
     @Query('isActive') isActive?: string,
+    @Query('matchExact') matchExact?: string,
   ) {
     return this.productsService.findAll({
       search,
@@ -45,6 +46,7 @@ export class ProductsController {
       page: page ? parseInt(page) : 1,
       limit: limit ? parseInt(limit) : 50,
       isActive: isActive === 'true' ? true : isActive === 'false' ? false : undefined,
+      matchExact: matchExact === 'true' || matchExact === '1',
     });
   }
 

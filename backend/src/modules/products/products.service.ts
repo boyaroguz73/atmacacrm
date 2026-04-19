@@ -344,7 +344,7 @@ export class ProductsService {
    * Harici URL'den görseli indirir, uploads/products/ altına kaydeder.
    * Zaten yerel bir yol ise veya indirme başarısız olursa orijinal URL'yi döner.
    */
-  private async downloadImageToLocal(remoteUrl: string, sku: string): Promise<string> {
+  async downloadImageToLocal(remoteUrl: string, sku: string): Promise<string> {
     if (!remoteUrl || remoteUrl.startsWith('/uploads/') || remoteUrl.startsWith('uploads/')) {
       return remoteUrl;
     }
@@ -382,29 +382,97 @@ export class ProductsService {
     }
   }
 
+  /**
+   * Harici görsel URL'sini indirip `imageUrl` alanını `/uploads/products/...` yapar.
+   * Sohbetten ürün gönderiminde kullanılır.
+   */
+  async ensureProductImageLocal(productId: string): Promise<string | null> {
+    const product = await this.prisma.product.findUnique({ where: { id: productId } });
+    if (!product) return null;
+    let url = (product.imageUrl || '').trim();
+    if (!url && product.additionalImages) {
+      try {
+        const images = Array.isArray(product.additionalImages)
+          ? product.additionalImages
+          : JSON.parse(String(product.additionalImages));
+        if (Array.isArray(images) && images.length > 0) {
+          url = (images[0] || '').trim();
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+    if (!url) return null;
+
+    const norm = (u: string) => (u.startsWith('/') ? u : `/${u}`);
+    if (url.startsWith('/uploads/') || url.startsWith('uploads/')) {
+      const normalized = norm(url);
+      const diskPath = join(process.cwd(), normalized.replace(/^\//, ''));
+      if (existsSync(diskPath)) return normalized;
+    }
+
+    const local = await this.downloadImageToLocal(url, product.sku);
+    if (local.startsWith('/uploads/') || local.startsWith('uploads/')) {
+      const normalized = norm(local);
+      if (normalized !== (product.imageUrl || '').trim()) {
+        await this.prisma.product.update({
+          where: { id: productId },
+          data: { imageUrl: normalized },
+        });
+      }
+      return normalized;
+    }
+    return null;
+  }
+
   async findAll(params: {
     search?: string;
     category?: string;
     page?: number;
     limit?: number;
     isActive?: boolean;
+    /**
+     * true: teklif/sohbet seçici modu — yalnızca ad, SKU, marka, kategori, varyant ve GTIN;
+     * açıklama / ürün URL / Google alanları aranmaz (yanlış pozitifleri keser).
+     * Kelimeler boşlukla ayrılır; her kelime bu alanlardan en az birinde geçmeli (AND).
+     */
+    matchExact?: boolean;
   }) {
-    const { search, category, page = 1, limit = 50, isActive } = params;
+    const { search, category, page = 1, limit = 50, isActive, matchExact } = params;
     const where: any = {};
     if (isActive !== undefined) where.isActive = isActive;
     if (category && category.trim()) where.category = category.trim();
+
     const tokens = splitSearchTokens(search);
-    if (tokens.length) {
+    if (!tokens.length) {
+      // arama yok
+    } else if (matchExact) {
       where.AND = tokens.map((token) => ({
         OR: [
           { name: { contains: token, mode: 'insensitive' } },
           { sku: { contains: token, mode: 'insensitive' } },
-          { description: { contains: token, mode: 'insensitive' } },
           { brand: { contains: token, mode: 'insensitive' } },
           { category: { contains: token, mode: 'insensitive' } },
-          { googleProductCategory: { contains: token, mode: 'insensitive' } },
-          { googleProductType: { contains: token, mode: 'insensitive' } },
-          { productUrl: { contains: token, mode: 'insensitive' } },
+          { gtin: { contains: token, mode: 'insensitive' } },
+          {
+            variants: {
+              some: {
+                OR: [
+                  { name: { contains: token, mode: 'insensitive' } },
+                  { externalId: { contains: token, mode: 'insensitive' } },
+                ],
+              },
+            },
+          },
+        ],
+      }));
+    } else {
+      where.AND = tokens.map((token) => ({
+        OR: [
+          { name: { contains: token, mode: 'insensitive' } },
+          { sku: { contains: token, mode: 'insensitive' } },
+          { brand: { contains: token, mode: 'insensitive' } },
+          { category: { contains: token, mode: 'insensitive' } },
           { gtin: { contains: token, mode: 'insensitive' } },
           {
             variants: {
@@ -456,8 +524,8 @@ export class ProductsService {
   }
 
   async findVariantsByProductId(productId: string) {
-    await this.findById(productId);
-    return this.prisma.productVariant.findMany({
+    const product = await this.findById(productId);
+    const variants = await this.prisma.productVariant.findMany({
       where: { productId, isActive: true },
       orderBy: { name: 'asc' },
       select: {
@@ -471,6 +539,41 @@ export class ProductsService {
         metadata: true,
       },
     });
+
+    if (variants.length === 0) return variants;
+
+    const baseName = String(product.name ?? '').trim() || 'Ürün';
+    const basePrice = Number(product.unitPrice);
+    const sku = String(product.sku ?? '');
+    const isGoogleVariantParent = sku.startsWith('IG-') && basePrice <= 0 && product.stock == null;
+    if (isGoogleVariantParent) {
+      return variants;
+    }
+
+    const hasSellableBase =
+      (Number.isFinite(basePrice) && basePrice > 0) ||
+      (product.stock != null && Number(product.stock) >= 0);
+    if (!hasSellableBase) {
+      return variants;
+    }
+
+    const nameTaken = variants.some((v) => String(v.name ?? '').trim() === baseName);
+    if (nameTaken) {
+      return variants;
+    }
+
+    const synthetic = {
+      id: null as string | null,
+      externalId: null as string | null,
+      name: baseName,
+      unitPrice: basePrice,
+      currency: product.currency ?? 'TRY',
+      vatRate: product.vatRate,
+      stock: product.stock,
+      metadata: { source: 'product_base' } as Prisma.InputJsonValue,
+    };
+
+    return [synthetic, ...variants];
   }
 
   async create(data: {

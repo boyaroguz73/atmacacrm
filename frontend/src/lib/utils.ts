@@ -25,6 +25,19 @@ export function backendPublicUrl(): string {
  */
 export function rewriteMediaUrlForClient(url: string): string {
   try {
+    const s = (url || '').trim();
+    if (!s) return url;
+    /** API sunucusundaki uploads; Next.js kökünde yok */
+    if (s.startsWith('/api/uploads/') || s.startsWith('api/uploads/')) {
+      const base = backendPublicUrl().replace(/\/$/, '');
+      const normalized = s.startsWith('/api/') ? s.slice(4) : `/${s.replace(/^api\//, '')}`;
+      return `${base}${normalized}`;
+    }
+    if (s.startsWith('/uploads/') || s.startsWith('uploads/')) {
+      const base = backendPublicUrl().replace(/\/$/, '');
+      const path = s.startsWith('/') ? s : `/${s}`;
+      return `${base}${path}`;
+    }
     if (!url.startsWith('http')) return url;
     const u = new URL(url);
     if (u.hostname !== 'localhost' && u.hostname !== '127.0.0.1') return url;

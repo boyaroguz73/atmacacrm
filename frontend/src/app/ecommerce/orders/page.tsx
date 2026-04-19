@@ -117,7 +117,7 @@ export default function EcommerceOrdersPage() {
     try {
       const { data } = await api.post('/ecommerce/tsoft/sync-customers', {}, { timeout: 120_000 });
       toast.success(
-        `Müşteriler: ${data.matched} güncellendi, ${data.created || 0} yeni kişi. En fazla ${data.maxPerSync ?? 100} müşteri çekilir. Sohbet için Gelen kutusuna bakın.`,
+        `Müşteriler: ${data.matched} güncellendi, ${data.created || 0} yeni kişi. T-Soft’tan ${data.tsoftCustomerCount ?? data.maxPerSync ?? 0} kayıt okundu. WhatsApp sohbeti için Gelen kutusuna bakın.`,
       );
     } catch (err: unknown) {
       const e = err as { response?: { data?: { message?: string } } };
@@ -294,7 +294,7 @@ export default function EcommerceOrdersPage() {
             className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium bg-blue-50 text-blue-800 hover:bg-blue-100 disabled:opacity-50"
           >
             {syncing === 'customers' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Users className="w-4 h-4" />}
-            Müşterileri CRM’e al (en fazla 100)
+            Müşterileri CRM’e al (tüm sayfalar)
           </button>
           <button
             type="button"

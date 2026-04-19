@@ -21,7 +21,7 @@ import { useChatStore } from '@/store/chat';
 import DateRangePicker from '@/components/ui/DateRangePicker';
 import ContactAvatar from '@/components/ui/ContactAvatar';
 import EcommerceCustomerBadge from '@/components/ui/EcommerceCustomerBadge';
-import { LEAD_STATUS_LABELS, LEAD_STATUS_COLORS } from '@/lib/constants';
+import { LEAD_STATUS_LABELS, LEAD_STATUS_COLORS, SOURCES } from '@/lib/constants';
 
 type LeadStatus = 'NEW' | 'CONTACTED' | 'INTERESTED' | 'OFFER_SENT' | 'WON' | 'LOST';
 
@@ -398,12 +398,18 @@ export default function ContactsPage() {
               </label>
               <label className="block text-sm">
                 <span className="text-gray-600 font-medium">Kaynak</span>
-                <input
-                  className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl text-sm"
+                <select
+                  className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl text-sm bg-white"
                   value={form.source}
                   onChange={(e) => setForm((f) => ({ ...f, source: e.target.value }))}
-                  placeholder="Opsiyonel"
-                />
+                >
+                  <option value="">Seçiniz</option>
+                  {SOURCES.map((s) => (
+                    <option key={s.value} value={s.value}>
+                      {s.label}
+                    </option>
+                  ))}
+                </select>
               </label>
               <label className="block text-sm">
                 <span className="text-gray-600 font-medium">Not</span>

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import api from '@/lib/api';
 import { cn, formatPhone, rewriteMediaUrlForClient } from '@/lib/utils';
+import { SOURCES } from '@/lib/constants';
 import { QuoteEmbeddedChat } from '@/components/quotes/QuoteEmbeddedChat';
 import { MeasurementLineCell } from '@/components/quotes/MeasurementLineCell';
 import toast from 'react-hot-toast';
@@ -11,9 +12,12 @@ import {
   ArrowLeft,
   Building2,
   Loader2,
+  MessageSquare,
   Package,
   Search,
   Trash2,
+  Upload,
+  UserPlus,
   X,
 } from 'lucide-react';
 
@@ -30,6 +34,42 @@ type BillingFields = {
   taxNumber: string;
   identityNumber: string;
 };
+
+type QuickContactForm = {
+  phone: string;
+  name: string;
+  surname: string;
+  email: string;
+  source: string;
+  company: string;
+  city: string;
+  address: string;
+  billingAddress: string;
+  taxOffice: string;
+  taxNumber: string;
+  identityNumber: string;
+  openChat: boolean;
+  sessionId: string;
+};
+
+function emptyQuickContactForm(): QuickContactForm {
+  return {
+    phone: '',
+    name: '',
+    surname: '',
+    email: '',
+    source: '',
+    company: '',
+    city: '',
+    address: '',
+    billingAddress: '',
+    taxOffice: '',
+    taxNumber: '',
+    identityNumber: '',
+    openChat: false,
+    sessionId: '',
+  };
+}
 
 function billingFingerprint(b: BillingFields): string {
   return JSON.stringify({
@@ -177,6 +217,13 @@ export default function NewQuotePage() {
   } | null>(null);
   const [contactDropdownOpen, setContactDropdownOpen] = useState(false);
   const contactDebounceRef = useRef<ReturnType<typeof setTimeout>>();
+  const contactSearchSeqRef = useRef(0);
+  const [quickContactOpen, setQuickContactOpen] = useState(false);
+  const [quickContactSubmitting, setQuickContactSubmitting] = useState(false);
+  const [quickContactSessions, setQuickContactSessions] = useState<
+    { id: string; name: string; status: string }[]
+  >([]);
+  const [quickContactForm, setQuickContactForm] = useState<QuickContactForm>(emptyQuickContactForm());
   
   // URL'den gelen contactId ile kişiyi otomatik seç
   useEffect(() => {
@@ -222,6 +269,8 @@ export default function NewQuotePage() {
   const [productResults, setProductResults] = useState<ProductHit[]>([]);
   const [productDropdownOpen, setProductDropdownOpen] = useState(false);
   const productDebounceRef = useRef<ReturnType<typeof setTimeout>>();
+  const productSearchSeqRef = useRef(0);
+  const [uploadingLineKey, setUploadingLineKey] = useState<string | null>(null);
 
   const [lines, setLines] = useState<LocalLineItem[]>([emptyLine()]);
   const [discountType, setDiscountType] = useState<DiscountType>('PERCENT');
@@ -244,7 +293,13 @@ export default function NewQuotePage() {
 
   const [variantPick, setVariantPick] = useState<{
     product: ProductHit;
-    variants: { id: string; name: string; unitPrice: number; vatRate: number; metadata?: unknown }[];
+    variants: {
+      id: string | null;
+      name: string;
+      unitPrice: number;
+      vatRate: number;
+      metadata?: unknown;
+    }[];
   } | null>(null);
 
   /** Teklifteki tüm satırlar için geçerli KDV oranı (API’ye satır başına yazılır). */
@@ -272,10 +327,13 @@ export default function NewQuotePage() {
       setContactResults([]);
       return;
     }
+    const seq = ++contactSearchSeqRef.current;
     try {
       const { data } = await api.get('/contacts', { params: { search: q, limit: 10 } });
+      if (seq !== contactSearchSeqRef.current) return;
       setContactResults(data.contacts || []);
     } catch {
+      if (seq !== contactSearchSeqRef.current) return;
       setContactResults([]);
     }
   }, []);
@@ -302,15 +360,104 @@ export default function NewQuotePage() {
     setContactResults([]);
   };
 
+  const openQuickContactModal = async () => {
+    setQuickContactForm({
+      ...emptyQuickContactForm(),
+      name:
+        !selectedContact && contactQuery.trim() && !/\d/.test(contactQuery)
+          ? contactQuery.trim()
+          : '',
+      phone:
+        !selectedContact && /\d/.test(contactQuery)
+          ? contactQuery.replace(/[^\d+]/g, '').trim()
+          : '',
+    });
+    setQuickContactOpen(true);
+    try {
+      const { data } = await api.get('/sessions');
+      const list = Array.isArray(data) ? data : [];
+      setQuickContactSessions(
+        list
+          .filter((s: { status?: string }) => s.status === 'WORKING')
+          .map((s: { id: string; name: string; status: string }) => ({
+            id: s.id,
+            name: s.name,
+            status: s.status,
+          })),
+      );
+    } catch {
+      setQuickContactSessions([]);
+    }
+  };
+
+  const closeQuickContactModal = () => {
+    if (quickContactSubmitting) return;
+    setQuickContactOpen(false);
+    setQuickContactForm(emptyQuickContactForm());
+    setQuickContactSessions([]);
+  };
+
+  const submitQuickContact = async () => {
+    if (!quickContactForm.phone.trim()) {
+      toast.error('Telefon numarası gerekli');
+      return;
+    }
+    setQuickContactSubmitting(true);
+    try {
+      const { data } = await api.post('/contacts', {
+        phone: quickContactForm.phone.trim(),
+        name: quickContactForm.name.trim() || undefined,
+        surname: quickContactForm.surname.trim() || undefined,
+        email: quickContactForm.email.trim() || undefined,
+        source: quickContactForm.source || undefined,
+        company: quickContactForm.company.trim() || undefined,
+        city: quickContactForm.city.trim() || undefined,
+        address: quickContactForm.address.trim() || undefined,
+        billingAddress: quickContactForm.billingAddress.trim() || undefined,
+        taxOffice: quickContactForm.taxOffice.trim() || undefined,
+        taxNumber: quickContactForm.taxNumber.trim() || undefined,
+        identityNumber: quickContactForm.identityNumber.trim() || undefined,
+        openChat: quickContactForm.openChat,
+        sessionId: quickContactForm.sessionId || undefined,
+      });
+      const created = data?.contact;
+      if (!created?.id || !created?.phone) throw new Error('Kişi bilgisi alınamadı');
+      setSelectedContact({
+        id: created.id,
+        name: created.name || null,
+        phone: created.phone,
+      });
+      setContactQuery(
+        created.name ? `${created.name} (${formatPhone(created.phone)})` : formatPhone(created.phone),
+      );
+      setContactDropdownOpen(false);
+      setContactResults([]);
+      setQuickContactOpen(false);
+      setQuickContactForm(emptyQuickContactForm());
+      toast.success('Kişi oluşturuldu ve seçildi');
+    } catch (err: unknown) {
+      const msg =
+        (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      toast.error(msg || 'Kişi oluşturulamadı');
+    } finally {
+      setQuickContactSubmitting(false);
+    }
+  };
+
   const searchProducts = useCallback(async (q: string) => {
     if (q.length < 1) {
       setProductResults([]);
       return;
     }
+    const seq = ++productSearchSeqRef.current;
     try {
-      const { data } = await api.get('/products', { params: { search: q, limit: 12, page: 1 } });
+      const { data } = await api.get('/products', {
+        params: { search: q, limit: 12, page: 1, matchExact: true },
+      });
+      if (seq !== productSearchSeqRef.current) return;
       setProductResults(data.products || []);
     } catch {
+      if (seq !== productSearchSeqRef.current) return;
       setProductResults([]);
     }
   }, []);
@@ -324,7 +471,13 @@ export default function NewQuotePage() {
 
   const finalizeProductLine = (
     p: ProductHit,
-    variant?: { id: string; name: string; unitPrice: number; metadata?: unknown; vatRate?: number },
+    variant?: {
+      id?: string | null;
+      name: string;
+      unitPrice: number;
+      metadata?: unknown;
+      vatRate?: number;
+    },
   ) => {
     const vat =
       variant?.vatRate != null && Number.isFinite(Number(variant.vatRate))
@@ -339,7 +492,7 @@ export default function NewQuotePage() {
       {
         key: genKey(),
         productId: p.id,
-        productVariantId: variant?.id,
+        productVariantId: variant?.id ?? undefined,
         lineImageUrl: p.imageUrl || undefined,
         name: variant ? variant.name : String(p.name ?? ''),
         description: p.description || undefined,
@@ -380,6 +533,27 @@ export default function NewQuotePage() {
 
   const updateLine = (key: string, patch: Partial<LocalLineItem>) => {
     setLines((prev) => prev.map((l) => (l.key === key ? { ...l, ...patch } : l)));
+  };
+
+  const uploadLineImage = async (lineKey: string, file: File) => {
+    if (!file.type.startsWith('image/')) {
+      toast.error('Lutfen bir gorsel dosyasi secin');
+      return;
+    }
+    setUploadingLineKey(lineKey);
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      const { data } = await api.post('/messages/upload', form);
+      const url = typeof data?.url === 'string' ? data.url.trim() : '';
+      if (!url) throw new Error('Gorsel URL alinamadi');
+      updateLine(lineKey, { lineImageUrl: url });
+      toast.success('Gorsel yuklendi');
+    } catch {
+      toast.error('Gorsel yuklenemedi');
+    } finally {
+      setUploadingLineKey((prev) => (prev === lineKey ? null : prev));
+    }
   };
 
   const removeLine = (key: string) => {
@@ -497,7 +671,7 @@ export default function NewQuotePage() {
             <div className="max-h-56 overflow-y-auto space-y-1">
               {variantPick.variants.map((v) => (
                 <button
-                  key={v.id}
+                  key={v.id ?? '__product_base__'}
                   type="button"
                   onClick={() => {
                     finalizeProductLine(variantPick.product, v);
@@ -542,6 +716,111 @@ export default function NewQuotePage() {
         className="flex flex-col xl:flex-row xl:items-start xl:gap-8 gap-6"
       >
         <aside className="w-full xl:w-72 xl:shrink-0 space-y-2 order-2 xl:order-1">
+          {quickContactOpen && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
+              <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-hidden">
+                <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+                  <div>
+                    <h3 className="text-sm font-bold text-gray-900">Hızlı kişi oluştur</h3>
+                    <p className="text-xs text-gray-500 mt-1">Kişiyi oluşturup teklife hemen bağlayın.</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={closeQuickContactModal}
+                    className="p-2 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-50"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+                <div className="p-5 space-y-4 overflow-y-auto max-h-[calc(90vh-72px)]">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <label className="block">
+                      <span className="text-xs text-gray-500">Telefon *</span>
+                      <input className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl" value={quickContactForm.phone} onChange={(e) => setQuickContactForm((f) => ({ ...f, phone: e.target.value }))} />
+                    </label>
+                    <label className="block">
+                      <span className="text-xs text-gray-500">E-posta</span>
+                      <input type="email" className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl" value={quickContactForm.email} onChange={(e) => setQuickContactForm((f) => ({ ...f, email: e.target.value }))} />
+                    </label>
+                    <label className="block">
+                      <span className="text-xs text-gray-500">Kaynak</span>
+                      <select className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl bg-white" value={quickContactForm.source} onChange={(e) => setQuickContactForm((f) => ({ ...f, source: e.target.value }))}>
+                        <option value="">Seçiniz</option>
+                        {SOURCES.map((s) => (
+                          <option key={s.value} value={s.value}>{s.label}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="block">
+                      <span className="text-xs text-gray-500">Ad</span>
+                      <input className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl" value={quickContactForm.name} onChange={(e) => setQuickContactForm((f) => ({ ...f, name: e.target.value }))} />
+                    </label>
+                    <label className="block">
+                      <span className="text-xs text-gray-500">Soyad</span>
+                      <input className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl" value={quickContactForm.surname} onChange={(e) => setQuickContactForm((f) => ({ ...f, surname: e.target.value }))} />
+                    </label>
+                    <label className="sm:col-span-2 block">
+                      <span className="text-xs text-gray-500">Şirket / unvan</span>
+                      <input className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl" value={quickContactForm.company} onChange={(e) => setQuickContactForm((f) => ({ ...f, company: e.target.value }))} />
+                    </label>
+                    <label className="block">
+                      <span className="text-xs text-gray-500">Şehir</span>
+                      <input className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl" value={quickContactForm.city} onChange={(e) => setQuickContactForm((f) => ({ ...f, city: e.target.value }))} />
+                    </label>
+                    <label className="block">
+                      <span className="text-xs text-gray-500">Vergi dairesi</span>
+                      <input className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl" value={quickContactForm.taxOffice} onChange={(e) => setQuickContactForm((f) => ({ ...f, taxOffice: e.target.value }))} />
+                    </label>
+                    <label className="block">
+                      <span className="text-xs text-gray-500">VKN</span>
+                      <input className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl" value={quickContactForm.taxNumber} onChange={(e) => setQuickContactForm((f) => ({ ...f, taxNumber: e.target.value }))} />
+                    </label>
+                    <label className="block">
+                      <span className="text-xs text-gray-500">TC Kimlik No</span>
+                      <input className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl" value={quickContactForm.identityNumber} onChange={(e) => setQuickContactForm((f) => ({ ...f, identityNumber: e.target.value }))} />
+                    </label>
+                    <label className="sm:col-span-2 block">
+                      <span className="text-xs text-gray-500">Adres</span>
+                      <textarea rows={2} className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl resize-y" value={quickContactForm.address} onChange={(e) => setQuickContactForm((f) => ({ ...f, address: e.target.value }))} />
+                    </label>
+                    <label className="sm:col-span-2 block">
+                      <span className="text-xs text-gray-500">Fatura adresi</span>
+                      <textarea rows={2} className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl resize-y" value={quickContactForm.billingAddress} onChange={(e) => setQuickContactForm((f) => ({ ...f, billingAddress: e.target.value }))} />
+                    </label>
+                  </div>
+                  <div className="rounded-xl border border-gray-100 bg-gray-50 p-3 space-y-3">
+                    <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                      <input type="checkbox" checked={quickContactForm.openChat} onChange={(e) => setQuickContactForm((f) => ({ ...f, openChat: e.target.checked }))} className="rounded border-gray-300 text-whatsapp focus:ring-whatsapp" />
+                      <span className="inline-flex items-center gap-2">
+                        <MessageSquare className="w-4 h-4 text-whatsapp" />
+                        Kayıttan sonra gelen kutusunda sohbet aç
+                      </span>
+                    </label>
+                    {quickContactForm.openChat && (
+                      <label className="block">
+                        <span className="text-xs text-gray-500">WhatsApp oturumu</span>
+                        <select className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl bg-white" value={quickContactForm.sessionId} onChange={(e) => setQuickContactForm((f) => ({ ...f, sessionId: e.target.value }))}>
+                          <option value="">Varsayılan (en son aktif)</option>
+                          {quickContactSessions.map((s) => (
+                            <option key={s.id} value={s.id}>{s.name}</option>
+                          ))}
+                        </select>
+                      </label>
+                    )}
+                  </div>
+                  <div className="flex items-center justify-end gap-2">
+                    <button type="button" onClick={closeQuickContactModal} disabled={quickContactSubmitting} className="px-4 py-2 rounded-xl border border-gray-200 text-sm text-gray-600 hover:bg-gray-50 disabled:opacity-50">
+                      Vazgeç
+                    </button>
+                    <button type="button" onClick={() => void submitQuickContact()} disabled={quickContactSubmitting} className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-whatsapp text-white text-sm font-semibold hover:bg-green-700 disabled:opacity-50">
+                      {quickContactSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserPlus className="w-4 h-4" />}
+                      Kaydet ve seç
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
           <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Sohbet</h3>
           {selectedContact ? (
             <QuoteEmbeddedChat contactId={selectedContact.id} contactPhone={selectedContact.phone} />
@@ -554,7 +833,17 @@ export default function NewQuotePage() {
         <div className="flex-1 min-w-0 space-y-6 order-1 xl:order-2 w-full">
           {/* Kişi */}
           <section className="bg-white rounded-xl border border-gray-100 shadow-sm p-5 space-y-3">
-            <h2 className="text-sm font-semibold text-gray-900">Müşteri</h2>
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="text-sm font-semibold text-gray-900">Müşteri</h2>
+              <button
+                type="button"
+                onClick={() => void openQuickContactModal()}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-green-50 text-green-700 hover:bg-green-100"
+              >
+                <UserPlus className="w-3.5 h-3.5" />
+                Hızlı kişi oluştur
+              </button>
+            </div>
             <div className="relative">
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -747,7 +1036,7 @@ export default function NewQuotePage() {
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
               <input
                 type="text"
-                placeholder="Ürün adı veya SKU ile ara…"
+                placeholder="Tam ürün adı veya SKU (tam eşleşme)"
                 value={productQuery}
                 onChange={(e) => handleProductSearch(e.target.value)}
                 onFocus={() => productQuery.length >= 1 && setProductDropdownOpen(true)}
@@ -817,15 +1106,32 @@ export default function NewQuotePage() {
                             </span>
                           )}
                         </div>
-                        <input
-                          type="url"
-                          value={line.lineImageUrl || ''}
-                          onChange={(e) =>
-                            updateLine(line.key, { lineImageUrl: e.target.value || undefined })
-                          }
-                          placeholder="Görsel URL"
-                          className="mt-1 w-full px-1 py-0.5 border border-gray-100 rounded text-[10px] text-gray-600"
-                        />
+                        <div className="mt-1 flex items-center gap-1">
+                          <label className="inline-flex items-center gap-1 px-1.5 py-0.5 border border-gray-200 rounded text-[10px] text-gray-700 cursor-pointer hover:bg-gray-50">
+                            {uploadingLineKey === line.key ? <Loader2 className="w-3 h-3 animate-spin" /> : <Upload className="w-3 h-3" />}
+                            Görsel yükle
+                            <input
+                              type="file"
+                              accept="image/*"
+                              className="hidden"
+                              disabled={uploadingLineKey === line.key}
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (file) void uploadLineImage(line.key, file);
+                                e.currentTarget.value = '';
+                              }}
+                            />
+                          </label>
+                          {line.lineImageUrl && (
+                            <button
+                              type="button"
+                              onClick={() => updateLine(line.key, { lineImageUrl: undefined })}
+                              className="px-1.5 py-0.5 border border-gray-200 rounded text-[10px] text-gray-600 hover:bg-gray-50"
+                            >
+                              Temizle
+                            </button>
+                          )}
+                        </div>
                       </td>
                       <td className="px-3 py-2">
                         <input

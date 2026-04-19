@@ -93,11 +93,13 @@ export default function NewOrderPage() {
   const [selectedContact, setSelectedContact] = useState<{ id: string; name: string | null; phone: string } | null>(null);
   const [contactDropdownOpen, setContactDropdownOpen] = useState(false);
   const contactDebounceRef = useRef<ReturnType<typeof setTimeout>>();
+  const contactSearchSeqRef = useRef(0);
 
   const [productQuery, setProductQuery] = useState('');
   const [productResults, setProductResults] = useState<ProductHit[]>([]);
   const [productDropdownOpen, setProductDropdownOpen] = useState(false);
   const productDebounceRef = useRef<ReturnType<typeof setTimeout>>();
+  const productSearchSeqRef = useRef(0);
 
   const [lines, setLines] = useState<LocalLineItem[]>([emptyLine()]);
   const [shippingAddress, setShippingAddress] = useState('');
@@ -123,10 +125,13 @@ export default function NewOrderPage() {
       setContactResults([]);
       return;
     }
+    const seq = ++contactSearchSeqRef.current;
     try {
       const { data } = await api.get('/contacts', { params: { search: q, limit: 10 } });
+      if (seq !== contactSearchSeqRef.current) return;
       setContactResults(data.contacts || []);
     } catch {
+      if (seq !== contactSearchSeqRef.current) return;
       setContactResults([]);
     }
   }, []);
@@ -136,10 +141,15 @@ export default function NewOrderPage() {
       setProductResults([]);
       return;
     }
+    const seq = ++productSearchSeqRef.current;
     try {
-      const { data } = await api.get('/products', { params: { search: q, limit: 12, page: 1 } });
+      const { data } = await api.get('/products', {
+        params: { search: q, limit: 12, page: 1, matchExact: true },
+      });
+      if (seq !== productSearchSeqRef.current) return;
       setProductResults(data.products || []);
     } catch {
+      if (seq !== productSearchSeqRef.current) return;
       setProductResults([]);
     }
   }, []);
@@ -326,7 +336,7 @@ export default function NewOrderPage() {
               value={productQuery}
               onChange={(e) => handleProductSearch(e.target.value)}
               onFocus={() => setProductDropdownOpen(true)}
-              placeholder="Ürün adı / SKU ara"
+              placeholder="Tam ürün adı veya SKU (tam eşleşme)"
               className="w-full pl-9 pr-3 py-2 rounded-xl border border-gray-200 text-sm"
             />
           </div>

@@ -560,6 +560,23 @@ export class QuotesService {
       quote.documentKind === 'QUOTE' ? 'QUOTE' : 'PROFORMA';
     const title = docKind === 'QUOTE' ? 'SATIŞ TEKLİFİ' : 'PROFORMA TEKLİF';
 
+    // PDF'de indirim satırı: kalem indirimi + genel indirim toplamı (UI beklentisi)
+    const lineDiscountTotal = (quote.items || []).reduce((acc: number, it: any) => {
+      const qty = Number(it.quantity || 0);
+      const unit = Number(it.unitPrice || 0);
+      const gross = Math.max(0, qty * unit);
+      const dv = Number(it.discountValue || 0);
+      if (!Number.isFinite(dv) || dv <= 0 || gross <= 0) return acc;
+      const dt = String(it.discountType || 'PERCENT').toUpperCase();
+      const raw =
+        dt === 'AMOUNT'
+          ? dv
+          : gross * (dv / 100);
+      const applied = Math.min(gross, Math.max(0, raw));
+      return acc + applied;
+    }, 0);
+    const pdfDiscountTotal = Math.round(((Number(lineDiscountTotal) || 0) + (Number(quote.discountTotal) || 0)) * 100) / 100;
+
     const addr =
       (c.billingAddress && String(c.billingAddress).trim()) ||
       (c.address && String(c.address).trim()) ||
@@ -570,7 +587,7 @@ export class QuotesService {
       documentNumber: `TKL-${String(quote.quoteNumber).padStart(5, '0')}`,
       date: new Date(quote.createdAt).toLocaleDateString('tr-TR'),
       validUntil: fmt(quote.validUntil),
-      deliveryDate: fmt(quote.deliveryDate),
+      deliveryDate: fmt(quote.deliveryDate) || '15-20 İŞ GÜNÜ',
       contactName: [c.name, c.surname].filter(Boolean).join(' ') || c.phone,
       contactCompany: c.company || undefined,
       contactPhone: c.phone,
@@ -580,12 +597,15 @@ export class QuotesService {
       contactTaxNumber: c.taxNumber?.trim() || undefined,
       contactIdentityNumber: c.identityNumber?.trim() || undefined,
       items: quote.items.map((i) => {
-        const cf = i.colorFabricInfo;
-        const ms = i.measurementInfo;
-        const lineDetail = [cf, ms].map((x) => (x != null ? String(x).trim() : '')).filter(Boolean).join(' · ');
+        const cf = i.colorFabricInfo != null ? String(i.colorFabricInfo).trim() : '';
+        const ms = i.measurementInfo != null ? String(i.measurementInfo).trim() : '';
+        const lineParts: string[] = [];
+        if (cf) lineParts.push(`Renk/Kumaş: ${cf}`);
+        if (ms) lineParts.push(`Ölçü: ${ms}`);
+        const lineDetail = lineParts.length ? lineParts.join('\n') : undefined;
         return {
           name: i.name,
-          lineDetail: lineDetail || undefined,
+          lineDetail,
           quantity: i.quantity,
           unitPrice: i.unitPrice,
           vatRate: i.vatRate,
@@ -602,7 +622,7 @@ export class QuotesService {
       }),
       currency: quote.currency,
       subtotal: quote.subtotal,
-      discountTotal: quote.discountTotal,
+      discountTotal: pdfDiscountTotal,
       vatTotal: quote.vatTotal,
       grandTotal: (quote as any).grandTotalOverride ?? quote.grandTotal,
       notes: quote.notes || undefined,

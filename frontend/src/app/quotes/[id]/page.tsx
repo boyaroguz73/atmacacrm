@@ -19,6 +19,7 @@ import {
   X,
   Search,
   Package,
+  Upload,
   Edit3,
   Save,
 } from 'lucide-react';
@@ -210,10 +211,18 @@ export default function QuoteDetailPage() {
   const [productResults, setProductResults] = useState<ProductHit[]>([]);
   const [productDropdownOpen, setProductDropdownOpen] = useState(false);
   const productDebounceRef = useRef<ReturnType<typeof setTimeout>>();
+  const productSearchSeqRef = useRef(0);
+  const [uploadingLineKey, setUploadingLineKey] = useState<string | null>(null);
 
   const [variantPick, setVariantPick] = useState<{
     product: ProductHit;
-    variants: { id: string; name: string; unitPrice: number; vatRate: number; metadata?: unknown }[];
+    variants: {
+      id: string | null;
+      name: string;
+      unitPrice: number;
+      vatRate: number;
+      metadata?: unknown;
+    }[];
   } | null>(null);
 
   // Accept modal
@@ -312,10 +321,15 @@ export default function QuoteDetailPage() {
       setProductResults([]);
       return;
     }
+    const seq = ++productSearchSeqRef.current;
     try {
-      const { data } = await api.get('/products', { params: { search: q, limit: 12, page: 1 } });
+      const { data } = await api.get('/products', {
+        params: { search: q, limit: 12, page: 1, matchExact: true },
+      });
+      if (seq !== productSearchSeqRef.current) return;
       setProductResults(data.products || []);
     } catch {
+      if (seq !== productSearchSeqRef.current) return;
       setProductResults([]);
     }
   }, []);
@@ -329,7 +343,13 @@ export default function QuoteDetailPage() {
 
   const finalizeProductLine = (
     p: ProductHit,
-    variant?: { id: string; name: string; unitPrice: number; metadata?: unknown; vatRate?: number },
+    variant?: {
+      id?: string | null;
+      name: string;
+      unitPrice: number;
+      metadata?: unknown;
+      vatRate?: number;
+    },
   ) => {
     const vat =
       variant?.vatRate != null && Number.isFinite(Number(variant.vatRate))
@@ -344,7 +364,7 @@ export default function QuoteDetailPage() {
       {
         key: genKey(),
         productId: p.id,
-        productVariantId: variant?.id,
+        productVariantId: variant?.id ?? undefined,
         lineImageUrl: p.imageUrl || undefined,
         name: variant ? variant.name : String(p.name ?? ''),
         description: p.description || undefined,
@@ -385,6 +405,27 @@ export default function QuoteDetailPage() {
 
   const updateLine = (key: string, patch: Partial<LocalLineItem>) => {
     setLines((prev) => prev.map((l) => (l.key === key ? { ...l, ...patch } : l)));
+  };
+
+  const uploadLineImage = async (lineKey: string, file: File) => {
+    if (!file.type.startsWith('image/')) {
+      toast.error('Lutfen bir gorsel dosyasi secin');
+      return;
+    }
+    setUploadingLineKey(lineKey);
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      const { data } = await api.post('/messages/upload', form);
+      const url = typeof data?.url === 'string' ? data.url.trim() : '';
+      if (!url) throw new Error('Gorsel URL alinamadi');
+      updateLine(lineKey, { lineImageUrl: url });
+      toast.success('Gorsel yuklendi');
+    } catch {
+      toast.error('Gorsel yuklenemedi');
+    } finally {
+      setUploadingLineKey((prev) => (prev === lineKey ? null : prev));
+    }
   };
 
   const removeLine = (key: string) => {
@@ -594,7 +635,7 @@ export default function QuoteDetailPage() {
               <div className="max-h-56 overflow-y-auto space-y-1">
                 {variantPick.variants.map((v) => (
                   <button
-                    key={v.id}
+                    key={v.id ?? '__product_base__'}
                     type="button"
                     onClick={() => {
                       finalizeProductLine(variantPick.product, v);
@@ -661,7 +702,7 @@ export default function QuoteDetailPage() {
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                 <input
                   type="text"
-                  placeholder="Ürün adı veya SKU ile ara…"
+                  placeholder="Tam ürün adı veya SKU (tam eşleşme)"
                   value={productQuery}
                   onChange={(e) => handleProductSearch(e.target.value)}
                   onFocus={() => productQuery.length >= 1 && setProductDropdownOpen(true)}
@@ -747,13 +788,32 @@ export default function QuoteDetailPage() {
                               </span>
                             )}
                           </div>
-                          <input
-                            type="url"
-                            value={line.lineImageUrl || ''}
-                            onChange={(e) => updateLine(line.key, { lineImageUrl: e.target.value || undefined })}
-                            placeholder="Görsel URL"
-                            className="mt-1 w-full px-1 py-0.5 border border-gray-100 rounded text-[10px] text-gray-600"
-                          />
+                          <div className="mt-1 flex items-center gap-1">
+                            <label className="inline-flex items-center gap-1 px-1.5 py-0.5 border border-gray-200 rounded text-[10px] text-gray-700 cursor-pointer hover:bg-gray-50">
+                              {uploadingLineKey === line.key ? <Loader2 className="w-3 h-3 animate-spin" /> : <Upload className="w-3 h-3" />}
+                              Görsel yükle
+                              <input
+                                type="file"
+                                accept="image/*"
+                                className="hidden"
+                                disabled={uploadingLineKey === line.key}
+                                onChange={(e) => {
+                                  const file = e.target.files?.[0];
+                                  if (file) void uploadLineImage(line.key, file);
+                                  e.currentTarget.value = '';
+                                }}
+                              />
+                            </label>
+                            {line.lineImageUrl && (
+                              <button
+                                type="button"
+                                onClick={() => updateLine(line.key, { lineImageUrl: undefined })}
+                                className="px-1.5 py-0.5 border border-gray-200 rounded text-[10px] text-gray-600 hover:bg-gray-50"
+                              >
+                                Temizle
+                              </button>
+                            )}
+                          </div>
                         </td>
                         <td className="px-3 py-2">
                           <input

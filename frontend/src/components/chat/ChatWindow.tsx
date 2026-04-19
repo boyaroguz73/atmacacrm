@@ -204,42 +204,62 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
 
   useEffect(() => {
     if (!productPickerOpen) return;
+    let cancelled = false;
     const q = productSearch.trim();
     const t = setTimeout(() => {
-      setProductSearchLoading(true);
-      api
-        .get('/products', {
-          params: {
-            search: q || undefined,
-            category: productCategoryFilter || undefined,
-            isActive: true,
-            limit: 24,
-            page: 1,
-          },
-        })
-        .then(({ data }) => setProductHits(data.products || []))
-        .catch(() => setProductHits([]))
-        .finally(() => setProductSearchLoading(false));
+      void (async () => {
+        setProductSearchLoading(true);
+        try {
+          const { data } = await api.get('/products', {
+            params: {
+              search: q || undefined,
+              category: productCategoryFilter || undefined,
+              isActive: true,
+              limit: 24,
+              page: 1,
+              matchExact: true,
+            },
+          });
+          if (!cancelled) setProductHits(data.products || []);
+        } catch {
+          if (!cancelled) setProductHits([]);
+        } finally {
+          setProductSearchLoading(false);
+        }
+      })();
     }, 280);
-    return () => clearTimeout(t);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
   }, [productSearch, productPickerOpen, productCategoryFilter]);
 
   useEffect(() => {
     if (!contactPickerOpen) return;
+    let cancelled = false;
     const q = contactSearch.trim();
     const t = setTimeout(() => {
-      if (q.length < 2) {
-        setContactHits([]);
-        return;
-      }
-      setContactSearchLoading(true);
-      api
-        .get('/contacts', { params: { search: q, limit: 20 } })
-        .then(({ data }) => setContactHits(data.contacts || []))
-        .catch(() => setContactHits([]))
-        .finally(() => setContactSearchLoading(false));
+      void (async () => {
+        if (q.length < 2) {
+          if (!cancelled) setContactHits([]);
+          setContactSearchLoading(false);
+          return;
+        }
+        setContactSearchLoading(true);
+        try {
+          const { data } = await api.get('/contacts', { params: { search: q, limit: 20 } });
+          if (!cancelled) setContactHits(data.contacts || []);
+        } catch {
+          if (!cancelled) setContactHits([]);
+        } finally {
+          setContactSearchLoading(false);
+        }
+      })();
     }, 260);
-    return () => clearTimeout(t);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
   }, [contactSearch, contactPickerOpen]);
 
   useEffect(() => {
@@ -980,8 +1000,8 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
                         'relative',
                         isImageMessage
                           ? isOutgoing
-                            ? 'w-full max-w-[min(90vw,700px)] sm:max-w-[min(82vw,760px)]'
-                            : 'w-full max-w-[min(90vw,700px)] sm:max-w-[min(82vw,760px)]'
+                            ? 'w-full max-w-[min(82vw,560px)] sm:max-w-[min(72vw,620px)]'
+                            : 'w-full max-w-[min(82vw,560px)] sm:max-w-[min(72vw,620px)]'
                           : 'max-w-[65%]',
                       )}
                     >
@@ -1079,7 +1099,7 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
                           <img
                             src={mediaUrlResolved}
                             alt=""
-                            className="block w-auto max-w-full h-auto max-h-[min(75vh,960px)] rounded-lg object-contain mx-auto hover:opacity-95 transition-opacity"
+                            className="block w-auto max-w-full h-auto max-h-[min(52vh,520px)] rounded-lg object-contain mx-auto hover:opacity-95 transition-opacity"
                             loading="lazy"
                             decoding="async"
                             onError={(e) => {
@@ -1143,7 +1163,7 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
                             controls
                             playsInline
                             preload="metadata"
-                            className="block w-auto max-w-full h-auto max-h-[min(75vh,720px)] rounded-lg bg-black mx-auto"
+                            className="block w-auto max-w-full h-auto max-h-[min(46vh,420px)] rounded-lg bg-black mx-auto"
                           >
                             <source src={mediaUrlResolved} type={msg.mediaMimeType || 'video/mp4'} />
                             Tarayıcınız video oynatmayı desteklemiyor.
@@ -1522,7 +1542,7 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
                     <input
                       type="search"
                       autoComplete="off"
-                      placeholder="Ürün adı veya SKU ara…"
+                      placeholder="Tam ürün adı veya SKU (tam eşleşme)"
                       value={productSearch}
                       onChange={(e) => setProductSearch(e.target.value)}
                       className="flex-1 min-w-0 text-sm py-1.5 px-1 border-0 focus:ring-0 focus:outline-none bg-transparent"
@@ -1841,7 +1861,7 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
               <img
                 src={lightboxUrl}
                 alt=""
-                className="max-h-[calc(100vh-6rem)] max-w-[min(100vw-2rem,1600px)] w-auto h-auto object-contain rounded-lg shadow-2xl pointer-events-auto cursor-default"
+                className="max-h-[calc(100vh-10rem)] max-w-[min(100vw-8rem,1100px)] w-auto h-auto object-contain rounded-lg shadow-2xl pointer-events-auto cursor-default"
                 onClick={(e) => e.stopPropagation()}
               />
             </div>
