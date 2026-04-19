@@ -61,6 +61,29 @@ enum DiscountType {
 enum ProductFeedSource {
   MANUAL
   XML
+  TSOFT
+}
+
+enum TsoftPushEntity {
+  PRODUCT
+  VARIANT
+  ORDER
+  IMAGE
+  STOCK
+  PRICE
+}
+
+enum TsoftPushOp {
+  CREATE
+  UPDATE
+  DELETE
+}
+
+enum TsoftPushStatus {
+  PENDING
+  RUNNING
+  DONE
+  FAILED
 }
 
 enum LeadStatus {
@@ -165,6 +188,7 @@ model Organization {
   auditLogs        AuditLog[]
   integrations           OrgIntegration[]
   tsoftCatalogProducts   TsoftCatalogProduct[]
+  tsoftPushQueue         TsoftPushQueue[]
 
   @@map("organizations")
 }
@@ -719,6 +743,30 @@ model TsoftCatalogProduct {
   @@map("tsoft_catalog_products")
 }
 
+/// CRM → T-Soft yazım işlerinin dayanıklı kuyruğu.
+/// Network hatası / 429 durumunda retry; Pull sync bekleyen kayıtları atlar (ezme riski yok).
+model TsoftPushQueue {
+  id             String          @id @default(uuid())
+  organizationId String
+  entity         TsoftPushEntity
+  entityId       String
+  op             TsoftPushOp
+  payload        Json
+  status         TsoftPushStatus @default(PENDING)
+  attemptCount   Int             @default(0)
+  lastError      String?
+  scheduledAt    DateTime        @default(now())
+  doneAt         DateTime?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, status, scheduledAt])
+  @@index([entity, entityId])
+  @@map("tsoft_push_queue")
+}
+
 /// XML / Google Shopping varyant satırları (item_group_id altında)
 model ProductVariant {
   id         String   @id @default(uuid())
@@ -739,9 +787,18 @@ model ProductVariant {
   createdAt  DateTime   @default(now())
   updatedAt  DateTime   @updatedAt
 
+  /// T-Soft varyant ID'si (opsiyonel, pull sonrası doldurulur)
+  tsoftId    String?  @unique
+  /// CRM'den kuyruğa alınmış bekleyen T-Soft işlemi
+  pendingPushOp TsoftPushOp?
+  /// Son başarılı T-Soft pull zamanı
+  tsoftLastPulledAt DateTime?
+
   quoteItems QuoteItem[]
+  orderItems OrderItem[]
 
   @@index([productId])
+  @@index([tsoftId])
   @@map("product_variants")
 }
 
@@ -875,6 +932,12 @@ model SalesOrder {
   depositBalanceReminderSent Boolean @default(false)
   /// Yönetim panelinde kayıt elle güncellendi
   panelEditedAt         DateTime?
+  /// CRM'den oluşturulurken T-Soft'a da itilsin mi (kullanıcı checkbox'ı)
+  pushToTsoft           Boolean     @default(false)
+  /// T-Soft'a başarıyla itildiğinde dolar
+  tsoftPushedAt         DateTime?
+  /// Son T-Soft push hatası (retry sonrasında)
+  tsoftLastError        String?
   createdAt             DateTime    @default(now())
   updatedAt             DateTime    @updatedAt
 
@@ -914,6 +977,8 @@ model OrderItem {
   id              String   @id @default(uuid())
   orderId         String
   productId       String?
+  /// Varyantlı ürün seçildiğinde varyant kimliği (chat/teklif/sipariş ortak akışı)
+  productVariantId String?
   name            String
   quantity        Float    @default(1)
   unitPrice       Float
@@ -930,12 +995,14 @@ model OrderItem {
   /// Ölçü / varyant detayı
   measurementInfo String?
 
-  order    SalesOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  product  Product?   @relation(fields: [productId], references: [id], onDelete: SetNull)
-  supplier Supplier?  @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  order          SalesOrder      @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product        Product?        @relation(fields: [productId], references: [id], onDelete: SetNull)
+  productVariant ProductVariant? @relation(fields: [productVariantId], references: [id], onDelete: SetNull)
+  supplier       Supplier?       @relation(fields: [supplierId], references: [id], onDelete: SetNull)
 
   @@index([orderId])
   @@index([supplierId])
+  @@index([productVariantId])
   @@map("order_items")
 }
 
