@@ -3,15 +3,10 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import api from '@/lib/api';
-import {
-  formatPhone,
-  getContactDisplayTitle,
-  getContactSecondaryPhoneLine,
-} from '@/lib/utils';
+import { getContactDisplayTitle, getContactSecondaryPhoneLine } from '@/lib/utils';
 import {
   X,
   User,
-  Phone,
   Mail,
   Building2,
   MapPin,
@@ -364,12 +359,6 @@ export default function ContactPanel({
 
               {/* Fields */}
               <div className="space-y-2 text-sm">
-                {/* Phone */}
-                <div className="flex items-center gap-2.5 text-gray-600">
-                  <Phone className="w-3.5 h-3.5 text-gray-400 shrink-0" />
-                  <span className="break-all text-xs">{formatPhone(contact.phone)}</span>
-                </div>
-
                 {editing ? (
                   <div className="space-y-3">
                     {/* E-posta */}

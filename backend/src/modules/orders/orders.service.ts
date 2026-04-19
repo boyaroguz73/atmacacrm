@@ -158,6 +158,8 @@ export class OrdersService {
       supplierId?: string | null;
       supplierOrderNo?: string | null;
       isFromStock?: boolean;
+      colorFabricInfo?: string | null;
+      measurementInfo?: string | null;
     }[];
   }) {
     if (!data.items?.length) throw new BadRequestException('En az bir kalem gerekli');
@@ -233,6 +235,14 @@ export class OrdersService {
             supplierId: i.supplierId || null,
             supplierOrderNo: i.supplierOrderNo || null,
             isFromStock: !!i.isFromStock,
+            colorFabricInfo:
+              i.colorFabricInfo != null && String(i.colorFabricInfo).trim() !== ''
+                ? String(i.colorFabricInfo).trim()
+                : null,
+            measurementInfo:
+              i.measurementInfo != null && String(i.measurementInfo).trim() !== ''
+                ? String(i.measurementInfo).trim()
+                : null,
           })),
         },
       },
@@ -280,10 +290,15 @@ export class OrdersService {
     const tsoftProducts: Record<string, unknown>[] = [];
     for (const item of orderItems) {
       const product = item.product;
+      const cf = item.colorFabricInfo != null ? String(item.colorFabricInfo).trim() : '';
+      const ms = item.measurementInfo != null ? String(item.measurementInfo).trim() : '';
+      const noteParts: string[] = [];
+      if (cf) noteParts.push(`Renk/Kumaş: ${cf}`);
+      if (ms) noteParts.push(`Ölçü: ${ms}`);
       const entry: Record<string, unknown> = {
         ProductCode: product?.sku || item.name,
         Quantity: item.quantity,
-        OrderNote: '',
+        OrderNote: noteParts.join(' | '),
       };
       tsoftProducts.push(entry);
     }
@@ -456,14 +471,23 @@ export class OrdersService {
           : undefined,
         quoteRef:
           quote?.quoteNumber != null ? `TKL-${String(quote.quoteNumber).padStart(5, '0')}` : undefined,
-        items: orderFull.items.map((i) => ({
-          name: i.name,
-          quantity: i.quantity,
-          unitPrice: i.unitPrice,
-          vatRate: i.vatRate,
-          lineTotal: i.lineTotal,
-          imageUrl: i.product?.imageUrl || undefined,
-        })),
+        items: orderFull.items.map((i) => {
+          const cf = i.colorFabricInfo != null ? String(i.colorFabricInfo).trim() : '';
+          const ms = i.measurementInfo != null ? String(i.measurementInfo).trim() : '';
+          const lineParts: string[] = [];
+          if (cf) lineParts.push(`Renk/Kumaş: ${cf}`);
+          if (ms) lineParts.push(`Ölçü: ${ms}`);
+          const lineDetail = lineParts.length ? lineParts.join('\n') : undefined;
+          return {
+            name: i.name,
+            quantity: i.quantity,
+            unitPrice: i.unitPrice,
+            vatRate: i.vatRate,
+            lineTotal: i.lineTotal,
+            lineDetail,
+            imageUrl: i.product?.imageUrl || undefined,
+          };
+        }),
         currency: orderFull.currency,
         subtotal: orderFull.subtotal,
         discountTotal: quote?.discountTotal ?? 0,
@@ -484,10 +508,16 @@ export class OrdersService {
     }
   }
 
-  /** Sipariş kaleminin tedarikçi bilgilerini güncelle */
+  /** Sipariş kalemini güncelle; miktar/fiyat/KDV değişince satır ve sipariş toplamları yeniden hesaplanır */
   async updateOrderItem(
     itemId: string,
     data: {
+      name?: string;
+      quantity?: number;
+      unitPrice?: number;
+      vatRate?: number;
+      colorFabricInfo?: string | null;
+      measurementInfo?: string | null;
       supplierId?: string | null;
       supplierOrderNo?: string | null;
       isFromStock?: boolean;
@@ -495,10 +525,63 @@ export class OrdersService {
   ) {
     const item = await this.prisma.orderItem.findUnique({
       where: { id: itemId },
+      include: {
+        order: {
+          select: {
+            id: true,
+            status: true,
+            invoice: { select: { id: true } },
+          },
+        },
+      },
     });
     if (!item) throw new NotFoundException('Sipariş kalemi bulunamadı');
+    if (item.order.invoice) {
+      throw new BadRequestException('Faturalı siparişin kalemleri değiştirilemez');
+    }
+    if (item.order.status === 'DELIVERED' || item.order.status === 'CANCELLED') {
+      throw new BadRequestException('Teslim edilmiş veya iptal sipariş düzenlenemez');
+    }
 
-    const patch: any = {};
+    const patch: Record<string, unknown> = {};
+    if ('name' in data && data.name !== undefined) {
+      const n = String(data.name).trim();
+      if (!n) throw new BadRequestException('Ürün adı boş olamaz');
+      patch.name = n;
+    }
+    if ('quantity' in data && data.quantity !== undefined) {
+      const q = Number(data.quantity);
+      if (!(q > 0) || !Number.isFinite(q)) {
+        throw new BadRequestException('Miktar 0’dan büyük olmalıdır');
+      }
+      patch.quantity = q;
+    }
+    if ('unitPrice' in data && data.unitPrice !== undefined) {
+      const p = Number(data.unitPrice);
+      if (!Number.isFinite(p) || p < 0) {
+        throw new BadRequestException('Birim fiyat geçersiz');
+      }
+      patch.unitPrice = p;
+    }
+    if ('vatRate' in data && data.vatRate !== undefined) {
+      const vr = Math.round(Number(data.vatRate));
+      if (!Number.isFinite(vr) || vr < 0) {
+        throw new BadRequestException('KDV oranı geçersiz');
+      }
+      patch.vatRate = vr;
+    }
+    if ('colorFabricInfo' in data) {
+      patch.colorFabricInfo =
+        data.colorFabricInfo == null || String(data.colorFabricInfo).trim() === ''
+          ? null
+          : String(data.colorFabricInfo).trim();
+    }
+    if ('measurementInfo' in data) {
+      patch.measurementInfo =
+        data.measurementInfo == null || String(data.measurementInfo).trim() === ''
+          ? null
+          : String(data.measurementInfo).trim();
+    }
     if ('supplierId' in data) {
       patch.supplierId = data.supplierId || null;
     }
@@ -508,31 +591,60 @@ export class OrdersService {
     if ('isFromStock' in data) {
       patch.isFromStock = !!data.isFromStock;
     }
+
+    const nextQty = patch.quantity !== undefined ? Number(patch.quantity) : item.quantity;
+    const nextPrice = patch.unitPrice !== undefined ? Number(patch.unitPrice) : item.unitPrice;
+    patch.lineTotal = Math.round(nextQty * nextPrice * 100) / 100;
+
     const nextIsFromStock =
       patch.isFromStock !== undefined ? !!patch.isFromStock : !!item.isFromStock;
-    const nextSupplierId =
-      patch.supplierId !== undefined ? patch.supplierId : item.supplierId;
     const nextSupplierOrderNo =
-      patch.supplierOrderNo !== undefined ? patch.supplierOrderNo : item.supplierOrderNo;
+      patch.supplierOrderNo !== undefined
+        ? (patch.supplierOrderNo as string | null)
+        : item.supplierOrderNo;
     if (!nextIsFromStock && !nextSupplierOrderNo) {
       throw new BadRequestException('Stok dışı kalem için sipariş no/referans zorunludur');
     }
 
-    const updated = await this.prisma.orderItem.update({
+    await this.prisma.orderItem.update({
       where: { id: itemId },
-      data: patch,
+      data: patch as any,
+    });
+
+    await this.recalculateOrderTotals(item.orderId);
+
+    return this.prisma.orderItem.findUnique({
+      where: { id: itemId },
       include: {
         supplier: true,
         product: { select: { id: true, sku: true, name: true, imageUrl: true } },
       },
     });
+  }
 
+  private async recalculateOrderTotals(orderId: string) {
+    const items = await this.prisma.orderItem.findMany({ where: { orderId } });
+    let subtotal = 0;
+    let vatTotal = 0;
+    let grandTotal = 0;
+    for (const row of items) {
+      const lineGross = row.quantity * row.unitPrice;
+      const divider = 1 + row.vatRate / 100;
+      const base = divider > 0 ? lineGross / divider : lineGross;
+      const vat = lineGross - base;
+      subtotal += base;
+      vatTotal += vat;
+      grandTotal += lineGross;
+    }
     await this.prisma.salesOrder.update({
-      where: { id: item.orderId },
-      data: { panelEditedAt: new Date() },
+      where: { id: orderId },
+      data: {
+        subtotal: Math.round(subtotal * 100) / 100,
+        vatTotal: Math.round(vatTotal * 100) / 100,
+        grandTotal: Math.round(grandTotal * 100) / 100,
+        panelEditedAt: new Date(),
+      },
     });
-
-    return updated;
   }
 
   /** Sipariş kalemlerini tedarikçi ile birlikte getir */

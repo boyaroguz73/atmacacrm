@@ -764,6 +764,14 @@ export class QuotesService {
         isFromStock: source === 'STOCK',
         supplierId: source === 'SUPPLIER' ? cfg?.supplierId || null : null,
         supplierOrderNo: source === 'SUPPLIER' ? cfg?.supplierOrderNo?.trim() || null : null,
+        colorFabricInfo:
+          item.colorFabricInfo != null && String(item.colorFabricInfo).trim() !== ''
+            ? String(item.colorFabricInfo).trim()
+            : null,
+        measurementInfo:
+          item.measurementInfo != null && String(item.measurementInfo).trim() !== ''
+            ? String(item.measurementInfo).trim()
+            : null,
       };
     });
 
@@ -846,14 +854,23 @@ export class QuotesService {
             : undefined,
           quoteRef:
             quote.quoteNumber != null ? `TKL-${String(quote.quoteNumber).padStart(5, '0')}` : undefined,
-          items: orderFull.items.map((i) => ({
-            name: i.name,
-            quantity: i.quantity,
-            unitPrice: i.unitPrice,
-            vatRate: i.vatRate,
-            lineTotal: i.lineTotal,
-            imageUrl: i.product?.imageUrl || undefined,
-          })),
+          items: orderFull.items.map((i) => {
+            const cf = i.colorFabricInfo != null ? String(i.colorFabricInfo).trim() : '';
+            const ms = i.measurementInfo != null ? String(i.measurementInfo).trim() : '';
+            const lineParts: string[] = [];
+            if (cf) lineParts.push(`Renk/Kumaş: ${cf}`);
+            if (ms) lineParts.push(`Ölçü: ${ms}`);
+            const lineDetail = lineParts.length ? lineParts.join('\n') : undefined;
+            return {
+              name: i.name,
+              quantity: i.quantity,
+              unitPrice: i.unitPrice,
+              vatRate: i.vatRate,
+              lineTotal: i.lineTotal,
+              lineDetail,
+              imageUrl: i.product?.imageUrl || undefined,
+            };
+          }),
           currency: orderFull.currency,
           subtotal: orderFull.subtotal,
           discountTotal: quote.discountTotal,

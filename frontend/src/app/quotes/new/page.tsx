@@ -7,6 +7,7 @@ import { cn, formatPhone, rewriteMediaUrlForClient } from '@/lib/utils';
 import { SOURCES } from '@/lib/constants';
 import { QuoteEmbeddedChat } from '@/components/quotes/QuoteEmbeddedChat';
 import { MeasurementLineCell } from '@/components/quotes/MeasurementLineCell';
+import { VariantPickerOption } from '@/components/quotes/VariantPickerOption';
 import toast from 'react-hot-toast';
 import {
   ArrowLeft,
@@ -299,6 +300,7 @@ export default function NewQuotePage() {
       unitPrice: number;
       vatRate: number;
       metadata?: unknown;
+      imageUrl?: string | null;
     }[];
   } | null>(null);
 
@@ -477,6 +479,7 @@ export default function NewQuotePage() {
       unitPrice: number;
       metadata?: unknown;
       vatRate?: number;
+      imageUrl?: string | null;
     },
   ) => {
     const vat =
@@ -493,7 +496,7 @@ export default function NewQuotePage() {
         key: genKey(),
         productId: p.id,
         productVariantId: variant?.id ?? undefined,
-        lineImageUrl: p.imageUrl || undefined,
+        lineImageUrl: (variant?.imageUrl && String(variant.imageUrl).trim()) || p.imageUrl || undefined,
         name: variant ? variant.name : String(p.name ?? ''),
         description: p.description || undefined,
         colorFabricInfo: '',
@@ -665,26 +668,21 @@ export default function NewQuotePage() {
     <div className="p-4 md:p-8 max-w-[1920px] mx-auto pb-28">
       {variantPick && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
-          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-5 space-y-3">
+          <div className="bg-white rounded-2xl shadow-xl max-w-lg w-full p-5 space-y-3">
             <h3 className="text-sm font-bold text-gray-900">Varyant seçin</h3>
             <p className="text-xs text-gray-500 line-clamp-2">{variantPick.product.name}</p>
-            <div className="max-h-56 overflow-y-auto space-y-1">
+            <div className="max-h-72 overflow-y-auto space-y-1.5">
               {variantPick.variants.map((v) => (
-                <button
+                <VariantPickerOption
                   key={v.id ?? '__product_base__'}
-                  type="button"
-                  onClick={() => {
+                  name={v.name}
+                  imageUrl={v.imageUrl}
+                  priceDisplay={`${sym}${v.unitPrice.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}`}
+                  onSelect={() => {
                     finalizeProductLine(variantPick.product, v);
                     setVariantPick(null);
                   }}
-                  className="w-full text-left px-3 py-2 rounded-lg border border-gray-100 hover:bg-green-50 text-sm"
-                >
-                  <span className="font-medium text-gray-900">{v.name}</span>
-                  <span className="text-xs text-gray-500 ml-2 tabular-nums">
-                    {sym}
-                    {v.unitPrice.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
-                  </span>
-                </button>
+                />
               ))}
             </div>
             <button
@@ -694,6 +692,202 @@ export default function NewQuotePage() {
             >
               Vazgeç
             </button>
+          </div>
+        </div>
+      )}
+      {quickContactOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40"
+          role="presentation"
+          onClick={() => !quickContactSubmitting && closeQuickContactModal()}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-hidden border border-gray-100"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-labelledby="quick-contact-title"
+          >
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                void submitQuickContact();
+              }}
+            >
+              <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+                <div>
+                  <h3 id="quick-contact-title" className="text-sm font-bold text-gray-900">
+                    Hızlı kişi oluştur
+                  </h3>
+                  <p className="text-xs text-gray-500 mt-1">Kişiyi oluşturup teklife hemen bağlayın.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={closeQuickContactModal}
+                  className="p-2 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-50"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="p-5 space-y-4 overflow-y-auto max-h-[calc(90vh-72px)]">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <label className="block">
+                    <span className="text-xs text-gray-500">Telefon *</span>
+                    <input
+                      className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl"
+                      value={quickContactForm.phone}
+                      onChange={(e) => setQuickContactForm((f) => ({ ...f, phone: e.target.value }))}
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="text-xs text-gray-500">E-posta</span>
+                    <input
+                      type="email"
+                      className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl"
+                      value={quickContactForm.email}
+                      onChange={(e) => setQuickContactForm((f) => ({ ...f, email: e.target.value }))}
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="text-xs text-gray-500">Kaynak</span>
+                    <select
+                      className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl bg-white"
+                      value={quickContactForm.source}
+                      onChange={(e) => setQuickContactForm((f) => ({ ...f, source: e.target.value }))}
+                    >
+                      <option value="">Seçiniz</option>
+                      {SOURCES.map((s) => (
+                        <option key={s.value} value={s.value}>
+                          {s.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="block">
+                    <span className="text-xs text-gray-500">Ad</span>
+                    <input
+                      className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl"
+                      value={quickContactForm.name}
+                      onChange={(e) => setQuickContactForm((f) => ({ ...f, name: e.target.value }))}
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="text-xs text-gray-500">Soyad</span>
+                    <input
+                      className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl"
+                      value={quickContactForm.surname}
+                      onChange={(e) => setQuickContactForm((f) => ({ ...f, surname: e.target.value }))}
+                    />
+                  </label>
+                  <label className="sm:col-span-2 block">
+                    <span className="text-xs text-gray-500">Şirket / unvan</span>
+                    <input
+                      className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl"
+                      value={quickContactForm.company}
+                      onChange={(e) => setQuickContactForm((f) => ({ ...f, company: e.target.value }))}
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="text-xs text-gray-500">Şehir</span>
+                    <input
+                      className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl"
+                      value={quickContactForm.city}
+                      onChange={(e) => setQuickContactForm((f) => ({ ...f, city: e.target.value }))}
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="text-xs text-gray-500">Vergi dairesi</span>
+                    <input
+                      className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl"
+                      value={quickContactForm.taxOffice}
+                      onChange={(e) => setQuickContactForm((f) => ({ ...f, taxOffice: e.target.value }))}
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="text-xs text-gray-500">VKN</span>
+                    <input
+                      className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl"
+                      value={quickContactForm.taxNumber}
+                      onChange={(e) => setQuickContactForm((f) => ({ ...f, taxNumber: e.target.value }))}
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="text-xs text-gray-500">TC Kimlik No</span>
+                    <input
+                      className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl"
+                      value={quickContactForm.identityNumber}
+                      onChange={(e) => setQuickContactForm((f) => ({ ...f, identityNumber: e.target.value }))}
+                    />
+                  </label>
+                  <label className="sm:col-span-2 block">
+                    <span className="text-xs text-gray-500">Adres</span>
+                    <textarea
+                      rows={2}
+                      className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl resize-y"
+                      value={quickContactForm.address}
+                      onChange={(e) => setQuickContactForm((f) => ({ ...f, address: e.target.value }))}
+                    />
+                  </label>
+                  <label className="sm:col-span-2 block">
+                    <span className="text-xs text-gray-500">Fatura adresi</span>
+                    <textarea
+                      rows={2}
+                      className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl resize-y"
+                      value={quickContactForm.billingAddress}
+                      onChange={(e) => setQuickContactForm((f) => ({ ...f, billingAddress: e.target.value }))}
+                    />
+                  </label>
+                </div>
+                <div className="rounded-xl border border-gray-100 bg-gray-50 p-3 space-y-3">
+                  <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={quickContactForm.openChat}
+                      onChange={(e) => setQuickContactForm((f) => ({ ...f, openChat: e.target.checked }))}
+                      className="rounded border-gray-300 text-whatsapp focus:ring-whatsapp"
+                    />
+                    <span className="inline-flex items-center gap-2">
+                      <MessageSquare className="w-4 h-4 text-whatsapp" />
+                      Kayıttan sonra gelen kutusunda sohbet aç
+                    </span>
+                  </label>
+                  {quickContactForm.openChat && (
+                    <label className="block">
+                      <span className="text-xs text-gray-500">WhatsApp oturumu</span>
+                      <select
+                        className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl bg-white"
+                        value={quickContactForm.sessionId}
+                        onChange={(e) => setQuickContactForm((f) => ({ ...f, sessionId: e.target.value }))}
+                      >
+                        <option value="">Varsayılan (en son aktif)</option>
+                        {quickContactSessions.map((s) => (
+                          <option key={s.id} value={s.id}>
+                            {s.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
+                </div>
+                <div className="flex items-center justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={closeQuickContactModal}
+                    disabled={quickContactSubmitting}
+                    className="px-4 py-2 rounded-xl border border-gray-200 text-sm text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+                  >
+                    İptal
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={quickContactSubmitting}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-whatsapp text-white text-sm font-semibold hover:bg-green-700 disabled:opacity-50"
+                  >
+                    {quickContactSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserPlus className="w-4 h-4" />}
+                    Kaydet ve seç
+                  </button>
+                </div>
+              </div>
+            </form>
           </div>
         </div>
       )}
@@ -716,111 +910,6 @@ export default function NewQuotePage() {
         className="flex flex-col xl:flex-row xl:items-start xl:gap-8 gap-6"
       >
         <aside className="w-full xl:w-72 xl:shrink-0 space-y-2 order-2 xl:order-1">
-          {quickContactOpen && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
-              <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-hidden">
-                <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
-                  <div>
-                    <h3 className="text-sm font-bold text-gray-900">Hızlı kişi oluştur</h3>
-                    <p className="text-xs text-gray-500 mt-1">Kişiyi oluşturup teklife hemen bağlayın.</p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={closeQuickContactModal}
-                    className="p-2 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-50"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
-                <div className="p-5 space-y-4 overflow-y-auto max-h-[calc(90vh-72px)]">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <label className="block">
-                      <span className="text-xs text-gray-500">Telefon *</span>
-                      <input className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl" value={quickContactForm.phone} onChange={(e) => setQuickContactForm((f) => ({ ...f, phone: e.target.value }))} />
-                    </label>
-                    <label className="block">
-                      <span className="text-xs text-gray-500">E-posta</span>
-                      <input type="email" className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl" value={quickContactForm.email} onChange={(e) => setQuickContactForm((f) => ({ ...f, email: e.target.value }))} />
-                    </label>
-                    <label className="block">
-                      <span className="text-xs text-gray-500">Kaynak</span>
-                      <select className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl bg-white" value={quickContactForm.source} onChange={(e) => setQuickContactForm((f) => ({ ...f, source: e.target.value }))}>
-                        <option value="">Seçiniz</option>
-                        {SOURCES.map((s) => (
-                          <option key={s.value} value={s.value}>{s.label}</option>
-                        ))}
-                      </select>
-                    </label>
-                    <label className="block">
-                      <span className="text-xs text-gray-500">Ad</span>
-                      <input className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl" value={quickContactForm.name} onChange={(e) => setQuickContactForm((f) => ({ ...f, name: e.target.value }))} />
-                    </label>
-                    <label className="block">
-                      <span className="text-xs text-gray-500">Soyad</span>
-                      <input className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl" value={quickContactForm.surname} onChange={(e) => setQuickContactForm((f) => ({ ...f, surname: e.target.value }))} />
-                    </label>
-                    <label className="sm:col-span-2 block">
-                      <span className="text-xs text-gray-500">Şirket / unvan</span>
-                      <input className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl" value={quickContactForm.company} onChange={(e) => setQuickContactForm((f) => ({ ...f, company: e.target.value }))} />
-                    </label>
-                    <label className="block">
-                      <span className="text-xs text-gray-500">Şehir</span>
-                      <input className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl" value={quickContactForm.city} onChange={(e) => setQuickContactForm((f) => ({ ...f, city: e.target.value }))} />
-                    </label>
-                    <label className="block">
-                      <span className="text-xs text-gray-500">Vergi dairesi</span>
-                      <input className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl" value={quickContactForm.taxOffice} onChange={(e) => setQuickContactForm((f) => ({ ...f, taxOffice: e.target.value }))} />
-                    </label>
-                    <label className="block">
-                      <span className="text-xs text-gray-500">VKN</span>
-                      <input className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl" value={quickContactForm.taxNumber} onChange={(e) => setQuickContactForm((f) => ({ ...f, taxNumber: e.target.value }))} />
-                    </label>
-                    <label className="block">
-                      <span className="text-xs text-gray-500">TC Kimlik No</span>
-                      <input className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl" value={quickContactForm.identityNumber} onChange={(e) => setQuickContactForm((f) => ({ ...f, identityNumber: e.target.value }))} />
-                    </label>
-                    <label className="sm:col-span-2 block">
-                      <span className="text-xs text-gray-500">Adres</span>
-                      <textarea rows={2} className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl resize-y" value={quickContactForm.address} onChange={(e) => setQuickContactForm((f) => ({ ...f, address: e.target.value }))} />
-                    </label>
-                    <label className="sm:col-span-2 block">
-                      <span className="text-xs text-gray-500">Fatura adresi</span>
-                      <textarea rows={2} className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl resize-y" value={quickContactForm.billingAddress} onChange={(e) => setQuickContactForm((f) => ({ ...f, billingAddress: e.target.value }))} />
-                    </label>
-                  </div>
-                  <div className="rounded-xl border border-gray-100 bg-gray-50 p-3 space-y-3">
-                    <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
-                      <input type="checkbox" checked={quickContactForm.openChat} onChange={(e) => setQuickContactForm((f) => ({ ...f, openChat: e.target.checked }))} className="rounded border-gray-300 text-whatsapp focus:ring-whatsapp" />
-                      <span className="inline-flex items-center gap-2">
-                        <MessageSquare className="w-4 h-4 text-whatsapp" />
-                        Kayıttan sonra gelen kutusunda sohbet aç
-                      </span>
-                    </label>
-                    {quickContactForm.openChat && (
-                      <label className="block">
-                        <span className="text-xs text-gray-500">WhatsApp oturumu</span>
-                        <select className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl bg-white" value={quickContactForm.sessionId} onChange={(e) => setQuickContactForm((f) => ({ ...f, sessionId: e.target.value }))}>
-                          <option value="">Varsayılan (en son aktif)</option>
-                          {quickContactSessions.map((s) => (
-                            <option key={s.id} value={s.id}>{s.name}</option>
-                          ))}
-                        </select>
-                      </label>
-                    )}
-                  </div>
-                  <div className="flex items-center justify-end gap-2">
-                    <button type="button" onClick={closeQuickContactModal} disabled={quickContactSubmitting} className="px-4 py-2 rounded-xl border border-gray-200 text-sm text-gray-600 hover:bg-gray-50 disabled:opacity-50">
-                      Vazgeç
-                    </button>
-                    <button type="button" onClick={() => void submitQuickContact()} disabled={quickContactSubmitting} className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-whatsapp text-white text-sm font-semibold hover:bg-green-700 disabled:opacity-50">
-                      {quickContactSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserPlus className="w-4 h-4" />}
-                      Kaydet ve seç
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
           <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Sohbet</h3>
           {selectedContact ? (
             <QuoteEmbeddedChat contactId={selectedContact.id} contactPhone={selectedContact.phone} />

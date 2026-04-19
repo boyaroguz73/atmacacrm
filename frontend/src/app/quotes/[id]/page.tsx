@@ -27,6 +27,7 @@ import toast from 'react-hot-toast';
 import { useAuthStore } from '@/store/auth';
 import { QuoteEmbeddedChat } from '@/components/quotes/QuoteEmbeddedChat';
 import { MeasurementLineCell } from '@/components/quotes/MeasurementLineCell';
+import { VariantPickerOption } from '@/components/quotes/VariantPickerOption';
 
 function toDateInputValue(iso: string | null | undefined): string {
   if (!iso) return '';
@@ -222,6 +223,7 @@ export default function QuoteDetailPage() {
       unitPrice: number;
       vatRate: number;
       metadata?: unknown;
+      imageUrl?: string | null;
     }[];
   } | null>(null);
 
@@ -349,6 +351,7 @@ export default function QuoteDetailPage() {
       unitPrice: number;
       metadata?: unknown;
       vatRate?: number;
+      imageUrl?: string | null;
     },
   ) => {
     const vat =
@@ -365,7 +368,7 @@ export default function QuoteDetailPage() {
         key: genKey(),
         productId: p.id,
         productVariantId: variant?.id ?? undefined,
-        lineImageUrl: p.imageUrl || undefined,
+        lineImageUrl: (variant?.imageUrl && String(variant.imageUrl).trim()) || p.imageUrl || undefined,
         name: variant ? variant.name : String(p.name ?? ''),
         description: p.description || undefined,
         colorFabricInfo: '',
@@ -629,26 +632,21 @@ export default function QuoteDetailPage() {
       <div className="p-4 md:p-8 max-w-[1920px] mx-auto pb-28">
         {variantPick && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
-            <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-5 space-y-3">
+            <div className="bg-white rounded-2xl shadow-xl max-w-lg w-full p-5 space-y-3">
               <h3 className="text-sm font-bold text-gray-900">Varyant seçin</h3>
               <p className="text-xs text-gray-500 line-clamp-2">{variantPick.product.name}</p>
-              <div className="max-h-56 overflow-y-auto space-y-1">
+              <div className="max-h-72 overflow-y-auto space-y-1.5">
                 {variantPick.variants.map((v) => (
-                  <button
+                  <VariantPickerOption
                     key={v.id ?? '__product_base__'}
-                    type="button"
-                    onClick={() => {
+                    name={v.name}
+                    imageUrl={v.imageUrl}
+                    priceDisplay={`${sym}${v.unitPrice.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}`}
+                    onSelect={() => {
                       finalizeProductLine(variantPick.product, v);
                       setVariantPick(null);
                     }}
-                    className="w-full text-left px-3 py-2 rounded-lg border border-gray-100 hover:bg-green-50 text-sm"
-                  >
-                    <span className="font-medium text-gray-900">{v.name}</span>
-                    <span className="text-xs text-gray-500 ml-2 tabular-nums">
-                      {sym}
-                      {v.unitPrice.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
-                    </span>
-                  </button>
+                  />
                 ))}
               </div>
               <button

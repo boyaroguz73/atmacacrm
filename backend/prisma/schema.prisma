@@ -734,6 +734,8 @@ model ProductVariant {
   isActive   Boolean    @default(true)
   /// XML subproduct/type2 vb. yapılandırılmış alanlar
   metadata   Json?
+  /// Varyanta özel görsel (akıştan); yoksa ürün görseli kullanılır
+  imageUrl   String?
   createdAt  DateTime   @default(now())
   updatedAt  DateTime   @updatedAt
 
@@ -923,6 +925,10 @@ model OrderItem {
   supplierOrderNo String?
   /// Stoktan mı karşılanacak
   isFromStock     Boolean  @default(false)
+  /// Renk / kumaş (serbest veya varyant seçimi)
+  colorFabricInfo String?
+  /// Ölçü / varyant detayı
+  measurementInfo String?
 
   order    SalesOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
   product  Product?   @relation(fields: [productId], references: [id], onDelete: SetNull)

@@ -6,12 +6,18 @@ import api, { getApiErrorMessage } from '@/lib/api';
 import { formatPhone, rewriteMediaUrlForClient } from '@/lib/utils';
 import toast from 'react-hot-toast';
 import { ArrowLeft, Loader2, Package, Search, Trash2 } from 'lucide-react';
+import { ColorFabricLineCell } from '@/components/quotes/ColorFabricLineCell';
+import { MeasurementLineCell } from '@/components/quotes/MeasurementLineCell';
+import { VariantPickerOption } from '@/components/quotes/VariantPickerOption';
 
 interface LocalLineItem {
   key: string;
   productId?: string;
+  productVariantId?: string;
   lineImageUrl?: string;
   name: string;
+  colorFabricInfo?: string;
+  measurementInfo?: string;
   quantity: number;
   unitPrice: number;
   vatRate: number;
@@ -36,6 +42,14 @@ interface SupplierHit {
 }
 
 type OrderPaymentModeUI = 'FULL' | 'DEPOSIT_50' | 'CUSTOM';
+
+function measurementHintFromVariantMetadata(metadata: unknown): string {
+  if (!metadata || typeof metadata !== 'object') return '';
+  const m = metadata as Record<string, unknown>;
+  const t2 = typeof m.type2 === 'string' ? m.type2.trim() : '';
+  const title = typeof m.title === 'string' ? m.title.trim() : '';
+  return t2 || title || '';
+}
 
 function calcTotals(items: LocalLineItem[]) {
   let subtotal = 0;
@@ -72,6 +86,8 @@ function emptyLine(): LocalLineItem {
   return {
     key: genKey(),
     name: '',
+    colorFabricInfo: '',
+    measurementInfo: '',
     quantity: 1,
     unitPrice: 0,
     vatRate: 20,
@@ -110,6 +126,18 @@ export default function NewOrderPage() {
   const [paymentMode, setPaymentMode] = useState<OrderPaymentModeUI>('FULL');
   const [customPaymentValue, setCustomPaymentValue] = useState('');
   const [sendToTsoft, setSendToTsoft] = useState(false);
+
+  const [variantPick, setVariantPick] = useState<{
+    product: ProductHit;
+    variants: {
+      id: string | null;
+      name: string;
+      unitPrice: number;
+      vatRate: number;
+      metadata?: unknown;
+      imageUrl?: string | null;
+    }[];
+  } | null>(null);
 
   const totals = useMemo(() => calcTotals(lines), [lines]);
 
@@ -175,26 +203,64 @@ export default function NewOrderPage() {
     productDebounceRef.current = setTimeout(() => searchProducts(val), 250);
   };
 
-  const addProductLine = (p: ProductHit) => {
+  const finalizeOrderLine = (
+    p: ProductHit,
+    variant?: {
+      id?: string | null;
+      name: string;
+      unitPrice: number;
+      vatRate?: number;
+      metadata?: unknown;
+      imageUrl?: string | null;
+    },
+  ) => {
+    const vat =
+      variant?.vatRate != null && Number.isFinite(Number(variant.vatRate))
+        ? Math.round(Number(variant.vatRate))
+        : p.vatRate != null && Number.isFinite(Number(p.vatRate))
+          ? Math.round(Number(p.vatRate))
+          : 20;
+    const measureHint = variant ? measurementHintFromVariantMetadata(variant.metadata) : '';
     setLines((prev) => [
       ...prev,
       {
         key: genKey(),
         productId: p.id,
-        lineImageUrl: p.imageUrl || undefined,
-        name: p.name,
+        productVariantId: variant?.id ?? undefined,
+        lineImageUrl: (variant?.imageUrl && String(variant.imageUrl).trim()) || p.imageUrl || undefined,
+        name: variant ? variant.name : p.name,
+        colorFabricInfo: '',
+        measurementInfo: measureHint,
         quantity: 1,
-        unitPrice: p.unitPrice,
-        vatRate: p.vatRate ?? 20,
+        unitPrice: variant ? variant.unitPrice : p.unitPrice,
+        vatRate: vat,
         isFromStock: true,
         sourceType: 'STOCK',
         supplierId: '',
         supplierOrderNo: '',
       },
     ]);
+    toast.success('Ürün satıra eklendi');
     setProductQuery('');
     setProductResults([]);
     setProductDropdownOpen(false);
+  };
+
+  const onPickProductFromSearch = async (p: ProductHit) => {
+    try {
+      const { data } = await api.get(`/products/${p.id}/variants`);
+      const vars = Array.isArray(data) ? data : [];
+      if (vars.length === 0) {
+        finalizeOrderLine(p);
+        return;
+      }
+      setVariantPick({ product: p, variants: vars });
+      setProductQuery('');
+      setProductResults([]);
+      setProductDropdownOpen(false);
+    } catch {
+      finalizeOrderLine(p);
+    }
   };
 
   const updateLine = (key: string, patch: Partial<LocalLineItem>) => {
@@ -263,6 +329,8 @@ export default function NewOrderPage() {
             (l.sourceType || (l.isFromStock ? 'STOCK' : 'SUPPLIER')) === 'STOCK'
               ? undefined
               : (l.supplierOrderNo || '').trim(),
+          colorFabricInfo: String(l.colorFabricInfo ?? '').trim() || undefined,
+          measurementInfo: String(l.measurementInfo ?? '').trim() || undefined,
         })),
       });
       toast.success('Sipariş oluşturuldu');
@@ -276,6 +344,35 @@ export default function NewOrderPage() {
 
   return (
     <div className="p-4 sm:p-6 w-full max-w-none space-y-6">
+      {variantPick && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
+          <div className="bg-white rounded-2xl shadow-xl max-w-lg w-full p-5 space-y-3">
+            <h3 className="text-sm font-bold text-gray-900">Varyant seçin</h3>
+            <p className="text-xs text-gray-500 line-clamp-2">{variantPick.product.name}</p>
+            <div className="max-h-72 overflow-y-auto space-y-1.5">
+              {variantPick.variants.map((v) => (
+                <VariantPickerOption
+                  key={v.id ?? '__product_base__'}
+                  name={v.name}
+                  imageUrl={v.imageUrl}
+                  priceDisplay={fmt(v.unitPrice)}
+                  onSelect={() => {
+                    finalizeOrderLine(variantPick.product, v);
+                    setVariantPick(null);
+                  }}
+                />
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={() => setVariantPick(null)}
+              className="w-full py-2 text-sm text-gray-600 border border-gray-200 rounded-xl hover:bg-gray-50"
+            >
+              Vazgeç
+            </button>
+          </div>
+        </div>
+      )}
       <button
         type="button"
         onClick={() => router.push('/orders')}
@@ -346,7 +443,7 @@ export default function NewOrderPage() {
                 <button
                   key={p.id}
                   type="button"
-                  onClick={() => addProductLine(p)}
+                  onClick={() => void onPickProductFromSearch(p)}
                   className="w-full text-left px-3 py-2.5 hover:bg-gray-50 flex items-center gap-3 border-b border-gray-50 last:border-0"
                 >
                   <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-md border border-gray-100 bg-gray-50 overflow-hidden shrink-0">
@@ -366,12 +463,14 @@ export default function NewOrderPage() {
           )}
         </div>
 
-        <div className="border border-gray-100 rounded-xl overflow-hidden">
-          <table className="w-full text-sm">
+        <div className="border border-gray-100 rounded-xl overflow-x-auto">
+          <table className="w-full text-sm min-w-[1100px]">
             <thead className="bg-gray-50 text-gray-500 text-xs uppercase">
               <tr>
                 <th className="px-3 py-2 text-left w-20 sm:w-24">Görsel</th>
-                <th className="px-3 py-2 text-left">Kalem</th>
+                <th className="px-3 py-2 text-left min-w-[140px]">Kalem</th>
+                <th className="px-3 py-2 text-left min-w-[140px]">Renk/Kumaş</th>
+                <th className="px-3 py-2 text-left min-w-[140px]">Ölçü</th>
                 <th className="px-3 py-2 text-right w-20">Adet</th>
                 <th className="px-3 py-2 text-right w-32">Birim (KDV Dahil)</th>
                 <th className="px-3 py-2 text-right w-20">KDV %</th>
@@ -390,11 +489,26 @@ export default function NewOrderPage() {
                       {line.lineImageUrl ? <img src={rewriteMediaUrlForClient(line.lineImageUrl)} alt="" className="w-full h-full object-cover" /> : null}
                     </div>
                   </td>
-                  <td className="px-3 py-2">
+                  <td className="px-3 py-2 align-top">
                     <input
                       value={line.name}
                       onChange={(e) => updateLine(line.key, { name: e.target.value })}
+                      placeholder="Ürün adı"
                       className="w-full px-2 py-1.5 rounded border border-gray-200"
+                    />
+                  </td>
+                  <td className="px-3 py-2 align-top">
+                    <ColorFabricLineCell
+                      productId={line.productId}
+                      value={line.colorFabricInfo ?? ''}
+                      onChange={(next) => updateLine(line.key, { colorFabricInfo: next })}
+                    />
+                  </td>
+                  <td className="px-3 py-2 align-top">
+                    <MeasurementLineCell
+                      productId={line.productId}
+                      value={line.measurementInfo ?? ''}
+                      onChange={(next) => updateLine(line.key, { measurementInfo: next })}
                     />
                   </td>
                   <td className="px-3 py-2">

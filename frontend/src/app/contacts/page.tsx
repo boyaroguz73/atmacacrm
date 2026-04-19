@@ -129,6 +129,11 @@ export default function ContactsPage() {
     loadSessionsForModal();
   };
 
+  const closeCreateModal = () => {
+    if (createSubmitting) return;
+    setCreateOpen(false);
+  };
+
   const submitCreate = async (opts?: { forceOpenChat?: boolean }) => {
     const openChat = opts?.forceOpenChat ?? form.openChat;
     if (!form.phone.trim()) {
@@ -510,6 +515,14 @@ export default function ContactsPage() {
               </label>
             </div>
             <div className="flex flex-wrap gap-2 px-5 py-4 border-t border-gray-100 bg-gray-50/50">
+              <button
+                type="button"
+                disabled={createSubmitting}
+                onClick={closeCreateModal}
+                className="min-w-[100px] px-4 py-2.5 rounded-xl border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-100 disabled:opacity-50"
+              >
+                İptal
+              </button>
               <button
                 type="button"
                 disabled={createSubmitting}

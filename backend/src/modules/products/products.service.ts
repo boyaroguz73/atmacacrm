@@ -227,6 +227,8 @@ type XmlSubproductRow = {
   priceRaw: string;
   subId: string;
   stock: number | null;
+  /** Alt ürün görseli (T-Soft / feed) */
+  imageUrl: string;
 };
 
 function asObjectArray(v: unknown): Record<string, unknown>[] {
@@ -246,8 +248,19 @@ function mapSubproductRows(rows: Record<string, unknown>[]): XmlSubproductRow[] 
     const wsCode = field(r, 'ws_code', 'wsCode');
     const stockRaw = field(r, 'stock');
     const stock = stockRaw ? parseInt(stockRaw, 10) : null;
+    const imageUrl = field(
+      r,
+      'image_link',
+      'g:image_link',
+      'image',
+      'g:image',
+      'picture',
+      'resim',
+      'thumbnail',
+      'img',
+    );
     if (!type2 && !title && !subId && !priceRaw) continue;
-    out.push({ type2, title, priceRaw, subId: wsCode || subId, stock });
+    out.push({ type2, title, priceRaw, subId: wsCode || subId, stock, imageUrl });
   }
   return out;
 }
@@ -525,6 +538,9 @@ export class ProductsService {
 
   async findVariantsByProductId(productId: string) {
     const product = await this.findById(productId);
+    const fallbackImage =
+      product.imageUrl && String(product.imageUrl).trim() !== '' ? String(product.imageUrl).trim() : null;
+
     const variants = await this.prisma.productVariant.findMany({
       where: { productId, isActive: true },
       orderBy: { name: 'asc' },
@@ -537,29 +553,35 @@ export class ProductsService {
         vatRate: true,
         stock: true,
         metadata: true,
+        imageUrl: true,
       },
     });
 
-    if (variants.length === 0) return variants;
+    const withResolvedImages = variants.map((v) => {
+      const vImg = v.imageUrl && String(v.imageUrl).trim() !== '' ? String(v.imageUrl).trim() : null;
+      return { ...v, imageUrl: vImg || fallbackImage };
+    });
+
+    if (withResolvedImages.length === 0) return withResolvedImages;
 
     const baseName = String(product.name ?? '').trim() || 'Ürün';
     const basePrice = Number(product.unitPrice);
     const sku = String(product.sku ?? '');
     const isGoogleVariantParent = sku.startsWith('IG-') && basePrice <= 0 && product.stock == null;
     if (isGoogleVariantParent) {
-      return variants;
+      return withResolvedImages;
     }
 
     const hasSellableBase =
       (Number.isFinite(basePrice) && basePrice > 0) ||
       (product.stock != null && Number(product.stock) >= 0);
     if (!hasSellableBase) {
-      return variants;
+      return withResolvedImages;
     }
 
-    const nameTaken = variants.some((v) => String(v.name ?? '').trim() === baseName);
+    const nameTaken = withResolvedImages.some((v) => String(v.name ?? '').trim() === baseName);
     if (nameTaken) {
-      return variants;
+      return withResolvedImages;
     }
 
     const synthetic = {
@@ -571,9 +593,10 @@ export class ProductsService {
       vatRate: product.vatRate,
       stock: product.stock,
       metadata: { source: 'product_base' } as Prisma.InputJsonValue,
+      imageUrl: fallbackImage,
     };
 
-    return [synthetic, ...variants];
+    return [synthetic, ...withResolvedImages];
   }
 
   async create(data: {
@@ -809,6 +832,7 @@ export class ProductsService {
               vatRate: itemVat,
               stock,
               isActive,
+              imageUrl: impImg && imageUrlFromFeed ? imageUrlFromFeed : null,
             },
             update: {
               name,
@@ -817,6 +841,7 @@ export class ProductsService {
               vatRate: itemVat,
               stock,
               isActive,
+              ...(impImg && imageUrlFromFeed ? { imageUrl: imageUrlFromFeed } : {}),
             },
           });
 
@@ -944,6 +969,7 @@ export class ProductsService {
             const variantName = `${name} — ${label}`.slice(0, 480);
             const varStock = row.stock != null ? row.stock : stock;
             const varActive = row.stock != null ? row.stock > 0 : isActive;
+            const rowImg = row.imageUrl?.trim() || null;
 
             const metadata: Prisma.InputJsonValue = {
               type2: row.type2 || null,
@@ -969,6 +995,7 @@ export class ProductsService {
                 stock: varStock,
                 isActive: varActive,
                 metadata,
+                imageUrl: impImg && rowImg ? rowImg : null,
               },
               update: {
                 name: variantName,
@@ -978,6 +1005,7 @@ export class ProductsService {
                 stock: varStock,
                 isActive: varActive,
                 metadata,
+                ...(impImg && rowImg ? { imageUrl: rowImg } : {}),
               },
             });
 

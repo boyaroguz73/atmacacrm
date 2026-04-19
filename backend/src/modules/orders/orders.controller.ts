@@ -87,11 +87,17 @@ export class OrdersController {
   }
 
   @Patch('items/:itemId')
-  @Roles('ADMIN', 'SUPERADMIN', 'ACCOUNTANT')
+  @Roles('AGENT', 'ADMIN', 'SUPERADMIN', 'ACCOUNTANT')
   updateOrderItem(
     @Param('itemId') itemId: string,
     @Body()
     body: {
+      name?: string;
+      quantity?: number;
+      unitPrice?: number;
+      vatRate?: number;
+      colorFabricInfo?: string | null;
+      measurementInfo?: string | null;
       supplierId?: string | null;
       supplierOrderNo?: string | null;
       isFromStock?: boolean;

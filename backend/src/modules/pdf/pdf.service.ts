@@ -16,6 +16,8 @@ interface PdfSettings {
   companyTaxNumber: string;
   companyMersisNo: string;
   logoUrl: string;
+  /** Banka QR (FAST/EFT); PDF’te banka metinleriyle hizalı sağ alt */
+  bankQrUrl: string;
   bankInfo: string;
   bank2Info: string;
   terms: string;
@@ -154,6 +156,7 @@ export class PdfService {
       companyTaxNumber: m.get('pdf_company_tax_number') || '',
       companyMersisNo: m.get('pdf_company_mersis_no') || '',
       logoUrl: m.get('pdf_logo_url') || '',
+      bankQrUrl: m.get('pdf_bank_qr_url') || '',
       bankInfo: m.get('pdf_bank_info') || '',
       bank2Info: m.get('pdf_bank2_info') || '',
       terms: m.get('pdf_terms') || '',
@@ -168,14 +171,24 @@ export class PdfService {
     const u = (url || '').trim();
     if (!u) return null;
     try {
-      const resp = await axios.get(u, {
-        responseType: 'arraybuffer',
-        timeout: 12_000,
-        maxContentLength: 2 * 1024 * 1024,
-        validateStatus: (s) => s >= 200 && s < 400,
-        headers: { 'User-Agent': 'AtmacaCRM-PDF/1.0' },
-      });
-      return Buffer.from(resp.data);
+      if (u.startsWith('http://') || u.startsWith('https://')) {
+        const resp = await axios.get(u, {
+          responseType: 'arraybuffer',
+          timeout: 12_000,
+          maxContentLength: 2 * 1024 * 1024,
+          validateStatus: (s) => s >= 200 && s < 400,
+          headers: { 'User-Agent': 'AtmacaCRM-PDF/1.0' },
+        });
+        return Buffer.from(resp.data);
+      }
+      /** `/uploads/...` (`POST /messages/upload`) — axios göreli yolu indiremez; diskten oku */
+      let diskRef = u;
+      if (diskRef.startsWith('/api/uploads/')) diskRef = diskRef.replace(/^\/api/, '');
+      const localPath = diskRef.startsWith('/')
+        ? join(process.cwd(), diskRef.slice(1))
+        : join(process.cwd(), diskRef);
+      if (existsSync(localPath)) return readFileSync(localPath);
+      this.logger.warn(`Kalem gorseli dosya bulunamadi: ${localPath} (url: ${u})`);
     } catch (err: any) {
       this.logger.warn(`Kalem gorseli yuklenemedi: ${err.message}`);
     }
@@ -208,6 +221,7 @@ export class PdfService {
   private async generateDocument(data: PdfData): Promise<string> {
     const settings = await this.getSettings();
     const logoBuffer = await this.fetchLogoBuffer(settings.logoUrl);
+    const bankQrBuffer = await this.fetchLogoBuffer(settings.bankQrUrl);
     const itemImageBuffers = await Promise.all(
       data.items.map((it) => this.fetchItemImageBuffer((it as LineItem).imageUrl)),
     );
@@ -349,13 +363,20 @@ export class PdfService {
         const ROW_H = 20;
         const HEADER_H = 18;
 
+        /* Sütun genişlikleri toplamı PW olmalı; son sütun (toplam) dar kalınca başlık taşması önlenir */
+        const COL_IDX = 30;
+        const COL_NAME = 196;
+        const COL_QTY = 52;
+        const COL_UNIT = 80;
+        const COL_DISC = 48;
+        const COL_TOT = PW - COL_IDX - COL_NAME - COL_QTY - COL_UNIT - COL_DISC;
         const cols = [
-          { label: '#',                          w: 26  },
-          { label: this.t('Urun / Hizmet'),      w: 230 },
-          { label: this.t('Miktar'),             w: 60  },
-          { label: `${this.t('B.Fiyat')} (${cs})`, w: 90 },
-          { label: this.t('Indirim'),            w: 55  },
-          { label: `${this.t('Toplam')} (${cs})`, w: PW - 461 },
+          { label: '#', w: COL_IDX },
+          { label: this.t('Urun / Hizmet'), w: COL_NAME },
+          { label: this.t('Miktar'), w: COL_QTY },
+          { label: `${this.t('B.Fiyat')} (${cs})`, w: COL_UNIT },
+          { label: this.t('Indirim'), w: COL_DISC },
+          { label: `${this.t('Toplam')} (${cs})`, w: COL_TOT },
         ];
 
         // Header row
@@ -503,15 +524,23 @@ export class PdfService {
           txt(value, sumX + lblW, y, { size: 9, bold, color, width: valW, align: 'right' });
         };
 
-        sumRow(this.t('Ara Toplam:'), fmtMoney(data.subtotal), rowY); rowY += 14;
+        const vatAmt = Number.isFinite(data.vatTotal) ? data.vatTotal : 0;
+        sumRow(this.t('Ara Toplam (KDV haric):'), fmtMoney(data.subtotal), rowY); rowY += 14;
+        sumRow(this.t('KDV Tutari:'), fmtMoney(vatAmt), rowY); rowY += 14;
         if (data.discountTotal > 0) {
           sumRow(this.t('Indirim:'), `-${fmtMoney(data.discountTotal)}`, rowY, false, '#cc0000'); rowY += 14;
         }
 
-        // Grand total box
+        // Grand total box — genel toplam KDV dahil (kalem fiyatlari da KDV dahil)
         doc.rect(sumX - 4, rowY - 2, lblW + valW + 8, 22).fill(primary);
-        sumRow(this.t('GENEL TOPLAM:'), fmtMoney(data.grandTotal), rowY + 5, true, '#ffffff');
+        sumRow(this.t('GENEL TOPLAM (KDV dahil):'), fmtMoney(data.grandTotal), rowY + 5, true, '#ffffff');
         rowY += 32;
+        rowY += txt(
+          this.t('* Tablodaki birim fiyat ve satir toplamlari KDV dahildir.'),
+          sumX,
+          rowY,
+          { size: 7, color: '#666666', width: lblW + valW, align: 'right', lineBreak: true },
+        ) + 2;
 
         // ── NOTES / TERMS / BANK ─────────────────────────────────────────
         rowY += 6;
@@ -544,21 +573,53 @@ export class PdfService {
           doc.text(this.t(footerNoteText), ML, rowY, { width: PW, lineBreak: true });
           rowY += h + 8;
         }
-        if (settings.bankInfo || settings.bank2Info) {
-          rowY += txt(this.t('Banka Bilgileri:'), ML, rowY, { size: 8.5, bold: true, width: PW, lineBreak: true }) + 2;
-          const halfW = (PW - 10) / 2;
+        if (settings.bankInfo || settings.bank2Info || bankQrBuffer) {
+          const qrSize = bankQrBuffer ? 82 : 0;
+          const qrGap = bankQrBuffer ? 10 : 0;
+          const textW = bankQrBuffer ? Math.max(160, PW - qrSize - qrGap) : PW;
+          const halfW = textW > 20 ? (textW - 10) / 2 : textW;
+
           R(); doc.fontSize(8).fillColor('#444');
           let h1 = 0;
           let h2 = 0;
-          if (settings.bankInfo)  {
+          if (settings.bankInfo) {
             h1 = doc.heightOfString(this.t(settings.bankInfo), { width: halfW });
-            doc.text(this.t(settings.bankInfo),  ML, rowY, { width: halfW, lineBreak: true });
           }
           if (settings.bank2Info) {
             h2 = doc.heightOfString(this.t(settings.bank2Info), { width: halfW });
-            doc.text(this.t(settings.bank2Info), ML + halfW + 10, rowY, { width: halfW, lineBreak: true });
           }
-          rowY += Math.max(h1, h2, 0) + 10;
+          const textH = Math.max(h1, h2);
+          const blockH = Math.max(textH, qrSize);
+          const approxTitle = 16;
+          if (rowY + approxTitle + blockH + 24 > PAGE_H - 95) {
+            doc.addPage({ margin: 0 });
+            doc.rect(0, 0, doc.page.width, 8).fill(primary);
+            rowY = 28;
+          }
+
+          rowY += txt(this.t('Banka Bilgileri:'), ML, rowY, { size: 8.5, bold: true, width: PW, lineBreak: true }) + 2;
+          const yBank = rowY;
+
+          R(); doc.fontSize(8).fillColor('#444');
+          if (settings.bankInfo) {
+            doc.text(this.t(settings.bankInfo), ML, yBank, { width: halfW, lineBreak: true });
+          }
+          if (settings.bank2Info) {
+            doc.text(this.t(settings.bank2Info), ML + halfW + 10, yBank, { width: halfW, lineBreak: true });
+          }
+          if (bankQrBuffer) {
+            try {
+              const qy = yBank + (textH > qrSize ? textH - qrSize : 0);
+              doc.image(bankQrBuffer, ML + textW + qrGap, qy, {
+                width: qrSize,
+                height: qrSize,
+                fit: [qrSize, qrSize],
+              });
+            } catch {
+              /* geçersiz görsel */
+            }
+          }
+          rowY = yBank + blockH + 10;
         }
 
         // ── SIGNATURE ────────────────────────────────────────────────────

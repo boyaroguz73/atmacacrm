@@ -43,6 +43,7 @@ import {
   Info,
 } from 'lucide-react';
 import ContactPanel from './ContactPanel';
+import { useAuthStore } from '@/store/auth';
 import api, { getApiErrorMessage } from '@/lib/api';
 import toast from 'react-hot-toast';
 import ContactAvatar from '@/components/ui/ContactAvatar';
@@ -122,6 +123,7 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
     sendProductShare,
     sendContactCard,
   } = useChatStore();
+  const authUser = useAuthStore((s) => s.user);
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const [showPanel, setShowPanel] = useState(true);
@@ -269,6 +271,10 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
       .then(({ data }) => setProductCategories(Array.isArray(data) ? data : []))
       .catch(() => setProductCategories([]));
   }, [productPickerOpen]);
+
+  useEffect(() => {
+    useAuthStore.getState().loadFromStorage();
+  }, []);
 
   useEffect(() => {
     api
@@ -1089,6 +1095,15 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
                           {isOutgoing
                             ? (msg.participantName || msg.sentBy?.name || 'Siz')
                             : (msg.participantName || formatPhone(msg.participantPhone) || '—')}
+                        </div>
+                      )}
+                      {/* Bire bir: aynı müşteriye birden fazla temsilci yazabildiği için gönderen adı */}
+                      {!activeConversation?.isGroup && isOutgoing && (
+                        <div className="text-xs font-semibold text-emerald-800 mb-1 truncate">
+                          {msg.sentBy?.name?.trim() ||
+                            (msg.id.startsWith('temp-')
+                              ? authUser?.name?.trim() || 'Gönderiliyor…'
+                              : '—')}
                         </div>
                       )}
                       {mediaUrlResolved && isImage && (

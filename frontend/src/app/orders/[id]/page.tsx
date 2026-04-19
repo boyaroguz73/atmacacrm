@@ -27,6 +27,8 @@ interface OrderItemRow {
   unitPrice: number;
   vatRate: number;
   lineTotal: number;
+  colorFabricInfo?: string | null;
+  measurementInfo?: string | null;
   product?: { id: string; sku: string; name: string; imageUrl?: string | null } | null;
   supplierId?: string | null;
   supplierOrderNo?: string | null;
@@ -93,9 +95,25 @@ function contactDisplayName(o: SalesOrder['contact']) {
   return formatPhone(o.phone);
 }
 
+type LineEditDraft = {
+  name: string;
+  colorFabricInfo: string;
+  measurementInfo: string;
+  quantity: number;
+  unitPrice: number;
+  vatRate: number;
+};
+
 function lineVatAmount(item: OrderItemRow) {
   const gross = item.lineTotal;
   const divider = 1 + (item.vatRate / 100);
+  const net = divider > 0 ? gross / divider : gross;
+  return Math.round((gross - net) * 100) / 100;
+}
+
+function draftLineVatAmount(d: LineEditDraft) {
+  const gross = d.quantity * d.unitPrice;
+  const divider = 1 + (d.vatRate / 100);
   const net = divider > 0 ? gross / divider : gross;
   return Math.round((gross - net) * 100) / 100;
 }
@@ -124,6 +142,7 @@ export default function OrderDetailPage() {
   const [invoiceDueDraft, setInvoiceDueDraft] = useState('');
   const [suppliers, setSuppliers] = useState<{ id: string; name: string }[]>([]);
   const [itemSavingId, setItemSavingId] = useState<string | null>(null);
+  const [lineDrafts, setLineDrafts] = useState<Record<string, LineEditDraft>>({});
 
   const fetchOrder = async () => {
     if (!orderId) return;
@@ -162,6 +181,28 @@ export default function OrderDetailPage() {
     setShippingDraft(order.shippingAddress ?? '');
     setInvoiceDueDraft('');
   }, [order?.id, order?.expectedDeliveryDate, order?.notes, order?.shippingAddress, loading]);
+
+  useEffect(() => {
+    if (!order?.items?.length) {
+      setLineDrafts({});
+      return;
+    }
+    setLineDrafts(
+      Object.fromEntries(
+        order.items.map((it) => [
+          it.id,
+          {
+            name: it.name,
+            colorFabricInfo: it.colorFabricInfo ?? '',
+            measurementInfo: it.measurementInfo ?? '',
+            quantity: it.quantity,
+            unitPrice: it.unitPrice,
+            vatRate: it.vatRate,
+          },
+        ]),
+      ),
+    );
+  }, [order?.id, order?.items]);
 
   const patchStatus = async (status: OrderStatus) => {
     if (!order) return;
@@ -253,6 +294,47 @@ export default function OrderDetailPage() {
       setItemSavingId(null);
     }
   };
+
+  const saveOrderLine = async (itemId: string) => {
+    const d = lineDrafts[itemId];
+    if (!d) return;
+    if (!d.name.trim()) {
+      toast.error('Ürün adı boş olamaz');
+      return;
+    }
+    setItemSavingId(itemId);
+    try {
+      await api.patch(`/orders/items/${itemId}`, {
+        name: d.name.trim(),
+        colorFabricInfo: d.colorFabricInfo.trim() || null,
+        measurementInfo: d.measurementInfo.trim() || null,
+        quantity: d.quantity,
+        unitPrice: d.unitPrice,
+        vatRate: Math.round(d.vatRate),
+      });
+      await fetchOrder();
+      toast.success('Kalem kaydedildi');
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, 'Kalem kaydedilemedi'));
+    } finally {
+      setItemSavingId(null);
+    }
+  };
+
+  const updateLineDraft = (itemId: string, patch: Partial<LineEditDraft>) => {
+    setLineDrafts((prev) => {
+      const cur = prev[itemId];
+      if (!cur) return prev;
+      return { ...prev, [itemId]: { ...cur, ...patch } };
+    });
+  };
+
+  const canEditOrderLines = Boolean(
+    order &&
+      !order.invoice &&
+      order.status !== 'DELIVERED' &&
+      order.status !== 'CANCELLED',
+  );
 
   return (
     <div className="p-4 sm:p-6 w-full max-w-none space-y-5">
@@ -393,28 +475,46 @@ export default function OrderDetailPage() {
             </div>
 
             <div>
-              <h3 className="text-sm font-semibold text-gray-800 mb-2">Kalemler</h3>
-              <div className="rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-                <table className="w-full text-sm">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-2">
+                <h3 className="text-sm font-semibold text-gray-800">Kalemler</h3>
+                {canEditOrderLines ? (
+                  <p className="text-xs text-gray-500">
+                    Ürün, miktar, fiyat ve renk/ölçü alanlarını düzenleyip <strong>Kaydet</strong> ile kaydedin. Genel toplam otomatik güncellenir.
+                  </p>
+                ) : order.invoice ? (
+                  <p className="text-xs text-amber-700">Faturalı siparişte kalem içeriği değiştirilemez.</p>
+                ) : order.status === 'DELIVERED' || order.status === 'CANCELLED' ? (
+                  <p className="text-xs text-gray-500">Bu durumda kalem düzenlenemez.</p>
+                ) : null}
+              </div>
+              <div className="rounded-xl border border-gray-100 shadow-sm overflow-x-auto">
+                <table className="w-full text-sm min-w-[980px]">
                   <thead>
                     <tr className="bg-gray-50/80 text-left text-xs font-semibold text-gray-500 uppercase">
                       <th className="px-3 py-2.5 w-16">Görsel</th>
-                      <th className="px-3 py-2.5">Ürün</th>
-                      <th className="px-3 py-2.5 text-right">Miktar</th>
-                      <th className="px-3 py-2.5 text-right">Birim fiyat</th>
-                      <th className="px-3 py-2.5 text-right">KDV</th>
+                      <th className="px-3 py-2.5 min-w-[120px]">Ürün</th>
+                      <th className="px-3 py-2.5 min-w-[100px]">Renk/Kumaş</th>
+                      <th className="px-3 py-2.5 min-w-[100px]">Ölçü</th>
+                      <th className="px-3 py-2.5 text-right w-20">Miktar</th>
+                      <th className="px-3 py-2.5 text-right min-w-[90px]">Birim fiyat</th>
+                      <th className="px-3 py-2.5 text-right min-w-[72px]">KDV</th>
                       <th className="px-3 py-2.5 text-left">Kaynak</th>
                       <th className="px-3 py-2.5 text-left">Tedarikçi</th>
                       <th className="px-3 py-2.5 text-left">Sipariş no</th>
-                      <th className="px-3 py-2.5 text-right">Satır toplamı</th>
+                      <th className="px-3 py-2.5 text-right min-w-[88px]">Satır toplamı</th>
+                      {canEditOrderLines ? <th className="px-3 py-2.5 w-24">İşlem</th> : null}
                     </tr>
                   </thead>
                   <tbody>
                     {order.items?.length ? (
                       order.items.map((item) => {
                         const vatAmt = lineVatAmount(item);
+                        const d = lineDrafts[item.id];
+                        const editable = canEditOrderLines && d;
+                        const draftVat = editable ? draftLineVatAmount(d) : vatAmt;
+                        const draftLineTotal = editable ? d.quantity * d.unitPrice : item.lineTotal;
                         return (
-                          <tr key={item.id} className="border-t border-gray-50">
+                          <tr key={item.id} className="border-t border-gray-50 align-top">
                             <td className="px-3 py-2.5 align-middle w-16">
                               <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-lg border border-gray-100 bg-gray-50 overflow-hidden">
                                 {item.product?.imageUrl ? (
@@ -424,19 +524,100 @@ export default function OrderDetailPage() {
                                 )}
                               </div>
                             </td>
-                            <td className="px-3 py-2.5">{item.name}</td>
-                            <td className="px-3 py-2.5 text-right">{item.quantity}</td>
-                            <td className="px-3 py-2.5 text-right">{formatMoney(item.unitPrice, order.currency)}</td>
+                            <td className="px-3 py-2.5">
+                              {editable ? (
+                                <input
+                                  value={d.name}
+                                  onChange={(e) => updateLineDraft(item.id, { name: e.target.value })}
+                                  className="w-full px-2 py-1.5 rounded border border-gray-200 text-sm"
+                                />
+                              ) : (
+                                item.name
+                              )}
+                            </td>
+                            <td className="px-3 py-2.5">
+                              {editable ? (
+                                <textarea
+                                  value={d.colorFabricInfo}
+                                  onChange={(e) => updateLineDraft(item.id, { colorFabricInfo: e.target.value })}
+                                  rows={2}
+                                  className="w-full px-2 py-1.5 rounded border border-gray-200 text-xs"
+                                  placeholder="Renk/kumaş"
+                                />
+                              ) : (
+                                <span className="text-sm text-gray-700">{item.colorFabricInfo?.trim() || '—'}</span>
+                              )}
+                            </td>
+                            <td className="px-3 py-2.5">
+                              {editable ? (
+                                <textarea
+                                  value={d.measurementInfo}
+                                  onChange={(e) => updateLineDraft(item.id, { measurementInfo: e.target.value })}
+                                  rows={2}
+                                  className="w-full px-2 py-1.5 rounded border border-gray-200 text-xs"
+                                  placeholder="Ölçü"
+                                />
+                              ) : (
+                                <span className="text-sm text-gray-700 whitespace-pre-wrap max-w-[200px]">{item.measurementInfo?.trim() || '—'}</span>
+                              )}
+                            </td>
                             <td className="px-3 py-2.5 text-right">
-                              <span>{item.vatRate}%</span>
-                              <span className="text-gray-400 text-xs block">({formatMoney(vatAmt, order.currency)})</span>
+                              {editable ? (
+                                <input
+                                  type="number"
+                                  min={0.01}
+                                  step={0.01}
+                                  value={d.quantity}
+                                  onChange={(e) =>
+                                    updateLineDraft(item.id, { quantity: parseFloat(e.target.value) || 0 })
+                                  }
+                                  className="w-full min-w-[4.5rem] px-2 py-1.5 rounded border border-gray-200 text-sm text-right tabular-nums"
+                                />
+                              ) : (
+                                item.quantity
+                              )}
+                            </td>
+                            <td className="px-3 py-2.5 text-right">
+                              {editable ? (
+                                <input
+                                  type="number"
+                                  min={0}
+                                  step={0.01}
+                                  value={d.unitPrice}
+                                  onChange={(e) =>
+                                    updateLineDraft(item.id, { unitPrice: parseFloat(e.target.value) || 0 })
+                                  }
+                                  className="w-full min-w-[5.5rem] px-2 py-1.5 rounded border border-gray-200 text-sm text-right tabular-nums"
+                                />
+                              ) : (
+                                formatMoney(item.unitPrice, order.currency)
+                              )}
+                            </td>
+                            <td className="px-3 py-2.5 text-right">
+                              {editable ? (
+                                <input
+                                  type="number"
+                                  min={0}
+                                  step={1}
+                                  value={d.vatRate}
+                                  onChange={(e) =>
+                                    updateLineDraft(item.id, { vatRate: parseFloat(e.target.value) || 0 })
+                                  }
+                                  className="w-14 px-2 py-1.5 rounded border border-gray-200 text-sm text-right"
+                                />
+                              ) : (
+                                <span className="block">{item.vatRate}%</span>
+                              )}
+                              <span className="text-gray-400 text-xs block">
+                                ({formatMoney(draftVat, order.currency)})
+                              </span>
                             </td>
                             <td className="px-3 py-2.5">
                               <label className="inline-flex items-center gap-2 text-xs">
                                 <input
                                   type="checkbox"
                                   checked={!!item.isFromStock}
-                                  disabled={itemSavingId === item.id}
+                                  disabled={!canEditOrderLines || itemSavingId === item.id}
                                   onChange={(e) =>
                                     void updateItemSource(item.id, {
                                       isFromStock: e.target.checked,
@@ -452,7 +633,7 @@ export default function OrderDetailPage() {
                             <td className="px-3 py-2.5">
                               <select
                                 value={item.supplierId || ''}
-                                disabled={!!item.isFromStock || itemSavingId === item.id}
+                                disabled={!!item.isFromStock || itemSavingId === item.id || !canEditOrderLines}
                                 onChange={(e) =>
                                   void updateItemSource(item.id, {
                                     supplierId: e.target.value || null,
@@ -468,8 +649,9 @@ export default function OrderDetailPage() {
                             </td>
                             <td className="px-3 py-2.5">
                               <input
+                                key={item.supplierOrderNo ?? 'empty'}
                                 defaultValue={item.supplierOrderNo || ''}
-                                disabled={!!item.isFromStock || itemSavingId === item.id}
+                                disabled={!!item.isFromStock || itemSavingId === item.id || !canEditOrderLines}
                                 onBlur={(e) =>
                                   void updateItemSource(item.id, {
                                     supplierOrderNo: e.target.value || null,
@@ -479,13 +661,29 @@ export default function OrderDetailPage() {
                                 className="px-2 py-1.5 rounded border border-gray-200 text-xs min-w-[140px] disabled:bg-gray-100"
                               />
                             </td>
-                            <td className="px-3 py-2.5 text-right font-medium">{formatMoney(item.lineTotal, order.currency)}</td>
+                            <td className="px-3 py-2.5 text-right font-medium tabular-nums">
+                              {formatMoney(editable ? draftLineTotal : item.lineTotal, order.currency)}
+                            </td>
+                            {canEditOrderLines ? (
+                              <td className="px-3 py-2.5">
+                                <button
+                                  type="button"
+                                  disabled={itemSavingId === item.id || !d}
+                                  onClick={() => void saveOrderLine(item.id)}
+                                  className="px-2.5 py-1.5 rounded-lg bg-whatsapp text-white text-xs font-medium hover:bg-green-600 disabled:opacity-50"
+                                >
+                                  {itemSavingId === item.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Kaydet'}
+                                </button>
+                              </td>
+                            ) : null}
                           </tr>
                         );
                       })
                     ) : (
                       <tr>
-                        <td colSpan={9} className="px-3 py-8 text-center text-gray-400 text-sm">Kalem yok</td>
+                        <td colSpan={canEditOrderLines ? 12 : 11} className="px-3 py-8 text-center text-gray-400 text-sm">
+                          Kalem yok
+                        </td>
                       </tr>
                     )}
                   </tbody>

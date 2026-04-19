@@ -25,6 +25,7 @@ import {
   ChevronRight,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { rewriteMediaUrlForClient } from '@/lib/utils';
 
 const AVATAR_REFRESH_FORCE_KEY = 'crm_settings_avatar_refresh_force';
 
@@ -626,6 +627,75 @@ export default function SettingsPage() {
                     />
                   </div>
                 ))}
+                <div className="md:col-span-2 rounded-xl border border-gray-100 bg-gray-50/80 p-4">
+                <label className="block text-xs font-medium text-gray-600 mb-2">Banka QR (FAST / EFT — PDF sağ alt)</label>
+                <p className="text-xs text-gray-500 mb-3">
+                  Teklif ve sipariş PDF’lerinde banka metinleriyle aynı blokta, sağ altta basılır. PNG veya JPG yükleyin.
+                </p>
+                <div className="flex flex-wrap items-center gap-3">
+                  <label className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 cursor-pointer transition-colors">
+                    <ImageIcon className="w-4 h-4 text-gray-500" />
+                    Görsel seç
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp,image/gif"
+                      className="hidden"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        e.target.value = '';
+                        if (!file) return;
+                        const fd = new FormData();
+                        fd.append('file', file);
+                        try {
+                          const { data } = await api.post<{ url: string }>('/system-settings/upload-bank-qr', fd, {
+                            headers: { 'Content-Type': 'multipart/form-data' },
+                          });
+                          setSettings((prev) => [
+                            ...prev.filter((s) => s.key !== 'pdf_bank_qr_url'),
+                            { key: 'pdf_bank_qr_url', value: data.url },
+                          ]);
+                          toast.success('Banka QR kaydedildi');
+                        } catch (err) {
+                          toast.error(getApiErrorMessage(err, 'Yüklenemedi'));
+                        }
+                      }}
+                    />
+                  </label>
+                  {settings.find((s) => s.key === 'pdf_bank_qr_url')?.value ? (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          await api.patch('/system-settings', { key: 'pdf_bank_qr_url', value: '' });
+                          setSettings((prev) => prev.filter((s) => s.key !== 'pdf_bank_qr_url'));
+                          toast.success('QR kaldırıldı');
+                        } catch {
+                          toast.error('Kaldırılamadı');
+                        }
+                      }}
+                      className="inline-flex items-center gap-1.5 px-3 py-2 text-sm text-red-600 hover:bg-red-50 rounded-lg border border-red-100"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                      Kaldır
+                    </button>
+                  ) : null}
+                </div>
+                {settings.find((s) => s.key === 'pdf_bank_qr_url')?.value ? (
+                  <div className="mt-3 flex items-start gap-3">
+                    <img
+                      src={rewriteMediaUrlForClient(settings.find((s) => s.key === 'pdf_bank_qr_url')!.value)}
+                      alt="Banka QR önizleme"
+                      className="w-28 h-28 object-contain border border-gray-200 rounded-lg bg-white p-1"
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).style.display = 'none';
+                      }}
+                    />
+                    <p className="text-[11px] text-gray-400 pt-1">
+                      {settings.find((s) => s.key === 'pdf_bank_qr_url')?.value}
+                    </p>
+                  </div>
+                ) : null}
+                </div>
               </div>
             </div>
 
