@@ -168,6 +168,21 @@ function childHrefMatches(pathname: string, searchParams: URLSearchParams, href:
   return true;
 }
 
+/** E-Ticaret altındaki bazı linkler redirect ile farklı route'a gider; aktif eşleşmede alias desteği */
+function childHrefMatchesWithAliases(
+  pathname: string,
+  searchParams: URLSearchParams,
+  href: string,
+): boolean {
+  if (childHrefMatches(pathname, searchParams, href)) return true;
+
+  if (href === '/ecommerce/products') {
+    return pathname === '/products' || pathname.startsWith('/products/');
+  }
+
+  return false;
+}
+
 export default function Sidebar({
   mobileOpen = false,
   onClose,
@@ -315,7 +330,7 @@ export default function Sidebar({
           return pathname === '/leads' && currentStatus === s;
         }
         if (c.href === '/inbox' && !c.param) return pathname === '/inbox' && !currentFilter;
-        return childHrefMatches(pathname, searchParams, c.href);
+        return childHrefMatchesWithAliases(pathname, searchParams, c.href);
       })) {
         active.push(item.href);
       }
@@ -334,7 +349,7 @@ export default function Sidebar({
         if (c.param) return pathname === '/inbox' && currentFilter === c.param;
         if (c.href.includes('?status=')) return false;
         if (c.href === '/inbox' && !c.param) return pathname === '/inbox' && !currentFilter;
-        return pathname === c.href || pathname.startsWith(c.href + '/');
+        return childHrefMatchesWithAliases(pathname, searchParams, c.href);
       }),
     );
     if (activeParent) {
@@ -378,7 +393,7 @@ export default function Sidebar({
     if (child.href === '/superadmin') {
       return pathname === '/superadmin';
     }
-    return childHrefMatches(pathname, searchParams, child.href);
+    return childHrefMatchesWithAliases(pathname, searchParams, child.href);
   };
 
   const isParentActive = (item: MenuItem) => {

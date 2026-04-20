@@ -100,6 +100,8 @@ const INTEGRATION_COLORS: Record<string, string> = {
   ideasoft: 'from-cyan-500 to-blue-500',
 };
 
+const ACTIVE_INTEGRATION_KEYS = new Set(['whatsapp', 'tsoft']);
+
 function BrandLogo({ k, size = 20 }: { k: string; size?: number }) {
   const s = size;
   switch (k) {
@@ -219,7 +221,17 @@ export default function IntegrationsPage() {
   const allIntegrations = categories.flatMap((c) =>
     Array.isArray(c?.integrations) ? c.integrations : [],
   );
-  const selected = allIntegrations.find((i) => i.key === selectedKey) || null;
+  const visibleCategories = categories
+    .map((c) => ({
+      ...c,
+      integrations: (Array.isArray(c?.integrations) ? c.integrations : []).filter((i) =>
+        ACTIVE_INTEGRATION_KEYS.has(i.key),
+      ),
+    }))
+    .filter((c) => c.integrations.length > 0);
+  const visibleIntegrations = visibleCategories.flatMap((c) => c.integrations);
+  const hiddenIntegrations = allIntegrations.filter((i) => !ACTIVE_INTEGRATION_KEYS.has(i.key));
+  const selected = visibleIntegrations.find((i) => i.key === selectedKey) || null;
 
   if (loading) {
     return (
@@ -248,7 +260,7 @@ export default function IntegrationsPage() {
           </div>
         </div>
 
-        {categories.map((category) => {
+        {visibleCategories.map((category) => {
           const CatIcon = CATEGORY_ICONS[category.key] || ShoppingBag;
           const items = Array.isArray(category?.integrations) ? category.integrations : [];
           return (
@@ -270,6 +282,15 @@ export default function IntegrationsPage() {
             </div>
           );
         })}
+
+        {hiddenIntegrations.length > 0 ? (
+          <div className="rounded-xl border border-amber-200 bg-amber-50/60 px-4 py-3">
+            <p className="text-xs font-semibold text-amber-800">Yakında</p>
+            <p className="text-xs text-amber-700 mt-1">
+              {hiddenIntegrations.map((i) => i.name).join(', ')} entegrasyonları yakında eklenecek.
+            </p>
+          </div>
+        ) : null}
       </div>
 
       {/* Right: Detail Panel */}

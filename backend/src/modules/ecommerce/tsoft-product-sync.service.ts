@@ -51,14 +51,47 @@ function pickString(...candidates: unknown[]): string | null {
   return null;
 }
 
+function looksLikeImageUrl(raw: string): boolean {
+  const s = raw.trim();
+  if (!s) return false;
+  if (/^https?:\/\//i.test(s)) return true;
+  if (/^\/\//.test(s)) return true;
+  if (/^\/[^/]/.test(s)) return true;
+  if (/^[\w./-]+\.(jpg|jpeg|png|webp|gif|bmp)(\?.*)?$/i.test(s)) return true;
+  return false;
+}
+
+function normalizeRemoteImageUrl(raw: string): string {
+  const s = raw.trim();
+  if (!s) return '';
+  if (s.startsWith('//')) return `https:${s}`;
+  return s;
+}
+
 function extractImageUrls(row: Record<string, unknown>): string[] {
   const urls = new Set<string>();
   const push = (v: unknown) => {
-    if (typeof v === 'string' && v.trim().startsWith('http')) urls.add(v.trim());
+    if (typeof v === 'string') {
+      const normalized = normalizeRemoteImageUrl(v);
+      if (looksLikeImageUrl(normalized)) urls.add(normalized);
+    }
     else if (v && typeof v === 'object') {
       const o = v as Record<string, unknown>;
-      const u = pickString(o['ImageUrl'], o['Url'], o['url'], o['ImagePath']);
-      if (u && u.startsWith('http')) urls.add(u);
+      const u = pickString(
+        o['ImageUrl'],
+        o['Url'],
+        o['url'],
+        o['ImagePath'],
+        o['PicturePath'],
+        o['PictureUrl'],
+        o['VariantImage'],
+        o['Photo'],
+        o['Resim'],
+      );
+      if (u) {
+        const normalized = normalizeRemoteImageUrl(u);
+        if (looksLikeImageUrl(normalized)) urls.add(normalized);
+      }
     }
   };
   // Ana görsel anahtarları
@@ -66,12 +99,53 @@ function extractImageUrls(row: Record<string, unknown>): string[] {
   push(row['Image']);
   push(row['MainImage']);
   push(row['Thumbnail']);
+  push(row['PicturePath']);
+  push(row['PictureUrl']);
+  push(row['VariantImage']);
+  push(row['Photo']);
+  push(row['Resim']);
   // Çoklu görsel dizileri
-  for (const key of ['ImageUrls', 'Images', 'ImageList', 'AdditionalImages']) {
+  for (const key of ['ImageUrls', 'Images', 'ImageList', 'AdditionalImages', 'Pictures', 'PhotoList']) {
     const arr = row[key];
     if (Array.isArray(arr)) arr.forEach(push);
   }
   return Array.from(urls);
+}
+
+function buildVariantName(v: Record<string, unknown>, fallbackCode?: string | null): string {
+  const direct = pickString(
+    v.ProductName,
+    v.VariantName,
+    v.Name,
+    v.OptionValue,
+    v.OptionName,
+    v.VariantTitle,
+    v.Title,
+    v.Type1,
+    v.Type2,
+    v.ColorName,
+    v.SizeName,
+  );
+  if (direct) return direct;
+
+  const pieces = [
+    pickString(v.ColorName, v.Color, v.Renk),
+    pickString(v.SizeName, v.Size, v.Beden),
+    pickString(v.PatternName, v.Pattern, v.Desen),
+    pickString(v.Type1),
+    pickString(v.Type2),
+    pickString(v.Option1Value),
+    pickString(v.Option2Value),
+    pickString(v.Option3Value),
+  ].filter((x): x is string => !!x && x.trim().length > 0);
+  if (pieces.length) return pieces.join(' / ');
+
+  const code =
+    pickString(v.VariantCode, v.SubProductCode, v.ProductCode, v.Barcode, v.Sku) ||
+    (fallbackCode ? String(fallbackCode) : '');
+  if (code.trim()) return code.trim();
+
+  return 'Varyant';
 }
 
 @Injectable()
@@ -318,8 +392,7 @@ export class TsoftProductSyncService {
       if (!vExternal) continue;
 
       const vSku = pickString(v.ProductCode, v.VariantCode, v.Barcode);
-      const vName =
-        pickString(v.ProductName, v.VariantName, v.Name, v.OptionValue) || 'Varyant';
+      const vName = buildVariantName(v, vExternal);
       const vUnitPrice =
         toNullableNumber(v.SellingPrice ?? v.sellingPrice ?? v.SalePrice ?? v.ListPrice) ?? 0;
       const vList = toNullableNumber(v.ListPrice ?? v.listPrice);

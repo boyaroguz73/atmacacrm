@@ -326,8 +326,29 @@ export class ProductsService {
       },
     });
 
+    const pickMetaString = (meta: unknown, keys: string[]): string | null => {
+      if (!meta || typeof meta !== 'object') return null;
+      const m = meta as Record<string, unknown>;
+      for (const key of keys) {
+        const val = m[key];
+        if (typeof val === 'string' && val.trim()) return val.trim();
+      }
+      return null;
+    };
+    const normalizeImageUrl = (value: string | null): string | null => {
+      if (!value) return null;
+      const s = value.trim();
+      if (!s) return null;
+      if (/^https?:\/\//i.test(s)) return s;
+      if (s.startsWith('//')) return `https:${s}`;
+      if (s.startsWith('/')) return s;
+      if (/^[\w./-]+\.(jpg|jpeg|png|webp|gif|bmp)(\?.*)?$/i.test(s)) return `/${s.replace(/^\/+/, '')}`;
+      return s;
+    };
+
     const withResolvedImages = variants.map((v) => {
-      const directImage = v.imageUrl && String(v.imageUrl).trim() !== '' ? String(v.imageUrl).trim() : null;
+      const directImage =
+        v.imageUrl && String(v.imageUrl).trim() !== '' ? normalizeImageUrl(String(v.imageUrl).trim()) : null;
       let extraImage: string | null = null;
       if (!directImage && v.additionalImages) {
         try {
@@ -336,21 +357,52 @@ export class ProductsService {
             : JSON.parse(String(v.additionalImages));
           if (Array.isArray(parsed)) {
             const first = parsed.find((x) => typeof x === 'string' && String(x).trim() !== '');
-            if (typeof first === 'string') extraImage = first.trim();
+            if (typeof first === 'string') extraImage = normalizeImageUrl(first.trim());
           }
         } catch {
           /* ignore malformed additionalImages payload */
         }
       }
 
+      const metaImage = normalizeImageUrl(
+        pickMetaString(v.metadata, [
+          'ImageUrl',
+          'imageUrl',
+          'PictureUrl',
+          'PicturePath',
+          'VariantImage',
+          'Photo',
+          'Resim',
+        ]),
+      );
+
       const rawName = String(v.name ?? '').trim();
+      const metaName = pickMetaString(v.metadata, [
+        'VariantName',
+        'ProductName',
+        'Name',
+        'OptionValue',
+        'OptionName',
+        'VariantTitle',
+        'Title',
+        'ColorName',
+        'SizeName',
+        'Type1',
+        'Type2',
+      ]);
       const fallbackName =
+        (rawName.toLowerCase() === 'varyant' ? '' : rawName) ||
+        metaName ||
         String(v.externalId ?? '').trim() ||
         String(v.sku ?? '').trim() ||
         productBaseName;
-      const resolvedName = rawName || fallbackName;
+      const resolvedName = fallbackName;
 
-      return { ...v, name: resolvedName, imageUrl: directImage || extraImage || fallbackImage };
+      return {
+        ...v,
+        name: resolvedName,
+        imageUrl: directImage || extraImage || metaImage || normalizeImageUrl(fallbackImage),
+      };
     });
 
     if (withResolvedImages.length === 0) return withResolvedImages;
