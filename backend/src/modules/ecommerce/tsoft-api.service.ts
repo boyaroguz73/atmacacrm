@@ -899,46 +899,49 @@ export class TsoftApiService {
       if (dsIso) dateFilter.OrderDateTimeStart = dsIso;
       if (deIso) dateFilter.OrderDateTimeEnd = deIso;
 
-      /** Bazı T-Soft sürümleri ağır getOrders parametrelerinde 500 döner; kademeli sadeleştirme. */
-      const attempts: Array<{
-        params?: Record<string, string | number>;
-        data?: Record<string, string | number>;
-      }> = [
-        {
-          params: {
-            start,
-            limit,
-            ...dateFilter,
-            FetchProductData: 1,
-            FetchCustomerData: 1,
-            FetchInvoiceAddress: 1,
-            FetchDeliveryAddress: 1,
-          },
-        },
-        {
-          params: {
-            start,
-            limit,
-            ...dateFilter,
-            FetchProductData: 0,
-            FetchCustomerData: 1,
-            FetchInvoiceAddress: 0,
-            FetchDeliveryAddress: 0,
-          },
-        },
+      // Alternatif filtre: OrderDateTime 500 dönüyorsa UpdateDateTime ile aynı aralığı dene.
+      const altDateFilter: Record<string, string> = {};
+      if (dsIso) altDateFilter.UpdateDateTimeStart = dsIso;
+      if (deIso) altDateFilter.UpdateDateTimeEnd = deIso;
+
+      /** Docs: tüm Fetch* paramları opsiyonel. Önce en sade istekle başla; sonra zenginleştir. */
+      const attempts: Array<{ params: Record<string, string | number> }> = [
+        // 1) Minimal: sadece start/limit/tarih
         { params: { start, limit, ...dateFilter } },
-        { data: { start, limit, ...dateFilter } },
+        // 2) Alternatif tarih filtresi (UpdateDateTime*)
+        { params: { start, limit, ...altDateFilter } },
+        // 3) Müşteri + adres bilgisi ekle
+        {
+          params: {
+            start,
+            limit,
+            ...dateFilter,
+            FetchCustomerData: '1',
+            FetchInvoiceAddress: '1',
+            FetchDeliveryAddress: '1',
+          },
+        },
+        // 4) Tam zenginlik (ürün detayı dahil)
+        {
+          params: {
+            start,
+            limit,
+            ...dateFilter,
+            FetchProductData: '1',
+            FetchCustomerData: '1',
+            FetchInvoiceAddress: '1',
+            FetchDeliveryAddress: '1',
+          },
+        },
       ];
       let lastErr: unknown = null;
       for (const attempt of attempts) {
         try {
-          const raw = attempt.data
-            ? await this.rest1RequestWithData(
-                organizationId,
-                '/rest1/order/getOrders',
-                attempt.data,
-              )
-            : await this.rest1Request(organizationId, '/rest1/order/getOrders', attempt.params);
+          const raw = await this.rest1Request(
+            organizationId,
+            '/rest1/order/getOrders',
+            attempt.params,
+          );
           return this.unwrapRest1List(raw);
         } catch (e) {
           lastErr = e;
