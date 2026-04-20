@@ -8,13 +8,22 @@ import toast from 'react-hot-toast';
 import { useAuthStore } from '@/store/auth';
 import {
   ArrowLeft,
+  Banknote,
   Calendar,
+  CheckCircle2,
+  CreditCard,
   ExternalLink,
   FileText,
+  Landmark,
   Loader2,
   Package,
+  Plus,
+  Receipt,
+  ReceiptText,
   Trash2,
   User,
+  Wallet,
+  X,
 } from 'lucide-react';
 import PanelEditedBadge from '@/components/ui/PanelEditedBadge';
 
@@ -26,6 +35,7 @@ interface OrderItemRow {
   quantity: number;
   unitPrice: number;
   vatRate: number;
+  priceIncludesVat?: boolean;
   lineTotal: number;
   colorFabricInfo?: string | null;
   measurementInfo?: string | null;
@@ -34,6 +44,20 @@ interface OrderItemRow {
   supplierOrderNo?: string | null;
   isFromStock?: boolean;
   supplier?: { id: string; name: string } | null;
+}
+
+type PaymentMethod = 'CASH' | 'TRANSFER' | 'CARD' | 'CHECK' | 'OTHER';
+type PaymentDirection = 'INCOME' | 'EXPENSE';
+
+interface PaymentEntry {
+  id: string;
+  amount: number;
+  direction: PaymentDirection;
+  method: PaymentMethod;
+  description: string;
+  reference: string | null;
+  occurredAt: string;
+  user: { id: string; name: string | null } | null;
 }
 
 interface SalesOrder {
@@ -55,6 +79,49 @@ interface SalesOrder {
   quote: { id: string; quoteNumber: number } | null;
   items: OrderItemRow[];
   confirmationPdfUrl?: string | null;
+  payments?: PaymentEntry[];
+  paidTotal?: number;
+  refundedTotal?: number;
+  remainingTotal?: number;
+  isFullyPaid?: boolean;
+}
+
+const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
+  CASH: 'Nakit',
+  TRANSFER: 'Havale / EFT',
+  CARD: 'Kredi Kartı / POS',
+  CHECK: 'Çek / Senet',
+  OTHER: 'Diğer',
+};
+
+function paymentMethodIcon(method: PaymentMethod) {
+  switch (method) {
+    case 'CASH':
+      return <Banknote className="w-3.5 h-3.5" />;
+    case 'TRANSFER':
+      return <Landmark className="w-3.5 h-3.5" />;
+    case 'CARD':
+      return <CreditCard className="w-3.5 h-3.5" />;
+    case 'CHECK':
+      return <ReceiptText className="w-3.5 h-3.5" />;
+    default:
+      return <Wallet className="w-3.5 h-3.5" />;
+  }
+}
+
+function toDateTimeInputValue(iso: string | null | undefined): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const off = d.getTimezoneOffset();
+  const local = new Date(d.getTime() - off * 60000);
+  return local.toISOString().slice(0, 16);
+}
+
+function formatDateTime(iso: string) {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleString('tr-TR', { dateStyle: 'short', timeStyle: 'short' });
 }
 
 const STATUS_LABELS: Record<OrderStatus, string> = {
@@ -102,6 +169,7 @@ type LineEditDraft = {
   quantity: number;
   unitPrice: number;
   vatRate: number;
+  priceIncludesVat: boolean;
 };
 
 function lineVatAmount(item: OrderItemRow) {
@@ -111,8 +179,15 @@ function lineVatAmount(item: OrderItemRow) {
   return Math.round((gross - net) * 100) / 100;
 }
 
+function draftLineGross(d: LineEditDraft): number {
+  const r = Math.max(0, d.vatRate) / 100;
+  return d.priceIncludesVat
+    ? d.quantity * d.unitPrice
+    : d.quantity * d.unitPrice * (1 + r);
+}
+
 function draftLineVatAmount(d: LineEditDraft) {
-  const gross = d.quantity * d.unitPrice;
+  const gross = draftLineGross(d);
   const divider = 1 + (d.vatRate / 100);
   const net = divider > 0 ? gross / divider : gross;
   return Math.round((gross - net) * 100) / 100;
@@ -127,6 +202,8 @@ export default function OrderDetailPage() {
   const canRegenerateOrderPdf =
     user?.role === 'ADMIN' || user?.role === 'SUPERADMIN' || user?.role === 'ACCOUNTANT';
   const canDeleteOrder =
+    user?.role === 'ADMIN' || user?.role === 'SUPERADMIN' || user?.role === 'ACCOUNTANT';
+  const canDeletePayment =
     user?.role === 'ADMIN' || user?.role === 'SUPERADMIN' || user?.role === 'ACCOUNTANT';
 
   const [order, setOrder] = useState<SalesOrder | null>(null);
@@ -143,6 +220,16 @@ export default function OrderDetailPage() {
   const [suppliers, setSuppliers] = useState<{ id: string; name: string }[]>([]);
   const [itemSavingId, setItemSavingId] = useState<string | null>(null);
   const [lineDrafts, setLineDrafts] = useState<Record<string, LineEditDraft>>({});
+
+  const [paymentOpen, setPaymentOpen] = useState(false);
+  const [paymentSaving, setPaymentSaving] = useState(false);
+  const [paymentDeletingId, setPaymentDeletingId] = useState<string | null>(null);
+  const [payAmount, setPayAmount] = useState<string>('');
+  const [payMethod, setPayMethod] = useState<PaymentMethod>('TRANSFER');
+  const [payDirection, setPayDirection] = useState<PaymentDirection>('INCOME');
+  const [payReference, setPayReference] = useState('');
+  const [payDescription, setPayDescription] = useState('');
+  const [payOccurredAt, setPayOccurredAt] = useState('');
 
   const fetchOrder = async () => {
     if (!orderId) return;
@@ -198,6 +285,7 @@ export default function OrderDetailPage() {
             quantity: it.quantity,
             unitPrice: it.unitPrice,
             vatRate: it.vatRate,
+            priceIncludesVat: it.priceIncludesVat !== false,
           },
         ]),
       ),
@@ -311,6 +399,7 @@ export default function OrderDetailPage() {
         quantity: d.quantity,
         unitPrice: d.unitPrice,
         vatRate: Math.round(d.vatRate),
+        priceIncludesVat: d.priceIncludesVat,
       });
       await fetchOrder();
       toast.success('Kalem kaydedildi');
@@ -318,6 +407,67 @@ export default function OrderDetailPage() {
       toast.error(getApiErrorMessage(err, 'Kalem kaydedilemedi'));
     } finally {
       setItemSavingId(null);
+    }
+  };
+
+  const openPaymentForm = (prefillRemaining: boolean) => {
+    setPayAmount(
+      prefillRemaining && order?.remainingTotal && order.remainingTotal > 0
+        ? String(Math.round((order.remainingTotal + Number.EPSILON) * 100) / 100)
+        : '',
+    );
+    setPayMethod('TRANSFER');
+    setPayDirection('INCOME');
+    setPayReference('');
+    setPayDescription('');
+    setPayOccurredAt(toDateTimeInputValue(new Date().toISOString()));
+    setPaymentOpen(true);
+  };
+
+  const closePaymentForm = () => {
+    if (paymentSaving) return;
+    setPaymentOpen(false);
+  };
+
+  const submitPayment = async () => {
+    if (!order) return;
+    const amt = Number(payAmount);
+    if (!Number.isFinite(amt) || amt <= 0) {
+      toast.error('Geçerli bir tutar girin');
+      return;
+    }
+    setPaymentSaving(true);
+    try {
+      await api.post(`/orders/${order.id}/payments`, {
+        amount: amt,
+        direction: payDirection,
+        method: payMethod,
+        description: payDescription.trim() || undefined,
+        reference: payReference.trim() || null,
+        occurredAt: payOccurredAt ? new Date(payOccurredAt).toISOString() : null,
+      });
+      toast.success(payDirection === 'INCOME' ? 'Tahsilat kaydedildi' : 'İade kaydedildi');
+      setPaymentOpen(false);
+      await fetchOrder();
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, 'Kayıt başarısız'));
+    } finally {
+      setPaymentSaving(false);
+    }
+  };
+
+  const removePayment = async (entryId: string) => {
+    if (!order) return;
+    if (!confirm('Bu tahsilat kaydı silinsin mi?')) return;
+    setPaymentDeletingId(entryId);
+    try {
+      await api.delete(`/orders/${order.id}/payments/${entryId}`);
+      toast.success('Tahsilat silindi');
+      await fetchOrder();
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, 'Silinemedi'));
+    } finally {
+      setPaymentDeletingId(null);
     }
   };
 
@@ -497,6 +647,7 @@ export default function OrderDetailPage() {
                       <th className="px-3 py-2.5 min-w-[100px]">Ölçü</th>
                       <th className="px-3 py-2.5 text-right w-20">Miktar</th>
                       <th className="px-3 py-2.5 text-right min-w-[90px]">Birim fiyat</th>
+                      <th className="px-3 py-2.5 text-center min-w-[96px]">Fiyat tipi</th>
                       <th className="px-3 py-2.5 text-right min-w-[72px]">KDV</th>
                       <th className="px-3 py-2.5 text-left">Kaynak</th>
                       <th className="px-3 py-2.5 text-left">Tedarikçi</th>
@@ -512,7 +663,7 @@ export default function OrderDetailPage() {
                         const d = lineDrafts[item.id];
                         const editable = canEditOrderLines && d;
                         const draftVat = editable ? draftLineVatAmount(d) : vatAmt;
-                        const draftLineTotal = editable ? d.quantity * d.unitPrice : item.lineTotal;
+                        const draftLineTotal = editable ? draftLineGross(d) : item.lineTotal;
                         return (
                           <tr key={item.id} className="border-t border-gray-50 align-top">
                             <td className="px-3 py-2.5 align-middle w-16">
@@ -590,7 +741,38 @@ export default function OrderDetailPage() {
                                   className="w-full min-w-[5.5rem] px-2 py-1.5 rounded border border-gray-200 text-sm text-right tabular-nums"
                                 />
                               ) : (
-                                formatMoney(item.unitPrice, order.currency)
+                                <div>
+                                  <div>{formatMoney(item.unitPrice, order.currency)}</div>
+                                  <div className="text-[10px] text-gray-400">
+                                    {item.priceIncludesVat !== false ? 'KDV dahil' : 'KDV hariç'}
+                                  </div>
+                                </div>
+                              )}
+                            </td>
+                            <td className="px-3 py-2.5 text-center">
+                              {editable ? (
+                                <select
+                                  value={d.priceIncludesVat ? 'incl' : 'excl'}
+                                  onChange={(e) =>
+                                    updateLineDraft(item.id, {
+                                      priceIncludesVat: e.target.value === 'incl',
+                                    })
+                                  }
+                                  className="px-2 py-1.5 rounded border border-gray-200 text-xs"
+                                >
+                                  <option value="incl">KDV dahil</option>
+                                  <option value="excl">KDV hariç</option>
+                                </select>
+                              ) : (
+                                <span
+                                  className={`inline-flex text-[10px] font-semibold px-2 py-0.5 rounded-full ${
+                                    item.priceIncludesVat !== false
+                                      ? 'bg-green-50 text-green-700'
+                                      : 'bg-blue-50 text-blue-700'
+                                  }`}
+                                >
+                                  {item.priceIncludesVat !== false ? 'KDV dahil' : 'KDV hariç'}
+                                </span>
                               )}
                             </td>
                             <td className="px-3 py-2.5 text-right">
@@ -681,7 +863,7 @@ export default function OrderDetailPage() {
                       })
                     ) : (
                       <tr>
-                        <td colSpan={canEditOrderLines ? 12 : 11} className="px-3 py-8 text-center text-gray-400 text-sm">
+                        <td colSpan={canEditOrderLines ? 13 : 12} className="px-3 py-8 text-center text-gray-400 text-sm">
                           Kalem yok
                         </td>
                       </tr>
@@ -689,6 +871,156 @@ export default function OrderDetailPage() {
                   </tbody>
                 </table>
               </div>
+            </div>
+
+            {/* Ödeme / tahsilat paneli */}
+            <div className="rounded-xl border border-gray-100 bg-white p-4 space-y-4">
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <h3 className="text-sm font-semibold text-gray-800 flex items-center gap-2">
+                  <Receipt className="w-4 h-4 text-whatsapp" />
+                  Tahsilat & Ödeme
+                  {order.isFullyPaid ? (
+                    <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-green-100 text-green-700 uppercase tracking-wide">
+                      <CheckCircle2 className="w-3 h-3" />
+                      Ödendi
+                    </span>
+                  ) : null}
+                </h3>
+                <div className="flex gap-2 flex-wrap">
+                  {order.remainingTotal && order.remainingTotal > 0 ? (
+                    <button
+                      type="button"
+                      onClick={() => openPaymentForm(true)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-whatsapp text-white text-xs font-semibold hover:bg-green-600"
+                    >
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      Kalanı tam tahsil et
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    onClick={() => openPaymentForm(false)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    Tahsilat / İade ekle
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="rounded-lg border border-gray-100 bg-gray-50/60 p-3">
+                  <div className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Toplam</div>
+                  <div className="text-base font-semibold text-gray-900 tabular-nums mt-0.5">
+                    {formatMoney(order.grandTotal, order.currency)}
+                  </div>
+                </div>
+                <div className="rounded-lg border border-green-100 bg-green-50/60 p-3">
+                  <div className="text-[10px] font-semibold text-green-700 uppercase tracking-wide">Tahsil edilen</div>
+                  <div className="text-base font-semibold text-green-800 tabular-nums mt-0.5">
+                    {formatMoney(order.paidTotal ?? 0, order.currency)}
+                  </div>
+                </div>
+                <div className="rounded-lg border border-amber-100 bg-amber-50/60 p-3">
+                  <div className="text-[10px] font-semibold text-amber-700 uppercase tracking-wide">İade</div>
+                  <div className="text-base font-semibold text-amber-800 tabular-nums mt-0.5">
+                    {formatMoney(order.refundedTotal ?? 0, order.currency)}
+                  </div>
+                </div>
+                <div
+                  className={`rounded-lg border p-3 ${
+                    (order.remainingTotal ?? 0) > 0
+                      ? 'border-red-100 bg-red-50/60'
+                      : 'border-green-100 bg-green-50/80'
+                  }`}
+                >
+                  <div
+                    className={`text-[10px] font-semibold uppercase tracking-wide ${
+                      (order.remainingTotal ?? 0) > 0 ? 'text-red-700' : 'text-green-700'
+                    }`}
+                  >
+                    Kalan bakiye
+                  </div>
+                  <div
+                    className={`text-base font-semibold tabular-nums mt-0.5 ${
+                      (order.remainingTotal ?? 0) > 0 ? 'text-red-800' : 'text-green-800'
+                    }`}
+                  >
+                    {formatMoney(Math.max(0, order.remainingTotal ?? 0), order.currency)}
+                  </div>
+                </div>
+              </div>
+
+              {order.payments?.length ? (
+                <div className="rounded-lg border border-gray-100 overflow-hidden">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="bg-gray-50 text-left text-gray-500 uppercase text-[10px] font-semibold">
+                        <th className="px-3 py-2">Tarih</th>
+                        <th className="px-3 py-2">Yöntem</th>
+                        <th className="px-3 py-2">Açıklama / Ref</th>
+                        <th className="px-3 py-2">Kaydeden</th>
+                        <th className="px-3 py-2 text-right">Tutar</th>
+                        {canDeletePayment ? <th className="px-3 py-2 w-10" /> : null}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {order.payments.map((p) => (
+                        <tr key={p.id} className="border-t border-gray-50">
+                          <td className="px-3 py-2 whitespace-nowrap text-gray-700">{formatDateTime(p.occurredAt)}</td>
+                          <td className="px-3 py-2">
+                            <span
+                              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-medium ${
+                                p.direction === 'INCOME'
+                                  ? 'bg-green-50 text-green-700'
+                                  : 'bg-amber-50 text-amber-700'
+                              }`}
+                            >
+                              {paymentMethodIcon(p.method)}
+                              {PAYMENT_METHOD_LABELS[p.method]}
+                              {p.direction === 'EXPENSE' ? ' · İade' : ''}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2 text-gray-700">
+                            <div>{p.description}</div>
+                            {p.reference ? (
+                              <div className="text-[11px] text-gray-400">Ref: {p.reference}</div>
+                            ) : null}
+                          </td>
+                          <td className="px-3 py-2 text-gray-600">{p.user?.name ?? '—'}</td>
+                          <td
+                            className={`px-3 py-2 text-right tabular-nums font-semibold ${
+                              p.direction === 'INCOME' ? 'text-green-700' : 'text-amber-700'
+                            }`}
+                          >
+                            {p.direction === 'INCOME' ? '+' : '−'}
+                            {formatMoney(p.amount, order.currency)}
+                          </td>
+                          {canDeletePayment ? (
+                            <td className="px-3 py-2 text-right">
+                              <button
+                                type="button"
+                                disabled={paymentDeletingId === p.id}
+                                onClick={() => void removePayment(p.id)}
+                                className="text-gray-400 hover:text-red-600 disabled:opacity-40"
+                                title="Tahsilatı sil"
+                              >
+                                {paymentDeletingId === p.id ? (
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                ) : (
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                )}
+                              </button>
+                            </td>
+                          ) : null}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p className="text-xs text-gray-500 italic">Henüz tahsilat kaydı yok.</p>
+              )}
             </div>
           </div>
 
@@ -721,6 +1053,152 @@ export default function OrderDetailPage() {
           </div>
         </div>
       )}
+
+      {paymentOpen && order ? (
+        <div
+          className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"
+          onClick={closePaymentForm}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100">
+              <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+                <Receipt className="w-4 h-4 text-whatsapp" />
+                {payDirection === 'INCOME' ? 'Tahsilat ekle' : 'İade ekle'}
+              </h3>
+              <button
+                type="button"
+                onClick={closePaymentForm}
+                className="text-gray-400 hover:text-gray-700"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-5 space-y-4">
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPayDirection('INCOME')}
+                  className={`flex-1 px-3 py-2 rounded-lg text-xs font-semibold border ${
+                    payDirection === 'INCOME'
+                      ? 'bg-green-50 border-green-200 text-green-700'
+                      : 'bg-white border-gray-200 text-gray-600'
+                  }`}
+                >
+                  Tahsilat
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPayDirection('EXPENSE')}
+                  className={`flex-1 px-3 py-2 rounded-lg text-xs font-semibold border ${
+                    payDirection === 'EXPENSE'
+                      ? 'bg-amber-50 border-amber-200 text-amber-700'
+                      : 'bg-white border-gray-200 text-gray-600'
+                  }`}
+                >
+                  İade
+                </button>
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-gray-600 mb-1 block">
+                  Tutar ({order.currency})
+                  {payDirection === 'INCOME' && order.remainingTotal != null ? (
+                    <span className="text-gray-400 font-normal ml-1">
+                      · kalan {formatMoney(Math.max(0, order.remainingTotal), order.currency)}
+                    </span>
+                  ) : null}
+                </label>
+                <input
+                  type="number"
+                  min={0.01}
+                  step={0.01}
+                  value={payAmount}
+                  onChange={(e) => setPayAmount(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm"
+                  placeholder="0,00"
+                  autoFocus
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-gray-600 mb-1 block">Yöntem</label>
+                <div className="grid grid-cols-5 gap-1">
+                  {(Object.keys(PAYMENT_METHOD_LABELS) as PaymentMethod[]).map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => setPayMethod(m)}
+                      className={`flex flex-col items-center justify-center gap-1 px-1 py-2 rounded-lg border text-[10px] font-medium ${
+                        payMethod === m
+                          ? 'bg-whatsapp/10 border-whatsapp text-whatsapp'
+                          : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+                      }`}
+                    >
+                      {paymentMethodIcon(m)}
+                      <span className="text-center leading-tight">{PAYMENT_METHOD_LABELS[m]}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-gray-600 mb-1 block">Tarih / saat</label>
+                <input
+                  type="datetime-local"
+                  value={payOccurredAt}
+                  onChange={(e) => setPayOccurredAt(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-gray-600 mb-1 block">
+                  Dekont / çek / POS referansı
+                </label>
+                <input
+                  value={payReference}
+                  onChange={(e) => setPayReference(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm"
+                  placeholder="İsteğe bağlı"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-gray-600 mb-1 block">Açıklama</label>
+                <textarea
+                  value={payDescription}
+                  onChange={(e) => setPayDescription(e.target.value)}
+                  rows={2}
+                  className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm"
+                  placeholder="Boş bırakılırsa otomatik doldurulur"
+                />
+              </div>
+            </div>
+            <div className="px-5 py-3 border-t border-gray-100 bg-gray-50 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={closePaymentForm}
+                disabled={paymentSaving}
+                className="px-4 py-2 rounded-lg border border-gray-200 text-sm text-gray-700 hover:bg-white disabled:opacity-50"
+              >
+                İptal
+              </button>
+              <button
+                type="button"
+                onClick={() => void submitPayment()}
+                disabled={paymentSaving}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-whatsapp text-white text-sm font-semibold hover:bg-green-600 disabled:opacity-50"
+              >
+                {paymentSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Receipt className="w-4 h-4" />}
+                Kaydet
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

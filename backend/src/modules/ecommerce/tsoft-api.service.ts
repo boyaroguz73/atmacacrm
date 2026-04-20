@@ -564,6 +564,243 @@ export class TsoftApiService {
     return [];
   }
 
+  /**
+   * Pagination ile tüm ürünleri çeker. `opts.detailed=true` ise FetchDetails/FetchSubProducts/FetchImageUrls açılır.
+   * Başarısız sayfada erken çıkmak yerine sweep için tam listeyi döndürmeyi hedefler; 429'da throw eder.
+   * `opts.pageSize` varsayılanı 50 (T-Soft rate limit dostu).
+   */
+  async fetchAllProducts(
+    organizationId: string,
+    opts: { maxPages?: number; pageSize?: number; detailed?: boolean; delayMs?: number } = {},
+  ): Promise<Record<string, unknown>[]> {
+    const maxPages = opts.maxPages ?? 200;
+    const limit = opts.pageSize ?? 50;
+    const delayMs = opts.delayMs ?? 200;
+    const detailed = opts.detailed ?? true;
+    const all: Record<string, unknown>[] = [];
+    for (let p = 1; p <= maxPages; p++) {
+      const start = (p - 1) * limit;
+      const raw = await this.rest1Request(organizationId, '/rest1/product/get/', {
+        start,
+        limit,
+        ...(detailed
+          ? { FetchDetails: 1, FetchSubProducts: 1, FetchImageUrls: 1 }
+          : {}),
+      });
+      const { rows } = this.unwrapRest1List(raw);
+      if (!rows.length) break;
+      all.push(...rows);
+      if (rows.length < limit) break;
+      if (delayMs > 0) await new Promise((r) => setTimeout(r, delayMs));
+    }
+    return all;
+  }
+
+  /** Tek ürün detayı — ProductCode (web servis kodu) veya ProductId ile. */
+  async getProductDetail(
+    organizationId: string,
+    keys: { productCode?: string; productId?: string | number },
+  ): Promise<Record<string, unknown> | null> {
+    const params: Record<string, string | number | boolean> = {
+      FetchDetails: 1,
+      FetchSubProducts: 1,
+      FetchImageUrls: 1,
+      limit: 1,
+    };
+    if (keys.productCode) params.ProductCode = keys.productCode;
+    if (keys.productId != null) params.ProductId = keys.productId;
+    const raw = await this.rest1Request(organizationId, '/rest1/product/get/', params);
+    const { rows } = this.unwrapRest1List(raw);
+    return rows[0] ?? null;
+  }
+
+  /**
+   * Ürün görsel listesi. T-Soft REST1 detay yanıtında `ImageUrls` alanı gelir;
+   * fallback olarak `/rest1/product/getProductImages` dener (kurulumda varsa).
+   */
+  async getProductImages(
+    organizationId: string,
+    keys: { productCode?: string; productId?: string | number },
+  ): Promise<string[]> {
+    const detail = await this.getProductDetail(organizationId, keys);
+    if (!detail) return [];
+    const urls: string[] = [];
+    const push = (v: unknown) => {
+      if (typeof v === 'string' && v.trim()) urls.push(v.trim());
+    };
+    const imgs = detail['ImageUrls'];
+    if (Array.isArray(imgs)) {
+      for (const row of imgs) {
+        if (typeof row === 'string') push(row);
+        else if (row && typeof row === 'object') {
+          const r = row as Record<string, unknown>;
+          push(r['ImageUrl'] ?? r['Url'] ?? r['url'] ?? r['image_url']);
+        }
+      }
+    }
+    push(detail['ImageUrl']);
+    push(detail['Image']);
+    return Array.from(new Set(urls));
+  }
+
+  /**
+   * Ürünün alt ürünleri (varyantları). Detay yanıtındaki `SubProducts` alanı öncelikli.
+   */
+  async getProductVariants(
+    organizationId: string,
+    keys: { productCode?: string; productId?: string | number },
+  ): Promise<Record<string, unknown>[]> {
+    const detail = await this.getProductDetail(organizationId, keys);
+    if (!detail) return [];
+    const subs = detail['SubProducts'];
+    if (Array.isArray(subs)) {
+      return subs.filter((x): x is Record<string, unknown> => x != null && typeof x === 'object');
+    }
+    if (keys.productCode) {
+      return this.listSubProducts(organizationId, keys.productCode);
+    }
+    return [];
+  }
+
+  // ─── Product image upload / delete ────────────────────────────────────
+
+  /**
+   * Ürün görseli ekler. T-Soft REST1: `/rest1/product/setProductImage`
+   * payload: { ProductCode, ImageUrl | ImageBase64, SortOrder? }
+   */
+  async uploadProductImage(
+    organizationId: string,
+    payload: { productCode: string; imageUrl?: string; imageBase64?: string; sortOrder?: number },
+  ): Promise<unknown> {
+    if (!payload.imageUrl && !payload.imageBase64) {
+      throw new BadRequestException('imageUrl veya imageBase64 gerekli');
+    }
+    const data: Record<string, unknown> = { ProductCode: payload.productCode };
+    if (payload.imageUrl) data.ImageUrl = payload.imageUrl;
+    if (payload.imageBase64) data.ImageBase64 = payload.imageBase64;
+    if (payload.sortOrder != null) data.SortOrder = payload.sortOrder;
+    return this.rest1RequestWithData(
+      organizationId,
+      '/rest1/product/setProductImage',
+      data,
+    );
+  }
+
+  /** Ürün görseli sil. payload: imageId / imageUrl (kurulumda hangisini kabul ediyorsa) */
+  async deleteProductImage(
+    organizationId: string,
+    payload: { productCode: string; imageId?: string | number; imageUrl?: string },
+  ): Promise<unknown> {
+    const data: Record<string, unknown> = { ProductCode: payload.productCode };
+    if (payload.imageId != null) data.ImageId = payload.imageId;
+    if (payload.imageUrl) data.ImageUrl = payload.imageUrl;
+    return this.rest1RequestWithData(
+      organizationId,
+      '/rest1/product/deleteProductImage',
+      data,
+    );
+  }
+
+  // ─── Stock / price quick updates ──────────────────────────────────────
+
+  async updateProductStock(
+    organizationId: string,
+    payload: { productCode: string; stock: number },
+  ): Promise<unknown> {
+    return this.rest1RequestWithData(
+      organizationId,
+      '/rest1/product/updateStock',
+      { ProductCode: payload.productCode, Stock: payload.stock },
+    );
+  }
+
+  async updateProductPrice(
+    organizationId: string,
+    payload: {
+      productCode: string;
+      listPrice?: number;
+      salePrice?: number;
+      currency?: string;
+    },
+  ): Promise<unknown> {
+    const data: Record<string, unknown> = { ProductCode: payload.productCode };
+    if (payload.listPrice != null) data.ListPrice = payload.listPrice;
+    if (payload.salePrice != null) data.SellingPrice = payload.salePrice;
+    if (payload.currency) data.Currency = payload.currency;
+    return this.rest1RequestWithData(
+      organizationId,
+      '/rest1/product/updatePrice',
+      data,
+    );
+  }
+
+  // ─── Variant (sub-product) CRUD ───────────────────────────────────────
+
+  /**
+   * Alt ürün oluştur/güncelle. T-Soft REST1: `/rest1/product/setSubProducts`
+   * payload T-Soft alan adlarıyla (ProductCode, VariantCode/OptionName/OptionValue/Stock/Price ...)
+   */
+  async setSubProducts(
+    organizationId: string,
+    data: Record<string, unknown> | Record<string, unknown>[],
+  ): Promise<unknown> {
+    return this.rest1RequestWithData(
+      organizationId,
+      '/rest1/product/setSubProducts',
+      data,
+    );
+  }
+
+  /** Alt ürün güncelle (sadece değişen alanlar). */
+  async updateSubProducts(
+    organizationId: string,
+    data: Record<string, unknown> | Record<string, unknown>[],
+  ): Promise<unknown> {
+    return this.rest1RequestWithData(
+      organizationId,
+      '/rest1/product/updateSubProducts',
+      data,
+    );
+  }
+
+  /**
+   * Alt ürün sil. T-Soft REST1 `/rest1/product/deleteSubProducts` — data: alt ürün kodu veya kod dizisi.
+   */
+  async deleteSubProducts(
+    organizationId: string,
+    codes: string | string[],
+  ): Promise<unknown> {
+    const token = await this.getBearerToken(organizationId);
+    const cfg = await this.loadConfig(organizationId);
+    const apiRoot = this.resolveApiRoot(organizationId, cfg);
+    const form = new URLSearchParams();
+    form.set('token', token);
+    form.set('data', Array.isArray(codes) ? JSON.stringify(codes) : codes);
+
+    const http = this.client(apiRoot);
+    const path = '/rest1/product/deleteSubProducts';
+    let res = await http.post(path, form.toString(), {
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    });
+
+    if (res.status === 401) {
+      this.clearTokenCache(organizationId);
+      const newToken = await this.getBearerToken(organizationId);
+      form.set('token', newToken);
+      const http2 = this.client(this.resolveApiRoot(organizationId, cfg));
+      res = await http2.post(path, form.toString(), {
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      });
+    }
+
+    if (res.status >= 400) {
+      throw new BadRequestException(
+        `T-Soft alt ürün silme (${res.status}): ${this.summarizeTsoftError(res.status, res.data)}`,
+      );
+    }
+    return res.data;
+  }
+
   // ─── Order endpoints ──────────────────────────────────────────────────
 
   async listOrders(organizationId: string, page = 1, limit = 50) {

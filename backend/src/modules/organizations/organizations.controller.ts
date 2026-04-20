@@ -146,30 +146,6 @@ export class OrganizationsController {
     return this.orgService.patchDefaultLocationSettings(orgId, body);
   }
 
-  @Get('my/product-feed')
-  @Roles('ADMIN', 'SUPERADMIN')
-  async getMyProductFeed(@Req() req: any) {
-    const orgId = await this.resolveMyOrgId(req);
-    return this.orgService.getProductFeedSettings(orgId);
-  }
-
-  @Patch('my/product-feed')
-  @Roles('ADMIN', 'SUPERADMIN')
-  async patchMyProductFeed(
-    @Req() req: any,
-    @Body()
-    body: {
-      xmlUrl?: string;
-      defaultVatRate?: number;
-      importDescription?: boolean;
-      importImages?: boolean;
-      importMerchantMeta?: boolean;
-    },
-  ) {
-    const orgId = await this.resolveMyOrgId(req);
-    return this.orgService.patchProductFeedSettings(orgId, body);
-  }
-
   // ===== SUPERADMIN endpoints (tüm organizasyonlar) =====
 
   @Get()

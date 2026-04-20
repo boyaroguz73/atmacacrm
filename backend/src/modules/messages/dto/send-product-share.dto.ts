@@ -8,6 +8,11 @@ export class SendProductShareDto {
   @MinLength(1)
   productId: string;
 
+  /** Varyant seçimi — dolu ise varyantın görseli/fiyatı/kodu kullanılır. */
+  @IsOptional()
+  @IsString()
+  productVariantId?: string;
+
   @IsOptional()
   @IsString()
   sessionName?: string;

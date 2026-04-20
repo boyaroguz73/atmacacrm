@@ -601,6 +601,18 @@ export class ConversationsService {
     });
   }
 
+  /**
+   * Gelen konuşmayı aktif AGENT'lar arasında round-robin ile atar.
+   *
+   * Seçim kıstası (en adil dağılım için iki katmanlı):
+   *  1) Açık (aktif) konuşma yükü en az olan → iş yükü dengesi.
+   *  2) Aynı yükte birden fazla agent varsa, en son bir konuşma atanan
+   *     agent değil, en uzun süredir atama almayan agent → klasik
+   *     round-robin davranışı.
+   *
+   * Çoklu organizasyon için `organizationId` verilirse yalnızca o
+   * organizasyonun aktif AGENT'ları havuzuna bakılır.
+   */
   async autoAssignRoundRobin(conversationId: string, organizationId?: string) {
     const agentWhere: any = { role: 'AGENT', isActive: true };
     if (organizationId) agentWhere.organizationId = organizationId;
@@ -610,23 +622,38 @@ export class ConversationsService {
       select: { id: true, name: true },
       orderBy: { createdAt: 'asc' },
     });
-
     if (agents.length === 0) return null;
 
     const agentIds = agents.map((a) => a.id);
-    const lastAssignment = await this.prisma.assignment.findFirst({
-      where: { userId: { in: agentIds } },
-      orderBy: { assignedAt: 'desc' },
-      select: { userId: true },
+
+    // 1) Aktif (henüz unassign olmayan) yük sayımı
+    const loadRows = await this.prisma.assignment.groupBy({
+      by: ['userId'],
+      where: { userId: { in: agentIds }, unassignedAt: null },
+      _count: { _all: true },
     });
+    const loadMap = new Map<string, number>();
+    for (const r of loadRows) loadMap.set(r.userId, r._count._all);
 
-    let nextIndex = 0;
-    if (lastAssignment) {
-      const lastIdx = agents.findIndex((a) => a.id === lastAssignment.userId);
-      nextIndex = lastIdx >= 0 ? (lastIdx + 1) % agents.length : 0;
-    }
+    // 2) Round-robin için her agent'in en son atama zamanı
+    const lastRows = await this.prisma.assignment.groupBy({
+      by: ['userId'],
+      where: { userId: { in: agentIds } },
+      _max: { assignedAt: true },
+    });
+    const lastMap = new Map<string, Date | null>();
+    for (const r of lastRows) lastMap.set(r.userId, r._max.assignedAt ?? null);
 
-    return this.assign(conversationId, agents[nextIndex].id);
+    const scored = agents
+      .map((a) => ({
+        id: a.id,
+        load: loadMap.get(a.id) ?? 0,
+        // Hiç atanmamışsa en önce sırada olsun
+        last: (lastMap.get(a.id) ?? new Date(0)).getTime(),
+      }))
+      .sort((x, y) => x.load - y.load || x.last - y.last);
+
+    return this.assign(conversationId, scored[0].id);
   }
 
   async updateLastMessage(id: string, text: string, timestamp?: Date) {

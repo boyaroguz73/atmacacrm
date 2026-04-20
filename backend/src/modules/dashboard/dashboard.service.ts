@@ -19,6 +19,7 @@ export class DashboardService {
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
+    const now = new Date();
 
     const mf = this.orgMessageFilter(organizationId);
     const cf = this.orgConvFilter(organizationId);
@@ -29,6 +30,9 @@ export class DashboardService {
     const orderFilter: any = organizationId
       ? { contact: { organizationId }, ...dateFilter }
       : { ...dateFilter };
+    // Outstanding (kalan bakiye) hesabında "o gün yaratılan" değil, "tahsil edilmemiş olan" tüm
+    // siparişleri görmek istediğimiz için tarih filtresini KULLANMIYORUZ.
+    const allOrdersFilter: any = organizationId ? { contact: { organizationId } } : {};
 
     const msgDateFilter = dateRange
       ? { createdAt: dateRange, ...mf }
@@ -46,8 +50,13 @@ export class DashboardService {
       leadsByStatus,
       agentStats,
       orderAgg,
+      ordersByStatus,
+      allOrdersGrandTotalAgg,
+      allOrderPaymentsAgg,
+      overdueDeliveries,
       cashIncome,
       cashExpense,
+      quotesByStatus,
     ] = await Promise.all([
       this.prisma.message.count({ where: msgDateFilter }),
       this.prisma.message.count({
@@ -87,8 +96,44 @@ export class DashboardService {
         _sum: { grandTotal: true },
         _count: { id: true },
       }),
-      this.safeCashAggregate(organizationId, 'INCOME', dateRange),
-      this.safeCashAggregate(organizationId, 'EXPENSE', dateRange),
+      // Siparişlerin duruma göre dağılımı (dönem filtresiz, anlık durum)
+      this.prisma.salesOrder.groupBy({
+        by: ['status'],
+        where: allOrdersFilter,
+        _count: { _all: true },
+        _sum: { grandTotal: true },
+      }),
+      // Tüm açık/teslim edilmiş sipariş ciro toplamı (iptaller hariç)
+      this.prisma.salesOrder.aggregate({
+        where: { ...allOrdersFilter, status: { not: 'CANCELLED' } },
+        _sum: { grandTotal: true },
+      }),
+      // Tüm siparişlere ilişkin tahsilat/iade toplamları (outstanding hesabı için)
+      this.prisma.cashBookEntry.groupBy({
+        by: ['direction'],
+        where: this.orgCashWhere(organizationId, { orderId: { not: null } }),
+        _sum: { amount: true },
+      }),
+      // Gecikmiş teslimatlar: beklenen tarih geçmiş ama teslim/iptal değil
+      this.prisma.salesOrder.count({
+        where: {
+          ...allOrdersFilter,
+          expectedDeliveryDate: { lt: now },
+          status: { notIn: ['DELIVERED', 'CANCELLED'] },
+        },
+      }),
+      this.cashAggregate(organizationId, 'INCOME', dateRange),
+      this.cashAggregate(organizationId, 'EXPENSE', dateRange),
+      // Teklif dönüşümü: dönem içinde oluşturulan teklifler duruma göre
+      this.prisma.quote.groupBy({
+        by: ['status'],
+        where: {
+          ...(organizationId ? { contact: { organizationId } } : {}),
+          ...(dateRange ? { createdAt: dateRange } : {}),
+        },
+        _count: { _all: true },
+        _sum: { grandTotal: true },
+      }),
     ]);
 
     const wonLeads = leadsByStatus.find((l) => l.status === 'WON');
@@ -100,6 +145,25 @@ export class DashboardService {
       totalLeadsForConversion > 0
         ? ((wonLeads?._count.id || 0) / totalLeadsForConversion) * 100
         : 0;
+
+    // Outstanding hesabı: açık ciro - (tahsilat - iade)
+    const orderGross = allOrdersGrandTotalAgg._sum.grandTotal || 0;
+    let allOrderIncome = 0;
+    let allOrderExpense = 0;
+    for (const row of allOrderPaymentsAgg) {
+      if (row.direction === 'INCOME') allOrderIncome = row._sum.amount || 0;
+      else if (row.direction === 'EXPENSE') allOrderExpense = row._sum.amount || 0;
+    }
+    const collectedNet = allOrderIncome - allOrderExpense;
+    const outstandingTotal = Math.max(0, Math.round((orderGross - collectedNet) * 100) / 100);
+
+    // Teklif dönüşüm oranı: ACCEPTED / (oluşturulanlar)
+    const totalQuotes = quotesByStatus.reduce((s, q) => s + q._count._all, 0);
+    const acceptedQuotes = quotesByStatus
+      .filter((q) => q.status === 'ACCEPTED')
+      .reduce((s, q) => s + q._count._all, 0);
+    const quoteConversionRate =
+      totalQuotes > 0 ? Math.round((acceptedQuotes / totalQuotes) * 10000) / 100 : 0;
 
     return {
       totalMessagesToday: totalMessages,
@@ -120,6 +184,24 @@ export class DashboardService {
       orders: {
         count: orderAgg._count.id,
         sumGrandTotal: orderAgg._sum.grandTotal || 0,
+        outstandingTotal,
+        collectedTotal: Math.round(collectedNet * 100) / 100,
+        overdueDeliveries,
+        byStatus: ordersByStatus.map((o) => ({
+          status: o.status,
+          count: o._count._all,
+          sumGrandTotal: o._sum.grandTotal || 0,
+        })),
+      },
+      quotes: {
+        total: totalQuotes,
+        accepted: acceptedQuotes,
+        conversionRate: quoteConversionRate,
+        byStatus: quotesByStatus.map((q) => ({
+          status: q.status,
+          count: q._count._all,
+          sumGrandTotal: q._sum.grandTotal || 0,
+        })),
       },
       cash: {
         income: cashIncome,
@@ -127,6 +209,17 @@ export class DashboardService {
         net: cashIncome - cashExpense,
       },
     };
+  }
+
+  /**
+   * CashBookEntry için organizasyon filtresini oluştur.
+   * CashBookEntry'de doğrudan organizationId yok; user.organizationId üzerinden
+   * eşleşme yapıyoruz (kullanıcıyı hangi organizasyonda ise onun kasa hareketi).
+   */
+  private orgCashWhere(organizationId?: string, extra: any = {}) {
+    const base: any = { ...extra };
+    if (organizationId) base.user = { organizationId };
+    return base;
   }
 
   private parseDateRange(from?: string, to?: string) {
@@ -137,17 +230,21 @@ export class DashboardService {
     return range;
   }
 
-  private async safeCashAggregate(
+  /**
+   * CashBookEntry agregat toplamı (INCOME/EXPENSE) — organizasyon filtresi user.organizationId'den.
+   * Tarih alanı `occurredAt`; `dateRange` verilirse onunla sınırlanır.
+   */
+  private async cashAggregate(
     organizationId?: string,
-    type?: string,
+    direction?: 'INCOME' | 'EXPENSE',
     dateRange?: any,
   ): Promise<number> {
+    const where: any = {};
+    if (direction) where.direction = direction;
+    if (dateRange) where.occurredAt = dateRange;
+    if (organizationId) where.user = { organizationId };
     try {
-      const where: any = {};
-      if (organizationId) where.organizationId = organizationId;
-      if (type) where.type = type;
-      if (dateRange) where.date = dateRange;
-      const agg = await (this.prisma as any).cashEntry.aggregate({
+      const agg = await this.prisma.cashBookEntry.aggregate({
         where,
         _sum: { amount: true },
       });

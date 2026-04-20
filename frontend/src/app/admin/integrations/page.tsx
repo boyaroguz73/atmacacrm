@@ -878,6 +878,57 @@ function MessagingPanel({ integration }: { integration: Integration }) {
 }
 
 /* ─────── E-commerce Panel ─────── */
+type TsoftSyncStatus = {
+  products: { total: number; active: number; lastPulledAt: string | null };
+  variants: { total: number; active: number };
+  orders: { lastSyncedAt: string | null; tsoftLinked: number };
+  customers: { matched: number };
+  pushQueue: {
+    pending: number;
+    running: number;
+    failed: number;
+    done24h: number;
+    lastError: string | null;
+    lastFailedAt: string | null;
+  };
+};
+
+type TsoftSyncFlags = {
+  products: boolean;
+  variants: boolean;
+  orders: boolean;
+  customers: boolean;
+  images: boolean;
+  push: boolean;
+};
+
+function readSyncFlags(config: any): TsoftSyncFlags {
+  const s = (config?.sync || {}) as Record<string, unknown>;
+  const bool = (v: unknown, def: boolean) => (typeof v === 'boolean' ? v : def);
+  return {
+    products: bool(s.products, true),
+    variants: bool(s.variants, true),
+    orders: bool(s.orders, true),
+    customers: bool(s.customers, true),
+    images: bool(s.images, true),
+    push: bool(s.push, true),
+  };
+}
+
+function formatRelative(iso: string | null): string {
+  if (!iso) return 'Hiç senkronize edilmedi';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '—';
+  const diff = Date.now() - d.getTime();
+  const min = Math.round(diff / 60000);
+  if (min < 1) return 'şimdi';
+  if (min < 60) return `${min} dk önce`;
+  const hr = Math.round(min / 60);
+  if (hr < 24) return `${hr} sa önce`;
+  const day = Math.round(hr / 24);
+  return `${day} gün önce`;
+}
+
 function TsoftPanel({ integration }: { integration: Integration }) {
   const ic = integration.config || {};
   const [baseUrl, setBaseUrl] = useState(String(ic.baseUrl || ic.storeUrl || ''));
@@ -886,11 +937,34 @@ function TsoftPanel({ integration }: { integration: Integration }) {
   const [usePanelApi, setUsePanelApi] = useState(
     ic.pathPrefix === '/panel' || String(ic.pathPrefix || '').toLowerCase() === 'panel',
   );
+  const [flags, setFlags] = useState<TsoftSyncFlags>(readSyncFlags(integration.config));
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
-  const [syncing, setSyncing] = useState(false);
+  const [syncingCustomers, setSyncingCustomers] = useState(false);
+  const [syncingProducts, setSyncingProducts] = useState(false);
+  const [syncingOrders, setSyncingOrders] = useState(false);
   const [diagnosing, setDiagnosing] = useState(false);
   const [diagnoseOut, setDiagnoseOut] = useState<string | null>(null);
+  const [status, setStatus] = useState<TsoftSyncStatus | null>(null);
+  const [statusLoading, setStatusLoading] = useState(false);
+
+  const fetchStatus = useCallback(async () => {
+    setStatusLoading(true);
+    try {
+      const { data } = await api.get<TsoftSyncStatus>('/ecommerce/tsoft/sync-status');
+      setStatus(data);
+    } catch {
+      /* status alınamazsa sessiz geç */
+    } finally {
+      setStatusLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchStatus();
+    const t = setInterval(fetchStatus, 15_000);
+    return () => clearInterval(t);
+  }, [fetchStatus]);
 
   const configSnapshot = JSON.stringify(integration.config ?? {});
   useEffect(() => {
@@ -899,6 +973,7 @@ function TsoftPanel({ integration }: { integration: Integration }) {
     setApiEmail(String(c.apiEmail || ''));
     setApiPassword('');
     setUsePanelApi(c.pathPrefix === '/panel' || String(c.pathPrefix || '').toLowerCase() === 'panel');
+    setFlags(readSyncFlags(c));
   }, [integration.key, configSnapshot]);
 
   const handleSave = async () => {
@@ -911,6 +986,7 @@ function TsoftPanel({ integration }: { integration: Integration }) {
           apiEmail: apiEmail.trim(),
           apiPassword,
           pathPrefix: usePanelApi ? '/panel' : '',
+          sync: flags,
         },
         { params: integrationOrgParams() },
       );
@@ -934,17 +1010,50 @@ function TsoftPanel({ integration }: { integration: Integration }) {
     }
   };
 
-  const handleSync = async () => {
-    setSyncing(true);
+  const handleSyncCustomers = async () => {
+    setSyncingCustomers(true);
     try {
       const { data } = await api.post('/ecommerce/tsoft/sync-customers');
       toast.success(
         `Eşleşen kişi: ${data.matched ?? 0} (T-Soft müşteri: ${data.tsoftCustomerCount ?? 0})`,
       );
+      await fetchStatus();
     } catch (err: any) {
       toast.error(getApiErrorMessage(err, 'Senkronizasyon başarısız'));
     } finally {
-      setSyncing(false);
+      setSyncingCustomers(false);
+    }
+  };
+
+  const handleSyncProducts = async () => {
+    setSyncingProducts(true);
+    try {
+      const { data } = await api.post(
+        '/ecommerce/tsoft/sync-products',
+        {},
+        { timeout: 180_000 },
+      );
+      toast.success(
+        `Ürün: ${data?.upsertedProducts ?? 0} · Varyant: ${data?.upsertedVariants ?? 0}`,
+      );
+      await fetchStatus();
+    } catch (err: any) {
+      toast.error(getApiErrorMessage(err, 'Ürün senkronizasyonu başarısız'));
+    } finally {
+      setSyncingProducts(false);
+    }
+  };
+
+  const handleSyncOrders = async () => {
+    setSyncingOrders(true);
+    try {
+      const { data } = await api.post('/ecommerce/tsoft/sync-orders', {}, { timeout: 180_000 });
+      toast.success(`Oluşturulan: ${data?.created ?? 0} · Güncellenen: ${data?.updated ?? 0}`);
+      await fetchStatus();
+    } catch (err: any) {
+      toast.error(getApiErrorMessage(err, 'Sipariş senkronizasyonu başarısız'));
+    } finally {
+      setSyncingOrders(false);
     }
   };
 
@@ -960,6 +1069,10 @@ function TsoftPanel({ integration }: { integration: Integration }) {
     } finally {
       setDiagnosing(false);
     }
+  };
+
+  const toggleFlag = (key: keyof TsoftSyncFlags) => {
+    setFlags((prev) => ({ ...prev, [key]: !prev[key] }));
   };
 
   return (
@@ -1031,15 +1144,6 @@ function TsoftPanel({ integration }: { integration: Integration }) {
           </button>
           <button
             type="button"
-            onClick={handleSync}
-            disabled={syncing}
-            className="flex items-center gap-2 px-4 py-2.5 border border-gray-200 text-gray-700 rounded-xl text-sm font-medium hover:bg-gray-50 disabled:opacity-50"
-          >
-            {syncing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-            Müşterileri eşleştir
-          </button>
-          <button
-            type="button"
             onClick={handleDiagnose}
             disabled={diagnosing}
             className="flex items-center gap-2 px-4 py-2.5 border border-gray-300 text-gray-600 rounded-xl text-sm font-medium hover:bg-gray-50 disabled:opacity-50"
@@ -1056,6 +1160,246 @@ function TsoftPanel({ integration }: { integration: Integration }) {
           </div>
         ) : null}
       </div>
+
+      {/* Sync durum kartları */}
+      <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-4">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+            <RotateCcw className="w-4 h-4 text-orange-500" />
+            Senkronizasyon Durumu
+          </h3>
+          <button
+            type="button"
+            onClick={fetchStatus}
+            disabled={statusLoading}
+            className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-800 disabled:opacity-50"
+          >
+            {statusLoading ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <RefreshCw className="w-3.5 h-3.5" />
+            )}
+            Yenile
+          </button>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <StatusCard
+            title="Ürünler (T-Soft → CRM)"
+            accent="orange"
+            primary={`${status?.products.active ?? 0} aktif / ${status?.products.total ?? 0} toplam`}
+            secondary={`Varyant: ${status?.variants.active ?? 0}/${status?.variants.total ?? 0}`}
+            footer={`Son çekim: ${formatRelative(status?.products.lastPulledAt ?? null)}`}
+            action={
+              <button
+                type="button"
+                onClick={handleSyncProducts}
+                disabled={syncingProducts}
+                className="text-[11px] font-medium text-orange-700 hover:text-orange-800 disabled:opacity-50 flex items-center gap-1"
+              >
+                {syncingProducts ? (
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                ) : (
+                  <RefreshCw className="w-3 h-3" />
+                )}
+                Şimdi çek
+              </button>
+            }
+          />
+          <StatusCard
+            title="Siparişler (T-Soft → CRM)"
+            accent="blue"
+            primary={`${status?.orders.tsoftLinked ?? 0} bağlı sipariş`}
+            secondary={`Son senkron: ${formatRelative(status?.orders.lastSyncedAt ?? null)}`}
+            action={
+              <button
+                type="button"
+                onClick={handleSyncOrders}
+                disabled={syncingOrders}
+                className="text-[11px] font-medium text-blue-700 hover:text-blue-800 disabled:opacity-50 flex items-center gap-1"
+              >
+                {syncingOrders ? (
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                ) : (
+                  <RefreshCw className="w-3 h-3" />
+                )}
+                Şimdi çek
+              </button>
+            }
+          />
+          <StatusCard
+            title="Müşteriler"
+            accent="violet"
+            primary={`${status?.customers.matched ?? 0} eşleşen kişi`}
+            secondary="T-Soft CustomerId ile CRM kişisi"
+            action={
+              <button
+                type="button"
+                onClick={handleSyncCustomers}
+                disabled={syncingCustomers}
+                className="text-[11px] font-medium text-violet-700 hover:text-violet-800 disabled:opacity-50 flex items-center gap-1"
+              >
+                {syncingCustomers ? (
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                ) : (
+                  <RefreshCw className="w-3 h-3" />
+                )}
+                Şimdi eşleştir
+              </button>
+            }
+          />
+          <StatusCard
+            title="Push Kuyruğu (CRM → T-Soft)"
+            accent={
+              (status?.pushQueue.failed ?? 0) > 0
+                ? 'red'
+                : (status?.pushQueue.pending ?? 0) > 0
+                ? 'amber'
+                : 'green'
+            }
+            primary={`${status?.pushQueue.pending ?? 0} bekliyor · ${status?.pushQueue.running ?? 0} çalışıyor`}
+            secondary={`Başarısız: ${status?.pushQueue.failed ?? 0} · Son 24s tamamlanan: ${status?.pushQueue.done24h ?? 0}`}
+            footer={
+              status?.pushQueue.lastError
+                ? `Son hata: ${status.pushQueue.lastError.slice(0, 120)}${
+                    status.pushQueue.lastError.length > 120 ? '…' : ''
+                  }`
+                : undefined
+            }
+          />
+        </div>
+      </div>
+
+      {/* Sync kapsamı */}
+      <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-4">
+        <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+          <Settings className="w-4 h-4 text-orange-500" />
+          Senkronizasyon Kapsamı
+        </h3>
+        <p className="text-xs text-gray-500 -mt-2">
+          Hangi veri türlerinin otomatik senkronize edileceğini belirleyin. Değişiklik
+          <span className="font-medium"> Kaydet</span> butonu ile uygulanır.
+        </p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <FlagToggle
+            label="Ürünler (pull)"
+            description="Her 30 dk ürün & varyant senkronizasyonu"
+            checked={flags.products}
+            onToggle={() => toggleFlag('products')}
+          />
+          <FlagToggle
+            label="Varyantlar"
+            description="Ürünlerin varyant verilerini getir"
+            checked={flags.variants}
+            onToggle={() => toggleFlag('variants')}
+          />
+          <FlagToggle
+            label="Görseller"
+            description="Ana ürün/varyant görsellerini indir"
+            checked={flags.images}
+            onToggle={() => toggleFlag('images')}
+          />
+          <FlagToggle
+            label="Siparişler (pull)"
+            description="Her 15 dk T-Soft siparişlerini çek"
+            checked={flags.orders}
+            onToggle={() => toggleFlag('orders')}
+          />
+          <FlagToggle
+            label="Müşteriler"
+            description="Her 60 dk telefona göre kişi eşleştir"
+            checked={flags.customers}
+            onToggle={() => toggleFlag('customers')}
+          />
+          <FlagToggle
+            label="Push kuyruğu"
+            description="CRM → T-Soft yazma işlerini işle"
+            checked={flags.push}
+            onToggle={() => toggleFlag('push')}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function FlagToggle({
+  label,
+  description,
+  checked,
+  onToggle,
+}: {
+  label: string;
+  description: string;
+  checked: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      className={`text-left flex items-start gap-3 p-3 rounded-xl border transition-all ${
+        checked
+          ? 'border-orange-300 bg-orange-50/60'
+          : 'border-gray-200 bg-white hover:border-gray-300'
+      }`}
+    >
+      <div className="mt-0.5 shrink-0">
+        {checked ? (
+          <ToggleRight className="w-8 h-5 text-orange-500" />
+        ) : (
+          <ToggleLeft className="w-8 h-5 text-gray-400" />
+        )}
+      </div>
+      <div className="min-w-0">
+        <p className="text-sm font-medium text-gray-900">{label}</p>
+        <p className="text-[11px] text-gray-500 mt-0.5 leading-snug">{description}</p>
+      </div>
+    </button>
+  );
+}
+
+function StatusCard({
+  title,
+  primary,
+  secondary,
+  footer,
+  action,
+  accent,
+}: {
+  title: string;
+  primary: string;
+  secondary?: string;
+  footer?: string;
+  action?: React.ReactNode;
+  accent: 'orange' | 'blue' | 'violet' | 'red' | 'amber' | 'green';
+}) {
+  const accentBg: Record<string, string> = {
+    orange: 'bg-orange-50 border-orange-100',
+    blue: 'bg-blue-50 border-blue-100',
+    violet: 'bg-violet-50 border-violet-100',
+    red: 'bg-red-50 border-red-100',
+    amber: 'bg-amber-50 border-amber-100',
+    green: 'bg-emerald-50 border-emerald-100',
+  };
+  const accentText: Record<string, string> = {
+    orange: 'text-orange-700',
+    blue: 'text-blue-700',
+    violet: 'text-violet-700',
+    red: 'text-red-700',
+    amber: 'text-amber-700',
+    green: 'text-emerald-700',
+  };
+  return (
+    <div className={`rounded-xl border p-3 ${accentBg[accent]}`}>
+      <div className="flex items-start justify-between gap-2">
+        <p className={`text-[11px] font-semibold uppercase tracking-wider ${accentText[accent]}`}>
+          {title}
+        </p>
+        {action}
+      </div>
+      <p className="mt-1 text-sm font-semibold text-gray-900">{primary}</p>
+      {secondary ? <p className="text-[11px] text-gray-600 mt-0.5">{secondary}</p> : null}
+      {footer ? <p className="text-[11px] text-gray-500 mt-1">{footer}</p> : null}
     </div>
   );
 }

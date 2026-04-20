@@ -451,15 +451,16 @@ export class MessagesService implements OnModuleInit {
     return message;
   }
 
-  /** Ürün ana görselini indirip WhatsApp’ta gönderir (sohbet ürün paylaşımı) */
+  /** Ürün (veya belirli varyantın) ana görselini indirip WhatsApp'ta gönderir (sohbet ürün paylaşımı) */
   async sendProductShare(params: {
     conversationId: string;
     productId: string;
+    productVariantId?: string;
     sentById: string;
     sessionName?: string;
     chatId?: string;
   }) {
-    const { conversationId, productId, sentById } = params;
+    const { conversationId, productId, productVariantId, sentById } = params;
     const conv = await this.prisma.conversation.findUnique({
       where: { id: conversationId },
       include: { session: true, contact: true },
@@ -472,18 +473,36 @@ export class MessagesService implements OnModuleInit {
     const product = await this.prisma.product.findUnique({ where: { id: productId } });
     if (!product) throw new NotFoundException('Ürün bulunamadı');
 
-    const unitPrice = Number(product.unitPrice ?? 0);
-    const price = `${unitPrice.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ${product.currency}`;
+    const variant = productVariantId
+      ? await this.prisma.productVariant.findFirst({
+          where: { id: productVariantId, productId },
+        })
+      : null;
+    if (productVariantId && !variant) {
+      throw new NotFoundException('Varyant bulunamadı');
+    }
+
+    const effName = variant
+      ? `${product.name} — ${variant.name}`
+      : product.name;
+    const unitPrice = Number(variant?.unitPrice ?? product.unitPrice ?? 0);
+    const currency = variant?.currency || product.currency;
+    const priceIncludesVat = variant?.priceIncludesVat ?? product.priceIncludesVat;
+    const priceLabel = priceIncludesVat ? 'Fiyat (KDV Dahil)' : 'Fiyat (KDV Hariç)';
+    const price = `${unitPrice.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ${currency}`;
     const siteLink = (product.productUrl || '').trim();
     const caption = [
-      product.name,
-      `Fiyat (KDV Dahil): ${price}`,
+      effName,
+      `${priceLabel}: ${price}`,
       siteLink ? `Ürün Linki: ${siteLink}` : '',
     ]
       .filter(Boolean)
       .join('\n');
 
-    const localUrl = await this.productsService.ensureProductImageLocal(productId);
+    const localUrl = variant
+      ? await this.productsService.ensureVariantImageLocal(variant.id)
+      : await this.productsService.ensureProductImageLocal(productId);
+
     if (localUrl) {
       const mediaUrl = localUrl.startsWith('/') ? localUrl : `/${localUrl}`;
       try {
@@ -501,7 +520,9 @@ export class MessagesService implements OnModuleInit {
       }
     }
 
-    this.logger.debug(`Ürün görseli yok veya indirilemedi, metin gönderiliyor: productId=${productId}`);
+    this.logger.debug(
+      `Ürün görseli yok veya indirilemedi, metin gönderiliyor: productId=${productId} variantId=${productVariantId ?? '-'}`,
+    );
     return this.sendText({
       conversationId,
       sessionName,

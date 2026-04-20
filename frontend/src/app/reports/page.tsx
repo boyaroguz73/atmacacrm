@@ -165,7 +165,7 @@ export default function ReportsOverviewPage() {
               sub={`${dash.orders?.count ?? 0} sipariş · Ort: ${fmtTry(avgOrderValue)}`}
               icon={ShoppingBag}
               color="text-indigo-600"
-              href="/reports/products"
+              href="/reports/sales"
             />
             <MetricCard
               label="Fatura Toplamı"

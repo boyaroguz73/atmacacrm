@@ -5,7 +5,9 @@ import { OrderStatus, DiscountType } from '@prisma/client';
 import { splitSearchTokens } from '../../common/search-tokens';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { TsoftApiService } from '../ecommerce/tsoft-api.service';
+import { TsoftPushService } from '../ecommerce/tsoft-push.service';
 import { extractTsoftNumericOrderIdFromApiResult } from '../ecommerce/tsoft-order.util';
+import { Prisma } from '@prisma/client';
 
 @Injectable()
 export class OrdersService {
@@ -30,6 +32,7 @@ export class OrdersService {
     private pdfService: PdfService,
     private auditLog: AuditLogService,
     private tsoftApi: TsoftApiService,
+    private tsoftPush: TsoftPushService,
   ) {}
 
   private readonly includeRelations = {
@@ -134,7 +137,161 @@ export class OrdersService {
       include: this.includeRelations,
     });
     if (!order) throw new NotFoundException('Sipariş bulunamadı');
-    return order;
+    const summary = await this.getPaymentSummary(id, order.grandTotal);
+    return {
+      ...order,
+      payments: summary.payments,
+      paidTotal: summary.paidTotal,
+      refundedTotal: summary.refundedTotal,
+      remainingTotal: summary.remainingTotal,
+      isFullyPaid: summary.isFullyPaid,
+    };
+  }
+
+  /**
+   * Sipariş tahsilat özeti: CashBookEntry üzerinden INCOME toplamı ödenen,
+   * EXPENSE toplamı iade sayılır; grandTotal - (ödenen - iade) = kalan bakiye.
+   */
+  async getPaymentSummary(
+    orderId: string,
+    grandTotalHint?: number,
+  ): Promise<{
+    payments: Array<{
+      id: string;
+      amount: number;
+      direction: 'INCOME' | 'EXPENSE';
+      method: 'CASH' | 'TRANSFER' | 'CARD' | 'CHECK' | 'OTHER';
+      description: string;
+      reference: string | null;
+      occurredAt: Date;
+      user: { id: string; name: string | null } | null;
+    }>;
+    paidTotal: number;
+    refundedTotal: number;
+    remainingTotal: number;
+    isFullyPaid: boolean;
+  }> {
+    const grandTotal =
+      grandTotalHint ??
+      (
+        await this.prisma.salesOrder.findUnique({
+          where: { id: orderId },
+          select: { grandTotal: true },
+        })
+      )?.grandTotal ??
+      0;
+
+    const entries = await this.prisma.cashBookEntry.findMany({
+      where: { orderId },
+      orderBy: { occurredAt: 'desc' },
+      include: { user: { select: { id: true, name: true } } },
+    });
+
+    let paid = 0;
+    let refunded = 0;
+    for (const e of entries) {
+      if (e.direction === 'INCOME') paid += e.amount;
+      else refunded += e.amount;
+    }
+
+    const paidTotal = Math.round(paid * 100) / 100;
+    const refundedTotal = Math.round(refunded * 100) / 100;
+    const net = paidTotal - refundedTotal;
+    const remainingTotal = Math.round((grandTotal - net) * 100) / 100;
+    const isFullyPaid = remainingTotal <= 0.009 && grandTotal > 0;
+
+    return {
+      payments: entries.map((e) => ({
+        id: e.id,
+        amount: e.amount,
+        direction: e.direction,
+        method: e.method,
+        description: e.description,
+        reference: e.reference,
+        occurredAt: e.occurredAt,
+        user: e.user,
+      })),
+      paidTotal,
+      refundedTotal,
+      remainingTotal,
+      isFullyPaid,
+    };
+  }
+
+  /**
+   * Sipariş için yeni tahsilat kaydeder (CashBookEntry).
+   * direction: INCOME (ön ödeme/tahsilat) veya EXPENSE (iade).
+   */
+  async addPayment(
+    userId: string,
+    orderId: string,
+    body: {
+      amount: number;
+      direction?: 'INCOME' | 'EXPENSE';
+      method?: 'CASH' | 'TRANSFER' | 'CARD' | 'CHECK' | 'OTHER';
+      description?: string;
+      reference?: string | null;
+      occurredAt?: string | null;
+    },
+  ) {
+    const order = await this.prisma.salesOrder.findUnique({
+      where: { id: orderId },
+      select: { id: true, orderNumber: true, grandTotal: true },
+    });
+    if (!order) throw new NotFoundException('Sipariş bulunamadı');
+
+    const amount = Number(body.amount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      throw new BadRequestException('Tutar 0’dan büyük olmalıdır');
+    }
+    const direction = body.direction === 'EXPENSE' ? 'EXPENSE' : 'INCOME';
+    const method = body.method ?? 'OTHER';
+    const description =
+      body.description?.trim() ||
+      (direction === 'INCOME'
+        ? `Sipariş tahsilatı (SIP-${String(order.orderNumber).padStart(5, '0')})`
+        : `Sipariş iadesi (SIP-${String(order.orderNumber).padStart(5, '0')})`);
+
+    // INCOME ise kalan bakiyeyi aşma kontrolü (iadeler sınırsız)
+    if (direction === 'INCOME') {
+      const summary = await this.getPaymentSummary(orderId, order.grandTotal);
+      // 1 kr tolerans
+      if (amount - summary.remainingTotal > 0.01) {
+        throw new BadRequestException(
+          `Tahsilat tutarı (${amount.toFixed(2)}) kalan bakiyeyi (${summary.remainingTotal.toFixed(
+            2,
+          )}) aşamaz`,
+        );
+      }
+    }
+
+    return this.prisma.cashBookEntry.create({
+      data: {
+        userId,
+        orderId,
+        amount,
+        direction,
+        method,
+        description,
+        reference: body.reference?.trim() || null,
+        occurredAt: body.occurredAt ? new Date(body.occurredAt) : new Date(),
+      },
+      include: { user: { select: { id: true, name: true } } },
+    });
+  }
+
+  /**
+   * Sipariş tahsilatını iptal eder (entry silinir).
+   */
+  async removePayment(orderId: string, entryId: string) {
+    const entry = await this.prisma.cashBookEntry.findUnique({
+      where: { id: entryId },
+    });
+    if (!entry || entry.orderId !== orderId) {
+      throw new NotFoundException('Tahsilat kaydı bulunamadı');
+    }
+    await this.prisma.cashBookEntry.delete({ where: { id: entryId } });
+    return { ok: true };
   }
 
   async create(userId: string, data: {
@@ -143,7 +300,10 @@ export class OrdersService {
     shippingAddress?: string;
     notes?: string;
     expectedDeliveryDate?: string;
+    /** Eski yol: senkron T-Soft push (deprecate). */
     sendToTsoft?: boolean;
+    /** Yeni yol: push kuyruğuna ekler (retry + tsoftPushedAt/tsoftLastError alanlarıyla). */
+    pushToTsoft?: boolean;
     organizationId?: string;
     payment?: {
       mode?: 'FULL' | 'DEPOSIT_50' | 'CUSTOM';
@@ -151,10 +311,13 @@ export class OrdersService {
     };
     items: {
       productId?: string;
+      productVariantId?: string | null;
       name: string;
       quantity: number;
       unitPrice: number;
       vatRate: number;
+      /** true: unitPrice KDV dahil (varsayılan) | false: KDV hariç */
+      priceIncludesVat?: boolean;
       supplierId?: string | null;
       supplierOrderNo?: string | null;
       isFromStock?: boolean;
@@ -181,8 +344,14 @@ export class OrdersService {
       if (!isFromStock && !supplierId) {
         throw new BadRequestException(`${item.name} için tedarikçi seçimi zorunludur`);
       }
-      const lineGross = item.quantity * item.unitPrice;
-      const divider = 1 + (item.vatRate / 100);
+      const priceIncludesVat = item.priceIncludesVat !== false;
+      const r = Math.max(0, Number(item.vatRate) || 0) / 100;
+      // priceIncludesVat=true  -> unitPrice KDV dahil, KDV hariç = unitPrice/(1+r)
+      // priceIncludesVat=false -> unitPrice KDV hariç, KDV dahil = unitPrice*(1+r)
+      const lineGross = priceIncludesVat
+        ? item.quantity * item.unitPrice
+        : item.quantity * item.unitPrice * (1 + r);
+      const divider = 1 + r;
       const base = divider > 0 ? lineGross / divider : lineGross;
       const vat = lineGross - base;
       subtotal += base;
@@ -190,6 +359,7 @@ export class OrdersService {
       grossTotal += lineGross;
       return {
         ...item,
+        priceIncludesVat,
         supplierId,
         supplierOrderNo,
         isFromStock,
@@ -227,10 +397,12 @@ export class OrdersService {
         items: {
           create: items.map((i) => ({
             productId: i.productId || null,
+            productVariantId: i.productVariantId || null,
             name: i.name,
             quantity: i.quantity,
             unitPrice: i.unitPrice,
             vatRate: i.vatRate,
+            priceIncludesVat: i.priceIncludesVat,
             lineTotal: i.lineTotal,
             supplierId: i.supplierId || null,
             supplierOrderNo: i.supplierOrderNo || null,
@@ -256,16 +428,77 @@ export class OrdersService {
       details: { grandTotal: order.grandTotal, itemCount: items.length },
     });
 
-    if (data.sendToTsoft && data.organizationId) {
+    if (data.pushToTsoft && data.organizationId) {
+      // Yeni yol: kuyruğa al. Worker başarılı olursa `tsoftSiteOrderId` dolar.
+      await this.prisma.salesOrder.update({
+        where: { id: order.id },
+        data: { pushToTsoft: true },
+      });
+      try {
+        const payload = this.buildTsoftOrderPayload(order);
+        await this.tsoftPush.enqueueOrderOperation({
+          organizationId: data.organizationId,
+          orderId: order.id,
+          op: 'CREATE',
+          payload: payload as Prisma.InputJsonValue,
+        });
+        this.logger.log(`Sipariş T-Soft kuyruğuna alındı: #${order.orderNumber}`);
+      } catch (e: any) {
+        this.logger.warn(`Sipariş T-Soft kuyruğuna alınamadı: ${e?.message}`);
+        await this.prisma.salesOrder.update({
+          where: { id: order.id },
+          data: { tsoftLastError: String(e?.message ?? 'bilinmeyen hata').slice(0, 500) },
+        });
+      }
+    } else if (data.sendToTsoft && data.organizationId) {
+      // Geriye dönük uyumluluk: senkron push (deprecate; kuyruğu kullanın).
       try {
         await this.pushOrderToTsoft(order, data.organizationId);
-        this.logger.log(`Sipariş T-Soft'a gönderildi: #${order.orderNumber}`);
+        this.logger.log(`Sipariş T-Soft'a (senkron) gönderildi: #${order.orderNumber}`);
       } catch (e: any) {
         this.logger.warn(`Sipariş T-Soft'a gönderilemedi: ${e?.message}`);
       }
     }
 
     return this.findById(order.id);
+  }
+
+  /**
+   * Mevcut `pushOrderToTsoft`'un REST1 payload kurgusunu kuyruk için ayrı metod olarak sunar.
+   * (Detay: `pushOrderToTsoft` hem build hem dispatch yapıyor; burada sadece payload istiyoruz.)
+   */
+  private buildTsoftOrderPayload(order: any): Record<string, unknown> {
+    const contact = order.contact;
+    const phone = contact?.phone ? String(contact.phone).replace(/\D/g, '') : '';
+    const items = (order.items ?? []).map((i: any) => ({
+      ProductCode: i.product?.sku ?? '',
+      Quantity: i.quantity,
+      SellingPrice: i.unitPrice,
+      Vat: i.vatRate,
+      // Renk/kumaş ve ölçü bilgileri sipariş satır notuna eklenir.
+      Note: [
+        i.colorFabricInfo ? `Renk/Kumaş: ${i.colorFabricInfo}` : '',
+        i.measurementInfo ? `Ölçü: ${i.measurementInfo}` : '',
+      ]
+        .filter(Boolean)
+        .join(' | '),
+    }));
+    return {
+      CustomerName: [contact?.name, contact?.surname].filter(Boolean).join(' ').trim() || 'Müşteri',
+      CustomerPhone: phone,
+      CustomerEmail: contact?.email ?? '',
+      ShippingAddress: order.shippingAddress ?? contact?.address ?? '',
+      BillingAddress: contact?.billingAddress ?? order.shippingAddress ?? '',
+      TaxOffice: contact?.taxOffice ?? '',
+      TaxNumber: contact?.taxNumber ?? contact?.identityNumber ?? '',
+      Currency: order.currency,
+      OrderSource: 'CRM',
+      Note: order.notes ?? '',
+      Products: items,
+      SubTotal: order.subtotal,
+      VatTotal: order.vatTotal,
+      GrandTotal: order.grandTotal,
+    };
   }
 
   /**
@@ -516,6 +749,8 @@ export class OrdersService {
       quantity?: number;
       unitPrice?: number;
       vatRate?: number;
+      /** true: unitPrice KDV dahil | false: KDV hariç */
+      priceIncludesVat?: boolean;
       colorFabricInfo?: string | null;
       measurementInfo?: string | null;
       supplierId?: string | null;
@@ -570,6 +805,9 @@ export class OrdersService {
       }
       patch.vatRate = vr;
     }
+    if ('priceIncludesVat' in data && data.priceIncludesVat !== undefined) {
+      patch.priceIncludesVat = !!data.priceIncludesVat;
+    }
     if ('colorFabricInfo' in data) {
       patch.colorFabricInfo =
         data.colorFabricInfo == null || String(data.colorFabricInfo).trim() === ''
@@ -594,7 +832,17 @@ export class OrdersService {
 
     const nextQty = patch.quantity !== undefined ? Number(patch.quantity) : item.quantity;
     const nextPrice = patch.unitPrice !== undefined ? Number(patch.unitPrice) : item.unitPrice;
-    patch.lineTotal = Math.round(nextQty * nextPrice * 100) / 100;
+    const nextVatRate =
+      patch.vatRate !== undefined ? Number(patch.vatRate) : item.vatRate;
+    const nextIncl =
+      patch.priceIncludesVat !== undefined
+        ? !!patch.priceIncludesVat
+        : item.priceIncludesVat;
+    const r = Math.max(0, nextVatRate) / 100;
+    const lineGross = nextIncl
+      ? nextQty * nextPrice
+      : nextQty * nextPrice * (1 + r);
+    patch.lineTotal = Math.round(lineGross * 100) / 100;
 
     const nextIsFromStock =
       patch.isFromStock !== undefined ? !!patch.isFromStock : !!item.isFromStock;
@@ -628,8 +876,12 @@ export class OrdersService {
     let vatTotal = 0;
     let grandTotal = 0;
     for (const row of items) {
-      const lineGross = row.quantity * row.unitPrice;
-      const divider = 1 + row.vatRate / 100;
+      const r = Math.max(0, row.vatRate) / 100;
+      // priceIncludesVat=true -> unitPrice KDV dahil; false -> KDV hariç.
+      const lineGross = row.priceIncludesVat
+        ? row.quantity * row.unitPrice
+        : row.quantity * row.unitPrice * (1 + r);
+      const divider = 1 + r;
       const base = divider > 0 ? lineGross / divider : lineGross;
       const vat = lineGross - base;
       subtotal += base;

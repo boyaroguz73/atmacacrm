@@ -9,16 +9,14 @@ import {
   Query,
   UseGuards,
   Req,
-  BadRequestException,
 } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { ProductsService } from './products.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
-import { DEFAULT_PRODUCT_XML_FEED_URL } from './product-feed.constants';
-import { OrganizationsService } from '../organizations/organizations.service';
+import { TsoftPushService } from '../ecommerce/tsoft-push.service';
+import { Prisma } from '@prisma/client';
 
 @ApiTags('Products')
 @ApiBearerAuth()
@@ -27,8 +25,7 @@ import { OrganizationsService } from '../organizations/organizations.service';
 export class ProductsController {
   constructor(
     private productsService: ProductsService,
-    private config: ConfigService,
-    private orgService: OrganizationsService,
+    private tsoftPush: TsoftPushService,
   ) {}
 
   @Get()
@@ -68,7 +65,8 @@ export class ProductsController {
   @Post()
   @UseGuards(RolesGuard)
   @Roles('ADMIN')
-  create(
+  async create(
+    @Req() req: any,
     @Body()
     body: {
       sku: string;
@@ -80,46 +78,97 @@ export class ProductsController {
       vatRate?: number;
       stock?: number;
       category?: string;
+      /** true ise ürün T-Soft'a da gönderilir (push queue). */
+      pushToTsoft?: boolean;
     },
   ) {
-    return this.productsService.create(body);
+    const { pushToTsoft, ...data } = body;
+    const product = await this.productsService.create(data);
+    if (pushToTsoft && req.user?.organizationId) {
+      await this.tsoftPush.enqueueProductOperation({
+        organizationId: req.user.organizationId,
+        productId: product.id,
+        op: 'CREATE',
+        payload: this.buildTsoftProductPayload(product) as Prisma.InputJsonValue,
+      });
+    }
+    return product;
   }
 
   @Patch(':id')
   @UseGuards(RolesGuard)
   @Roles('ADMIN')
-  update(@Param('id') id: string, @Body() body: any) {
-    return this.productsService.update(id, body);
+  async update(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() body: any,
+  ) {
+    const { pushToTsoft, ...data } = body || {};
+    const updated = await this.productsService.update(id, data);
+    if (pushToTsoft && req.user?.organizationId) {
+      await this.tsoftPush.enqueueProductOperation({
+        organizationId: req.user.organizationId,
+        productId: updated.id,
+        op: 'UPDATE',
+        payload: this.buildTsoftProductPayload(updated) as Prisma.InputJsonValue,
+      });
+    }
+    return updated;
   }
 
   @Delete(':id')
   @UseGuards(RolesGuard)
   @Roles('ADMIN', 'SUPERADMIN')
-  remove(@Param('id') id: string) {
+  async remove(@Req() req: any, @Param('id') id: string, @Query('pushToTsoft') pushToTsoft?: string) {
+    const shouldPush = pushToTsoft === 'true' || pushToTsoft === '1';
+    const existing = await this.productsService.findById(id);
+    if (shouldPush && req.user?.organizationId && existing.sku) {
+      // T-Soft'tan silinsin — DB'de tombstone için isActive=false bırak; kuyruk başarılı olunca hard delete yapılır.
+      await this.productsService.update(id, { isActive: false });
+      await this.tsoftPush.enqueueProductOperation({
+        organizationId: req.user.organizationId,
+        productId: id,
+        op: 'DELETE',
+        payload: { ProductCode: existing.sku } as Prisma.InputJsonValue,
+      });
+      return { queued: true };
+    }
     return this.productsService.remove(id);
   }
 
-  /** Google Shopping XML akışını hemen çek ve ürünleri güncelle (cron ile aynı mantık) */
-  @Post('sync-feed')
-  @UseGuards(RolesGuard)
-  @Roles('ADMIN', 'SUPERADMIN')
-  async syncFeed(@Req() req: any, @Body() body?: { url?: string }) {
-    let orgId = req.user?.organizationId as string | undefined;
-    if (!orgId) orgId = (await this.orgService.getFirstOrganizationId()) ?? undefined;
-    if (!orgId) throw new BadRequestException('Organizasyon bulunamadı');
-    const feed = await this.orgService.getProductFeedSettings(orgId);
-    const fromEnv = this.config.get<string>('PRODUCT_XML_FEED_URL')?.trim();
-    const url =
-      (body?.url && body.url.trim()) ||
-      (feed.xmlUrl && feed.xmlUrl.trim()) ||
-      fromEnv ||
-      DEFAULT_PRODUCT_XML_FEED_URL;
-    return this.productsService.syncFromGoogleShoppingXml(url, {
-      defaultVatRate: feed.defaultVatRate,
-      importDescription: feed.importDescription,
-      importImages: feed.importImages,
-      importMerchantMeta: feed.importMerchantMeta,
-    });
+  /**
+   * CRM ürününden T-Soft setProducts/updateProducts payload'ı üretir.
+   * T-Soft alan adları için {@link TsoftApiService.setProducts} dokümantasyonuna göre PascalCase.
+   */
+  private buildTsoftProductPayload(product: {
+    sku: string;
+    name: string;
+    description: string | null;
+    unitPrice: number;
+    listPrice: number | null;
+    salePriceAmount: number | null;
+    currency: string;
+    vatRate: number;
+    stock: number | null;
+    isActive: boolean;
+    brand: string | null;
+    category: string | null;
+    imageUrl: string | null;
+  }): Record<string, unknown> {
+    return {
+      ProductCode: product.sku,
+      ProductName: product.name,
+      ShortDescription: product.description ?? '',
+      SellingPrice: product.salePriceAmount ?? product.unitPrice,
+      ListPrice: product.listPrice ?? product.unitPrice,
+      Currency: product.currency,
+      Vat: product.vatRate,
+      Stock: product.stock ?? 0,
+      IsActive: product.isActive ? 1 : 0,
+      Brand: product.brand ?? '',
+      CategoryName: product.category ?? '',
+      ...(product.imageUrl ? { ImageUrl: product.imageUrl } : {}),
+    };
   }
 
   /** Harici URL'lere sahip tüm ürün görsellerini toplu olarak yerele indir */

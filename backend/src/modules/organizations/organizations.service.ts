@@ -351,48 +351,4 @@ export class OrganizationsService {
     return { users, sessions, contacts, conversations, messages };
   }
 
-  getProductFeedSettings(organizationId: string) {
-    return this.prisma.organization
-      .findUnique({
-        where: { id: organizationId },
-        select: { settings: true },
-      })
-      .then((org) => {
-        const prev = this.parseSettings(org?.settings ?? null);
-        const pf = (prev.productFeed as Record<string, unknown> | undefined) ?? {};
-        return {
-          xmlUrl: typeof pf.xmlUrl === 'string' ? pf.xmlUrl : '',
-          defaultVatRate: typeof pf.defaultVatRate === 'number' ? pf.defaultVatRate : 20,
-          importDescription: pf.importDescription !== false,
-          importImages: pf.importImages !== false,
-          importMerchantMeta: pf.importMerchantMeta !== false,
-        };
-      });
-  }
-
-  async patchProductFeedSettings(
-    organizationId: string,
-    body: {
-      xmlUrl?: string;
-      defaultVatRate?: number;
-      importDescription?: boolean;
-      importImages?: boolean;
-      importMerchantMeta?: boolean;
-    },
-  ) {
-    const org = await this.prisma.organization.findUnique({
-      where: { id: organizationId },
-      select: { settings: true },
-    });
-    if (!org) throw new NotFoundException('Organizasyon bulunamadı');
-    const prev = this.parseSettings(org.settings);
-    const curPf = (prev.productFeed as Record<string, unknown> | undefined) ?? {};
-    const nextPf = { ...curPf, ...body };
-    const nextSettings = { ...prev, productFeed: nextPf };
-    await this.prisma.organization.update({
-      where: { id: organizationId },
-      data: { settings: nextSettings as Prisma.InputJsonValue },
-    });
-    return this.getProductFeedSettings(organizationId);
-  }
 }

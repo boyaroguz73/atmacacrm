@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils';
 
 const LINKS = [
   { href: '/reports', label: 'Özet' },
+  { href: '/reports/sales', label: 'Satış trendi' },
   { href: '/reports/messages', label: 'Mesajlar' },
   { href: '/reports/cash', label: 'Kasa' },
   { href: '/reports/funnel', label: 'Huni' },

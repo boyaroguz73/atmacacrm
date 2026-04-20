@@ -96,6 +96,16 @@ export class EcommerceController {
     return this.ecommerceService.syncTsoftOrders(this.orgId(user), user.id);
   }
 
+  /** Admin paneli: T-Soft pull/push özet durumu */
+  @Get('tsoft/sync-status')
+  @UseGuards(RolesGuard)
+  @Roles('ADMIN')
+  getTsoftSyncStatus(
+    @CurrentUser() user: { role?: string; organizationId?: string | null },
+  ) {
+    return this.ecommerceService.getTsoftSyncStatus(this.orgId(user));
+  }
+
   @Get('tsoft/products')
   @UseGuards(RolesGuard)
   @Roles('ADMIN')
@@ -142,6 +152,24 @@ export class EcommerceController {
   @Roles('ADMIN')
   syncTsoftCatalog(@CurrentUser() user: { role?: string; organizationId?: string | null }) {
     return this.ecommerceService.syncTsoftCatalog(this.orgId(user));
+  }
+
+  /** T-Soft → CRM ürün pull senkronu (plan §PR-3). `products` + `product_variants` yazar. */
+  @Post('tsoft/sync-products')
+  @UseGuards(RolesGuard)
+  @Roles('ADMIN')
+  syncTsoftProducts(
+    @CurrentUser() user: { role?: string; organizationId?: string | null },
+    @Body()
+    dto?: {
+      variants?: boolean;
+      images?: boolean;
+      stock?: boolean;
+      price?: boolean;
+      descriptions?: boolean;
+    },
+  ) {
+    return this.ecommerceService.syncTsoftProducts(this.orgId(user), dto ?? {});
   }
 
   @Get('tsoft/catalog')

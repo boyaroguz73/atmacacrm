@@ -37,7 +37,6 @@
     "bullmq": "^5.1.0",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.1",
-    "fast-xml-parser": "^5.5.12",
     "helmet": "^7.1.0",
     "ioredis": "^5.3.2",
     "iyzipay": "^2.0.67",

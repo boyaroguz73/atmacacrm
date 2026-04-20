@@ -66,9 +66,10 @@ export class MessageSyncScheduler implements OnModuleInit {
             return cid && cid.endsWith('@c.us') && cid !== 'status@broadcast' && !cid.includes('@broadcast');
           });
 
-          const sortedChats = personalChats
-            .filter((c: any) => c.timestamp)
-            .sort((a: any, b: any) => (b.timestamp || 0) - (a.timestamp || 0));
+          /** timestamp olmayan sohbetler eskiden tamamen atlanıyordu; sonda yine de senkronlanır */
+          const sortedChats = [...personalChats].sort(
+            (a: any, b: any) => (b.timestamp || 0) - (a.timestamp || 0),
+          );
 
           this.logger.debug(`Oturum ${session.name}: ${sortedChats.length} sohbet senkron ediliyor (toplam: ${personalChats.length})`);
 
@@ -86,7 +87,9 @@ export class MessageSyncScheduler implements OnModuleInit {
                 session.id,
               );
 
-              const result = await this.controller.syncMessagesCore(conversation.id);
+              const result = await this.controller.syncMessagesCore(conversation.id, {
+                downloadMedia: false,
+              });
               totalSynced += result.synced;
               if (result.synced > 0) totalConversations++;
 

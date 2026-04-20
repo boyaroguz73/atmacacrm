@@ -21,8 +21,12 @@ interface CreateQuoteItem {
   quantity: number;
   unitPrice: number;
   vatRate: number;
+  /** true: birim fiyat KDV dahil | false: KDV hariç (varsayılan: dahil) */
+  priceIncludesVat?: boolean;
   discountType?: DiscountType;
   discountValue?: number;
+  /** calcTotals çıktısı — genel iskonto sonrası satır KDV dahil tutar */
+  lineTotal?: number;
 }
 
 @Injectable()
@@ -37,15 +41,33 @@ export class QuotesService {
     private auditLog: AuditLogService,
   ) {}
 
-  private calcLineTotal(item: CreateQuoteItem): number {
-    const gross = item.quantity * item.unitPrice;
+  private roundMoney(n: number): number {
+    return Math.round(n * 100) / 100;
+  }
+
+  /**
+   * Satır indirimi sonrası KDV hariç tutar ve KDV dahil brüt (genel iskonto öncesi).
+   * Birim fiyat: priceIncludesVat true ise KDV dahil, false ise KDV hariç.
+   */
+  private lineExAndGrossAfterLineDiscount(item: CreateQuoteItem): { ex: number; gross: number } {
+    const q = Math.max(0, Number(item.quantity) || 0);
+    const u = Number(item.unitPrice) || 0;
+    const r = Math.max(0, Number(item.vatRate) || 0) / 100;
+    const incl = item.priceIncludesVat !== false;
+
+    let gross = incl ? q * u : q * u * (1 + r);
+
     let lineDiscount = 0;
     if (item.discountValue && item.discountValue > 0) {
-      if (item.discountType === 'AMOUNT') lineDiscount = item.discountValue;
-      else lineDiscount = gross * (item.discountValue / 100);
+      lineDiscount =
+        item.discountType === 'AMOUNT'
+          ? item.discountValue
+          : gross * (item.discountValue / 100);
     }
-    const grossAfterDiscount = Math.max(0, gross - lineDiscount);
-    return Math.round(grossAfterDiscount * 100) / 100;
+    gross = Math.max(0, gross - lineDiscount);
+
+    const ex = 1 + r > 0 ? gross / (1 + r) : gross;
+    return { ex, gross };
   }
 
   private calcTotals(
@@ -53,48 +75,44 @@ export class QuotesService {
     discountType: DiscountType,
     discountValue: number,
   ) {
-    let netSubtotalBeforeGeneralDiscount = 0;
-    let vatTotalBeforeGeneralDiscount = 0;
-    let grossSubtotalBeforeGeneralDiscount = 0;
-    const calculated = items.map((item) => {
-      const lineGross = item.quantity * item.unitPrice;
-      let lineDiscount = 0;
-      if (item.discountValue && item.discountValue > 0) {
-        lineDiscount = item.discountType === 'AMOUNT'
-          ? item.discountValue
-          : lineGross * (item.discountValue / 100);
-      }
-      const grossAfterLineDiscount = Math.max(0, lineGross - lineDiscount);
-      const divider = 1 + (item.vatRate / 100);
-      const lineNet = divider > 0 ? grossAfterLineDiscount / divider : grossAfterLineDiscount;
-      const lineVat = grossAfterLineDiscount - lineNet;
-      grossSubtotalBeforeGeneralDiscount += grossAfterLineDiscount;
-      netSubtotalBeforeGeneralDiscount += lineNet;
-      vatTotalBeforeGeneralDiscount += lineVat;
-      return { ...item, lineTotal: Math.round(grossAfterLineDiscount * 100) / 100 };
+    const rows = items.map((item) => {
+      const { ex } = this.lineExAndGrossAfterLineDiscount(item);
+      return { item, exBefore: ex };
     });
+
+    const sumExBefore = rows.reduce((s, x) => s + x.exBefore, 0);
 
     let discountTotal = 0;
     if (discountValue > 0) {
-      discountTotal = discountType === 'AMOUNT'
-        ? discountValue
-        : grossSubtotalBeforeGeneralDiscount * (discountValue / 100);
+      if (discountType === 'AMOUNT') {
+        discountTotal = Math.min(discountValue, sumExBefore);
+      } else {
+        discountTotal = sumExBefore * (discountValue / 100);
+      }
     }
-    const grossAfterGeneralDiscount = Math.max(0, grossSubtotalBeforeGeneralDiscount - discountTotal);
-    const discountRatio =
-      grossSubtotalBeforeGeneralDiscount > 0
-        ? grossAfterGeneralDiscount / grossSubtotalBeforeGeneralDiscount
-        : 1;
-    const adjustedNetSubtotal = netSubtotalBeforeGeneralDiscount * discountRatio;
-    const adjustedVatTotal = vatTotalBeforeGeneralDiscount * discountRatio;
-    const grandTotal = Math.round(grossAfterGeneralDiscount * 100) / 100;
+    discountTotal = this.roundMoney(discountTotal);
+
+    const sumExAfter = Math.max(0, sumExBefore - discountTotal);
+    const ratio = sumExBefore > 0 ? sumExAfter / sumExBefore : 0;
+
+    let vatTotal = 0;
+    const calculated = rows.map(({ item, exBefore }) => {
+      const r = Math.max(0, Number(item.vatRate) || 0) / 100;
+      const exAfter = exBefore * ratio;
+      const lineGrossAfterGeneral = exAfter * (1 + r);
+      vatTotal += exAfter * r;
+      return {
+        ...item,
+        lineTotal: this.roundMoney(lineGrossAfterGeneral),
+      };
+    });
 
     return {
       items: calculated,
-      subtotal: Math.round(adjustedNetSubtotal * 100) / 100,
-      discountTotal: Math.round(discountTotal * 100) / 100,
-      vatTotal: Math.round(adjustedVatTotal * 100) / 100,
-      grandTotal,
+      subtotal: this.roundMoney(sumExAfter),
+      discountTotal,
+      vatTotal: this.roundMoney(vatTotal),
+      grandTotal: this.roundMoney(sumExAfter + vatTotal),
     };
   }
 
@@ -276,6 +294,7 @@ export class QuotesService {
             quantity: item.quantity,
             unitPrice: item.unitPrice,
             vatRate: item.vatRate,
+            priceIncludesVat: item.priceIncludesVat !== false,
             discountType: item.discountType || null,
             discountValue: item.discountValue || 0,
             lineTotal: item.lineTotal,
@@ -386,6 +405,7 @@ export class QuotesService {
           quantity: it.quantity,
           unitPrice: it.unitPrice,
           vatRate: it.vatRate,
+          priceIncludesVat: (it as { priceIncludesVat?: boolean }).priceIncludesVat !== false,
           discountType: (it.discountType as DiscountType | null) || undefined,
           discountValue: it.discountValue || 0,
         }));
@@ -519,12 +539,13 @@ export class QuotesService {
                   quantity: item.quantity,
                   unitPrice: item.unitPrice,
                   vatRate: item.vatRate,
+                  priceIncludesVat: item.priceIncludesVat !== false,
                   discountType: item.discountType || null,
                   discountValue: item.discountValue || 0,
                   lineTotal:
                     typeof item.lineTotal === 'number'
                       ? item.lineTotal
-                      : this.calcLineTotal(item),
+                      : this.roundMoney(this.lineExAndGrossAfterLineDiscount(item).gross),
                 })),
               },
             }
@@ -564,7 +585,10 @@ export class QuotesService {
     const lineDiscountTotal = (quote.items || []).reduce((acc: number, it: any) => {
       const qty = Number(it.quantity || 0);
       const unit = Number(it.unitPrice || 0);
-      const gross = Math.max(0, qty * unit);
+      const vat = Number(it.vatRate || 0);
+      const r = vat / 100;
+      const pic = it.priceIncludesVat !== false;
+      const gross = pic ? Math.max(0, qty * unit) : Math.max(0, qty * unit * (1 + r));
       const dv = Number(it.discountValue || 0);
       if (!Number.isFinite(dv) || dv <= 0 || gross <= 0) return acc;
       const dt = String(it.discountType || 'PERCENT').toUpperCase();
@@ -760,6 +784,7 @@ export class QuotesService {
         quantity: item.quantity,
         unitPrice: item.unitPrice,
         vatRate: item.vatRate,
+        priceIncludesVat: item.priceIncludesVat !== false,
         lineTotal: item.lineTotal,
         isFromStock: source === 'STOCK',
         supplierId: source === 'SUPPLIER' ? cfg?.supplierId || null : null,

@@ -51,6 +51,10 @@ interface SalesOrder {
   createdAt: string;
   updatedAt: string;
   panelEditedAt?: string | null;
+  pushToTsoft?: boolean;
+  tsoftSiteOrderId?: string | null;
+  tsoftPushedAt?: string | null;
+  tsoftLastError?: string | null;
   invoice?: { id: string } | null;
   createdBy?: { id: string; name: string | null } | null;
   contact: {
@@ -335,9 +339,30 @@ export default function OrdersPage() {
                       )}
                     </td>
                     <td className="px-5 py-3">
-                      <span className={`inline-flex text-[10px] font-semibold px-2.5 py-1 rounded-full ${statusBadgeClass(order.status)}`}>
-                        {STATUS_LABELS[order.status]}
-                      </span>
+                      <div className="flex flex-col gap-1">
+                        <span className={`inline-flex text-[10px] font-semibold px-2.5 py-1 rounded-full w-fit ${statusBadgeClass(order.status)}`}>
+                          {STATUS_LABELS[order.status]}
+                        </span>
+                        {order.tsoftSiteOrderId ? (
+                          <span
+                            className="inline-flex text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 w-fit"
+                            title={`T-Soft sipariş #${order.tsoftSiteOrderId}${order.tsoftPushedAt ? ` • ${new Date(order.tsoftPushedAt).toLocaleString('tr-TR')}` : ''}`}
+                          >
+                            T-Soft ✓
+                          </span>
+                        ) : order.pushToTsoft && order.tsoftLastError ? (
+                          <span
+                            className="inline-flex text-[10px] font-semibold px-2 py-0.5 rounded-full bg-red-50 text-red-700 w-fit"
+                            title={order.tsoftLastError}
+                          >
+                            T-Soft ✕
+                          </span>
+                        ) : order.pushToTsoft ? (
+                          <span className="inline-flex text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 w-fit">
+                            T-Soft kuyrukta…
+                          </span>
+                        ) : null}
+                      </div>
                     </td>
                     <td className="px-5 py-3 text-gray-600">{order.currency || 'TRY'}</td>
                     <td className="px-5 py-3 text-right font-medium text-gray-900 tabular-nums">

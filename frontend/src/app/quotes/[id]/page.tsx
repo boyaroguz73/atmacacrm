@@ -62,6 +62,8 @@ interface LocalLineItem {
   measurementInfo?: string;
   quantity: number;
   unitPrice: number;
+  vatRate: number;
+  priceIncludesVat: boolean;
   applyDiscount: boolean;
   discountType: DiscountType;
   discountValue: number;
@@ -74,6 +76,7 @@ interface ProductHit {
   description?: string | null;
   unitPrice: number;
   vatRate: number;
+  priceIncludesVat?: boolean;
   currency?: string;
   imageUrl?: string | null;
 }
@@ -106,55 +109,65 @@ function measurementHintFromVariantMetadata(metadata: unknown): string {
   return t2 || title || '';
 }
 
-function calcTotals(
-  items: LocalLineItem[],
-  discountType: DiscountType,
-  discountValue: number,
-  lineVatRate: number,
-) {
-  let netSubtotalBeforeGeneralDiscount = 0;
-  let vatTotalBeforeGeneralDiscount = 0;
-  let grossSubtotalBeforeGeneralDiscount = 0;
-  const calculated = items.map((item) => {
-    const lineGross = item.quantity * item.unitPrice;
-    let lineDiscount = 0;
-    if (item.discountValue && item.discountValue > 0) {
-      lineDiscount =
-        item.discountType === 'AMOUNT'
-          ? item.discountValue
-          : lineGross * (item.discountValue / 100);
-    }
-    const grossAfterLineDiscount = Math.max(0, lineGross - lineDiscount);
-    const divider = 1 + (lineVatRate / 100);
-    const lineNet = divider > 0 ? grossAfterLineDiscount / divider : grossAfterLineDiscount;
-    const lineVat = grossAfterLineDiscount - lineNet;
-    netSubtotalBeforeGeneralDiscount += lineNet;
-    vatTotalBeforeGeneralDiscount += lineVat;
-    grossSubtotalBeforeGeneralDiscount += grossAfterLineDiscount;
-    const lineTotal = Math.round(grossAfterLineDiscount * 100) / 100;
-    return { ...item, lineTotal };
-  });
+function round2(n: number) {
+  return Math.round(n * 100) / 100;
+}
+
+function lineExAfterLineDiscount(item: LocalLineItem): number {
+  const q = Math.max(0, Number(item.quantity) || 0);
+  const u = Number(item.unitPrice) || 0;
+  const r = Math.max(0, Number(item.vatRate) || 0) / 100;
+  const incl = item.priceIncludesVat;
+
+  let gross = incl ? q * u : q * u * (1 + r);
+
+  let lineDiscount = 0;
+  if (item.applyDiscount && item.discountValue && item.discountValue > 0) {
+    lineDiscount =
+      item.discountType === 'AMOUNT'
+        ? item.discountValue
+        : gross * (item.discountValue / 100);
+  }
+  gross = Math.max(0, gross - lineDiscount);
+
+  return 1 + r > 0 ? gross / (1 + r) : gross;
+}
+
+function calcTotals(items: LocalLineItem[], discountType: DiscountType, discountValue: number) {
+  const rows = items.map((item) => ({
+    item,
+    exBefore: lineExAfterLineDiscount(item),
+  }));
+
+  const sumExBefore = rows.reduce((s, x) => s + x.exBefore, 0);
 
   let discountTotal = 0;
   if (discountValue > 0) {
     discountTotal =
-      discountType === 'AMOUNT' ? discountValue : grossSubtotalBeforeGeneralDiscount * (discountValue / 100);
+      discountType === 'AMOUNT'
+        ? Math.min(discountValue, sumExBefore)
+        : sumExBefore * (discountValue / 100);
   }
-  const grossAfterGeneralDiscount = Math.max(0, grossSubtotalBeforeGeneralDiscount - discountTotal);
-  const discountRatio =
-    grossSubtotalBeforeGeneralDiscount > 0
-      ? grossAfterGeneralDiscount / grossSubtotalBeforeGeneralDiscount
-      : 1;
-  const adjustedNet = netSubtotalBeforeGeneralDiscount * discountRatio;
-  const adjustedVat = vatTotalBeforeGeneralDiscount * discountRatio;
-  const grandTotal = Math.round(grossAfterGeneralDiscount * 100) / 100;
+  discountTotal = round2(discountTotal);
+
+  const sumExAfter = Math.max(0, sumExBefore - discountTotal);
+  const ratio = sumExBefore > 0 ? sumExAfter / sumExBefore : 0;
+
+  let vatTotal = 0;
+  const lineTotals = rows.map(({ item, exBefore }) => {
+    const r = Math.max(0, Number(item.vatRate) || 0) / 100;
+    const exAfter = exBefore * ratio;
+    const lineGrossAfterGeneral = exAfter * (1 + r);
+    vatTotal += exAfter * r;
+    return round2(lineGrossAfterGeneral);
+  });
 
   return {
-    lineTotals: calculated.map((c) => c.lineTotal),
-    subtotal: Math.round(adjustedNet * 100) / 100,
-    discountTotal: Math.round(discountTotal * 100) / 100,
-    vatTotal: Math.round(adjustedVat * 100) / 100,
-    grandTotal,
+    lineTotals,
+    subtotal: round2(sumExAfter),
+    discountTotal,
+    vatTotal: round2(vatTotal),
+    grandTotal: round2(sumExAfter + vatTotal),
   };
 }
 
@@ -175,6 +188,8 @@ function emptyLine(): LocalLineItem {
     measurementInfo: '',
     quantity: 1,
     unitPrice: 0,
+    vatRate: 20,
+    priceIncludesVat: true,
     applyDiscount: false,
     discountType: 'PERCENT',
     discountValue: 0,
@@ -205,7 +220,6 @@ export default function QuoteDetailPage() {
   const [documentKind, setDocumentKind] = useState<'PROFORMA' | 'QUOTE'>('PROFORMA');
   const [grandTotalOverride, setGrandTotalOverride] = useState<string>('');
   const [saving, setSaving] = useState(false);
-  const [lineVatRate, setLineVatRate] = useState(20);
 
   // Product search
   const [productQuery, setProductQuery] = useState('');
@@ -222,6 +236,7 @@ export default function QuoteDetailPage() {
       name: string;
       unitPrice: number;
       vatRate: number;
+      priceIncludesVat?: boolean;
       metadata?: unknown;
       imageUrl?: string | null;
     }[];
@@ -244,14 +259,9 @@ export default function QuoteDetailPage() {
   const sym = currencySymbol(currency);
 
   const totals = useMemo(
-    () => calcTotals(lines, discountType, discountValue, lineVatRate),
-    [lines, discountType, discountValue, lineVatRate],
+    () => calcTotals(lines, discountType, discountValue),
+    [lines, discountType, discountValue],
   );
-
-  const lineVatSelectOptions = useMemo(() => {
-    const s = new Set<number>([...LINE_VAT_OPTIONS, lineVatRate]);
-    return Array.from(s).sort((a, b) => a - b);
-  }, [lineVatRate]);
 
   const displayGrandTotal = grandTotalOverride && parseFloat(grandTotalOverride) > 0 
     ? parseFloat(grandTotalOverride) 
@@ -271,10 +281,6 @@ export default function QuoteDetailPage() {
 
   const initFormFromQuote = (q: any) => {
     const rawItems = q.items || [];
-    const rateSet = Array.from(
-      new Set(rawItems.map((it: any) => Number(it.vatRate ?? 0))),
-    ) as number[];
-    setLineVatRate(rateSet.length === 1 ? rateSet[0]! : 20);
     setLines(
       rawItems.map((it: any) => ({
         key: String(it.id),
@@ -285,8 +291,10 @@ export default function QuoteDetailPage() {
         description: it.description || undefined,
         colorFabricInfo: it.colorFabricInfo != null ? String(it.colorFabricInfo) : '',
         measurementInfo: it.measurementInfo != null ? String(it.measurementInfo) : '',
-        quantity: Number(it.quantity || 0),
+        quantity: Math.max(1, Math.round(Number(it.quantity || 1))),
         unitPrice: Number(it.unitPrice || 0),
+        vatRate: Math.round(Number(it.vatRate ?? 20)),
+        priceIncludesVat: it.priceIncludesVat !== false,
         applyDiscount: Number(it.discountValue || 0) > 0,
         discountType: (it.discountType || 'PERCENT') as DiscountType,
         discountValue: Number(it.discountValue || 0),
@@ -351,6 +359,7 @@ export default function QuoteDetailPage() {
       unitPrice: number;
       metadata?: unknown;
       vatRate?: number;
+      priceIncludesVat?: boolean;
       imageUrl?: string | null;
     },
   ) => {
@@ -359,8 +368,13 @@ export default function QuoteDetailPage() {
         ? Math.round(Number(variant.vatRate))
         : p.vatRate != null && Number.isFinite(Number(p.vatRate))
           ? Math.round(Number(p.vatRate))
-          : null;
-    if (vat != null) setLineVatRate(vat);
+          : 20;
+    const pic =
+      variant?.priceIncludesVat !== undefined
+        ? variant.priceIncludesVat
+        : p.priceIncludesVat !== undefined
+          ? p.priceIncludesVat
+          : true;
     const measureHint = variant ? measurementHintFromVariantMetadata(variant.metadata) : '';
     setLines((prev) => [
       ...prev,
@@ -375,6 +389,8 @@ export default function QuoteDetailPage() {
         measurementInfo: measureHint,
         quantity: 1,
         unitPrice: variant ? variant.unitPrice : p.unitPrice,
+        vatRate: vat,
+        priceIncludesVat: pic,
         applyDiscount: false,
         discountType: 'PERCENT',
         discountValue: 0,
@@ -467,9 +483,10 @@ export default function QuoteDetailPage() {
           description: l.description || undefined,
           quantity: l.quantity,
           unitPrice: l.unitPrice,
-          vatRate: Math.round(lineVatRate),
-          discountType: l.applyDiscount ? l.discountType : 'PERCENT',
-          discountValue: l.applyDiscount ? l.discountValue || 0 : 0,
+          vatRate: Math.round(l.vatRate),
+          priceIncludesVat: l.priceIncludesVat,
+          discountType: 'PERCENT',
+          discountValue: 0,
           colorFabricInfo: String(l.colorFabricInfo ?? '').trim() || null,
           measurementInfo: String(l.measurementInfo ?? '').trim() || null,
         })),
@@ -735,23 +752,6 @@ export default function QuoteDetailPage() {
                 >
                   + Boş satır
                 </button>
-              </div>
-              <div className="px-5 pt-3 flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-2 sm:gap-4">
-                <label className="flex items-center gap-2 text-xs text-gray-700">
-                  <span className="font-medium text-gray-600 shrink-0">KDV oranı (tüm satırlar)</span>
-                  <select
-                    value={lineVatRate}
-                    onChange={(e) => setLineVatRate(Number(e.target.value))}
-                    className="px-2 py-1.5 border border-gray-200 rounded-lg text-xs font-medium bg-white focus:outline-none focus:border-whatsapp"
-                  >
-                    {lineVatSelectOptions.map((v) => (
-                      <option key={v} value={v}>
-                        %{v}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <div className="sm:flex-1 min-w-0" />
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-xs min-w-[900px]">

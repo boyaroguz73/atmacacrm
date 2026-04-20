@@ -95,6 +95,7 @@ export class QuotesController {
         quantity: number;
         unitPrice: number;
         vatRate: number;
+        priceIncludesVat?: boolean;
         discountType?: 'PERCENT' | 'AMOUNT';
         discountValue?: number;
       }> | null;

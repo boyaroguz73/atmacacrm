@@ -21,6 +21,8 @@ interface LocalLineItem {
   quantity: number;
   unitPrice: number;
   vatRate: number;
+  /** true: unitPrice KDV dahil (varsayılan) | false: KDV hariç */
+  priceIncludesVat: boolean;
   isFromStock: boolean;
   sourceType?: 'STOCK' | 'SUPPLIER';
   supplierId?: string;
@@ -34,6 +36,7 @@ interface ProductHit {
   unitPrice: number;
   vatRate: number;
   imageUrl?: string | null;
+  priceIncludesVat?: boolean;
 }
 
 interface SupplierHit {
@@ -56,8 +59,13 @@ function calcTotals(items: LocalLineItem[]) {
   let vatTotal = 0;
   let grandTotal = 0;
   const lineTotals = items.map((item) => {
-    const lineGross = item.quantity * item.unitPrice;
-    const divider = 1 + item.vatRate / 100;
+    const r = Math.max(0, item.vatRate) / 100;
+    const incl = item.priceIncludesVat !== false;
+    // incl=true -> unitPrice KDV dahil, incl=false -> KDV hariç
+    const lineGross = incl
+      ? item.quantity * item.unitPrice
+      : item.quantity * item.unitPrice * (1 + r);
+    const divider = 1 + r;
     const lineNet = divider > 0 ? lineGross / divider : lineGross;
     const lineVat = lineGross - lineNet;
     subtotal += lineNet;
@@ -91,6 +99,7 @@ function emptyLine(): LocalLineItem {
     quantity: 1,
     unitPrice: 0,
     vatRate: 20,
+    priceIncludesVat: true,
     isFromStock: true,
     sourceType: 'STOCK',
     supplierId: '',
@@ -125,7 +134,7 @@ export default function NewOrderPage() {
   const [suppliers, setSuppliers] = useState<SupplierHit[]>([]);
   const [paymentMode, setPaymentMode] = useState<OrderPaymentModeUI>('FULL');
   const [customPaymentValue, setCustomPaymentValue] = useState('');
-  const [sendToTsoft, setSendToTsoft] = useState(false);
+  const [pushToTsoft, setPushToTsoft] = useState(false);
 
   const [variantPick, setVariantPick] = useState<{
     product: ProductHit;
@@ -136,6 +145,7 @@ export default function NewOrderPage() {
       vatRate: number;
       metadata?: unknown;
       imageUrl?: string | null;
+      priceIncludesVat?: boolean;
     }[];
   } | null>(null);
 
@@ -212,6 +222,7 @@ export default function NewOrderPage() {
       vatRate?: number;
       metadata?: unknown;
       imageUrl?: string | null;
+      priceIncludesVat?: boolean;
     },
   ) => {
     const vat =
@@ -220,6 +231,12 @@ export default function NewOrderPage() {
         : p.vatRate != null && Number.isFinite(Number(p.vatRate))
           ? Math.round(Number(p.vatRate))
           : 20;
+    const incl =
+      variant?.priceIncludesVat !== undefined
+        ? variant.priceIncludesVat
+        : p.priceIncludesVat !== undefined
+          ? p.priceIncludesVat
+          : true;
     const measureHint = variant ? measurementHintFromVariantMetadata(variant.metadata) : '';
     setLines((prev) => [
       ...prev,
@@ -234,6 +251,7 @@ export default function NewOrderPage() {
         quantity: 1,
         unitPrice: variant ? variant.unitPrice : p.unitPrice,
         vatRate: vat,
+        priceIncludesVat: incl,
         isFromStock: true,
         sourceType: 'STOCK',
         supplierId: '',
@@ -309,17 +327,19 @@ export default function NewOrderPage() {
         shippingAddress: shippingAddress.trim() || null,
         notes: notes.trim() || null,
         expectedDeliveryDate: expectedDeliveryDate ? new Date(expectedDeliveryDate).toISOString() : null,
-        sendToTsoft,
+        pushToTsoft,
         payment: {
           mode: paymentMode,
           customValue: paymentMode === 'CUSTOM' ? Number(customPaymentValue) || undefined : undefined,
         },
         items: validLines.map((l) => ({
           productId: l.productId || undefined,
+          productVariantId: l.productVariantId || undefined,
           name: l.name.trim(),
           quantity: l.quantity,
           unitPrice: l.unitPrice,
           vatRate: Math.round(l.vatRate),
+          priceIncludesVat: l.priceIncludesVat !== false,
           isFromStock: (l.sourceType || (l.isFromStock ? 'STOCK' : 'SUPPLIER')) === 'STOCK',
           supplierId:
             (l.sourceType || (l.isFromStock ? 'STOCK' : 'SUPPLIER')) === 'SUPPLIER'
@@ -472,7 +492,8 @@ export default function NewOrderPage() {
                 <th className="px-3 py-2 text-left min-w-[140px]">Renk/Kumaş</th>
                 <th className="px-3 py-2 text-left min-w-[140px]">Ölçü</th>
                 <th className="px-3 py-2 text-right w-20">Adet</th>
-                <th className="px-3 py-2 text-right w-32">Birim (KDV Dahil)</th>
+                <th className="px-3 py-2 text-right w-32">Birim fiyat</th>
+                <th className="px-3 py-2 text-center w-28">Fiyat tipi</th>
                 <th className="px-3 py-2 text-right w-20">KDV %</th>
                 <th className="px-3 py-2 text-left w-44">Kaynak</th>
                 <th className="px-3 py-2 text-left w-48">Tedarikçi</th>
@@ -529,6 +550,19 @@ export default function NewOrderPage() {
                       onChange={(e) => updateLine(line.key, { unitPrice: Math.max(0, parseFloat(e.target.value) || 0) })}
                       className="w-full px-2 py-1.5 rounded border border-gray-200 text-right"
                     />
+                  </td>
+                  <td className="px-3 py-2">
+                    <select
+                      value={line.priceIncludesVat ? 'incl' : 'excl'}
+                      onChange={(e) =>
+                        updateLine(line.key, { priceIncludesVat: e.target.value === 'incl' })
+                      }
+                      className="w-full px-2 py-1.5 rounded border border-gray-200 text-xs"
+                      title="Birim fiyat KDV dahil mi hariç mi?"
+                    >
+                      <option value="incl">KDV dahil</option>
+                      <option value="excl">KDV hariç</option>
+                    </select>
                   </td>
                   <td className="px-3 py-2">
                     <input
@@ -670,11 +704,11 @@ export default function NewOrderPage() {
           <label className="inline-flex items-center gap-2 text-sm text-gray-700 cursor-pointer select-none">
             <input
               type="checkbox"
-              checked={sendToTsoft}
-              onChange={(e) => setSendToTsoft(e.target.checked)}
+              checked={pushToTsoft}
+              onChange={(e) => setPushToTsoft(e.target.checked)}
               className="rounded border-gray-300 text-whatsapp focus:ring-whatsapp"
             />
-            Siteye de gönderilsin
+            T-Soft sitesine de gönderilsin (kuyruğa alınır)
           </label>
           <button
             type="button"

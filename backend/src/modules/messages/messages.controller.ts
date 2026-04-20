@@ -84,6 +84,7 @@ export class MessagesController {
     return this.messagesService.sendProductShare({
       conversationId: body.conversationId,
       productId: body.productId,
+      productVariantId: body.productVariantId,
       sentById: user.id,
       sessionName: body.sessionName,
       chatId: body.chatId,
@@ -112,9 +113,11 @@ export class MessagesController {
   @UseInterceptors(
     FileInterceptor('file', {
       storage: imageStorage,
-      limits: { fileSize: 16 * 1024 * 1024 },
+      // WhatsApp belge üst sınırına yakın; frontend ile hizalı (64 MB).
+      limits: { fileSize: 64 * 1024 * 1024 },
       fileFilter: (_req, file, cb) => {
-        const allowed = /\.(jpg|jpeg|png|gif|webp|mp4|mp3|ogg|opus|pdf|doc|docx|xls|xlsx|ppt|pptx|txt|csv|zip|rar)$/i;
+        const allowed =
+          /\.(jpg|jpeg|png|gif|webp|heic|heif|mp4|mov|m4v|3gp|webm|mp3|ogg|opus|m4a|aac|wav|pdf|doc|docx|xls|xlsx|ppt|pptx|txt|csv|zip|rar|7z)$/i;
         if (allowed.test(extname(file.originalname))) {
           cb(null, true);
         } else {

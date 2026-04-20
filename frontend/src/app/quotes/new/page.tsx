@@ -24,7 +24,7 @@ import {
 
 type DiscountType = 'PERCENT' | 'AMOUNT';
 
-/** Tüm satırlarda tek KDV oranı (birim fiyat KDV dahil hesap için). */
+/** Satır başına KDV oranı seçenekleri */
 const LINE_VAT_OPTIONS = [0, 1, 10, 20] as const;
 
 type BillingFields = {
@@ -95,6 +95,10 @@ interface LocalLineItem {
   measurementInfo?: string;
   quantity: number;
   unitPrice: number;
+  /** Satır KDV oranı (%) */
+  vatRate: number;
+  /** true: birim fiyat KDV dahil | false: KDV hariç */
+  priceIncludesVat: boolean;
   applyDiscount: boolean;
   discountType: DiscountType;
   discountValue: number;
@@ -107,6 +111,7 @@ interface ProductHit {
   description?: string | null;
   unitPrice: number;
   vatRate: number;
+  priceIncludesVat?: boolean;
   currency?: string;
   imageUrl?: string | null;
 }
@@ -126,55 +131,70 @@ function measurementHintFromVariantMetadata(metadata: unknown): string {
   return t2 || title || '';
 }
 
+function round2(n: number) {
+  return Math.round(n * 100) / 100;
+}
+
+/** Backend `QuotesService` ile aynı: satır indirimi sonrası KDV hariç tutar (genel iskonto öncesi). */
+function lineExAfterLineDiscount(item: LocalLineItem): number {
+  const q = Math.max(0, Number(item.quantity) || 0);
+  const u = Number(item.unitPrice) || 0;
+  const r = Math.max(0, Number(item.vatRate) || 0) / 100;
+  const incl = item.priceIncludesVat;
+
+  let gross = incl ? q * u : q * u * (1 + r);
+
+  let lineDiscount = 0;
+  if (item.applyDiscount && item.discountValue && item.discountValue > 0) {
+    lineDiscount =
+      item.discountType === 'AMOUNT'
+        ? item.discountValue
+        : gross * (item.discountValue / 100);
+  }
+  gross = Math.max(0, gross - lineDiscount);
+
+  return 1 + r > 0 ? gross / (1 + r) : gross;
+}
+
 /** Backend `QuotesService.calcTotals` ile aynı mantık (önizleme). */
-function calcTotals(
-  items: LocalLineItem[],
-  discountType: DiscountType,
-  discountValue: number,
-  lineVatRate: number,
-) {
-  let netSubtotalBeforeGeneralDiscount = 0;
-  let vatTotalBeforeGeneralDiscount = 0;
-  let grossSubtotalBeforeGeneralDiscount = 0;
-  const calculated = items.map((item) => {
-    const lineGross = item.quantity * item.unitPrice;
-    let lineDiscount = 0;
-    if (item.discountValue && item.discountValue > 0) {
-      lineDiscount =
-        item.discountType === 'AMOUNT'
-          ? item.discountValue
-          : lineGross * (item.discountValue / 100);
-    }
-    const grossAfterLineDiscount = Math.max(0, lineGross - lineDiscount);
-    const divider = 1 + (lineVatRate / 100);
-    const lineNet = divider > 0 ? grossAfterLineDiscount / divider : grossAfterLineDiscount;
-    const lineVat = grossAfterLineDiscount - lineNet;
-    netSubtotalBeforeGeneralDiscount += lineNet;
-    vatTotalBeforeGeneralDiscount += lineVat;
-    grossSubtotalBeforeGeneralDiscount += grossAfterLineDiscount;
-    const lineTotal = Math.round(grossAfterLineDiscount * 100) / 100;
-    return { ...item, lineTotal };
-  });
+function calcTotals(items: LocalLineItem[], discountType: DiscountType, discountValue: number) {
+  const rows = items.map((item) => ({
+    item,
+    exBefore: lineExAfterLineDiscount(item),
+  }));
+
+  const sumExBefore = rows.reduce((s, x) => s + x.exBefore, 0);
 
   let discountTotal = 0;
   if (discountValue > 0) {
     discountTotal =
-      discountType === 'AMOUNT' ? discountValue : grossSubtotalBeforeGeneralDiscount * (discountValue / 100);
+      discountType === 'AMOUNT'
+        ? Math.min(discountValue, sumExBefore)
+        : sumExBefore * (discountValue / 100);
   }
-  const grossAfterGeneralDiscount = Math.max(0, grossSubtotalBeforeGeneralDiscount - discountTotal);
-  const discountRatio =
-    grossSubtotalBeforeGeneralDiscount > 0
-      ? grossAfterGeneralDiscount / grossSubtotalBeforeGeneralDiscount
-      : 1;
-  const adjustedNet = netSubtotalBeforeGeneralDiscount * discountRatio;
-  const adjustedVat = vatTotalBeforeGeneralDiscount * discountRatio;
-  const grandTotal = Math.round(grossAfterGeneralDiscount * 100) / 100;
+  discountTotal = round2(discountTotal);
+
+  const sumExAfter = Math.max(0, sumExBefore - discountTotal);
+  const ratio = sumExBefore > 0 ? sumExAfter / sumExBefore : 0;
+
+  let vatTotal = 0;
+  const lineTotals = rows.map(({ item, exBefore }) => {
+    const r = Math.max(0, Number(item.vatRate) || 0) / 100;
+    const exAfter = exBefore * ratio;
+    const lineGrossAfterGeneral = exAfter * (1 + r);
+    vatTotal += exAfter * r;
+    return round2(lineGrossAfterGeneral);
+  });
+
+  const subtotal = round2(sumExAfter);
+  vatTotal = round2(vatTotal);
+  const grandTotal = round2(sumExAfter + vatTotal);
 
   return {
-    lineTotals: calculated.map((c) => c.lineTotal),
-    subtotal: Math.round(adjustedNet * 100) / 100,
-    discountTotal: Math.round(discountTotal * 100) / 100,
-    vatTotal: Math.round(adjustedVat * 100) / 100,
+    lineTotals,
+    subtotal,
+    discountTotal,
+    vatTotal,
     grandTotal,
   };
 }
@@ -196,6 +216,8 @@ function emptyLine(): LocalLineItem {
     measurementInfo: '',
     quantity: 1,
     unitPrice: 0,
+    vatRate: 20,
+    priceIncludesVat: true,
     applyDiscount: false,
     discountType: 'PERCENT',
     discountValue: 0,
@@ -299,25 +321,18 @@ export default function NewQuotePage() {
       name: string;
       unitPrice: number;
       vatRate: number;
+      priceIncludesVat?: boolean;
       metadata?: unknown;
       imageUrl?: string | null;
     }[];
   } | null>(null);
 
-  /** Teklifteki tüm satırlar için geçerli KDV oranı (API’ye satır başına yazılır). */
-  const [lineVatRate, setLineVatRate] = useState(20);
-
   const sym = currencySymbol(currency);
 
   const totals = useMemo(
-    () => calcTotals(lines, discountType, discountValue, lineVatRate),
-    [lines, discountType, discountValue, lineVatRate],
+    () => calcTotals(lines, discountType, discountValue),
+    [lines, discountType, discountValue],
   );
-
-  const lineVatSelectOptions = useMemo(() => {
-    const s = new Set<number>([...LINE_VAT_OPTIONS, lineVatRate]);
-    return Array.from(s).sort((a, b) => a - b);
-  }, [lineVatRate]);
 
   const billingDirty = useMemo(() => {
     if (!billingDraft || !billingBaseline) return false;
@@ -479,6 +494,7 @@ export default function NewQuotePage() {
       unitPrice: number;
       metadata?: unknown;
       vatRate?: number;
+      priceIncludesVat?: boolean;
       imageUrl?: string | null;
     },
   ) => {
@@ -487,8 +503,13 @@ export default function NewQuotePage() {
         ? Math.round(Number(variant.vatRate))
         : p.vatRate != null && Number.isFinite(Number(p.vatRate))
           ? Math.round(Number(p.vatRate))
-          : null;
-    if (vat != null) setLineVatRate(vat);
+          : 20;
+    const pic =
+      variant?.priceIncludesVat !== undefined
+        ? variant.priceIncludesVat
+        : p.priceIncludesVat !== undefined
+          ? p.priceIncludesVat
+          : true;
     const measureHint = variant ? measurementHintFromVariantMetadata(variant.metadata) : '';
     setLines((prev) => [
       ...prev,
@@ -503,6 +524,8 @@ export default function NewQuotePage() {
         measurementInfo: measureHint,
         quantity: 1,
         unitPrice: variant ? variant.unitPrice : p.unitPrice,
+        vatRate: vat,
+        priceIncludesVat: pic,
         applyDiscount: false,
         discountType: 'PERCENT',
         discountValue: 0,
@@ -624,9 +647,10 @@ export default function NewQuotePage() {
           description: l.description || undefined,
           quantity: l.quantity,
           unitPrice: l.unitPrice,
-          vatRate: Math.round(lineVatRate),
-          discountType: l.applyDiscount ? l.discountType : 'PERCENT',
-          discountValue: l.applyDiscount ? l.discountValue || 0 : 0,
+          vatRate: Math.round(l.vatRate),
+          priceIncludesVat: l.priceIncludesVat,
+          discountType: 'PERCENT',
+          discountValue: 0,
           colorFabricInfo: String(l.colorFabricInfo ?? '').trim() || undefined,
           measurementInfo: String(l.measurementInfo ?? '').trim() || undefined,
         })),
@@ -920,6 +944,7 @@ export default function NewQuotePage() {
           )}
         </aside>
         <div className="flex-1 min-w-0 space-y-6 order-1 xl:order-2 w-full">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
           {/* Kişi */}
           <section className="bg-white rounded-xl border border-gray-100 shadow-sm p-5 space-y-3">
             <div className="flex items-center justify-between gap-3">
@@ -990,6 +1015,41 @@ export default function NewQuotePage() {
               )}
             </div>
           </section>
+
+          {/* Ürün arama */}
+          <section className="bg-white rounded-xl border border-gray-100 shadow-sm p-5 space-y-3">
+            <h2 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+              <Package className="w-4 h-4 text-whatsapp" />
+              Ürün ekle
+            </h2>
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Tam ürün adı veya SKU (tam eşleşme)"
+                value={productQuery}
+                onChange={(e) => handleProductSearch(e.target.value)}
+                onFocus={() => productQuery.length >= 1 && setProductDropdownOpen(true)}
+                onBlur={() => setTimeout(() => setProductDropdownOpen(false), 200)}
+                className="w-full pl-9 pr-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-whatsapp"
+              />
+              {productDropdownOpen && productResults.length > 0 && (
+                <div className="absolute z-30 mt-1 w-full bg-white border border-gray-200 rounded-xl shadow-lg max-h-56 overflow-y-auto">
+                  {productResults.map((p) => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onMouseDown={() => void onPickProductFromSearch(p)}
+                      className="w-full text-left px-4 py-2.5 hover:bg-green-50/60 border-b border-gray-50 last:border-0"
+                    >
+                      <p className="text-sm font-medium text-gray-900">{p.name}</p>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </section>
+          </div>
 
           {selectedContact && (
             <section
@@ -1115,40 +1175,6 @@ export default function NewQuotePage() {
             </section>
           )}
 
-          {/* Ürün arama */}
-          <section className="bg-white rounded-xl border border-gray-100 shadow-sm p-5 space-y-3">
-            <h2 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
-              <Package className="w-4 h-4 text-whatsapp" />
-              Ürün ekle
-            </h2>
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-              <input
-                type="text"
-                placeholder="Tam ürün adı veya SKU (tam eşleşme)"
-                value={productQuery}
-                onChange={(e) => handleProductSearch(e.target.value)}
-                onFocus={() => productQuery.length >= 1 && setProductDropdownOpen(true)}
-                onBlur={() => setTimeout(() => setProductDropdownOpen(false), 200)}
-                className="w-full pl-9 pr-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-whatsapp"
-              />
-              {productDropdownOpen && productResults.length > 0 && (
-                <div className="absolute z-30 mt-1 w-full bg-white border border-gray-200 rounded-xl shadow-lg max-h-56 overflow-y-auto">
-                  {productResults.map((p) => (
-                    <button
-                      key={p.id}
-                      type="button"
-                      onMouseDown={() => void onPickProductFromSearch(p)}
-                      className="w-full text-left px-4 py-2.5 hover:bg-green-50/60 border-b border-gray-50 last:border-0"
-                    >
-                      <p className="text-sm font-medium text-gray-900">{p.name}</p>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          </section>
-
           {/* Satırlar — tam genişlik (orta sütun flex-1) */}
           <section className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden w-full">
             <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
@@ -1163,17 +1189,17 @@ export default function NewQuotePage() {
             </div>
             
             <div className="overflow-x-auto w-full min-w-0">
-                <table className="w-full text-xs min-w-[780px]">
+                <table className="w-full text-xs min-w-[1020px]">
                 <thead>
                   <tr className="bg-gray-50/90 text-gray-500 font-semibold uppercase tracking-wide text-[10px]">
                     <th className="text-left px-2 py-2 w-20 sm:w-24">Görsel</th>
                     <th className="text-left px-3 py-2 w-[18%]">Ürün</th>
                     <th className="text-left px-2 py-2 w-[14%]">Renk/Kumaş</th>
                     <th className="text-left px-2 py-2 w-[12%]">Ölçü</th>
-                    <th className="text-left px-2 py-2 w-16">Miktar</th>
-                    <th className="text-left px-2 py-2 w-28">Birim (KDV dahil)</th>
-                    <th className="text-left px-2 py-2 w-40">Satır indirimi</th>
-                    <th className="text-right px-3 py-2 w-24">Satır Toplamı</th>
+                    <th className="text-left px-2 py-2 w-14">Miktar</th>
+                    <th className="text-left px-2 py-2 w-16">KDV %</th>
+                    <th className="text-left px-2 py-2 w-[7.5rem]">Birim fiyat</th>
+                    <th className="text-right px-3 py-2 w-28">Satır (KDV dahil)</th>
                     <th className="w-10" />
                   </tr>
                 </thead>
@@ -1250,71 +1276,58 @@ export default function NewQuotePage() {
                       <td className="px-2 py-2">
                         <input
                           type="number"
-                          min={0.01}
-                          step={0.01}
+                          min={1}
+                          step={1}
                           value={line.quantity}
                           onChange={(e) =>
-                            updateLine(line.key, { quantity: parseFloat(e.target.value) || 0 })
+                            updateLine(line.key, {
+                              quantity: Math.max(1, parseInt(e.target.value, 10) || 1),
+                            })
                           }
                           className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm tabular-nums"
                         />
                       </td>
                       <td className="px-2 py-2">
-                        <input
-                          type="number"
-                          min={0}
-                          step={0.01}
-                          value={line.unitPrice}
+                        <select
+                          value={line.vatRate}
                           onChange={(e) =>
-                            updateLine(line.key, { unitPrice: parseFloat(e.target.value) || 0 })
+                            updateLine(line.key, { vatRate: parseInt(e.target.value, 10) || 0 })
                           }
-                          className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm tabular-nums"
-                        />
+                          className="w-full px-1.5 py-1.5 border border-gray-200 rounded-lg text-[11px] font-medium bg-white tabular-nums"
+                        >
+                          {Array.from(new Set([...LINE_VAT_OPTIONS, line.vatRate]))
+                            .sort((a, b) => a - b)
+                            .map((v) => (
+                              <option key={v} value={v}>
+                                %{v}
+                              </option>
+                            ))}
+                        </select>
                       </td>
                       <td className="px-2 py-2">
-                        <div className="flex flex-col gap-1.5 min-w-0">
-                          <label className="inline-flex items-center gap-2 text-[11px] font-medium text-gray-700">
-                            <input
-                              type="checkbox"
-                              checked={line.applyDiscount}
-                              onChange={(e) =>
-                                updateLine(line.key, {
-                                  applyDiscount: e.target.checked,
-                                  ...(e.target.checked ? {} : { discountValue: 0, discountType: 'PERCENT' }),
-                                })
-                              }
-                              className="rounded border-gray-300 text-whatsapp focus:ring-whatsapp shrink-0"
-                            />
-                            İndirim uygula
-                          </label>
-                          {line.applyDiscount ? (
-                            <div className="flex gap-1 items-center">
-                              <select
-                                value={line.discountType}
-                                onChange={(e) =>
-                                  updateLine(line.key, {
-                                    discountType: e.target.value as DiscountType,
-                                  })
-                                }
-                                className="w-14 shrink-0 px-1 py-1 border border-gray-200 rounded-lg text-[11px] font-medium bg-white"
-                              >
-                                <option value="PERCENT">%</option>
-                                <option value="AMOUNT">TL</option>
-                              </select>
-                              <input
-                                type="number"
-                                min={0}
-                                step={0.01}
-                                value={line.discountValue}
-                                onChange={(e) =>
-                                  updateLine(line.key, {
-                                    discountValue: parseFloat(e.target.value) || 0,
-                                  })
-                                }
-                                className="min-w-0 flex-1 px-2 py-1 border border-gray-200 rounded-lg text-sm tabular-nums"
-                              />
-                            </div>
-                          ) : null}
+                        <div className="flex flex-col gap-1">
+                          <select
+                            value={line.priceIncludesVat ? 'incl' : 'excl'}
+                            onChange={(e) =>
+                              updateLine(line.key, {
+                                priceIncludesVat: e.target.value === 'incl',
+                              })
+                            }
+                            className="w-full px-1.5 py-1 border border-gray-200 rounded-lg text-[10px] font-medium bg-white"
+                          >
+                            <option value="incl">KDV dahil</option>
+                            <option value="excl">KDV hariç</option>
+                          </select>
+                          <input
+                            type="number"
+                            min={0}
+                            step={0.01}
+                            value={line.unitPrice}
+                            onChange={(e) =>
+                              updateLine(line.key, { unitPrice: parseFloat(e.target.value) || 0 })
+                            }
+                            className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm tabular-nums"
+                          />
                         </div>
                       </td>
                       <td className="px-3 py-2 text-right text-sm font-semibold text-gray-800 tabular-nums">
@@ -1436,18 +1449,20 @@ export default function NewQuotePage() {
               Özet
             </h3>
             <dl className="space-y-3 text-sm">
+              {totals.discountTotal > 0 ? (
+                <div className="flex justify-between gap-2 text-gray-600">
+                  <dt>Genel iskonto</dt>
+                  <dd className="font-medium text-red-600 tabular-nums">
+                    −{sym}
+                    {fmt(totals.discountTotal)}
+                  </dd>
+                </div>
+              ) : null}
               <div className="flex justify-between gap-2 text-gray-600">
-                <dt>Ara Toplam</dt>
+                <dt>İskontolu toplam (KDV hariç)</dt>
                 <dd className="font-medium text-gray-900 tabular-nums">
                   {sym}
                   {fmt(totals.subtotal)}
-                </dd>
-              </div>
-              <div className="flex justify-between gap-2 text-gray-600">
-                <dt>İndirim</dt>
-                <dd className="font-medium text-red-600 tabular-nums">
-                  −{sym}
-                  {fmt(totals.discountTotal)}
                 </dd>
               </div>
               <div className="flex justify-between gap-2 text-gray-600">
@@ -1467,7 +1482,7 @@ export default function NewQuotePage() {
                 </div>
               )}
               <div className="pt-3 border-t border-green-100 flex justify-between items-baseline gap-2">
-                <dt className="text-base font-bold text-gray-900">GENEL TOPLAM</dt>
+                <dt className="text-base font-bold text-gray-900">GENEL TOPLAM (KDV dahil)</dt>
                 <dd className="text-2xl font-extrabold text-whatsapp tabular-nums">
                   {sym}
                   {fmt(grandTotalOverride && parseFloat(grandTotalOverride) > 0 

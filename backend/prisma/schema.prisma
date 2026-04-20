@@ -40,6 +40,15 @@ enum CashDirection {
   EXPENSE
 }
 
+/// Tahsilat/ödeme yöntemi (CashBookEntry için)
+enum CashMethod {
+  CASH
+  TRANSFER
+  CARD
+  CHECK
+  OTHER
+}
+
 enum LedgerKind {
   RECEIVABLE
   PAYABLE
@@ -60,7 +69,6 @@ enum DiscountType {
 
 enum ProductFeedSource {
   MANUAL
-  XML
   TSOFT
 }
 
@@ -159,36 +167,36 @@ enum TicketPriority {
 }
 
 model Organization {
-  id              String   @id @default(uuid())
-  name            String
-  slug            String   @unique
-  logo            String?
-  primaryColor    String   @default("#25D366")
-  secondaryColor  String   @default("#1a2238")
-  plan            PlanType @default(FREE)
-  maxUsers        Int      @default(5)
-  maxSessions     Int      @default(1)
-  isActive        Boolean  @default(true)
-  settings        Json?
-  billingEmail    String?
-  billingName     String?
-  billingAddress  String?
-  taxNumber       String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id             String   @id @default(uuid())
+  name           String
+  slug           String   @unique
+  logo           String?
+  primaryColor   String   @default("#25D366")
+  secondaryColor String   @default("#1a2238")
+  plan           PlanType @default(FREE)
+  maxUsers       Int      @default(5)
+  maxSessions    Int      @default(1)
+  isActive       Boolean  @default(true)
+  settings       Json?
+  billingEmail   String?
+  billingName    String?
+  billingAddress String?
+  taxNumber      String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
-  users            User[]
-  sessions         WhatsappSession[]
-  contacts         Contact[]
-  subscriptions    Subscription[]
-  invoices         Invoice[]
-  supportTickets   SupportTicket[]
-  templates        MessageTemplate[]
-  autoReplyFlows   AutoReplyFlow[]
-  auditLogs        AuditLog[]
-  integrations           OrgIntegration[]
-  tsoftCatalogProducts   TsoftCatalogProduct[]
-  tsoftPushQueue         TsoftPushQueue[]
+  users                User[]
+  sessions             WhatsappSession[]
+  contacts             Contact[]
+  subscriptions        Subscription[]
+  invoices             Invoice[]
+  supportTickets       SupportTicket[]
+  templates            MessageTemplate[]
+  autoReplyFlows       AutoReplyFlow[]
+  auditLogs            AuditLog[]
+  integrations         OrgIntegration[]
+  tsoftCatalogProducts TsoftCatalogProduct[]
+  tsoftPushQueue       TsoftPushQueue[]
 
   @@map("organizations")
 }
@@ -217,16 +225,16 @@ model Subscription {
 }
 
 model Invoice {
-  id              String   @id @default(uuid())
+  id              String    @id @default(uuid())
   organizationId  String
   subscriptionId  String?
   amount          Float
-  currency        String   @default("TRY")
-  status          String   @default("pending")
+  currency        String    @default("TRY")
+  status          String    @default("pending")
   iyzicoPaymentId String?
   description     String?
   paidAt          DateTime?
-  createdAt       DateTime @default(now())
+  createdAt       DateTime  @default(now())
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
@@ -236,37 +244,37 @@ model Invoice {
 }
 
 model User {
-  id             String        @id @default(uuid())
-  email          String        @unique
+  id             String   @id @default(uuid())
+  email          String   @unique
   password       String
   name           String
-  role           UserRole      @default(AGENT)
+  role           UserRole @default(AGENT)
   avatar         String?
-  isActive       Boolean       @default(true)
+  isActive       Boolean  @default(true)
   organizationId String?
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
-  organization      Organization?      @relation(fields: [organizationId], references: [id])
-  assignments       Assignment[]
-  sentMessages      Message[]          @relation("SentByUser")
-  activities        Activity[]
-  agentMetrics      AgentMetric[]
-  tasks             Task[]
-  internalNotes     InternalNote[]
-  templates         MessageTemplate[]  @relation("TemplateCreator")
-  autoReplyFlows    AutoReplyFlow[]    @relation("FlowCreator")
-  auditLogs         AuditLog[]         @relation("AuditLogs")
-  createdTickets    SupportTicket[]    @relation("TicketCreator")
-  assignedTickets   SupportTicket[]    @relation("TicketAssignee")
-  ticketMessages    TicketMessage[]    @relation("TicketMessages")
-  passwordResets    PasswordReset[]
-  createdQuotes          Quote[]             @relation("QuoteCreator")
-  createdOrders          SalesOrder[]        @relation("OrderCreator")
-  createdAccInvoices     AccountingInvoice[] @relation("AccInvoiceCreator")
-  cashBookEntries        CashBookEntry[]
-  ledgerEntries          LedgerEntry[]
-  deliveryNotes          DeliveryNote[]
+  organization       Organization?       @relation(fields: [organizationId], references: [id])
+  assignments        Assignment[]
+  sentMessages       Message[]           @relation("SentByUser")
+  activities         Activity[]
+  agentMetrics       AgentMetric[]
+  tasks              Task[]
+  internalNotes      InternalNote[]
+  templates          MessageTemplate[]   @relation("TemplateCreator")
+  autoReplyFlows     AutoReplyFlow[]     @relation("FlowCreator")
+  auditLogs          AuditLog[]          @relation("AuditLogs")
+  createdTickets     SupportTicket[]     @relation("TicketCreator")
+  assignedTickets    SupportTicket[]     @relation("TicketAssignee")
+  ticketMessages     TicketMessage[]     @relation("TicketMessages")
+  passwordResets     PasswordReset[]
+  createdQuotes      Quote[]             @relation("QuoteCreator")
+  createdOrders      SalesOrder[]        @relation("OrderCreator")
+  createdAccInvoices AccountingInvoice[] @relation("AccInvoiceCreator")
+  cashBookEntries    CashBookEntry[]
+  ledgerEntries      LedgerEntry[]
+  deliveryNotes      DeliveryNote[]
 
   @@index([organizationId])
   @@map("users")
@@ -303,21 +311,21 @@ model Contact {
   company         String?
   city            String?
   address         String?
-  taxNumber       String?  // VKN (Vergi Kimlik Numarası)
+  taxNumber       String? // VKN (Vergi Kimlik Numarası)
   /// Vergi dairesi
   taxOffice       String?
-  identityNumber  String?  // TC Kimlik Numarası
-  billingAddress  String?  // Fatura adresi
-  shippingAddress String?  // Teslimat adresi
+  identityNumber  String? // TC Kimlik Numarası
+  billingAddress  String? // Fatura adresi
+  shippingAddress String? // Teslimat adresi
   metadata        Json?
   organizationId  String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  organization  Organization?  @relation(fields: [organizationId], references: [id])
-  conversations Conversation[]
-  lead          Lead?
-  tasks         Task[]
+  organization       Organization?       @relation(fields: [organizationId], references: [id])
+  conversations      Conversation[]
+  lead               Lead?
+  tasks              Task[]
   quotes             Quote[]
   orders             SalesOrder[]
   accountingInvoices AccountingInvoice[]
@@ -329,29 +337,29 @@ model Contact {
 }
 
 model Conversation {
-  id              String   @id @default(uuid())
-  contactId       String
-  sessionId       String
-  lastMessageAt   DateTime @default(now())
-  lastMessageText String?
-  unreadCount     Int      @default(0)
-  isArchived      Boolean  @default(false)
-  isClosed        Boolean  @default(false)
+  id               String   @id @default(uuid())
+  contactId        String
+  sessionId        String
+  lastMessageAt    DateTime @default(now())
+  lastMessageText  String?
+  unreadCount      Int      @default(0)
+  isArchived       Boolean  @default(false)
+  isClosed         Boolean  @default(false)
   /// WhatsApp grup sohbeti mi?
-  isGroup         Boolean  @default(false)
+  isGroup          Boolean  @default(false)
   /// WhatsApp grup JID'si (örn: 123456789@g.us)
-  waGroupId       String?
+  waGroupId        String?
   /// Grup adı (WhatsApp'tan alınan)
-  groupName       String?
+  groupName        String?
   /// Grup açıklaması
   groupDescription String?
   /// Grup profil fotoğrafı URL'si
-  groupAvatarUrl  String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  groupAvatarUrl   String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
-  contact       Contact          @relation(fields: [contactId], references: [id], onDelete: Cascade)
-  session       WhatsappSession  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  contact       Contact         @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  session       WhatsappSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   messages      Message[]
   assignments   Assignment[]
   internalNotes InternalNote[]
@@ -366,27 +374,27 @@ model Conversation {
 }
 
 model Message {
-  id            String           @id @default(uuid())
-  conversationId String
-  sessionId     String
-  waMessageId   String?          @unique
-  direction     MessageDirection
-  body          String?
-  mediaType     MediaType?
-  mediaUrl      String?
-  mediaMimeType String?
-  status        MessageStatus    @default(PENDING)
-  sentById      String?
-  timestamp     DateTime         @default(now())
-  reactions     Json?
-  isEdited      Boolean          @default(false)
-  editedAt      DateTime?
-  metadata      Json?
+  id               String           @id @default(uuid())
+  conversationId   String
+  sessionId        String
+  waMessageId      String?          @unique
+  direction        MessageDirection
+  body             String?
+  mediaType        MediaType?
+  mediaUrl         String?
+  mediaMimeType    String?
+  status           MessageStatus    @default(PENDING)
+  sentById         String?
+  timestamp        DateTime         @default(now())
+  reactions        Json?
+  isEdited         Boolean          @default(false)
+  editedAt         DateTime?
+  metadata         Json?
   /// Grup mesajlarında gönderenin WhatsApp numarası (participant JID'den)
   participantPhone String?
   /// Grup mesajlarında gönderenin adı (pushName/notifyName)
   participantName  String?
-  createdAt     DateTime         @default(now())
+  createdAt        DateTime         @default(now())
 
   conversation Conversation    @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   session      WhatsappSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
@@ -400,17 +408,17 @@ model Message {
 }
 
 model Lead {
-  id          String     @id @default(uuid())
-  contactId   String     @unique
-  status      LeadStatus @default(NEW)
-  value       Float?
-  source      String?
-  notes       String?
+  id         String     @id @default(uuid())
+  contactId  String     @unique
+  status     LeadStatus @default(NEW)
+  value      Float?
+  source     String?
+  notes      String?
   /// LOST durumunda kayıp nedeni (serbest metin)
-  lossReason  String?
-  closedAt    DateTime?
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
+  lossReason String?
+  closedAt   DateTime?
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
 
   contact    Contact    @relation(fields: [contactId], references: [id], onDelete: Cascade)
   activities Activity[]
@@ -420,11 +428,11 @@ model Lead {
 }
 
 model Assignment {
-  id              String   @id @default(uuid())
-  conversationId  String
-  userId          String
-  assignedAt      DateTime @default(now())
-  unassignedAt    DateTime?
+  id             String    @id @default(uuid())
+  conversationId String
+  userId         String
+  assignedAt     DateTime  @default(now())
+  unassignedAt   DateTime?
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -550,22 +558,22 @@ model AutoReplyFlow {
 }
 
 model SupportTicket {
-  id              String         @id @default(uuid())
-  organizationId  String
-  createdById     String
-  assignedToId    String?
-  subject         String
-  description     String
-  status          TicketStatus   @default(OPEN)
-  priority        TicketPriority @default(MEDIUM)
-  category        String?
-  closedAt        DateTime?
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
+  id             String         @id @default(uuid())
+  organizationId String
+  createdById    String
+  assignedToId   String?
+  subject        String
+  description    String
+  status         TicketStatus   @default(OPEN)
+  priority       TicketPriority @default(MEDIUM)
+  category       String?
+  closedAt       DateTime?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
 
-  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  createdBy    User           @relation("TicketCreator", fields: [createdById], references: [id])
-  assignedTo   User?          @relation("TicketAssignee", fields: [assignedToId], references: [id])
+  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy    User            @relation("TicketCreator", fields: [createdById], references: [id])
+  assignedTo   User?           @relation("TicketAssignee", fields: [assignedToId], references: [id])
   messages     TicketMessage[]
 
   @@index([organizationId])
@@ -589,12 +597,12 @@ model TicketMessage {
 }
 
 model PasswordReset {
-  id        String   @id @default(uuid())
+  id        String    @id @default(uuid())
   userId    String
-  token     String   @unique
+  token     String    @unique
   expiresAt DateTime
   usedAt    DateTime?
-  createdAt DateTime @default(now())
+  createdAt DateTime  @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -625,14 +633,14 @@ model AuditLog {
 }
 
 model OrgIntegration {
-  id             String   @id @default(uuid())
+  id             String    @id @default(uuid())
   organizationId String
   integrationKey String
-  isEnabled      Boolean  @default(false)
+  isEnabled      Boolean   @default(false)
   config         Json?
   purchasedAt    DateTime?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
@@ -657,24 +665,26 @@ model ProductCategory {
 // ─── Products ───
 
 model Product {
-  id          String   @id @default(uuid())
-  sku         String   @unique
-  name        String
-  description String?
-  unit        String   @default("Adet")
-  unitPrice   Float
-  currency    String   @default("TRY")
-  vatRate     Int      @default(20)
-  stock       Int?
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id               String   @id @default(uuid())
+  sku              String   @unique
+  name             String
+  description      String?
+  unit             String   @default("Adet")
+  unitPrice        Float
+  currency         String   @default("TRY")
+  vatRate          Int      @default(20)
+  /// true: unitPrice KDV dahil | false: KDV hariç (XML feed genelde hariç)
+  priceIncludesVat Boolean  @default(true)
+  stock            Int?
+  isActive         Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
-  /// Elle mi yoksa Google Shopping XML akışından mı geldi
+  /// Elle mi yoksa T-Soft pull senkronu ile mi geldi
   productFeedSource ProductFeedSource @default(MANUAL)
 
   /// g:product_type ile doldurulur (ürün kategorisi); elle düzenlenebilir
-  category                String?
+  category String?
 
   // Google Merchant / Shopping RSS alanları
   productUrl              String?
@@ -695,39 +705,48 @@ model Product {
   gtin                    String?
   /// g:additional_image_link URL listesi (JSON dizi)
   additionalImages        Json?
-  xmlSyncedAt             DateTime?
+
+  /// T-Soft ProductId (API). SKU değişse bile bağı koruyan asıl anahtar.
+  tsoftId           String?   @unique
+  /// Son başarılı T-Soft pull zaman damgası.
+  tsoftLastPulledAt DateTime?
+  /// Beklemedeki T-Soft push işlemi: CREATE | UPDATE | DELETE | null.
+  /// NULL olmayan kayıtları pull sync ezmez (read-after-write guard).
+  pendingPushOp     String?
 
   quoteItems QuoteItem[]
   orderItems OrderItem[]
-  variants  ProductVariant[]
+  variants   ProductVariant[]
 
   @@index([sku])
   @@index([productFeedSource])
   @@index([category])
+  @@index([tsoftId])
+  @@index([pendingPushOp])
   @@map("products")
 }
 
 /// T-Soft REST’ten senkronlanan site ürünü (görsel içeriği DB’de tutulmaz; yalnızca metin + JSON özet)
 model TsoftCatalogProduct {
-  id               String   @id @default(uuid())
+  id             String       @id @default(uuid())
   organizationId String
-  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
-  tsoftProductId String? /// T-Soft ProductId
-  productCode    String /// Web Servis / ürün kodu
-  barcode        String?
-  productName    String
-  sellingPrice   Float?
-  listPrice      Float?
-  buyingPrice    Float?
-  currency       String   @default("TRY")
-  stock          Int?
-  vatRate        Int?
-  brand          String?
-  model          String?
-  categoryCode   String?
-  categoryName   String?
-  isActive       Boolean  @default(true)
+  tsoftProductId   String? /// T-Soft ProductId
+  productCode      String /// Web Servis / ürün kodu
+  barcode          String?
+  productName      String
+  sellingPrice     Float?
+  listPrice        Float?
+  buyingPrice      Float?
+  currency         String  @default("TRY")
+  stock            Int?
+  vatRate          Int?
+  brand            String?
+  model            String?
+  categoryCode     String?
+  categoryName     String?
+  isActive         Boolean @default(true)
   shortDescription String? @db.Text
   detailsText      String? @db.Text /// HTML’den img kaldırılmış veya düz metin
   /// Alt ürün özeti (görsel URL’leri çıkarılmış)
@@ -735,7 +754,7 @@ model TsoftCatalogProduct {
   /// API satırının görsel alanları budanmış kopyası (opsiyonel araştırma için)
   rawSnapshotJson  Json?
 
-  syncedAt DateTime @default(now())
+  syncedAt  DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@unique([organizationId, productCode])
@@ -744,6 +763,8 @@ model TsoftCatalogProduct {
 }
 
 /// CRM → T-Soft yazım işlerinin dayanıklı kuyruğu.
+/// Worker her dakika `status=PENDING && scheduledAt<=now` kayıtlarını alır;
+/// başarılı olursa DONE, hata olursa FAILED (attemptCount<5 ise exp. backoff ile tekrar PENDING).
 /// Network hatası / 429 durumunda retry; Pull sync bekleyen kayıtları atlar (ezme riski yok).
 model TsoftPushQueue {
   id             String          @id @default(uuid())
@@ -756,99 +777,112 @@ model TsoftPushQueue {
   attemptCount   Int             @default(0)
   lastError      String?
   scheduledAt    DateTime        @default(now())
+  startedAt      DateTime?
   doneAt         DateTime?
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
 
-  organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@index([organizationId, status, scheduledAt])
   @@index([entity, entityId])
   @@map("tsoft_push_queue")
 }
 
-/// XML / Google Shopping varyant satırları (item_group_id altında)
+/// XML / Google Shopping / T-Soft varyant satırları (item_group_id altında)
 model ProductVariant {
-  id         String   @id @default(uuid())
-  productId  String
-  product    Product    @relation(fields: [productId], references: [id], onDelete: Cascade)
-  /// Akıştaki benzersiz kimlik (g:id / SKU)
-  externalId String     @unique
-  name       String
-  unitPrice  Float
-  currency   String     @default("TRY")
-  vatRate    Int        @default(20)
-  stock      Int?
-  isActive   Boolean    @default(true)
+  id               String   @id @default(uuid())
+  productId        String
+  product          Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  /// Akıştaki benzersiz kimlik (g:id / SKU / T-Soft variant kodu)
+  externalId       String   @unique
+  /// T-Soft VariantId (asıl anahtar; externalId değişse bile bağı korur)
+  tsoftId          String?  @unique
+  /// Varyanta özel SKU (T-Soft "ProductCode" / barcode)
+  sku              String?
+  name             String
+  /// Varyanta özel açıklama (T-Soft "Description")
+  description      String?
+  unitPrice        Float
+  /// T-Soft "ListPrice"
+  listPrice        Float?
+  /// T-Soft "SellingPrice / SalePrice"
+  salePriceAmount  Float?
+  currency         String   @default("TRY")
+  vatRate          Int      @default(20)
+  /// true: unitPrice KDV dahil | false: KDV hariç
+  priceIncludesVat Boolean  @default(true)
+  stock            Int?
+  isActive         Boolean  @default(true)
   /// XML subproduct/type2 vb. yapılandırılmış alanlar
-  metadata   Json?
-  /// Varyanta özel görsel (akıştan); yoksa ürün görseli kullanılır
-  imageUrl   String?
-  createdAt  DateTime   @default(now())
-  updatedAt  DateTime   @updatedAt
-
-  /// T-Soft varyant ID'si (opsiyonel, pull sonrası doldurulur)
-  tsoftId    String?  @unique
+  metadata         Json?
+  /// Varyanta özel ana görsel (asla parent'a sızdırılmaz)
+  imageUrl         String?
+  /// Ek varyant görselleri (URL dizisi JSON)
+  additionalImages Json?
   /// CRM'den kuyruğa alınmış bekleyen T-Soft işlemi
-  pendingPushOp TsoftPushOp?
+  pendingPushOp     TsoftPushOp?
   /// Son başarılı T-Soft pull zamanı
   tsoftLastPulledAt DateTime?
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
 
   quoteItems QuoteItem[]
   orderItems OrderItem[]
 
   @@index([productId])
   @@index([tsoftId])
+  @@index([sku])
   @@map("product_variants")
 }
 
 // ─── Quotes ───
 
 model Quote {
-  id            String       @id @default(uuid())
-  quoteNumber   Int          @unique @default(autoincrement())
-  contactId     String
-  createdById   String
-  status        QuoteStatus  @default(DRAFT)
-  currency      String       @default("TRY")
-  subtotal      Float        @default(0)
-  discountType  DiscountType @default(PERCENT)
-  discountValue Float        @default(0)
-  discountTotal Float        @default(0)
-  vatTotal      Float        @default(0)
-  grandTotal    Float        @default(0)
-  validUntil    DateTime?
-  deliveryDate  DateTime?
-  notes         String?
+  id                   String           @id @default(uuid())
+  quoteNumber          Int              @unique @default(autoincrement())
+  contactId            String
+  createdById          String
+  status               QuoteStatus      @default(DRAFT)
+  currency             String           @default("TRY")
+  subtotal             Float            @default(0)
+  discountType         DiscountType     @default(PERCENT)
+  discountValue        Float            @default(0)
+  discountTotal        Float            @default(0)
+  vatTotal             Float            @default(0)
+  grandTotal           Float            @default(0)
+  validUntil           DateTime?
+  deliveryDate         DateTime?
+  notes                String?
   /// Bu teklife özel ödeme koşulları (sistem ayarını ezer)
-  termsOverride String?
+  termsOverride        String?
   /// Bu teklife özel alt not (sistem ayarını ezer)
-  footerNoteOverride String?
-  pdfUrl        String?
+  footerNoteOverride   String?
+  pdfUrl               String?
   /// Kabul sonrası ödeme modeli
-  paymentMode   QuotePaymentMode @default(FULL)
+  paymentMode          QuotePaymentMode @default(FULL)
   /// Kısmi ödeme tutarı (TL)
   partialPaymentAmount Float?
-  acceptedAt    DateTime?
+  acceptedAt           DateTime?
   /// Versiyon numarası (her güncelleme öncesi artırılır)
-  currentVersion Int @default(1)
+  currentVersion       Int              @default(1)
   /// PDF başlığı: PROFORMA | QUOTE
-  documentKind  String       @default("PROFORMA")
+  documentKind         String           @default("PROFORMA")
   /// Yönetim panelinde kayıt elle güncellendi (müşteri PDF’lerinde gösterilmez)
-  panelEditedAt DateTime?
+  panelEditedAt        DateTime?
   /// Temsilci bilgisi
-  agentInfo     String?
+  agentInfo            String?
   /// Renk/Kumaş bilgisi
-  colorFabricInfo String?
+  colorFabricInfo      String?
   /// Ölçü bilgisi
-  measurementInfo String?
+  measurementInfo      String?
   /// Genel toplam manuel düzenleme (doluysa hesaplanan yerine kullanılır)
-  grandTotalOverride Float?
-  createdAt     DateTime     @default(now())
-  updatedAt     DateTime     @updatedAt
+  grandTotalOverride   Float?
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
 
-  contact   Contact        @relation(fields: [contactId], references: [id], onDelete: Cascade)
-  createdBy User           @relation("QuoteCreator", fields: [createdById], references: [id])
+  contact   Contact            @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  createdBy User               @relation("QuoteCreator", fields: [createdById], references: [id])
   items     QuoteItem[]
   versions  QuoteVersion[]
   order     SalesOrder?
@@ -875,28 +909,30 @@ model QuoteVersion {
 }
 
 model QuoteItem {
-  id            String        @id @default(uuid())
-  quoteId       String
-  productId     String?
+  id               String        @id @default(uuid())
+  quoteId          String
+  productId        String?
   productVariantId String?
-  name          String
-  description   String?
-  quantity      Float         @default(1)
-  unitPrice     Float
-  vatRate       Int           @default(20)
-  discountType  DiscountType? @default(PERCENT)
-  discountValue Float?        @default(0)
-  lineTotal     Float         @default(0)
+  name             String
+  description      String?
+  quantity         Float         @default(1)
+  unitPrice        Float
+  vatRate          Int           @default(20)
+  /// Teklif anındaki fiyat tipi (ürün güncellenince değişmesin diye)
+  priceIncludesVat Boolean       @default(true)
+  discountType     DiscountType? @default(PERCENT)
+  discountValue    Float?        @default(0)
+  lineTotal        Float         @default(0)
   /// Satır görseli (PDF / ekran)
-  lineImageUrl  String?
+  lineImageUrl     String?
   /// Ürün satırına özel renk/kumaş
-  colorFabricInfo String?
+  colorFabricInfo  String?
   /// Ürün satırına özel ölçü
-  measurementInfo String?
+  measurementInfo  String?
 
-  quote            Quote           @relation(fields: [quoteId], references: [id], onDelete: Cascade)
-  product          Product?        @relation(fields: [productId], references: [id], onDelete: SetNull)
-  productVariant   ProductVariant? @relation(fields: [productVariantId], references: [id], onDelete: SetNull)
+  quote          Quote           @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  product        Product?        @relation(fields: [productId], references: [id], onDelete: SetNull)
+  productVariant ProductVariant? @relation(fields: [productVariantId], references: [id], onDelete: SetNull)
 
   @@index([quoteId])
   @@index([productVariantId])
@@ -906,48 +942,49 @@ model QuoteItem {
 // ─── Orders ───
 
 model SalesOrder {
-  id                    String      @id @default(uuid())
-  orderNumber           Int         @unique @default(autoincrement())
+  id                         String      @id @default(uuid())
+  orderNumber                Int         @unique @default(autoincrement())
   /// T-Soft / harici sipariş ID'si (tekil; upsert için)
-  externalId            String?     @unique
+  externalId                 String?     @unique
   /// T-Soft sipariş numerik ID (order2 API için; OrderId)
-  tsoftSiteOrderId      String?
+  tsoftSiteOrderId           String?
   /// Siparişin kaynağı: MANUAL | TSOFT
-  source                String      @default("MANUAL")
-  quoteId               String?     @unique
-  contactId             String
-  createdById           String
-  status                OrderStatus @default(PENDING)
-  currency              String      @default("TRY")
-  subtotal              Float       @default(0)
-  vatTotal              Float       @default(0)
-  grandTotal            Float       @default(0)
-  shippingAddress       String?
-  notes                 String?
+  source                     String      @default("MANUAL")
+  quoteId                    String?     @unique
+  contactId                  String
+  createdById                String
+  status                     OrderStatus @default(PENDING)
+  currency                   String      @default("TRY")
+  subtotal                   Float       @default(0)
+  vatTotal                   Float       @default(0)
+  grandTotal                 Float       @default(0)
+  shippingAddress            String?
+  notes                      String?
   /// Planlanan teslim tarihi; teklifteki teslim tarihinden siparişe kopyalanabilir
-  expectedDeliveryDate  DateTime?
+  expectedDeliveryDate       DateTime?
   /// Tekliften dönüşüm sonrası sipariş onay formu (PDF)
-  confirmationPdfUrl    String?
+  confirmationPdfUrl         String?
   /// %50 ön ödemede teslim öncesi kalan tahsilat hatırlatması oluşturuldu mu
-  depositBalanceReminderSent Boolean @default(false)
+  depositBalanceReminderSent Boolean     @default(false)
   /// Yönetim panelinde kayıt elle güncellendi
-  panelEditedAt         DateTime?
+  panelEditedAt              DateTime?
   /// CRM'den oluşturulurken T-Soft'a da itilsin mi (kullanıcı checkbox'ı)
-  pushToTsoft           Boolean     @default(false)
+  pushToTsoft                Boolean     @default(false)
   /// T-Soft'a başarıyla itildiğinde dolar
-  tsoftPushedAt         DateTime?
+  tsoftPushedAt              DateTime?
   /// Son T-Soft push hatası (retry sonrasında)
-  tsoftLastError        String?
-  createdAt             DateTime    @default(now())
-  updatedAt             DateTime    @updatedAt
+  tsoftLastError             String?
 
-  quote     Quote?             @relation(fields: [quoteId], references: [id], onDelete: SetNull)
-  contact   Contact            @relation(fields: [contactId], references: [id], onDelete: Cascade)
-  createdBy User               @relation("OrderCreator", fields: [createdById], references: [id])
-  items             OrderItem[]
-  invoice           AccountingInvoice?
-  cashBookEntries   CashBookEntry[]
-  deliveryNotes     DeliveryNote[]
+  createdAt                  DateTime    @default(now())
+  updatedAt                  DateTime    @updatedAt
+
+  quote           Quote?             @relation(fields: [quoteId], references: [id], onDelete: SetNull)
+  contact         Contact            @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  createdBy       User               @relation("OrderCreator", fields: [createdById], references: [id])
+  items           OrderItem[]
+  invoice         AccountingInvoice?
+  cashBookEntries CashBookEntry[]
+  deliveryNotes   DeliveryNote[]
 
   @@index([contactId])
   @@index([status])
@@ -974,26 +1011,30 @@ model Supplier {
 }
 
 model OrderItem {
-  id              String   @id @default(uuid())
-  orderId         String
-  productId       String?
-  /// Varyantlı ürün seçildiğinde varyant kimliği (chat/teklif/sipariş ortak akışı)
+  id               String  @id @default(uuid())
+  orderId          String
+  productId        String?
+  /// Varyantlı ürün seçildiğinde varyant kimliği (chat/teklif/sipariş ortak akışı).
+  /// T-Soft push'ta da kullanılır (renk/kumaş/beden vs.).
   productVariantId String?
-  name            String
-  quantity        Float    @default(1)
-  unitPrice       Float
-  vatRate         Int      @default(20)
-  lineTotal       Float    @default(0)
+  name             String
+  quantity         Float   @default(1)
+  unitPrice        Float
+  vatRate          Int     @default(20)
+  /// true: unitPrice KDV dahil (varsayılan), false: KDV hariç.
+  /// Teklif modeliyle aynı; sipariş kalemleri için hesap doğruluğu.
+  priceIncludesVat Boolean @default(true)
+  lineTotal        Float   @default(0)
   /// Tedarikçi (boş ise henüz belirlenmemiş)
-  supplierId      String?
+  supplierId       String?
   /// Tedarikçiye verilen sipariş numarası
-  supplierOrderNo String?
+  supplierOrderNo  String?
   /// Stoktan mı karşılanacak
-  isFromStock     Boolean  @default(false)
+  isFromStock      Boolean @default(false)
   /// Renk / kumaş (serbest veya varyant seçimi)
-  colorFabricInfo String?
+  colorFabricInfo  String?
   /// Ölçü / varyant detayı
-  measurementInfo String?
+  measurementInfo  String?
 
   order          SalesOrder      @relation(fields: [orderId], references: [id], onDelete: Cascade)
   product        Product?        @relation(fields: [productId], references: [id], onDelete: SetNull)
@@ -1009,31 +1050,31 @@ model OrderItem {
 // ─── Accounting Invoices ───
 
 model AccountingInvoice {
-  id              String           @id @default(uuid())
-  invoiceNumber   Int              @unique @default(autoincrement())
-  orderId         String?          @unique
-  quoteId         String?          @unique
-  contactId       String
-  createdById     String
-  status          AccInvoiceStatus @default(PENDING)
-  currency        String           @default("TRY")
-  subtotal        Float            @default(0)
-  vatTotal        Float            @default(0)
-  grandTotal      Float            @default(0)
-  dueDate         DateTime?
-  paidAt          DateTime?
-  pdfUrl          String?
-  uploadedPdfUrl  String?
-  notes           String?
+  id             String           @id @default(uuid())
+  invoiceNumber  Int              @unique @default(autoincrement())
+  orderId        String?          @unique
+  quoteId        String?          @unique
+  contactId      String
+  createdById    String
+  status         AccInvoiceStatus @default(PENDING)
+  currency       String           @default("TRY")
+  subtotal       Float            @default(0)
+  vatTotal       Float            @default(0)
+  grandTotal     Float            @default(0)
+  dueDate        DateTime?
+  paidAt         DateTime?
+  pdfUrl         String?
+  uploadedPdfUrl String?
+  notes          String?
   /// Yönetim panelinde kayıt elle güncellendi
-  panelEditedAt   DateTime?
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
+  panelEditedAt  DateTime?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
 
-  order     SalesOrder? @relation(fields: [orderId], references: [id], onDelete: SetNull)
-  quote     Quote?      @relation(fields: [quoteId], references: [id], onDelete: SetNull)
-  contact   Contact     @relation(fields: [contactId], references: [id], onDelete: Cascade)
-  createdBy User        @relation("AccInvoiceCreator", fields: [createdById], references: [id])
+  order           SalesOrder?     @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  quote           Quote?          @relation(fields: [quoteId], references: [id], onDelete: SetNull)
+  contact         Contact         @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  createdBy       User            @relation("AccInvoiceCreator", fields: [createdById], references: [id])
   cashBookEntries CashBookEntry[]
 
   @@index([contactId])
@@ -1049,6 +1090,10 @@ model CashBookEntry {
   userId      String
   amount      Float
   direction   CashDirection
+  /// Ödeme yöntemi; sipariş tahsilatlarında nakit/havale/POS/çek kırılımı için
+  method      CashMethod    @default(OTHER)
+  /// Banka/POS referansı, dekont no, çek no vb. (serbest metin)
+  reference   String?
   description String
   occurredAt  DateTime      @default(now())
   orderId     String?
@@ -1056,27 +1101,29 @@ model CashBookEntry {
   pdfUrl      String?
   createdAt   DateTime      @default(now())
 
-  user    User                 @relation(fields: [userId], references: [id])
-  order   SalesOrder?          @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  user    User               @relation(fields: [userId], references: [id])
+  order   SalesOrder?        @relation(fields: [orderId], references: [id], onDelete: SetNull)
   invoice AccountingInvoice? @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
 
   @@index([userId])
   @@index([occurredAt(sort: Desc)])
+  @@index([orderId])
+  @@index([invoiceId])
   @@map("cash_book_entries")
 }
 
 model LedgerEntry {
-  id          String     @id @default(uuid())
-  userId      String
-  contactId   String?
-  kind        LedgerKind
-  title       String
-  amount      Float
-  currency    String     @default("TRY")
-  dueDate     DateTime?
-  notes       String?
-  pdfUrl      String?
-  createdAt   DateTime   @default(now())
+  id        String     @id @default(uuid())
+  userId    String
+  contactId String?
+  kind      LedgerKind
+  title     String
+  amount    Float
+  currency  String     @default("TRY")
+  dueDate   DateTime?
+  notes     String?
+  pdfUrl    String?
+  createdAt DateTime   @default(now())
 
   user    User     @relation(fields: [userId], references: [id])
   contact Contact? @relation(fields: [contactId], references: [id], onDelete: SetNull)

@@ -168,6 +168,22 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
   const [productCategoryFilter, setProductCategoryFilter] = useState('');
   const [productCategories, setProductCategories] = useState<{ category: string; count: number }[]>([]);
   const [productSearchLoading, setProductSearchLoading] = useState(false);
+  const [variantPickerFor, setVariantPickerFor] = useState<{
+    productId: string;
+    productName: string;
+    productImageUrl?: string | null;
+  } | null>(null);
+  const [variantHits, setVariantHits] = useState<
+    {
+      id: string | null;
+      name: string;
+      imageUrl?: string | null;
+      unitPrice: number;
+      currency: string;
+      stock: number | null;
+    }[]
+  >([]);
+  const [variantLoading, setVariantLoading] = useState(false);
   const [contactPickerOpen, setContactPickerOpen] = useState(false);
   const [contactSearch, setContactSearch] = useState('');
   const [contactHits, setContactHits] = useState<
@@ -476,6 +492,17 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    // WhatsApp uygulaması resmi olarak belge için 100MB'a kadar izin verir;
+    // güvenli bir üst sınır olarak 64MB koyuyoruz (video/görsel için yeterli).
+    const MAX_SIZE = 64 * 1024 * 1024;
+    if (file.size > MAX_SIZE) {
+      toast.error(
+        `Dosya çok büyük (${(file.size / (1024 * 1024)).toFixed(1)} MB). Üst sınır 64 MB.`,
+      );
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      return;
+    }
+
     setSelectedFile(file);
     setCaption('');
 
@@ -483,6 +510,14 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
       const reader = new FileReader();
       reader.onload = (ev) => setFilePreview(ev.target?.result as string);
       reader.readAsDataURL(file);
+    } else if (file.type.startsWith('video/') || file.type.startsWith('audio/')) {
+      // Video/audio için object URL ile preview — <video>/<audio> etiketi tüketir.
+      try {
+        const objectUrl = URL.createObjectURL(file);
+        setFilePreview(objectUrl);
+      } catch {
+        setFilePreview(null);
+      }
     } else {
       setFilePreview(null);
     }
@@ -491,6 +526,14 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
   };
 
   const cancelFileSelect = () => {
+    // Video/audio için ObjectURL kullandıysak bellek sızıntısı olmaması adına iade et.
+    if (filePreview && filePreview.startsWith('blob:')) {
+      try {
+        URL.revokeObjectURL(filePreview);
+      } catch {
+        /* noop */
+      }
+    }
     setSelectedFile(null);
     setFilePreview(null);
     setCaption('');
@@ -510,18 +553,30 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
 
       const fullMediaUrl = `${backendPublicUrl()}${uploadResult.url}`;
 
+      // Optimistic render için MIME tipinden dosya türünü çıkar; backend doğru tipi yine döndürür.
+      const m = (selectedFile.type || '').toLowerCase();
+      const mediaTypeHint: 'IMAGE' | 'VIDEO' | 'AUDIO' | 'DOCUMENT' =
+        m.startsWith('image/')
+          ? 'IMAGE'
+          : m.startsWith('video/')
+            ? 'VIDEO'
+            : m.startsWith('audio/')
+              ? 'AUDIO'
+              : 'DOCUMENT';
+
       await sendMediaMessage({
         conversationId: activeConversation.id,
         sessionName: activeConversation.session.name,
         chatId,
         mediaUrl: fullMediaUrl,
         caption: caption || undefined,
+        mediaTypeHint,
       });
 
       cancelFileSelect();
     } catch (err: any) {
       console.error('Medya gönderim hatası:', err?.response?.data || err.message);
-      alert('Görsel gönderilemedi: ' + (err?.response?.data?.message || err.message));
+      toast.error(getApiErrorMessage(err, 'Medya gönderilemedi'));
     } finally {
       setUploading(false);
     }
@@ -1317,12 +1372,22 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
           <div className="bg-white border-t border-gray-200 px-4 py-3">
             <div className="flex items-start gap-3">
               <div className="relative flex-shrink-0">
-                {filePreview ? (
+                {filePreview && selectedFile.type.startsWith('image/') ? (
                   <img
                     src={filePreview}
                     alt=""
                     className="max-h-56 max-w-[min(280px,45vw)] w-auto h-auto object-contain rounded-xl border border-gray-200 bg-gray-50"
                   />
+                ) : filePreview && selectedFile.type.startsWith('video/') ? (
+                  <video
+                    src={filePreview}
+                    controls
+                    className="max-h-56 max-w-[min(280px,45vw)] rounded-xl border border-gray-200 bg-black"
+                  />
+                ) : filePreview && selectedFile.type.startsWith('audio/') ? (
+                  <div className="px-3 py-2 bg-gray-50 rounded-xl border border-gray-200 min-w-[240px]">
+                    <audio src={filePreview} controls className="w-full" />
+                  </div>
                 ) : (
                   <div className="w-24 h-24 min-h-[120px] bg-gray-100 rounded-xl flex items-center justify-center border border-gray-200">
                     <FileText className="w-8 h-8 text-gray-400" />
@@ -1550,7 +1615,88 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
               )}
             </div>
             <div className="flex-1 relative">
-              {productPickerOpen && (
+              {productPickerOpen && variantPickerFor && (
+                <div className="absolute bottom-full mb-2 left-0 right-0 bg-white border border-gray-200 rounded-xl shadow-lg z-30 overflow-hidden flex flex-col max-h-80">
+                  <div className="p-2 border-b border-gray-100 flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setVariantPickerFor(null);
+                        setVariantHits([]);
+                      }}
+                      className="text-xs text-gray-500 hover:text-gray-900 px-2 py-1 rounded hover:bg-gray-50"
+                    >
+                      ← Geri
+                    </button>
+                    <span className="text-sm font-medium text-gray-800 truncate flex-1">
+                      {variantPickerFor.productName} — Varyant seç
+                    </span>
+                  </div>
+                  <div className="overflow-y-auto flex-1">
+                    {variantLoading ? (
+                      <div className="flex justify-center py-6">
+                        <Loader2 className="w-6 h-6 text-whatsapp animate-spin" />
+                      </div>
+                    ) : variantHits.length === 0 ? (
+                      <p className="text-xs text-gray-400 text-center py-6 px-3">
+                        Varyant bulunamadı
+                      </p>
+                    ) : (
+                      variantHits.map((v, idx) => (
+                        <button
+                          key={v.id ?? `base-${idx}`}
+                          type="button"
+                          disabled={sending}
+                          onClick={() => {
+                            setSending(true);
+                            sendProductShare({
+                              conversationId: activeConversation.id,
+                              productId: variantPickerFor.productId,
+                              productVariantId: v.id ?? undefined,
+                              sessionName: activeConversation.session?.name,
+                              chatId: `${activeConversation.contact.phone}@c.us`,
+                            })
+                              .then(() => {
+                                setProductPickerOpen(false);
+                                setProductSearch('');
+                                setVariantPickerFor(null);
+                                setVariantHits([]);
+                              })
+                              .catch((err) => {
+                                toast.error(getApiErrorMessage(err, 'Ürün gönderilemedi'));
+                              })
+                              .finally(() => setSending(false));
+                          }}
+                          className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-gray-50 border-b border-gray-50 last:border-b-0 text-left disabled:opacity-50"
+                        >
+                          <div className="w-14 h-14 rounded-xl bg-gray-100 overflow-hidden shrink-0 border border-gray-100">
+                            {v.imageUrl || variantPickerFor.productImageUrl ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img
+                                src={rewriteMediaUrlForClient(
+                                  (v.imageUrl || variantPickerFor.productImageUrl) as string,
+                                )}
+                                alt=""
+                                className="w-full h-full object-cover"
+                              />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center text-[10px] text-gray-400">—</div>
+                            )}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-medium text-gray-900 truncate">{v.name}</p>
+                            <p className="text-[11px] text-gray-500">
+                              {v.unitPrice.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} {v.currency}
+                              {v.stock != null ? ` • Stok: ${v.stock}` : ''}
+                            </p>
+                          </div>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+              {productPickerOpen && !variantPickerFor && (
                 <div className="absolute bottom-full mb-2 left-0 right-0 bg-white border border-gray-200 rounded-xl shadow-lg z-20 overflow-hidden flex flex-col max-h-72">
                   <div className="p-2 border-b border-gray-100 flex items-center gap-2">
                     <Search className="w-4 h-4 text-gray-400 shrink-0" />
@@ -1591,7 +1737,37 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
                           key={p.id}
                           type="button"
                           disabled={sending}
-                          onClick={() => {
+                          onClick={async () => {
+                            // Önce varyantları yükle; varsa varyant seçim ekranına geç, yoksa direkt gönder.
+                            setVariantLoading(true);
+                            setVariantPickerFor({
+                              productId: p.id,
+                              productName: p.name,
+                              productImageUrl: p.imageUrl ?? null,
+                            });
+                            try {
+                              const { data } = await api.get(`/products/${p.id}/variants`);
+                              const list = Array.isArray(data) ? data : [];
+                              const hasReal = list.some((v: any) => v?.id);
+                              if (hasReal) {
+                                setVariantHits(
+                                  list.map((v: any) => ({
+                                    id: v.id ?? null,
+                                    name: String(v.name ?? ''),
+                                    imageUrl: v.imageUrl ?? null,
+                                    unitPrice: Number(v.unitPrice ?? 0),
+                                    currency: String(v.currency ?? 'TRY'),
+                                    stock: v.stock == null ? null : Number(v.stock),
+                                  })),
+                                );
+                                setVariantLoading(false);
+                                return;
+                              }
+                            } catch (e) {
+                              // varyant çekilemedi — ana ürünü direkt gönder
+                            }
+                            setVariantLoading(false);
+                            setVariantPickerFor(null);
                             setSending(true);
                             sendProductShare({
                               conversationId: activeConversation.id,

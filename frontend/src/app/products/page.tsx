@@ -21,6 +21,19 @@ import {
 
 const PAGE_SIZE = 20;
 
+interface ProductVariantLite {
+  id: string;
+  tsoftId?: string | null;
+  sku?: string | null;
+  name: string;
+  unitPrice: number;
+  listPrice?: number | null;
+  salePriceAmount?: number | null;
+  stock?: number | null;
+  isActive: boolean;
+  imageUrl?: string | null;
+}
+
 interface Product {
   id: string;
   sku: string;
@@ -34,7 +47,7 @@ interface Product {
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
-  productFeedSource?: 'MANUAL' | 'XML';
+  productFeedSource?: 'MANUAL' | 'TSOFT';
   productUrl?: string | null;
   imageUrl?: string | null;
   category?: string | null;
@@ -50,7 +63,9 @@ interface Product {
   googleIdentifierExists?: string | null;
   gtin?: string | null;
   additionalImages?: string[] | null;
-  xmlSyncedAt?: string | null;
+  tsoftId?: string | null;
+  tsoftLastPulledAt?: string | null;
+  pendingPushOp?: 'CREATE' | 'UPDATE' | 'DELETE' | null;
 }
 
 type FormState = {
@@ -101,40 +116,13 @@ export default function ProductsPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [form, setForm] = useState<FormState>(emptyForm);
+  const [pushToTsoft, setPushToTsoft] = useState(false);
+  const [editingVariants, setEditingVariants] = useState<ProductVariantLite[]>([]);
+  const [variantsLoading, setVariantsLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [togglingId, setTogglingId] = useState<string | null>(null);
-  const [syncingXml, setSyncingXml] = useState(false);
   const [downloadingImages, setDownloadingImages] = useState(false);
-
-  type ProductFeedSettings = {
-    xmlUrl: string;
-    defaultVatRate: number;
-    importDescription: boolean;
-    importImages: boolean;
-    importMerchantMeta: boolean;
-  };
-  const [productFeed, setProductFeed] = useState<ProductFeedSettings | null>(null);
-  const [feedLoading, setFeedLoading] = useState(false);
-  const [feedSaving, setFeedSaving] = useState(false);
-
-  useEffect(() => {
-    if (!isAdmin) return;
-    let cancelled = false;
-    setFeedLoading(true);
-    void (async () => {
-      try {
-        const { data } = await api.get<ProductFeedSettings>('/organizations/my/product-feed');
-        if (!cancelled) setProductFeed(data);
-      } catch (err: unknown) {
-        if (!cancelled) toast.error(getApiErrorMessage(err, 'XML ayarları yüklenemedi'));
-      } finally {
-        if (!cancelled) setFeedLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [isAdmin]);
+  const [syncingTsoft, setSyncingTsoft] = useState(false);
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(searchQuery.trim()), 300);
@@ -178,19 +166,42 @@ export default function ProductsPage() {
   const openCreate = () => {
     setEditingProduct(null);
     setForm(emptyForm());
+    setPushToTsoft(false);
+    setEditingVariants([]);
     setShowForm(true);
   };
 
   const openEdit = (p: Product) => {
     setEditingProduct(p);
     setForm(productToForm(p));
+    setPushToTsoft(p.productFeedSource === 'TSOFT');
+    setEditingVariants([]);
     setShowForm(true);
+    if (p.productFeedSource === 'TSOFT') {
+      void loadVariants(p.id);
+    }
   };
 
   const closeForm = () => {
     setShowForm(false);
     setEditingProduct(null);
     setForm(emptyForm());
+    setPushToTsoft(false);
+    setEditingVariants([]);
+  };
+
+  const loadVariants = async (productId: string) => {
+    setVariantsLoading(true);
+    try {
+      const { data } = await api.get<{ variants: ProductVariantLite[] }>(
+        `/products/${productId}/variants`,
+      );
+      setEditingVariants(Array.isArray(data?.variants) ? data.variants : []);
+    } catch {
+      setEditingVariants([]);
+    } finally {
+      setVariantsLoading(false);
+    }
   };
 
   const submitForm = async (e: React.FormEvent) => {
@@ -210,7 +221,7 @@ export default function ProductsPage() {
       return;
     }
     const vat = parseInt(form.vatRate, 10);
-    const payload = {
+    const payload: Record<string, unknown> = {
       sku: form.sku.trim(),
       name: form.name.trim(),
       description: form.description.trim() || undefined,
@@ -220,14 +231,19 @@ export default function ProductsPage() {
       vatRate: vat,
       stock: stockVal,
     };
+    if (pushToTsoft) payload.pushToTsoft = true;
     setSaving(true);
     try {
       if (editingProduct) {
         await api.patch(`/products/${editingProduct.id}`, payload);
-        toast.success('Ürün güncellendi');
+        toast.success(
+          pushToTsoft ? 'Ürün güncellendi · T-Soft kuyruğa alındı' : 'Ürün güncellendi',
+        );
       } else {
         await api.post('/products', payload);
-        toast.success('Ürün oluşturuldu');
+        toast.success(
+          pushToTsoft ? 'Ürün oluşturuldu · T-Soft kuyruğa alındı' : 'Ürün oluşturuldu',
+        );
       }
       closeForm();
       fetchProducts();
@@ -239,13 +255,37 @@ export default function ProductsPage() {
   };
 
   const removeProduct = async (p: Product) => {
-    if (!confirm(`“${p.name}” silinsin mi? Bu işlem geri alınamaz.`)) return;
+    const isTsoft = p.productFeedSource === 'TSOFT';
+    const msg = isTsoft
+      ? `“${p.name}” T-Soft'ta da silinecek (kuyruğa alınır). Devam edilsin mi?`
+      : `“${p.name}” silinsin mi? Bu işlem geri alınamaz.`;
+    if (!confirm(msg)) return;
     try {
-      await api.delete(`/products/${p.id}`);
-      toast.success('Ürün silindi');
+      await api.delete(`/products/${p.id}`, {
+        params: isTsoft ? { pushToTsoft: 'true' } : {},
+      });
+      toast.success(isTsoft ? 'Silme kuyruğa alındı' : 'Ürün silindi');
       fetchProducts();
     } catch (err: unknown) {
       toast.error(getApiErrorMessage(err, 'Silinemedi'));
+    }
+  };
+
+  const runTsoftSync = async () => {
+    setSyncingTsoft(true);
+    try {
+      const { data } = await api.post<{
+        upsertedProducts: number;
+        upsertedVariants: number;
+      }>('/ecommerce/tsoft/sync-products', {}, { timeout: 180_000 });
+      toast.success(
+        `T-Soft senkron: ${data.upsertedProducts ?? 0} ürün · ${data.upsertedVariants ?? 0} varyant`,
+      );
+      fetchProducts();
+    } catch (err: unknown) {
+      toast.error(getApiErrorMessage(err, 'T-Soft senkron başarısız'));
+    } finally {
+      setSyncingTsoft(false);
     }
   };
 
@@ -261,54 +301,6 @@ export default function ProductsPage() {
       toast.error(getApiErrorMessage(err, 'Durum güncellenemedi'));
     } finally {
       setTogglingId(null);
-    }
-  };
-
-  const saveProductFeed = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!productFeed) return;
-    setFeedSaving(true);
-    try {
-      const { data } = await api.patch<ProductFeedSettings>('/organizations/my/product-feed', {
-        xmlUrl: productFeed.xmlUrl.trim(),
-        defaultVatRate: Math.min(100, Math.max(0, Math.round(Number(productFeed.defaultVatRate) || 0))),
-        importDescription: productFeed.importDescription,
-        importImages: productFeed.importImages,
-        importMerchantMeta: productFeed.importMerchantMeta,
-      });
-      setProductFeed(data);
-      toast.success('Ürün XML ayarları kaydedildi');
-    } catch (err: unknown) {
-      toast.error(getApiErrorMessage(err, 'Kaydedilemedi'));
-    } finally {
-      setFeedSaving(false);
-    }
-  };
-
-  const syncXmlFeed = async () => {
-    setSyncingXml(true);
-    try {
-      const { data } = await api.post<{
-        imported: number;
-        updated: number;
-        deactivated: number;
-        errors: string[];
-      }>('/products/sync-feed', {});
-      const errCount = data.errors?.length ?? 0;
-      toast.success(
-        `XML senkron: ${data.imported ?? 0} yeni, ${data.updated ?? 0} güncellendi, ${
-          data.deactivated ?? 0
-        } akışta olmayan XML ürünü pasifleştirildi${errCount ? `, ${errCount} hata` : ''}`,
-      );
-      if (errCount && data.errors?.length) {
-        const preview = data.errors.slice(0, 5).join(' · ');
-        toast.error(preview + (data.errors.length > 5 ? '…' : ''), { duration: 6000 });
-      }
-      fetchProducts();
-    } catch (err: unknown) {
-      toast.error(getApiErrorMessage(err, 'XML senkron başarısız'));
-    } finally {
-      setSyncingXml(false);
     }
   };
 
@@ -348,24 +340,25 @@ export default function ProductsPage() {
               Ürünler
             </h1>
             <p className="text-sm text-gray-500 mt-1">
-              SKU, fiyat ve stok. XML adresi ve içe aktarma seçenekleri aşağıda kayıtlıdır; senkron organizasyon ayarından veya
-              zamanlayıcıdan çalışır.
+              SKU, fiyat ve stok. T-Soft kaynaklı ürünler ve elle eklenenler tek listede görünür; T-Soft tarafıyla senkron
+              admin entegrasyonlar panelinden yapılır.
             </p>
           </div>
           {isAdmin ? (
             <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
-                disabled={syncingXml}
-                onClick={() => void syncXmlFeed()}
-                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-gray-200 bg-white text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 disabled:opacity-50 transition-colors"
+                disabled={syncingTsoft}
+                onClick={() => void runTsoftSync()}
+                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-orange-200 bg-orange-50 text-sm font-medium text-orange-700 shadow-sm hover:bg-orange-100 disabled:opacity-50 transition-colors"
+                title="T-Soft API'den ürünleri ve varyantları senkronize et"
               >
-                {syncingXml ? (
+                {syncingTsoft ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
                 ) : (
-                  <RefreshCw className="w-4 h-4 text-whatsapp" />
+                  <RefreshCw className="w-4 h-4" />
                 )}
-                XML senkron
+                T-Soft senkron
               </button>
               <button
                 type="button"
@@ -391,97 +384,6 @@ export default function ProductsPage() {
             </div>
           ) : null}
         </div>
-
-        {isAdmin ? (
-          <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5 space-y-4">
-            <div>
-              <h2 className="text-sm font-semibold text-gray-900">Ürün XML Senkronizasyonu</h2>
-              <p className="text-xs text-gray-500 mt-1">
-                T-Soft veya Google Shopping XML akışından ürünleri çeker. Alt ürünler (varyantlar) otomatik eşlenir.
-              </p>
-            </div>
-            {feedLoading || !productFeed ? (
-              <div className="flex items-center gap-2 text-sm text-gray-500 py-4">
-                <Loader2 className="w-5 h-5 animate-spin text-whatsapp" />
-                Ayarlar yükleniyor…
-              </div>
-            ) : (
-              <form onSubmit={saveProductFeed} className="space-y-4 max-w-2xl">
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">XML feed URL</label>
-                  <input
-                    type="url"
-                    value={productFeed.xmlUrl}
-                    onChange={(e) => setProductFeed((f) => (f ? { ...f, xmlUrl: e.target.value } : f))}
-                    placeholder="https://…/products.xml"
-                    className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-1 focus:ring-whatsapp/30 focus:border-whatsapp"
-                  />
-                </div>
-                <div className="flex flex-wrap gap-6">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Varsayılan KDV %</label>
-                    <input
-                      type="number"
-                      min={0}
-                      max={100}
-                      value={productFeed.defaultVatRate}
-                      onChange={(e) =>
-                        setProductFeed((f) =>
-                          f ? { ...f, defaultVatRate: parseInt(e.target.value, 10) || 0 } : f,
-                        )
-                      }
-                      className="w-28 px-3 py-2 rounded-xl border border-gray-200 text-sm"
-                    />
-                  </div>
-                </div>
-                <fieldset className="space-y-2">
-                  <legend className="text-xs font-semibold text-gray-700 mb-2">İçe aktarılacak alanlar</legend>
-                  <label className="flex items-center gap-2 text-sm text-gray-700">
-                    <input
-                      type="checkbox"
-                      checked={productFeed.importDescription}
-                      onChange={(e) =>
-                        setProductFeed((f) => (f ? { ...f, importDescription: e.target.checked } : f))
-                      }
-                      className="rounded border-gray-300 text-whatsapp focus:ring-whatsapp"
-                    />
-                    Açıklama
-                  </label>
-                  <label className="flex items-center gap-2 text-sm text-gray-700">
-                    <input
-                      type="checkbox"
-                      checked={productFeed.importImages}
-                      onChange={(e) =>
-                        setProductFeed((f) => (f ? { ...f, importImages: e.target.checked } : f))
-                      }
-                      className="rounded border-gray-300 text-whatsapp focus:ring-whatsapp"
-                    />
-                    Görseller
-                  </label>
-                  <label className="flex items-center gap-2 text-sm text-gray-700">
-                    <input
-                      type="checkbox"
-                      checked={productFeed.importMerchantMeta}
-                      onChange={(e) =>
-                        setProductFeed((f) => (f ? { ...f, importMerchantMeta: e.target.checked } : f))
-                      }
-                      className="rounded border-gray-300 text-whatsapp focus:ring-whatsapp"
-                    />
-                    Google / tüccar meta (marka, gtin, ek etiketler vb.)
-                  </label>
-                </fieldset>
-                <button
-                  type="submit"
-                  disabled={feedSaving}
-                  className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gray-900 text-white text-sm font-medium disabled:opacity-50"
-                >
-                  {feedSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-                  Ayarları kaydet
-                </button>
-              </form>
-            )}
-          </div>
-        ) : null}
 
         <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
           <div className="relative max-w-md">
@@ -548,15 +450,31 @@ export default function ProductsPage() {
                         </td>
                         <td className="px-4 py-3 font-mono text-xs text-gray-800">{p.sku}</td>
                         <td className="px-4 py-3">
-                          <span
-                            className={`inline-flex px-2 py-0.5 rounded-md text-[10px] font-semibold uppercase tracking-wide ${
-                              p.productFeedSource === 'XML'
-                                ? 'bg-blue-100 text-blue-800'
-                                : 'bg-gray-100 text-gray-600'
-                            }`}
-                          >
-                            {p.productFeedSource === 'XML' ? 'XML' : 'El'}
-                          </span>
+                          <div className="flex flex-col items-start gap-1">
+                            <span
+                              className={`inline-flex px-2 py-0.5 rounded-md text-[10px] font-semibold uppercase tracking-wide ${
+                                p.productFeedSource === 'TSOFT'
+                                  ? 'bg-orange-100 text-orange-800'
+                                  : 'bg-gray-100 text-gray-600'
+                              }`}
+                              title={
+                                p.productFeedSource === 'TSOFT'
+                                  ? `T-Soft ID: ${p.tsoftId || '—'}`
+                                  : undefined
+                              }
+                            >
+                              {p.productFeedSource === 'TSOFT' ? 'T-Soft' : 'El'}
+                            </span>
+                            {p.pendingPushOp ? (
+                              <span
+                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase bg-amber-100 text-amber-800"
+                                title={`Kuyrukta: ${p.pendingPushOp}`}
+                              >
+                                <Loader2 className="w-2.5 h-2.5 animate-spin" />
+                                {p.pendingPushOp}
+                              </span>
+                            ) : null}
+                          </div>
                         </td>
                         <td className="px-4 py-3 font-medium text-gray-900 max-w-[200px] truncate" title={p.name}>
                           {p.name}
@@ -705,119 +623,59 @@ export default function ProductsPage() {
                   className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:border-whatsapp focus:ring-1 focus:ring-whatsapp/20 resize-y"
                 />
               </div>
-              {editingProduct?.productFeedSource === 'XML' ? (
-                <div className="rounded-xl border border-blue-100 bg-blue-50/60 p-3 text-xs text-gray-700 space-y-2">
-                  <p className="font-semibold text-blue-900">XML akış alanları (salt okunur)</p>
-                  <dl className="grid grid-cols-1 gap-1.5">
-                    {editingProduct.productUrl ? (
-                      <div>
-                        <dt className="text-gray-500">g:link</dt>
-                        <dd>
-                          <a
-                            href={editingProduct.productUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-whatsapp hover:underline break-all"
-                          >
-                            {editingProduct.productUrl}
-                          </a>
-                        </dd>
-                      </div>
+              {editingProduct?.productFeedSource === 'TSOFT' ? (
+                <div className="rounded-xl border border-orange-200 bg-orange-50/60 p-3 text-xs text-gray-700 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="font-semibold text-orange-900">T-Soft bağlı ürün</p>
+                      <p className="text-[11px] text-orange-700 mt-0.5">
+                        {editingProduct.tsoftId ? `T-Soft ID: ${editingProduct.tsoftId}` : 'T-Soft ID yok'}
+                        {editingProduct.tsoftLastPulledAt
+                          ? ` · Son pull: ${new Date(editingProduct.tsoftLastPulledAt).toLocaleString('tr-TR')}`
+                          : ''}
+                      </p>
+                    </div>
+                    {editingProduct.pendingPushOp ? (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold uppercase bg-amber-200 text-amber-900">
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                        Kuyrukta · {editingProduct.pendingPushOp}
+                      </span>
                     ) : null}
-                    {editingProduct.imageUrl ? (
-                      <div>
-                        <dt className="text-gray-500">g:image_link</dt>
-                        <dd className="break-all">{editingProduct.imageUrl}</dd>
-                      </div>
-                    ) : null}
-                    {editingProduct.listPrice != null ? (
-                      <div>
-                        <dt className="text-gray-500">g:price (liste)</dt>
-                        <dd>
-                          {formatMoney(editingProduct.listPrice, editingProduct.currency)}
-                        </dd>
-                      </div>
-                    ) : null}
-                    {editingProduct.salePriceAmount != null ? (
-                      <div>
-                        <dt className="text-gray-500">g:sale_price</dt>
-                        <dd>
-                          {formatMoney(editingProduct.salePriceAmount, editingProduct.currency)}
-                        </dd>
-                      </div>
-                    ) : null}
-                    {editingProduct.salePriceEffectiveRange ? (
-                      <div>
-                        <dt className="text-gray-500">g:sale_price_effective_date</dt>
-                        <dd className="break-all">{editingProduct.salePriceEffectiveRange}</dd>
-                      </div>
-                    ) : null}
-                    {editingProduct.googleCondition ? (
-                      <div>
-                        <dt className="text-gray-500">g:condition</dt>
-                        <dd>{editingProduct.googleCondition}</dd>
-                      </div>
-                    ) : null}
-                    {editingProduct.googleAvailability ? (
-                      <div>
-                        <dt className="text-gray-500">g:availability</dt>
-                        <dd>{editingProduct.googleAvailability}</dd>
-                      </div>
-                    ) : null}
-                    {editingProduct.googleIdentifierExists ? (
-                      <div>
-                        <dt className="text-gray-500">g:identifier_exists</dt>
-                        <dd>{editingProduct.googleIdentifierExists}</dd>
-                      </div>
-                    ) : null}
-                    {editingProduct.brand ? (
-                      <div>
-                        <dt className="text-gray-500">g:brand</dt>
-                        <dd>{editingProduct.brand}</dd>
-                      </div>
-                    ) : null}
-                    {editingProduct.googleProductCategory ? (
-                      <div>
-                        <dt className="text-gray-500">g:google_product_category</dt>
-                        <dd>{editingProduct.googleProductCategory}</dd>
-                      </div>
-                    ) : null}
-                    {editingProduct.googleProductType ? (
-                      <div>
-                        <dt className="text-gray-500">g:product_type</dt>
-                        <dd>{editingProduct.googleProductType}</dd>
-                      </div>
-                    ) : null}
-                    {editingProduct.googleCustomLabel0 ? (
-                      <div>
-                        <dt className="text-gray-500">g:custom_label_0</dt>
-                        <dd>{editingProduct.googleCustomLabel0}</dd>
-                      </div>
-                    ) : null}
-                    {editingProduct.gtin ? (
-                      <div>
-                        <dt className="text-gray-500">g:gtin</dt>
-                        <dd>{editingProduct.gtin}</dd>
-                      </div>
-                    ) : null}
-                    {Array.isArray(editingProduct.additionalImages) &&
-                    editingProduct.additionalImages.length > 0 ? (
-                      <div>
-                        <dt className="text-gray-500">g:additional_image_link</dt>
-                        <dd className="text-gray-600">
-                          {editingProduct.additionalImages.length} ek görsel URL
-                        </dd>
-                      </div>
-                    ) : null}
-                    {editingProduct.xmlSyncedAt ? (
-                      <div>
-                        <dt className="text-gray-500">Son XML senkron</dt>
-                        <dd>{new Date(editingProduct.xmlSyncedAt).toLocaleString('tr-TR')}</dd>
-                      </div>
-                    ) : null}
-                  </dl>
+                  </div>
+                  <label className="flex items-start gap-2 text-xs text-gray-700 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={pushToTsoft}
+                      onChange={(e) => setPushToTsoft(e.target.checked)}
+                      className="mt-0.5 rounded border-gray-300 text-orange-500 focus:ring-orange-400"
+                    />
+                    <span>
+                      <span className="font-medium text-gray-900">T-Soft'a da yaz</span>
+                      <span className="block text-[11px] text-gray-500 mt-0.5">
+                        Değişiklik önce T-Soft'a itilecek (kuyruk), başarılı olunca bir sonraki pull ile
+                        CRM doğrulanacak. Kapatırsanız değişiklik yalnızca CRM'de kalır (bir sonraki pull
+                        üzerine yazabilir).
+                      </span>
+                    </span>
+                  </label>
                 </div>
+              ) : !editingProduct ? (
+                <label className="flex items-start gap-2 text-xs text-gray-700 cursor-pointer bg-gray-50 border border-gray-200 rounded-xl p-3">
+                  <input
+                    type="checkbox"
+                    checked={pushToTsoft}
+                    onChange={(e) => setPushToTsoft(e.target.checked)}
+                    className="mt-0.5 rounded border-gray-300 text-orange-500 focus:ring-orange-400"
+                  />
+                  <span>
+                    <span className="font-medium text-gray-900">T-Soft'a da oluştur</span>
+                    <span className="block text-[11px] text-gray-500 mt-0.5">
+                      Ürün kuyruğa alınır, T-Soft'ta oluşturulduktan sonra T-Soft ID geri döner.
+                    </span>
+                  </span>
+                </label>
               ) : null}
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-medium text-gray-500 mb-1">Birim</label>
@@ -875,6 +733,69 @@ export default function ProductsPage() {
                   className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:border-whatsapp focus:ring-1 focus:ring-whatsapp/20"
                 />
               </div>
+              {editingProduct?.productFeedSource === 'TSOFT' ? (
+                <div className="rounded-xl border border-gray-200 bg-white p-3 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-semibold text-gray-900">
+                      Varyantlar {editingVariants.length > 0 ? `(${editingVariants.length})` : ''}
+                    </p>
+                    {variantsLoading ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-gray-400" />
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => void loadVariants(editingProduct.id)}
+                        className="text-[11px] text-gray-500 hover:text-gray-800"
+                      >
+                        Yenile
+                      </button>
+                    )}
+                  </div>
+                  {editingVariants.length === 0 && !variantsLoading ? (
+                    <p className="text-[11px] text-gray-400 py-1">Varyant bulunamadı.</p>
+                  ) : (
+                    <div className="max-h-56 overflow-y-auto divide-y divide-gray-100">
+                      {editingVariants.map((v) => (
+                        <div key={v.id} className="flex items-center gap-2 py-1.5 text-[11px]">
+                          <div className="w-8 h-8 shrink-0 rounded-md border border-gray-100 bg-gray-50 overflow-hidden">
+                            {v.imageUrl ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img
+                                src={rewriteMediaUrlForClient(v.imageUrl)}
+                                alt={v.name}
+                                className="w-full h-full object-cover"
+                              />
+                            ) : null}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium text-gray-800 truncate" title={v.name}>
+                              {v.name}
+                            </p>
+                            <p className="text-gray-400 font-mono truncate" title={v.sku || ''}>
+                              {v.sku || '—'}
+                            </p>
+                          </div>
+                          <div className="text-right tabular-nums">
+                            <p className="text-gray-800">{formatMoney(v.unitPrice, editingProduct.currency)}</p>
+                            <p className="text-[10px] text-gray-400">
+                              Stok: {v.stock != null ? v.stock : '—'}
+                            </p>
+                          </div>
+                          <span
+                            className={`w-1.5 h-1.5 rounded-full ${
+                              v.isActive ? 'bg-emerald-500' : 'bg-gray-300'
+                            }`}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <p className="text-[10px] text-gray-400">
+                    Varyant düzenleme T-Soft üzerinden yapılır; buradaki veriler pull senkronu ile güncellenir.
+                  </p>
+                </div>
+              ) : null}
+
               <div className="flex justify-end gap-2 pt-2">
                 <button
                   type="button"
@@ -890,6 +811,7 @@ export default function ProductsPage() {
                 >
                   {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
                   {editingProduct ? 'Kaydet' : 'Oluştur'}
+                  {pushToTsoft ? ' · T-Soft' : ''}
                 </button>
               </div>
             </form>

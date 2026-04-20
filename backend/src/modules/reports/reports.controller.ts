@@ -51,6 +51,37 @@ export class ReportsController {
     );
   }
 
+  @Get('sales/timeseries')
+  getSalesTimeseries(
+    @Req() req: any,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('granularity') granularity?: string,
+  ) {
+    const g = granularity === 'month' || granularity === 'week' ? granularity : 'day';
+    return this.reportsService.getSalesTimeseries(
+      from ? new Date(from) : undefined,
+      to ? new Date(to) : undefined,
+      requireOrgId(req.user),
+      g,
+    );
+  }
+
+  @Get('sales/top-customers')
+  getTopCustomers(
+    @Req() req: any,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.reportsService.getTopCustomers(
+      from ? new Date(from) : undefined,
+      to ? new Date(to) : undefined,
+      requireOrgId(req.user),
+      limit ? parseInt(limit, 10) : 10,
+    );
+  }
+
   @Get('leads/funnel')
   getLeadFunnel(
     @Req() req: any,

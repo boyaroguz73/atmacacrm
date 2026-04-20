@@ -26,6 +26,13 @@ export class WahaService implements OnModuleInit {
   readonly syncChatLimit: number;
   readonly syncMessageLimit: number;
   readonly syncTimeoutMs: number;
+  /** Toplu senkron sırasında WAHA’dan medya indirilsin mi (false: daha hızlı, daha az timeout) */
+  readonly syncDownloadMedia: boolean;
+  /**
+   * sync-all: Veritabanı son mesaj zamanı WAHA sohbet zamanından yeniyse konuşmayı atla.
+   * true: daha az API yükü; false (varsayılan): eksik mesaj riskini azaltır.
+   */
+  readonly syncSkipUpToDateConversations: boolean;
   private readonly requestTimeoutMs: number;
 
   constructor(
@@ -39,6 +46,9 @@ export class WahaService implements OnModuleInit {
     this.syncChatLimit = parseInt(this.config.get('SYNC_CHAT_LIMIT', '200'), 10);
     this.syncMessageLimit = parseInt(this.config.get('SYNC_MESSAGE_LIMIT', '200'), 10);
     this.syncTimeoutMs = parseInt(this.config.get('SYNC_TIMEOUT_MS', '120000'), 10);
+    this.syncDownloadMedia = this.config.get('SYNC_DOWNLOAD_MEDIA', 'false') === 'true';
+    this.syncSkipUpToDateConversations =
+      this.config.get('SYNC_SKIP_UP_TO_DATE', 'false') === 'true';
 
     const rawTimeout = parseInt(this.config.get('WAHA_REQUEST_TIMEOUT_MS', '120000'), 10);
     this.requestTimeoutMs = Number.isFinite(rawTimeout)
@@ -57,7 +67,7 @@ export class WahaService implements OnModuleInit {
     );
 
     this.logger.log(
-      `Sync ayarları: chatLimit=${this.syncChatLimit}, msgLimit=${this.syncMessageLimit}, timeout=${this.syncTimeoutMs}ms`,
+      `Sync ayarları: chatLimit=${this.syncChatLimit}, msgLimit=${this.syncMessageLimit}, timeout=${this.syncTimeoutMs}ms, downloadMedia=${this.syncDownloadMedia}, skipUpToDate=${this.syncSkipUpToDateConversations}`,
     );
   }
 
@@ -726,15 +736,18 @@ export class WahaService implements OnModuleInit {
     sessionName: string,
     chatId: string,
     limit?: number,
+    /** Belirtilmezse `syncDownloadMedia` (ortam: SYNC_DOWNLOAD_MEDIA) kullanılır */
+    downloadMedia?: boolean,
   ): Promise<any[]> {
     const effectiveLimit = limit ?? this.syncMessageLimit;
+    const dm = downloadMedia !== undefined ? downloadMedia : this.syncDownloadMedia;
     try {
       const fullChatId = chatId.includes('@') ? chatId : `${chatId}@c.us`;
       const encSession = encodeURIComponent(sessionName);
       const encChat = encodeURIComponent(fullChatId);
       const response = await this.http.get(
         `/api/${encSession}/chats/${encChat}/messages`,
-        { params: { limit: effectiveLimit, downloadMedia: true }, timeout: this.syncTimeoutMs },
+        { params: { limit: effectiveLimit, downloadMedia: dm }, timeout: this.syncTimeoutMs },
       );
       return response.data || [];
     } catch (error: any) {

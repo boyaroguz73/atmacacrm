@@ -538,7 +538,12 @@ export class WahaWebhookHandler {
       // ─────────────────────────────────────────────────────────────
       if (!isFromMe && !isGroup) {
         if (!fullConversation.assignments?.length) {
-          await this.conversationsService.autoAssignRoundRobin(conversation.id);
+          // Çoklu organizasyon: yalnızca konuşmanın bağlı olduğu organizasyonun
+          // aktif AGENT'ları arasından round-robin atama yap.
+          await this.conversationsService.autoAssignRoundRobin(
+            conversation.id,
+            waSession.organizationId ?? undefined,
+          );
         }
 
         const msgCount = await this.prisma.message.count({

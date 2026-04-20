@@ -4,11 +4,25 @@ import { OrdersModule } from '../orders/orders.module';
 import { EcommerceController } from './ecommerce.controller';
 import { EcommerceService } from './ecommerce.service';
 import { TsoftApiService } from './tsoft-api.service';
+import { TsoftProductSyncService } from './tsoft-product-sync.service';
+import { TsoftPushService } from './tsoft-push.service';
+import { TsoftSyncScheduler } from './tsoft-sync.scheduler';
 
 @Module({
   imports: [PrismaModule, forwardRef(() => OrdersModule)],
   controllers: [EcommerceController],
-  providers: [EcommerceService, TsoftApiService],
-  exports: [EcommerceService, TsoftApiService],
+  providers: [
+    EcommerceService,
+    TsoftApiService,
+    TsoftProductSyncService,
+    TsoftPushService,
+    TsoftSyncScheduler,
+  ],
+  exports: [
+    EcommerceService,
+    TsoftApiService,
+    TsoftProductSyncService,
+    TsoftPushService,
+  ],
 })
 export class EcommerceModule {}

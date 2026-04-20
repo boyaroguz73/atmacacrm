@@ -11,6 +11,11 @@ import { Prisma } from '@prisma/client';
 import { randomUUID } from 'crypto';
 import { TsoftApiService } from './tsoft-api.service';
 import {
+  TsoftProductSyncService,
+  TsoftProductSyncOptions,
+  TsoftProductSyncResult,
+} from './tsoft-product-sync.service';
+import {
   normalizeComparablePhone,
   normalizeTsoftPhone,
   formatPhoneForTsoft,
@@ -53,6 +58,7 @@ export class EcommerceService {
   constructor(
     private prisma: PrismaService,
     private tsoftApi: TsoftApiService,
+    private tsoftProductSync: TsoftProductSyncService,
     @Inject(forwardRef(() => OrdersService))
     private readonly ordersService: OrdersService,
   ) {}
@@ -136,6 +142,129 @@ export class EcommerceService {
 
   async listProducts(organizationId: string, page: number, limit: number) {
     return this.tsoftApi.listProducts(organizationId, page, limit);
+  }
+
+  /**
+   * T-Soft → CRM ürün pull senkronu (plan §PR-3).
+   * Ürünleri `products` + `product_variants` tablolarına upsert eder;
+   * sweep ile görmediğimiz TSOFT ürünlerini pasifler.
+   */
+  async syncTsoftProducts(
+    organizationId: string,
+    opts: TsoftProductSyncOptions = {},
+  ): Promise<TsoftProductSyncResult> {
+    return this.tsoftProductSync.syncTsoftProducts(organizationId, opts);
+  }
+
+  /**
+   * T-Soft admin panel durumu: kategori başına son sync zamanı, CRM'deki
+   * TSOFT kaynak sayaçları ve push kuyruğu özeti.
+   */
+  async getTsoftSyncStatus(organizationId: string): Promise<{
+    products: { total: number; active: number; lastPulledAt: string | null };
+    variants: { total: number; active: number };
+    orders: { lastSyncedAt: string | null; tsoftLinked: number };
+    customers: { matched: number };
+    pushQueue: {
+      pending: number;
+      running: number;
+      failed: number;
+      done24h: number;
+      lastError: string | null;
+      lastFailedAt: string | null;
+    };
+  }> {
+    const [
+      productAggregate,
+      lastProductPull,
+      variantAggregate,
+      lastOrderTsoft,
+      tsoftLinkedOrders,
+      matchedContacts,
+      pushPending,
+      pushRunning,
+      pushFailed,
+      pushDone24,
+      lastFailed,
+    ] = await Promise.all([
+      this.prisma.product.groupBy({
+        by: ['isActive'],
+        where: { productFeedSource: 'TSOFT' },
+        _count: { _all: true },
+      }),
+      this.prisma.product.findFirst({
+        where: { productFeedSource: 'TSOFT', tsoftLastPulledAt: { not: null } },
+        orderBy: { tsoftLastPulledAt: 'desc' },
+        select: { tsoftLastPulledAt: true },
+      }),
+      this.prisma.productVariant.groupBy({
+        by: ['isActive'],
+        where: { tsoftId: { not: null } },
+        _count: { _all: true },
+      }),
+      this.prisma.salesOrder.findFirst({
+        where: { contact: { organizationId }, tsoftSiteOrderId: { not: null } },
+        orderBy: { tsoftPushedAt: 'desc' },
+        select: { tsoftPushedAt: true, createdAt: true },
+      }),
+      this.prisma.salesOrder.count({
+        where: { contact: { organizationId }, tsoftSiteOrderId: { not: null } },
+      }),
+      this.prisma.contact.count({
+        where: {
+          organizationId,
+          metadata: { path: ['tsoftCustomerId'], not: Prisma.AnyNull },
+        },
+      }),
+      this.prisma.tsoftPushQueue.count({ where: { organizationId, status: 'PENDING' } }),
+      this.prisma.tsoftPushQueue.count({ where: { organizationId, status: 'RUNNING' } }),
+      this.prisma.tsoftPushQueue.count({ where: { organizationId, status: 'FAILED' } }),
+      this.prisma.tsoftPushQueue.count({
+        where: {
+          organizationId,
+          status: 'DONE',
+          doneAt: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
+        },
+      }),
+      this.prisma.tsoftPushQueue.findFirst({
+        where: { organizationId, status: { in: ['FAILED', 'PENDING'] }, lastError: { not: null } },
+        orderBy: { updatedAt: 'desc' },
+        select: { lastError: true, updatedAt: true },
+      }),
+    ]);
+
+    const productActive = productAggregate.find((r) => r.isActive)?._count._all ?? 0;
+    const productInactive = productAggregate.find((r) => !r.isActive)?._count._all ?? 0;
+    const variantActive = variantAggregate.find((r) => r.isActive)?._count._all ?? 0;
+    const variantInactive = variantAggregate.find((r) => !r.isActive)?._count._all ?? 0;
+
+    return {
+      products: {
+        total: productActive + productInactive,
+        active: productActive,
+        lastPulledAt: lastProductPull?.tsoftLastPulledAt?.toISOString() ?? null,
+      },
+      variants: {
+        total: variantActive + variantInactive,
+        active: variantActive,
+      },
+      orders: {
+        lastSyncedAt:
+          lastOrderTsoft?.tsoftPushedAt?.toISOString() ??
+          lastOrderTsoft?.createdAt?.toISOString() ??
+          null,
+        tsoftLinked: tsoftLinkedOrders,
+      },
+      customers: { matched: matchedContacts },
+      pushQueue: {
+        pending: pushPending,
+        running: pushRunning,
+        failed: pushFailed,
+        done24h: pushDone24,
+        lastError: lastFailed?.lastError ?? null,
+        lastFailedAt: lastFailed?.updatedAt?.toISOString() ?? null,
+      },
+    };
   }
 
   async listOrders(organizationId: string, page: number, limit: number) {

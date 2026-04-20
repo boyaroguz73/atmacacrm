@@ -17,6 +17,9 @@ import {
   Wallet,
   UserPlus,
   Loader2,
+  AlertTriangle,
+  Receipt,
+  FileText,
 } from 'lucide-react';
 import { LEAD_STATUS_LABELS, LEAD_STATUS_COLORS } from '@/lib/constants';
 
@@ -39,9 +42,33 @@ interface DashboardData {
     messagesToday: number;
     activeAssignments: number;
   }[];
-  orders: { count: number; sumGrandTotal: number };
+  orders: {
+    count: number;
+    sumGrandTotal: number;
+    outstandingTotal: number;
+    collectedTotal: number;
+    overdueDeliveries: number;
+    byStatus: { status: string; count: number; sumGrandTotal: number }[];
+  };
+  quotes: {
+    total: number;
+    accepted: number;
+    conversionRate: number;
+    byStatus: { status: string; count: number; sumGrandTotal: number }[];
+  };
   cash: { income: number; expense: number; net: number };
 }
+
+const ORDER_STATUS_LABELS: Record<string, string> = {
+  DRAFT: 'Taslak',
+  PENDING: 'Beklemede',
+  CONFIRMED: 'Onaylı',
+  IN_PRODUCTION: 'Üretimde',
+  READY: 'Hazır',
+  SHIPPED: 'Kargoda',
+  DELIVERED: 'Teslim',
+  CANCELLED: 'İptal',
+};
 
 const statusLabels = LEAD_STATUS_LABELS;
 const statusColors = LEAD_STATUS_COLORS;
@@ -196,6 +223,32 @@ export default function DashboardPage() {
       href: '/orders',
     },
     {
+      label: 'Tahsilat bekleyen',
+      value: fmtTry(data.orders.outstandingTotal),
+      icon: Receipt,
+      color: data.orders.outstandingTotal > 0 ? 'bg-rose-500' : 'bg-emerald-500',
+      sub: `Tahsil edilen: ${fmtTry(data.orders.collectedTotal)}`,
+      href: '/orders',
+    },
+    {
+      label: 'Gecikmiş teslimat',
+      value: data.orders.overdueDeliveries,
+      icon: AlertTriangle,
+      color: data.orders.overdueDeliveries > 0 ? 'bg-amber-500' : 'bg-gray-300',
+      sub: data.orders.overdueDeliveries > 0
+        ? 'Beklenen tarihi geçmiş ve hâlâ teslim edilmemiş'
+        : 'Gecikme yok',
+      href: '/orders',
+    },
+    {
+      label: 'Teklif dönüşüm',
+      value: `%${data.quotes.conversionRate}`,
+      icon: FileText,
+      color: 'bg-sky-500',
+      sub: `${data.quotes.accepted}/${data.quotes.total} kabul edilen`,
+      href: '/quotes',
+    },
+    {
       label: 'Kasa',
       value: fmtTry(data.cash.net),
       icon: data.cash.net >= 0 ? TrendingUp : TrendingDown,
@@ -204,6 +257,10 @@ export default function DashboardPage() {
       href: '/accounting/cash',
     },
   ];
+
+  const orderStatusRows = (data.orders.byStatus || [])
+    .filter((r) => r.count > 0)
+    .sort((a, b) => b.count - a.count);
 
   return (
     <div className="p-6 space-y-6">
@@ -306,6 +363,55 @@ export default function DashboardPage() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="bg-white rounded-xl border border-gray-100 p-6 shadow-sm">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold text-gray-900">Sipariş Durumu</h2>
+            <Link href="/orders" className="text-xs font-medium text-whatsapp hover:underline">
+              Tüm siparişler
+            </Link>
+          </div>
+          {orderStatusRows.length === 0 ? (
+            <p className="text-gray-400 text-sm">Kayıt yok</p>
+          ) : (
+            <div className="space-y-3">
+              {orderStatusRows.map((row) => {
+                const totalCount = orderStatusRows.reduce((s, r) => s + r.count, 0);
+                const pct = totalCount > 0 ? (row.count / totalCount) * 100 : 0;
+                const label = ORDER_STATUS_LABELS[row.status] || row.status;
+                const barColor =
+                  row.status === 'DELIVERED'
+                    ? 'bg-emerald-500'
+                    : row.status === 'CANCELLED'
+                      ? 'bg-gray-400'
+                      : row.status === 'IN_PRODUCTION' || row.status === 'READY'
+                        ? 'bg-indigo-500'
+                        : row.status === 'SHIPPED'
+                          ? 'bg-sky-500'
+                          : 'bg-amber-500';
+                return (
+                  <div key={row.status} className="flex items-center gap-3">
+                    <span className="px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap bg-gray-100 text-gray-700 min-w-[72px] text-center">
+                      {label}
+                    </span>
+                    <div className="flex-1 bg-gray-100 rounded-full h-2">
+                      <div
+                        className={`${barColor} h-2 rounded-full transition-all`}
+                        style={{ width: `${Math.min(100, pct)}%` }}
+                      />
+                    </div>
+                    <div className="text-right shrink-0">
+                      <span className="text-sm font-semibold text-gray-700">{row.count}</span>
+                      {row.sumGrandTotal > 0 && (
+                        <span className="text-[10px] text-gray-400 ml-1">({fmtTry(row.sumGrandTotal)})</span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
         <div className="bg-white rounded-xl border border-gray-100 p-6 shadow-sm">
           <h2 className="text-lg font-semibold text-gray-900 mb-4">
             Potansiyel Müşteri Durumu

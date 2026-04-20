@@ -80,6 +80,16 @@ export class ContactsService {
       const nm = name?.trim();
       if (nm && isFallbackContactName(existing.name, existing.phone) && !existing.surname?.trim()) {
         updates.name = nm;
+      } else if (
+        !nm &&
+        isFallbackContactName(existing.name, existing.phone) &&
+        !existing.surname?.trim()
+      ) {
+        /** WAHA/webhook bazen isim göndermez; mevcut kayıtta ad boşsa görünen telefonu yaz */
+        const fb = formatPhoneDisplay(primary);
+        if (fb && fb !== '—') {
+          updates.name = fb;
+        }
       }
 
       // organizationId boşsa ve yeni değer varsa güncelle
@@ -100,13 +110,25 @@ export class ContactsService {
       return this.prisma.contact.findUniqueOrThrow({ where: { id: existing.id } });
     }
 
-    return this.prisma.contact.create({
-      data: { 
-        phone: primary, 
-        name: (name && name.trim()) || formatPhoneDisplay(primary) || null,
-        organizationId: organizationId || null,
-      },
-    });
+    try {
+      return await this.prisma.contact.create({
+        data: {
+          phone: primary,
+          name: (name && name.trim()) || formatPhoneDisplay(primary) || null,
+          organizationId: organizationId || null,
+        },
+      });
+    } catch (e: any) {
+      // Webhook'ta message + message.any aynı anda geldiğinde aynı telefon için yarış olabilir.
+      // Unique(phone) çakışmasında mevcut kaydı geri döndür.
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
+        const raceWinner = await this.prisma.contact.findFirst({
+          where: { phone: { in: Array.from(new Set([primary, ...keys])) } },
+        });
+        if (raceWinner) return raceWinner;
+      }
+      throw e;
+    }
   }
 
   /**

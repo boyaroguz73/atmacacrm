@@ -105,4 +105,36 @@ export class OrdersController {
   ) {
     return this.ordersService.updateOrderItem(itemId, body);
   }
+
+  // ─── Tahsilatlar / ödeme kayıtları ───
+
+  @Get(':id/payments')
+  @Roles('AGENT')
+  listPayments(@Param('id') id: string) {
+    return this.ordersService.getPaymentSummary(id);
+  }
+
+  @Post(':id/payments')
+  @Roles('AGENT', 'ADMIN', 'SUPERADMIN', 'ACCOUNTANT')
+  addPayment(
+    @CurrentUser('id') userId: string,
+    @Param('id') id: string,
+    @Body()
+    body: {
+      amount: number;
+      direction?: 'INCOME' | 'EXPENSE';
+      method?: 'CASH' | 'TRANSFER' | 'CARD' | 'CHECK' | 'OTHER';
+      description?: string;
+      reference?: string | null;
+      occurredAt?: string | null;
+    },
+  ) {
+    return this.ordersService.addPayment(userId, id, body);
+  }
+
+  @Delete(':id/payments/:entryId')
+  @Roles('ADMIN', 'SUPERADMIN', 'ACCOUNTANT')
+  removePayment(@Param('id') id: string, @Param('entryId') entryId: string) {
+    return this.ordersService.removePayment(id, entryId);
+  }
 }

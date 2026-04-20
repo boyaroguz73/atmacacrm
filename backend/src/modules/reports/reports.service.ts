@@ -30,7 +30,7 @@ export class ReportsService {
           uniqueContactsMessaged,
           activeConversations,
           unansweredConversations,
-          avgResponseTime,
+          responseMetrics,
           taskStats,
         ] = await Promise.all([
           this.prisma.message.count({
@@ -45,7 +45,7 @@ export class ReportsService {
             where: { userId: agent.id, unassignedAt: null },
           }),
           this.getUnansweredCount(agent.id),
-          this.calculateAvgResponseTime(agent.id, from, to),
+          this.calculateResponseMetrics(agent.id, from, to),
           this.getAgentTaskStats(agent.id),
         ]);
 
@@ -61,7 +61,11 @@ export class ReportsService {
           uniqueContactsMessaged,
           activeConversations,
           unansweredConversations,
-          avgResponseTimeMinutes: avgResponseTime,
+          /** Geriye dönük uyumluluk: ortalama dakika */
+          avgResponseTimeMinutes:
+            responseMetrics.avg != null ? Math.round(responseMetrics.avg) : null,
+          /** Yeni detaylı metrikler (medyan, p90, SLA) */
+          responseMetrics,
           taskStats,
         };
       }),
@@ -123,45 +127,97 @@ export class ReportsService {
     });
   }
 
-  private async calculateAvgResponseTime(
+  /**
+   * Yanıt süresi metrikleri (dakika cinsinden).
+   *
+   * Her gelen mesaj (INCOMING) için, aynı konuşmada agent'ın attığı sonraki ilk
+   * giden mesajı bulur ve aradaki farkı dakikaya çevirir. 1440 dk (24 saat) üstü
+   * aykırı değerler (muhtemelen uyku / offline) hariç tutulur.
+   *
+   * Döndürülenler:
+   *  - avg     : aritmetik ortalama
+   *  - p50     : medyan (yarıdan daha hızlı mı?)
+   *  - p90     : en yavaş %10 eşiği (SLA hedeflemede kritik)
+   *  - total   : değerlendirmeye alınan yanıt çifti sayısı
+   *  - sla30   : 30 dakika içinde yanıt oranı (%) — sla eşiği isteğe bağlı
+   *  - slaBreaches : 30 dk'yi aşan yanıt sayısı
+   */
+  private async calculateResponseMetrics(
     agentId: string,
     from: Date,
     to: Date,
-  ): Promise<number | null> {
+    slaThresholdMinutes = 30,
+  ): Promise<{
+    avg: number | null;
+    p50: number | null;
+    p90: number | null;
+    total: number;
+    sla30Percent: number | null;
+    slaBreaches: number;
+  }> {
     try {
       const rows = await this.prisma.$queryRaw<
-        { avg_minutes: number | null }[]
+        {
+          avg_minutes: number | null;
+          p50_minutes: number | null;
+          p90_minutes: number | null;
+          total: bigint;
+          breaches: bigint;
+        }[]
       >`
-        SELECT AVG(EXTRACT(EPOCH FROM (r."timestamp" - i."timestamp")) / 60.0)
-          AS avg_minutes
-        FROM messages i
-        INNER JOIN LATERAL (
-          SELECT m."timestamp"
-          FROM messages m
-          WHERE m."conversationId" = i."conversationId"
-            AND m.direction = 'OUTGOING'::"MessageDirection"
-            AND m."sentById" = ${agentId}::uuid
-            AND m."timestamp" > i."timestamp"
-          ORDER BY m."timestamp" ASC
-          LIMIT 1
-        ) r ON true
-        WHERE i.direction = 'INCOMING'::"MessageDirection"
-          AND i."createdAt" >= ${from}
-          AND i."createdAt" <= ${to}
-          AND EXISTS (
-            SELECT 1
-            FROM assignments a
-            WHERE a."conversationId" = i."conversationId"
-              AND a."userId" = ${agentId}::uuid
-          )
-          AND EXTRACT(EPOCH FROM (r."timestamp" - i."timestamp")) / 60.0 < 1440
+        WITH pairs AS (
+          SELECT
+            EXTRACT(EPOCH FROM (r."timestamp" - i."timestamp")) / 60.0 AS minutes
+          FROM messages i
+          INNER JOIN LATERAL (
+            SELECT m."timestamp"
+            FROM messages m
+            WHERE m."conversationId" = i."conversationId"
+              AND m.direction = 'OUTGOING'::"MessageDirection"
+              AND m."sentById" = ${agentId}::uuid
+              AND m."timestamp" > i."timestamp"
+            ORDER BY m."timestamp" ASC
+            LIMIT 1
+          ) r ON true
+          WHERE i.direction = 'INCOMING'::"MessageDirection"
+            AND i."createdAt" >= ${from}
+            AND i."createdAt" <= ${to}
+            AND EXISTS (
+              SELECT 1 FROM assignments a
+              WHERE a."conversationId" = i."conversationId"
+                AND a."userId" = ${agentId}::uuid
+            )
+            AND EXTRACT(EPOCH FROM (r."timestamp" - i."timestamp")) / 60.0 < 1440
+        )
+        SELECT
+          AVG(minutes)::float AS avg_minutes,
+          percentile_cont(0.5) WITHIN GROUP (ORDER BY minutes)::float AS p50_minutes,
+          percentile_cont(0.9) WITHIN GROUP (ORDER BY minutes)::float AS p90_minutes,
+          COUNT(*)::bigint AS total,
+          SUM(CASE WHEN minutes > ${slaThresholdMinutes}::float THEN 1 ELSE 0 END)::bigint AS breaches
+        FROM pairs
       `;
-
-      const avg = rows[0]?.avg_minutes;
-      if (avg == null || Number.isNaN(Number(avg))) return null;
-      return Math.round(Number(avg));
-    } catch {
-      return null;
+      const row = rows[0];
+      if (!row) {
+        return { avg: null, p50: null, p90: null, total: 0, sla30Percent: null, slaBreaches: 0 };
+      }
+      const total = Number(row.total || 0);
+      const breaches = Number(row.breaches || 0);
+      const slaPercent =
+        total > 0 ? Math.round(((total - breaches) / total) * 1000) / 10 : null;
+      const round1 = (v: number | null) =>
+        v == null || Number.isNaN(Number(v)) ? null : Math.round(Number(v) * 10) / 10;
+      return {
+        avg: round1(row.avg_minutes),
+        p50: round1(row.p50_minutes),
+        p90: round1(row.p90_minutes),
+        total,
+        sla30Percent: slaPercent,
+        slaBreaches: breaches,
+      };
+    } catch (e) {
+      this.logger.warn(`Agent response metrics fallback: ${(e as Error).message}`);
+      return { avg: null, p50: null, p90: null, total: 0, sla30Percent: null, slaBreaches: 0 };
     }
   }
 
@@ -296,6 +352,112 @@ export class ReportsService {
       }));
     } catch (error) {
       this.logger.warn(`Cash timeseries fallback (empty): ${(error as Error).message}`);
+      return [];
+    }
+  }
+
+  /**
+   * Sipariş bazlı satış trendi (zaman serisi).
+   *
+   * Bucket stratejisi:
+   * - day   : her gün
+   * - week  : ISO pazartesi başlangıçlı hafta
+   * - month : takvim ayı
+   *
+   * Sipariş filtresi: status <> CANCELLED (iptal edilenleri hariç tut).
+   * Ciro olarak `grandTotal` baz alınır (KDV dahil net brüt tutar).
+   */
+  async getSalesTimeseries(
+    dateFrom?: Date,
+    dateTo?: Date,
+    organizationId?: string,
+    granularity: 'day' | 'week' | 'month' = 'day',
+  ) {
+    const from = dateFrom || new Date(new Date().setHours(0, 0, 0, 0));
+    const to = dateTo || new Date();
+    const trunc = granularity === 'month' ? 'month' : granularity === 'week' ? 'week' : 'day';
+    try {
+      const orgClause = organizationId
+        ? Prisma.sql`AND c."organizationId" = ${organizationId}::uuid`
+        : Prisma.empty;
+      const rows = await this.prisma.$queryRaw<
+        { bucket: Date | string; count: bigint; revenue: number }[]
+      >`
+        SELECT date_trunc(${trunc}, o."createdAt")::date AS bucket,
+          COUNT(*)::bigint AS count,
+          COALESCE(SUM(o."grandTotal"), 0)::float AS revenue
+        FROM sales_orders o
+        INNER JOIN contacts c ON o."contactId" = c.id
+        WHERE o."createdAt" >= ${from} AND o."createdAt" <= ${to}
+          AND o.status <> 'CANCELLED'::"OrderStatus"
+        ${orgClause}
+        GROUP BY 1
+        ORDER BY 1 ASC
+      `;
+      return rows.map((r) => {
+        const count = Number(r.count);
+        const revenue = Math.round((r.revenue || 0) * 100) / 100;
+        return {
+          bucket: new Date(r.bucket).toISOString().slice(0, 10),
+          count,
+          revenue,
+          avgOrderValue: count > 0 ? Math.round((revenue / count) * 100) / 100 : 0,
+        };
+      });
+    } catch (error) {
+      this.logger.warn(`Sales timeseries fallback (empty): ${(error as Error).message}`);
+      return [];
+    }
+  }
+
+  /**
+   * En çok satan müşteriler (ciro sıralı).
+   * İptal edilen siparişler hariç, verilen tarih aralığında sipariş veren kişileri döndürür.
+   */
+  async getTopCustomers(
+    dateFrom?: Date,
+    dateTo?: Date,
+    organizationId?: string,
+    limit = 10,
+  ) {
+    const from = dateFrom || new Date(new Date().setHours(0, 0, 0, 0));
+    const to = dateTo || new Date();
+    try {
+      const orgClause = organizationId
+        ? Prisma.sql`AND c."organizationId" = ${organizationId}::uuid`
+        : Prisma.empty;
+      const rows = await this.prisma.$queryRaw<
+        {
+          contactId: string;
+          name: string | null;
+          phone: string | null;
+          orderCount: bigint;
+          revenue: number;
+        }[]
+      >`
+        SELECT c.id AS "contactId",
+          c.name,
+          c.phone,
+          COUNT(o.id)::bigint AS "orderCount",
+          COALESCE(SUM(o."grandTotal"), 0)::float AS revenue
+        FROM sales_orders o
+        INNER JOIN contacts c ON o."contactId" = c.id
+        WHERE o."createdAt" >= ${from} AND o."createdAt" <= ${to}
+          AND o.status <> 'CANCELLED'::"OrderStatus"
+        ${orgClause}
+        GROUP BY c.id, c.name, c.phone
+        ORDER BY revenue DESC NULLS LAST
+        LIMIT ${limit}
+      `;
+      return rows.map((r) => ({
+        contactId: r.contactId,
+        name: r.name || '—',
+        phone: r.phone || '',
+        orderCount: Number(r.orderCount),
+        revenue: Math.round((r.revenue || 0) * 100) / 100,
+      }));
+    } catch (error) {
+      this.logger.warn(`Top customers fallback (empty): ${(error as Error).message}`);
       return [];
     }
   }

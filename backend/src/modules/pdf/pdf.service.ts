@@ -525,9 +525,13 @@ export class PdfService {
         };
 
         const vatAmt = Number.isFinite(data.vatTotal) ? data.vatTotal : 0;
+        // KDV dahil brut = ara toplam + KDV (indirimden once)
+        const grossVatIncluded = (data.subtotal || 0) + vatAmt;
         sumRow(this.t('Ara Toplam (KDV haric):'), fmtMoney(data.subtotal), rowY); rowY += 14;
         sumRow(this.t('KDV Tutari:'), fmtMoney(vatAmt), rowY); rowY += 14;
         if (data.discountTotal > 0) {
+          // Indirim oncesi brut satiri, ardindan indirim kirilimi
+          sumRow(this.t('Toplam (KDV dahil):'), fmtMoney(grossVatIncluded), rowY); rowY += 14;
           sumRow(this.t('Indirim:'), `-${fmtMoney(data.discountTotal)}`, rowY, false, '#cc0000'); rowY += 14;
         }
 
@@ -560,11 +564,39 @@ export class PdfService {
           rowY += h + 6;
         }
         if (termsText) {
-          R(); doc.fontSize(8).fillColor('#444');
-          const h = doc.heightOfString(this.t(termsText), { width: PW }) + 8;
-          ensureSpace(h);
-          doc.text(this.t(termsText), ML, rowY, { width: PW, lineBreak: true });
-          rowY += h + 6;
+          // Sartlar ve Kosullar: belge okunakliligi icin her zaman yeni sayfada
+          // ve basliklandirilmis bir sekilde gosterilir ("2. sayfa sartlar sablonu").
+          doc.addPage({ margin: 0 });
+          doc.rect(0, 0, doc.page.width, 8).fill(primary);
+          rowY = 28;
+
+          R(); doc.fontSize(13).fillColor('#111');
+          doc.text(this.t('Sartlar ve Kosullar'), ML, rowY, { width: PW });
+          rowY += 22;
+          doc
+            .moveTo(ML, rowY - 4)
+            .lineTo(ML + PW, rowY - 4)
+            .lineWidth(0.5)
+            .strokeColor(primary)
+            .stroke();
+
+          R(); doc.fontSize(9).fillColor('#333');
+          const termsBlockWidth = PW;
+          // Her paragraf arasi 4pt bosluk
+          const paragraphs = this.t(termsText).split(/\n{2,}/);
+          for (const p of paragraphs) {
+            const block = p.replace(/\n/g, ' \n');
+            const hBlock = doc.heightOfString(block, { width: termsBlockWidth }) + 4;
+            // Sayfa sonuna yaklasirsa yeni sayfaya tas
+            if (rowY + hBlock > PAGE_H - 90) {
+              doc.addPage({ margin: 0 });
+              doc.rect(0, 0, doc.page.width, 8).fill(primary);
+              rowY = 28;
+            }
+            doc.text(block, ML, rowY, { width: termsBlockWidth, lineBreak: true });
+            rowY += hBlock + 4;
+          }
+          rowY += 6;
         }
         if (footerNoteText) {
           R(); doc.fontSize(8).fillColor('#444');

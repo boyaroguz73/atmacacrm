@@ -315,6 +315,7 @@ export class ConversationsController {
   /** WAHA’dan mesaj çekme (iç kullanım; org kontrolü çağıran yapar) */
   async syncMessagesCore(
     id: string,
+    opts?: { downloadMedia?: boolean },
   ): Promise<{ synced: number; message: string; conversationId: string }> {
     let conversation = await this.conversationsService.findById(id, {
       skipContactEnrichment: true,
@@ -420,9 +421,12 @@ export class ConversationsController {
     }
     const chatIdForWaha = `${waDigits}@c.us`;
 
+    const downloadMedia = opts?.downloadMedia !== false;
     const wahaMessages = await this.wahaService.getChatMessages(
       sessionName,
       chatIdForWaha,
+      undefined,
+      downloadMedia,
     );
 
     if (!wahaMessages.length) {
@@ -826,7 +830,7 @@ export class ConversationsController {
             : null;
 
           const existing = dbConvMap.get(phone);
-          if (existing) {
+          if (existing && this.wahaService.syncSkipUpToDateConversations) {
             const dbTs = existing.lastMessageAt
               ? Math.floor(existing.lastMessageAt.getTime() / 1000)
               : 0;
@@ -881,7 +885,9 @@ export class ConversationsController {
               });
             }
 
-            const result = await this.syncMessagesCore(task.conversationId);
+            const result = await this.syncMessagesCore(task.conversationId, {
+              downloadMedia: false,
+            });
             totalSynced += result.synced;
             if (result.synced > 0) updatedConversations++;
             await this.conversationsService

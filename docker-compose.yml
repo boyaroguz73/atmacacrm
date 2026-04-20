@@ -74,7 +74,12 @@ services:
       PORT: "4000"
       SYNC_CHAT_LIMIT: ${SYNC_CHAT_LIMIT:-99999}
       SYNC_MESSAGE_LIMIT: ${SYNC_MESSAGE_LIMIT:-99999}
-      SYNC_TIMEOUT_MS: ${SYNC_TIMEOUT_MS:-60000}
+      # WAHA istek süresi; medya ağırsa artırın
+      SYNC_TIMEOUT_MS: ${SYNC_TIMEOUT_MS:-120000}
+      # Toplu senkron: false = medya indirmeden liste (hızlı, daha az timeout). Medya için true.
+      SYNC_DOWNLOAD_MEDIA: ${SYNC_DOWNLOAD_MEDIA:-false}
+      # sync-all: true = veritabanı WAHA’dan yeniyse konuşmayı atla (hızlı, eksik mesaj riski)
+      SYNC_SKIP_UP_TO_DATE: ${SYNC_SKIP_UP_TO_DATE:-false}
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_USER: ${SMTP_USER:-}
@@ -84,8 +89,6 @@ services:
       IYZICO_SECRET_KEY: ${IYZICO_SECRET_KEY:-}
       IYZICO_BASE_URL: ${IYZICO_BASE_URL:-https://sandbox-api.iyzipay.com}
       WAHA_WEBHOOK_SECRET: ${WAHA_WEBHOOK_SECRET:-}
-      # Google Shopping ürün XML (boşsa varsayılan atmacaofis TR akışı kullanılır)
-      PRODUCT_XML_FEED_URL: ${PRODUCT_XML_FEED_URL:-}
     volumes:
       - backend_uploads:/app/uploads
     depends_on:

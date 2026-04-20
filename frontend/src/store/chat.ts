@@ -131,11 +131,14 @@ interface ChatState {
     chatId: string;
     mediaUrl: string;
     caption?: string;
+    /** Optimistic render için dosya tipi ipucu; backend yine doğrular. */
+    mediaTypeHint?: 'IMAGE' | 'VIDEO' | 'AUDIO' | 'DOCUMENT';
   }) => Promise<void>;
   /** Ürün görseli + açıklama (sohbetten paylaşım) */
   sendProductShare: (params: {
     conversationId: string;
     productId: string;
+    productVariantId?: string;
     sessionName?: string;
     chatId?: string;
   }) => Promise<void>;
@@ -356,7 +359,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
       conversationId: params.conversationId,
       direction: 'OUTGOING',
       body: params.caption || null,
-      mediaType: 'IMAGE',
+      // mediaTypeHint yoksa görsel varsayılır; backend doğru tipi döndürür.
+      mediaType: params.mediaTypeHint || 'IMAGE',
       mediaUrl: params.mediaUrl,
       status: 'PENDING',
       timestamp: new Date().toISOString(),
