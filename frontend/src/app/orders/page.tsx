@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import api, { getApiErrorMessage } from '@/lib/api';
 import { formatPhone } from '@/lib/utils';
@@ -22,7 +22,6 @@ import {
   Store,
 } from 'lucide-react';
 import PanelEditedBadge from '@/components/ui/PanelEditedBadge';
-import TsoftStoreOrdersPanel from '@/components/ecommerce/TsoftStoreOrdersPanel';
 
 type OrderStatus = 'PENDING' | 'PROCESSING' | 'SHIPPED' | 'DELIVERED' | 'CANCELLED';
 
@@ -132,15 +131,11 @@ function contactDisplayName(o: SalesOrder['contact']) {
   return formatPhone(o.phone);
 }
 
-function isSiteImportedOrder(o: SalesOrder) {
-  return o.source === 'TSOFT' || (o.externalId?.startsWith('tsoft_') ?? false);
-}
-
 export default function OrdersPage() {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const { user, loadFromStorage } = useAuthStore();
   const showTsoftTools = user?.role === 'ADMIN';
+  const [syncingTsoft, setSyncingTsoft] = useState(false);
   const canRegenerateOrderPdf =
     user?.role === 'ADMIN' || user?.role === 'SUPERADMIN' || user?.role === 'ACCOUNTANT';
   const canDeleteOrder =
@@ -197,6 +192,26 @@ export default function OrdersPage() {
     fetchOrders();
   }, [fetchOrders]);
 
+  const syncFromTsoft = async () => {
+    if (syncingTsoft) return;
+    setSyncingTsoft(true);
+    try {
+      const { data } = await api.post(
+        '/ecommerce/tsoft/sync-orders',
+        { from: dateFrom || undefined, to: dateTo || undefined },
+        { timeout: 120_000 },
+      );
+      toast.success(
+        `T-Soft: ${data.imported} yeni, ${data.skippedExisting} kayıtlı, ${data.errors || 0} hata`,
+      );
+      void fetchOrders(true);
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, 'T-Soft senkronu başarısız'));
+    } finally {
+      setSyncingTsoft(false);
+    }
+  };
+
   const removeOrder = async (order: SalesOrder, e?: React.MouseEvent) => {
     e?.stopPropagation();
     if (!canDeleteOrder) return;
@@ -223,6 +238,17 @@ export default function OrdersPage() {
           <p className="text-sm text-gray-500 mt-1">Satış siparişlerini görüntüleyin, durum güncelleyin ve fatura oluşturun.</p>
         </div>
         <div className="flex items-center gap-2">
+          {showTsoftTools ? (
+            <button
+              type="button"
+              onClick={() => void syncFromTsoft()}
+              disabled={syncingTsoft}
+              className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-amber-200 bg-amber-50 text-sm font-medium text-amber-900 shadow-sm hover:bg-amber-100 transition-colors disabled:opacity-50"
+            >
+              <Store className={`w-4 h-4 ${syncingTsoft ? 'animate-pulse' : ''}`} />
+              {syncingTsoft ? 'Çekiliyor…' : 'T-Soft’tan çek'}
+            </button>
+          ) : null}
           <Link
             href="/orders/new"
             className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-whatsapp text-white text-sm font-medium shadow-sm hover:bg-green-600 transition-colors"
@@ -303,15 +329,6 @@ export default function OrdersPage() {
         </div>
       </div>
 
-      {showTsoftTools ? (
-        <TsoftStoreOrdersPanel
-          defaultOpen={searchParams.get('tsoft') === '1'}
-          dateFrom={dateFrom}
-          dateTo={dateTo}
-          onCrmOrdersSynced={() => void fetchOrders(true)}
-        />
-      ) : null}
-
       <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[1080px] text-sm">
@@ -363,14 +380,6 @@ export default function OrdersPage() {
                     <td className="px-5 py-3 font-mono text-xs font-semibold text-gray-900">
                       <span className="flex items-center gap-1.5 flex-wrap">
                         {formatOrderNo(order.orderNumber)}
-                        {isSiteImportedOrder(order) ? (
-                          <span
-                            className="inline-flex text-[10px] font-semibold px-2 py-0.5 rounded-md bg-amber-100 text-amber-900 border border-amber-200/80 whitespace-nowrap"
-                            title="İnternet mağazasından aktarılmış sipariş"
-                          >
-                            Site siparişi
-                          </span>
-                        ) : null}
                       </span>
                       <PanelEditedBadge at={order.panelEditedAt} />
                     </td>
