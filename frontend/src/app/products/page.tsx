@@ -650,11 +650,11 @@ export default function ProductsPage() {
                       className="mt-0.5 rounded border-gray-300 text-orange-500 focus:ring-orange-400"
                     />
                     <span>
-                      <span className="font-medium text-gray-900">T-Soft'a da yaz</span>
+                      <span className="font-medium text-gray-900">{"T-Soft'a da yaz"}</span>
                       <span className="block text-[11px] text-gray-500 mt-0.5">
-                        Değişiklik önce T-Soft'a itilecek (kuyruk), başarılı olunca bir sonraki pull ile
-                        CRM doğrulanacak. Kapatırsanız değişiklik yalnızca CRM'de kalır (bir sonraki pull
-                        üzerine yazabilir).
+                        {
+                          "Değişiklik önce T-Soft'a itilecek (kuyruk), başarılı olunca bir sonraki pull ile CRM doğrulanacak. Kapatırsanız değişiklik yalnızca CRM'de kalır (bir sonraki pull üzerine yazabilir)."
+                        }
                       </span>
                     </span>
                   </label>
@@ -668,9 +668,11 @@ export default function ProductsPage() {
                     className="mt-0.5 rounded border-gray-300 text-orange-500 focus:ring-orange-400"
                   />
                   <span>
-                    <span className="font-medium text-gray-900">T-Soft'a da oluştur</span>
+                    <span className="font-medium text-gray-900">{"T-Soft'a da oluştur"}</span>
                     <span className="block text-[11px] text-gray-500 mt-0.5">
-                      Ürün kuyruğa alınır, T-Soft'ta oluşturulduktan sonra T-Soft ID geri döner.
+                      {
+                        "Ürün kuyruğa alınır, T-Soft'ta oluşturulduktan sonra T-Soft ID geri döner."
+                      }
                     </span>
                   </span>
                 </label>

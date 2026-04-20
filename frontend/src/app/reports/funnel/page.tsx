@@ -213,8 +213,9 @@ export default function ReportFunnelPage() {
             </div>
 
             <p className="text-[11px] text-gray-400 mt-4">
-              * Elde tutma, bir önceki basamaktan bu basamağa düşen oranı gösterir. &ldquo;Teklif → Kazanım&rdquo; KPI'sı, tüm
-              pipeline üzerinden toplam teklif içinden kazanılan oranını verir.
+              * Elde tutma, bir önceki basamaktan bu basamağa düşen oranı gösterir. &ldquo;Teklif →
+              Kazanım&rdquo;{" "}
+              {"KPI'sı, tüm pipeline üzerinden toplam teklif içinden kazanılan oranını verir."}
             </p>
           </div>
 
