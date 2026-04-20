@@ -57,6 +57,21 @@ export class ProductsController {
     return this.productsService.findVariantsByProductId(id);
   }
 
+  @Patch(':id/variants/:variantId')
+  @UseGuards(RolesGuard)
+  @Roles('ADMIN')
+  updateVariant(
+    @Param('id') productId: string,
+    @Param('variantId') variantId: string,
+    @Body() body: Record<string, unknown>,
+  ) {
+    return this.productsService.updateVariant(
+      productId,
+      variantId,
+      body as Prisma.ProductVariantUpdateInput,
+    );
+  }
+
   @Get(':id')
   findById(@Param('id') id: string) {
     return this.productsService.findById(id);
@@ -103,7 +118,7 @@ export class ProductsController {
     @Param('id') id: string,
     @Body() body: any,
   ) {
-    const { pushToTsoft, ...data } = body || {};
+    const { pushToTsoft, productFeedSource: _pfs, ...data } = body || {};
     const updated = await this.productsService.update(id, data);
     if (pushToTsoft && req.user?.organizationId) {
       await this.tsoftPush.enqueueProductOperation({

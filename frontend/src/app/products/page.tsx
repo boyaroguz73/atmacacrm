@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import Link from 'next/link';
 import api, { getApiErrorMessage } from '@/lib/api';
 import toast from 'react-hot-toast';
 import { useAuthStore } from '@/store/auth';
@@ -20,19 +21,6 @@ import {
 } from 'lucide-react';
 
 const PAGE_SIZE = 20;
-
-interface ProductVariantLite {
-  id: string;
-  tsoftId?: string | null;
-  sku?: string | null;
-  name: string;
-  unitPrice: number;
-  listPrice?: number | null;
-  salePriceAmount?: number | null;
-  stock?: number | null;
-  isActive: boolean;
-  imageUrl?: string | null;
-}
 
 interface Product {
   id: string;
@@ -90,19 +78,6 @@ const emptyForm = (): FormState => ({
   stock: '',
 });
 
-function productToForm(p: Product): FormState {
-  return {
-    sku: p.sku,
-    name: p.name,
-    description: p.description ?? '',
-    unit: p.unit || 'Adet',
-    unitPrice: String(p.unitPrice),
-    currency: p.currency || 'TRY',
-    vatRate: String(p.vatRate),
-    stock: p.stock != null ? String(p.stock) : '',
-  };
-}
-
 export default function ProductsPage() {
   const { user } = useAuthStore();
   const isAdmin = user?.role === 'ADMIN' || user?.role === 'SUPERADMIN';
@@ -112,13 +87,12 @@ export default function ProductsPage() {
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
-  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('');
+  const [categories, setCategories] = useState<{ category: string; count: number }[]>([]);
   const [form, setForm] = useState<FormState>(emptyForm);
   const [pushToTsoft, setPushToTsoft] = useState(false);
-  const [editingVariants, setEditingVariants] = useState<ProductVariantLite[]>([]);
-  const [variantsLoading, setVariantsLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [downloadingImages, setDownloadingImages] = useState(false);
@@ -131,7 +105,14 @@ export default function ProductsPage() {
 
   useEffect(() => {
     setPage(1);
-  }, [debouncedSearch]);
+  }, [debouncedSearch, categoryFilter]);
+
+  useEffect(() => {
+    void api
+      .get<Array<{ category: string; count: number }>>('/products/categories-summary')
+      .then(({ data }) => setCategories(Array.isArray(data) ? data : []))
+      .catch(() => setCategories([]));
+  }, []);
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
@@ -143,6 +124,7 @@ export default function ProductsPage() {
         {
           params: {
             search: debouncedSearch || undefined,
+            category: categoryFilter.trim() || undefined,
             page,
             limit: PAGE_SIZE,
           },
@@ -157,51 +139,22 @@ export default function ProductsPage() {
     } finally {
       setLoading(false);
     }
-  }, [debouncedSearch, page]);
+  }, [debouncedSearch, categoryFilter, page]);
 
   useEffect(() => {
     fetchProducts();
   }, [fetchProducts]);
 
   const openCreate = () => {
-    setEditingProduct(null);
     setForm(emptyForm());
     setPushToTsoft(false);
-    setEditingVariants([]);
     setShowForm(true);
-  };
-
-  const openEdit = (p: Product) => {
-    setEditingProduct(p);
-    setForm(productToForm(p));
-    setPushToTsoft(p.productFeedSource === 'TSOFT');
-    setEditingVariants([]);
-    setShowForm(true);
-    if (p.productFeedSource === 'TSOFT') {
-      void loadVariants(p.id);
-    }
   };
 
   const closeForm = () => {
     setShowForm(false);
-    setEditingProduct(null);
     setForm(emptyForm());
     setPushToTsoft(false);
-    setEditingVariants([]);
-  };
-
-  const loadVariants = async (productId: string) => {
-    setVariantsLoading(true);
-    try {
-      const { data } = await api.get<{ variants: ProductVariantLite[] }>(
-        `/products/${productId}/variants`,
-      );
-      setEditingVariants(Array.isArray(data?.variants) ? data.variants : []);
-    } catch {
-      setEditingVariants([]);
-    } finally {
-      setVariantsLoading(false);
-    }
   };
 
   const submitForm = async (e: React.FormEvent) => {
@@ -234,21 +187,12 @@ export default function ProductsPage() {
     if (pushToTsoft) payload.pushToTsoft = true;
     setSaving(true);
     try {
-      if (editingProduct) {
-        await api.patch(`/products/${editingProduct.id}`, payload);
-        toast.success(
-          pushToTsoft ? 'Ürün güncellendi · T-Soft kuyruğa alındı' : 'Ürün güncellendi',
-        );
-      } else {
-        await api.post('/products', payload);
-        toast.success(
-          pushToTsoft ? 'Ürün oluşturuldu · T-Soft kuyruğa alındı' : 'Ürün oluşturuldu',
-        );
-      }
+      await api.post('/products', payload);
+      toast.success(pushToTsoft ? 'Ürün oluşturuldu · T-Soft kuyruğa alındı' : 'Ürün oluşturuldu');
       closeForm();
       fetchProducts();
     } catch (err: unknown) {
-      toast.error(getApiErrorMessage(err, editingProduct ? 'Güncelleme başarısız' : 'Oluşturma başarısız'));
+      toast.error(getApiErrorMessage(err, 'Oluşturma başarısız'));
     } finally {
       setSaving(false);
     }
@@ -385,8 +329,8 @@ export default function ProductsPage() {
           ) : null}
         </div>
 
-        <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
-          <div className="relative max-w-md">
+        <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4 flex flex-col sm:flex-row gap-3 sm:items-end">
+          <div className="relative flex-1 max-w-md">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input
               type="text"
@@ -395,6 +339,23 @@ export default function ProductsPage() {
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full pl-10 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-whatsapp focus:ring-1 focus:ring-whatsapp/20"
             />
+          </div>
+          <div className="sm:w-64">
+            <label className="block text-[10px] font-medium text-gray-500 mb-1 uppercase tracking-wide">
+              Kategori
+            </label>
+            <select
+              value={categoryFilter}
+              onChange={(e) => setCategoryFilter(e.target.value)}
+              className="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-whatsapp focus:ring-1 focus:ring-whatsapp/20"
+            >
+              <option value="">Tümü</option>
+              {categories.map((c) => (
+                <option key={c.category} value={c.category}>
+                  {c.category} ({c.count})
+                </option>
+              ))}
+            </select>
           </div>
         </div>
 
@@ -477,7 +438,9 @@ export default function ProductsPage() {
                           </div>
                         </td>
                         <td className="px-4 py-3 font-medium text-gray-900 max-w-[200px] truncate" title={p.name}>
-                          {p.name}
+                          <Link href={`/products/${p.id}`} className="text-whatsapp hover:underline">
+                            {p.name}
+                          </Link>
                         </td>
                         <td className="px-4 py-3 text-gray-600 max-w-[220px] truncate" title={p.category || ''}>
                           {p.category || '—'}
@@ -513,14 +476,13 @@ export default function ProductsPage() {
                         <td className="px-4 py-3 text-right">
                           {isAdmin ? (
                             <div className="inline-flex items-center gap-1">
-                              <button
-                                type="button"
-                                onClick={() => openEdit(p)}
-                                className="p-2 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-whatsapp transition-colors"
-                                title="Düzenle"
+                              <Link
+                                href={`/products/${p.id}`}
+                                className="p-2 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-whatsapp transition-colors inline-flex"
+                                title="Detay / düzenle"
                               >
                                 <Pencil className="w-4 h-4" />
-                              </button>
+                              </Link>
                               <button
                                 type="button"
                                 onClick={() => removeProduct(p)}
@@ -583,7 +545,7 @@ export default function ProductsPage() {
           >
             <div className="sticky top-0 flex items-center justify-between px-5 py-4 border-b border-gray-100 bg-white rounded-t-xl">
               <h2 id="product-form-title" className="text-lg font-semibold text-gray-900">
-                {editingProduct ? 'Ürünü düzenle' : 'Yeni ürün'}
+                Yeni ürün
               </h2>
               <button
                 type="button"
@@ -623,60 +585,22 @@ export default function ProductsPage() {
                   className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:border-whatsapp focus:ring-1 focus:ring-whatsapp/20 resize-y"
                 />
               </div>
-              {editingProduct?.productFeedSource === 'TSOFT' ? (
-                <div className="rounded-xl border border-orange-200 bg-orange-50/60 p-3 text-xs text-gray-700 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="font-semibold text-orange-900">T-Soft bağlı ürün</p>
-                      <p className="text-[11px] text-orange-700 mt-0.5">
-                        {editingProduct.tsoftId ? `T-Soft ID: ${editingProduct.tsoftId}` : 'T-Soft ID yok'}
-                        {editingProduct.tsoftLastPulledAt
-                          ? ` · Son pull: ${new Date(editingProduct.tsoftLastPulledAt).toLocaleString('tr-TR')}`
-                          : ''}
-                      </p>
-                    </div>
-                    {editingProduct.pendingPushOp ? (
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold uppercase bg-amber-200 text-amber-900">
-                        <Loader2 className="w-3 h-3 animate-spin" />
-                        Kuyrukta · {editingProduct.pendingPushOp}
-                      </span>
-                    ) : null}
-                  </div>
-                  <label className="flex items-start gap-2 text-xs text-gray-700 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={pushToTsoft}
-                      onChange={(e) => setPushToTsoft(e.target.checked)}
-                      className="mt-0.5 rounded border-gray-300 text-orange-500 focus:ring-orange-400"
-                    />
-                    <span>
-                      <span className="font-medium text-gray-900">{"T-Soft'a da yaz"}</span>
-                      <span className="block text-[11px] text-gray-500 mt-0.5">
-                        {
-                          "Değişiklik önce T-Soft'a itilecek (kuyruk), başarılı olunca bir sonraki pull ile CRM doğrulanacak. Kapatırsanız değişiklik yalnızca CRM'de kalır (bir sonraki pull üzerine yazabilir)."
-                        }
-                      </span>
-                    </span>
-                  </label>
-                </div>
-              ) : !editingProduct ? (
-                <label className="flex items-start gap-2 text-xs text-gray-700 cursor-pointer bg-gray-50 border border-gray-200 rounded-xl p-3">
-                  <input
-                    type="checkbox"
-                    checked={pushToTsoft}
-                    onChange={(e) => setPushToTsoft(e.target.checked)}
-                    className="mt-0.5 rounded border-gray-300 text-orange-500 focus:ring-orange-400"
-                  />
-                  <span>
-                    <span className="font-medium text-gray-900">{"T-Soft'a da oluştur"}</span>
-                    <span className="block text-[11px] text-gray-500 mt-0.5">
-                      {
-                        "Ürün kuyruğa alınır, T-Soft'ta oluşturulduktan sonra T-Soft ID geri döner."
-                      }
-                    </span>
+              <label className="flex items-start gap-2 text-xs text-gray-700 cursor-pointer bg-gray-50 border border-gray-200 rounded-xl p-3">
+                <input
+                  type="checkbox"
+                  checked={pushToTsoft}
+                  onChange={(e) => setPushToTsoft(e.target.checked)}
+                  className="mt-0.5 rounded border-gray-300 text-orange-500 focus:ring-orange-400"
+                />
+                <span>
+                  <span className="font-medium text-gray-900">{"T-Soft'a da oluştur"}</span>
+                  <span className="block text-[11px] text-gray-500 mt-0.5">
+                    {
+                      "Ürün kuyruğa alınır, T-Soft'ta oluşturulduktan sonra T-Soft ID geri döner."
+                    }
                   </span>
-                </label>
-              ) : null}
+                </span>
+              </label>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
@@ -735,69 +659,6 @@ export default function ProductsPage() {
                   className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:border-whatsapp focus:ring-1 focus:ring-whatsapp/20"
                 />
               </div>
-              {editingProduct?.productFeedSource === 'TSOFT' ? (
-                <div className="rounded-xl border border-gray-200 bg-white p-3 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <p className="text-xs font-semibold text-gray-900">
-                      Varyantlar {editingVariants.length > 0 ? `(${editingVariants.length})` : ''}
-                    </p>
-                    {variantsLoading ? (
-                      <Loader2 className="w-3.5 h-3.5 animate-spin text-gray-400" />
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => void loadVariants(editingProduct.id)}
-                        className="text-[11px] text-gray-500 hover:text-gray-800"
-                      >
-                        Yenile
-                      </button>
-                    )}
-                  </div>
-                  {editingVariants.length === 0 && !variantsLoading ? (
-                    <p className="text-[11px] text-gray-400 py-1">Varyant bulunamadı.</p>
-                  ) : (
-                    <div className="max-h-56 overflow-y-auto divide-y divide-gray-100">
-                      {editingVariants.map((v) => (
-                        <div key={v.id} className="flex items-center gap-2 py-1.5 text-[11px]">
-                          <div className="w-8 h-8 shrink-0 rounded-md border border-gray-100 bg-gray-50 overflow-hidden">
-                            {v.imageUrl ? (
-                              // eslint-disable-next-line @next/next/no-img-element
-                              <img
-                                src={rewriteMediaUrlForClient(v.imageUrl)}
-                                alt={v.name}
-                                className="w-full h-full object-cover"
-                              />
-                            ) : null}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="font-medium text-gray-800 truncate" title={v.name}>
-                              {v.name}
-                            </p>
-                            <p className="text-gray-400 font-mono truncate" title={v.sku || ''}>
-                              {v.sku || '—'}
-                            </p>
-                          </div>
-                          <div className="text-right tabular-nums">
-                            <p className="text-gray-800">{formatMoney(v.unitPrice, editingProduct.currency)}</p>
-                            <p className="text-[10px] text-gray-400">
-                              Stok: {v.stock != null ? v.stock : '—'}
-                            </p>
-                          </div>
-                          <span
-                            className={`w-1.5 h-1.5 rounded-full ${
-                              v.isActive ? 'bg-emerald-500' : 'bg-gray-300'
-                            }`}
-                          />
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  <p className="text-[10px] text-gray-400">
-                    Varyant düzenleme T-Soft üzerinden yapılır; buradaki veriler pull senkronu ile güncellenir.
-                  </p>
-                </div>
-              ) : null}
-
               <div className="flex justify-end gap-2 pt-2">
                 <button
                   type="button"
@@ -812,7 +673,7 @@ export default function ProductsPage() {
                   className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-whatsapp text-white text-sm font-medium hover:bg-whatsapp/90 disabled:opacity-50"
                 >
                   {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-                  {editingProduct ? 'Kaydet' : 'Oluştur'}
+                  Oluştur
                   {pushToTsoft ? ' · T-Soft' : ''}
                 </button>
               </div>

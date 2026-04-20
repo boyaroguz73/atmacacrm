@@ -806,15 +806,46 @@ export class TsoftApiService {
   async listOrders(organizationId: string, page = 1, limit = 50) {
     if (this.isRest1(organizationId)) {
       const start = (page - 1) * limit;
-      const raw = await this.rest1Request(organizationId, '/rest1/order/getOrders', {
-        start,
-        limit,
-        FetchProductData: 1,
-        FetchCustomerData: 1,
-        FetchInvoiceAddress: 1,
-        FetchDeliveryAddress: 1,
-      });
-      return this.unwrapRest1List(raw);
+      /** Bazı T-Soft sürümleri ağır getOrders parametrelerinde 500 döner; kademeli sadeleştirme. */
+      const attempts: Record<string, string | number>[] = [
+        {
+          start,
+          limit,
+          FetchProductData: 1,
+          FetchCustomerData: 1,
+          FetchInvoiceAddress: 1,
+          FetchDeliveryAddress: 1,
+        },
+        {
+          start,
+          limit,
+          FetchProductData: 0,
+          FetchCustomerData: 1,
+          FetchInvoiceAddress: 0,
+          FetchDeliveryAddress: 0,
+        },
+        { start, limit },
+      ];
+      let lastErr: unknown = null;
+      for (const params of attempts) {
+        try {
+          const raw = await this.rest1Request(organizationId, '/rest1/order/getOrders', params);
+          return this.unwrapRest1List(raw);
+        } catch (e) {
+          lastErr = e;
+          const retry =
+            e instanceof BadRequestException &&
+            /\([45]0[0238]\)|\(5\d\d\)/.test(e.message);
+          if (retry) {
+            this.logger.warn(`[TSOFT] getOrders yeniden deneniyor (daha hafif parametre): ${e.message}`);
+            continue;
+          }
+          throw e;
+        }
+      }
+      throw lastErr instanceof Error
+        ? lastErr
+        : new BadRequestException('T-Soft sipariş listesi alınamadı');
     }
     const data = await this.v3Request<unknown>(organizationId, 'GET', '/api/v3/admin/orders/order', {
       params: { page, limit, sort: '-id' },

@@ -392,7 +392,25 @@ export class ProductsService {
 
   async update(id: string, data: Prisma.ProductUpdateInput) {
     await this.findById(id);
-    return this.prisma.product.update({ where: { id }, data });
+    const existing = await this.prisma.product.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException('Ürün bulunamadı');
+
+    const { productFeedSource: _ignoreFeed, ...rest } = data as Prisma.ProductUpdateInput & {
+      productFeedSource?: unknown;
+    };
+    const patch: Prisma.ProductUpdateInput = { ...rest };
+
+    if (existing.tsoftId || existing.productFeedSource === ProductFeedSource.TSOFT) {
+      patch.productFeedSource = ProductFeedSource.TSOFT;
+    }
+
+    return this.prisma.product.update({ where: { id }, data: patch });
+  }
+
+  async updateVariant(productId: string, variantId: string, data: Prisma.ProductVariantUpdateInput) {
+    const v = await this.prisma.productVariant.findUnique({ where: { id: variantId } });
+    if (!v || v.productId !== productId) throw new NotFoundException('Varyant bulunamadı');
+    return this.prisma.productVariant.update({ where: { id: variantId }, data });
   }
 
   async remove(id: string) {

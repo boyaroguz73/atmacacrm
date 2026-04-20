@@ -290,42 +290,41 @@ export class PdfService {
         const PW = doc.page.width - ML - MR; // 515
         const PAGE_H = doc.page.height; // 841.89
 
-        // ── HEADER BOX ──────────────────────────────────────────────────
-        // Colored top bar
+        // ── HEADER (birleşik bant: küçük logo + iletişim/vergi tek blokta; ayrı ünvan satırı yok) ──
         doc.rect(0, 0, doc.page.width, 8).fill(primary);
 
-        let logoW = 0;
-        let logoBottom = 18;
+        const titleBoxW = 190;
+        const titleBoxX = doc.page.width - MR - titleBoxW;
+        let logoBottom = 14;
         if (logoBuffer) {
           try {
-            doc.image(logoBuffer, ML, 16, { fit: [250, 56] });
-            logoW = 250;
-            logoBottom = 72;
+            doc.image(logoBuffer, ML, 12, { fit: [150, 40] });
+            logoBottom = 54;
           } catch { /* skip */ }
         }
 
-        // Company info (right of logo)
-        const titleBoxW = 190;
-        const titleBoxX = doc.page.width - MR - titleBoxW;
-        let firmX = ML + logoW + (logoW ? 10 : 0);
-        let companyInfoW = Math.max(120, titleBoxX - firmX - 12);
-        let cy = 15;
-        if (companyInfoW < 150) {
-          firmX = ML;
-          companyInfoW = titleBoxX - ML - 12;
-          cy = logoBottom + 4;
+        const metaLines: string[] = [];
+        if (!logoBuffer && settings.companyName) {
+          metaLines.push(this.t(settings.companyName));
         }
-        cy += txt(this.t(settings.companyName), firmX, cy, { size: 12, bold: true, color: primary, width: companyInfoW, lineBreak: true }) + 3;
-        if (settings.companyAddress) { cy += txt(this.t(settings.companyAddress), firmX, cy, { size: 7.5, color: '#555', width: companyInfoW, lineBreak: true }) + 2; }
-        if (settings.companyPhone)   { cy += txt(`Tel: ${settings.companyPhone}`, firmX, cy, { size: 7.5, color: '#555', width: companyInfoW, lineBreak: true }) + 2; }
-        if (settings.companyEmail)   { cy += txt(`E-posta: ${settings.companyEmail}`, firmX, cy, { size: 7.5, color: '#555', width: companyInfoW, lineBreak: true }) + 2; }
-        if (settings.companyWebsite) { cy += txt(settings.companyWebsite, firmX, cy, { size: 7.5, color: '#555', width: companyInfoW, lineBreak: true }) + 2; }
+        if (settings.companyAddress) metaLines.push(this.t(settings.companyAddress));
+        if (settings.companyPhone) metaLines.push(`Tel: ${settings.companyPhone}`);
+        if (settings.companyEmail) metaLines.push(`E-posta: ${settings.companyEmail}`);
+        if (settings.companyWebsite) metaLines.push(settings.companyWebsite);
         if (settings.companyTaxOffice || settings.companyTaxNumber) {
-          cy += txt(`VD: ${this.t(settings.companyTaxOffice)}  VN: ${settings.companyTaxNumber}`, firmX, cy, { size: 7.5, color: '#555', width: companyInfoW, lineBreak: true }) + 2;
+          metaLines.push(`VD: ${this.t(settings.companyTaxOffice)}  VN: ${settings.companyTaxNumber}`);
         }
-        if (settings.companyMersisNo) { cy += txt(`Mersis: ${settings.companyMersisNo}`, firmX, cy, { size: 7.5, color: '#555', width: companyInfoW, lineBreak: true }) + 2; }
+        if (settings.companyMersisNo) metaLines.push(`Mersis: ${settings.companyMersisNo}`);
 
-        // Document title box (right side)
+        let cy = logoBottom + 6;
+        const metaW = titleBoxX - ML - 12;
+        if (metaLines.length && metaW > 40) {
+          R(); doc.fontSize(7).fillColor('#555555');
+          const block = metaLines.join(' · ');
+          doc.text(block, ML, cy, { width: metaW, lineBreak: true });
+          cy += doc.heightOfString(block, { width: metaW }) + 6;
+        }
+
         doc.rect(titleBoxX, 12, titleBoxW, 68).fill('#f5f5f5');
         txt(this.t(data.title), titleBoxX + 8, 18, { size: 14, bold: true, color: primary, width: titleBoxW - 16 });
         let ry2 = 38;
@@ -335,8 +334,7 @@ export class PdfService {
         if (data.deliveryDate) { txt(`Teslim: ${data.deliveryDate}`, titleBoxX + 8, ry2, { size: 8, color: '#444', width: titleBoxW - 16 }); ry2 += 11; }
         if (data.dueDate)      { txt(`Vade: ${data.dueDate}`, titleBoxX + 8, ry2, { size: 8, color: '#444', width: titleBoxW - 16 }); }
 
-        // ── DIVIDER ─────────────────────────────────────────────────────
-        const headerBottom = Math.max(cy, logoBottom, 82) + 8;
+        const headerBottom = Math.max(cy, logoBottom + 28, 82) + 8;
         doc.moveTo(ML, headerBottom).lineTo(ML + PW, headerBottom).lineWidth(1).strokeColor(primary).stroke();
 
         // ── CUSTOMER INFO ────────────────────────────────────────────────
@@ -564,37 +562,26 @@ export class PdfService {
           rowY += h + 6;
         }
         if (termsText) {
-          // Sartlar ve Kosullar: belge okunakliligi icin her zaman yeni sayfada
-          // ve basliklandirilmis bir sekilde gosterilir ("2. sayfa sartlar sablonu").
-          doc.addPage({ margin: 0 });
-          doc.rect(0, 0, doc.page.width, 8).fill(primary);
-          rowY = 28;
-
-          R(); doc.fontSize(13).fillColor('#111');
-          doc.text(this.t('Sartlar ve Kosullar'), ML, rowY, { width: PW });
-          rowY += 22;
+          rowY += 4;
+          R(); doc.fontSize(8.5).fillColor(primary);
+          doc.text(this.t('Sartlar ve Kosullar'), ML, rowY, { width: PW, lineBreak: false });
+          rowY += 12;
           doc
-            .moveTo(ML, rowY - 4)
-            .lineTo(ML + PW, rowY - 4)
-            .lineWidth(0.5)
+            .moveTo(ML, rowY - 2)
+            .lineTo(ML + PW, rowY - 2)
+            .lineWidth(0.4)
             .strokeColor(primary)
             .stroke();
-
-          R(); doc.fontSize(9).fillColor('#333');
+          rowY += 6;
+          R(); doc.fontSize(7.5).fillColor('#333333');
           const termsBlockWidth = PW;
-          // Her paragraf arasi 4pt bosluk
           const paragraphs = this.t(termsText).split(/\n{2,}/);
           for (const p of paragraphs) {
             const block = p.replace(/\n/g, ' \n');
-            const hBlock = doc.heightOfString(block, { width: termsBlockWidth }) + 4;
-            // Sayfa sonuna yaklasirsa yeni sayfaya tas
-            if (rowY + hBlock > PAGE_H - 90) {
-              doc.addPage({ margin: 0 });
-              doc.rect(0, 0, doc.page.width, 8).fill(primary);
-              rowY = 28;
-            }
+            const hBlock = doc.heightOfString(block, { width: termsBlockWidth }) + 3;
+            ensureSpace(hBlock + 10);
             doc.text(block, ML, rowY, { width: termsBlockWidth, lineBreak: true });
-            rowY += hBlock + 4;
+            rowY += hBlock + 3;
           }
           rowY += 6;
         }
@@ -670,8 +657,6 @@ export class PdfService {
         const sigBottomPad = settings.showSignatureArea ? 92 : 56;
         if (rowY > PAGE_H - sigBottomPad) rowY = PAGE_H - sigBottomPad;
         doc.moveTo(ML, footerY - 8).lineTo(ML + PW, footerY - 8).lineWidth(0.3).strokeColor('#dddddd').stroke();
-        R(); doc.fontSize(7).fillColor('#aaaaaa');
-        doc.text(`Sayfa 1`, ML, footerY - 4, { width: PW, align: 'right', lineBreak: false });
 
         doc.end();
       } catch (err: any) {

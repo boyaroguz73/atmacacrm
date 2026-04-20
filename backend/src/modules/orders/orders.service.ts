@@ -46,6 +46,7 @@ export class OrdersService {
         company: true,
         address: true,
         billingAddress: true,
+        shippingAddress: true,
         taxOffice: true,
         taxNumber: true,
         identityNumber: true,
@@ -62,6 +63,15 @@ export class OrdersService {
             imageUrl: true,
             category: true,
             googleProductType: true,
+          },
+        },
+        productVariant: {
+          select: {
+            id: true,
+            sku: true,
+            name: true,
+            tsoftId: true,
+            externalId: true,
           },
         },
         supplier: { select: { id: true, name: true, phone: true } },

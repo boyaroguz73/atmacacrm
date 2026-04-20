@@ -40,6 +40,13 @@ interface OrderItemRow {
   colorFabricInfo?: string | null;
   measurementInfo?: string | null;
   product?: { id: string; sku: string; name: string; imageUrl?: string | null } | null;
+  productVariant?: {
+    id: string;
+    sku?: string | null;
+    name: string;
+    tsoftId?: string | null;
+    externalId?: string | null;
+  } | null;
   supplierId?: string | null;
   supplierOrderNo?: string | null;
   isFromStock?: boolean;
@@ -67,15 +74,32 @@ interface SalesOrder {
   source?: string;
   status: OrderStatus;
   currency: string;
+  subtotal?: number;
+  vatTotal?: number;
   grandTotal: number;
   shippingAddress: string | null;
   notes: string | null;
   expectedDeliveryDate?: string | null;
   createdAt: string;
   panelEditedAt?: string | null;
+  tsoftSiteOrderId?: string | null;
+  pushToTsoft?: boolean;
+  tsoftPushedAt?: string | null;
+  tsoftLastError?: string | null;
   invoice?: { id: string } | null;
   createdBy?: { id: string; name: string | null } | null;
-  contact: { name: string | null; surname: string | null; phone: string };
+  contact: {
+    name: string | null;
+    surname: string | null;
+    phone: string;
+    email?: string | null;
+    company?: string | null;
+    address?: string | null;
+    billingAddress?: string | null;
+    shippingAddress?: string | null;
+    taxOffice?: string | null;
+    taxNumber?: string | null;
+  };
   quote: { id: string; quoteNumber: number } | null;
   items: OrderItemRow[];
   confirmationPdfUrl?: string | null;
@@ -558,6 +582,82 @@ export default function OrderDetailPage() {
               </p>
             ) : null}
 
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+              <div className="rounded-xl border border-gray-100 bg-gradient-to-br from-slate-50 to-white p-4 space-y-2">
+                <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Finansal özet</h3>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-500">Ara toplam</span>
+                  <span className="tabular-nums font-medium text-gray-800">
+                    {formatMoney(order.subtotal ?? 0, order.currency)}
+                  </span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-500">KDV</span>
+                  <span className="tabular-nums font-medium text-gray-800">
+                    {formatMoney(order.vatTotal ?? 0, order.currency)}
+                  </span>
+                </div>
+                <div className="flex justify-between text-sm pt-2 border-t border-gray-100">
+                  <span className="text-gray-700 font-medium">Genel toplam</span>
+                  <span className="tabular-nums font-bold text-whatsapp">
+                    {formatMoney(order.grandTotal, order.currency)}
+                  </span>
+                </div>
+                <p className="text-[10px] text-gray-400">Oluşturulma: {formatDateTime(order.createdAt)}</p>
+              </div>
+
+              <div className="rounded-xl border border-gray-100 bg-white p-4 space-y-2">
+                <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Müşteri</h3>
+                {order.contact.company ? (
+                  <p className="text-sm font-medium text-gray-900">{order.contact.company}</p>
+                ) : null}
+                {order.contact.email ? (
+                  <p className="text-xs text-gray-600">{order.contact.email}</p>
+                ) : null}
+                {order.contact.billingAddress ? (
+                  <div>
+                    <p className="text-[10px] font-semibold text-gray-400 uppercase">Fatura</p>
+                    <p className="text-xs text-gray-700 whitespace-pre-wrap">{order.contact.billingAddress}</p>
+                  </div>
+                ) : null}
+                {order.contact.taxOffice || order.contact.taxNumber ? (
+                  <p className="text-xs text-gray-600">
+                    VD: {order.contact.taxOffice || '—'} · VN: {order.contact.taxNumber || '—'}
+                  </p>
+                ) : null}
+              </div>
+
+              <div className="rounded-xl border border-indigo-100 bg-indigo-50/40 p-4 space-y-2">
+                <h3 className="text-xs font-semibold text-indigo-800 uppercase tracking-wide">E-ticaret / T-Soft</h3>
+                <div className="text-xs space-y-1 text-gray-700">
+                  <p>
+                    <span className="text-gray-500">Kaynak:</span>{' '}
+                    <span className="font-medium">{order.source || 'MANUAL'}</span>
+                  </p>
+                  {order.externalId ? (
+                    <p className="font-mono break-all">
+                      <span className="text-gray-500">Harici ID:</span> {order.externalId}
+                    </p>
+                  ) : null}
+                  {order.tsoftSiteOrderId ? (
+                    <p className="font-mono">
+                      <span className="text-gray-500">Site OrderId:</span> {order.tsoftSiteOrderId}
+                    </p>
+                  ) : null}
+                  <p>
+                    <span className="text-gray-500">Panele it:</span>{' '}
+                    {order.pushToTsoft ? 'Evet' : 'Hayır'}
+                  </p>
+                  {order.tsoftPushedAt ? (
+                    <p className="text-emerald-700">İtildi: {formatDateTime(order.tsoftPushedAt)}</p>
+                  ) : null}
+                  {order.tsoftLastError ? (
+                    <p className="text-red-700 text-[11px] whitespace-pre-wrap break-words">{order.tsoftLastError}</p>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+
             <div className="rounded-xl border border-gray-100 bg-gray-50/40 p-4 space-y-3">
               <div className="flex items-center gap-2 text-sm font-semibold text-gray-800">
                 <Calendar className="w-4 h-4 text-whatsapp" />
@@ -676,15 +776,26 @@ export default function OrderDetailPage() {
                               </div>
                             </td>
                             <td className="px-3 py-2.5">
-                              {editable ? (
-                                <input
-                                  value={d.name}
-                                  onChange={(e) => updateLineDraft(item.id, { name: e.target.value })}
-                                  className="w-full px-2 py-1.5 rounded border border-gray-200 text-sm"
-                                />
-                              ) : (
-                                item.name
-                              )}
+                              <div className="space-y-1">
+                                {editable ? (
+                                  <input
+                                    value={d.name}
+                                    onChange={(e) => updateLineDraft(item.id, { name: e.target.value })}
+                                    className="w-full px-2 py-1.5 rounded border border-gray-200 text-sm"
+                                  />
+                                ) : (
+                                  <span className="font-medium text-gray-900">{item.name}</span>
+                                )}
+                                {item.productVariant ? (
+                                  <p className="text-[10px] text-indigo-700">
+                                    Varyant: {item.productVariant.name}
+                                    {item.productVariant.sku ? ` · ${item.productVariant.sku}` : ''}
+                                  </p>
+                                ) : null}
+                                {item.product ? (
+                                  <p className="text-[10px] text-gray-400 font-mono">Ürün SKU: {item.product.sku}</p>
+                                ) : null}
+                              </div>
                             </td>
                             <td className="px-3 py-2.5">
                               {editable ? (
