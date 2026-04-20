@@ -27,13 +27,8 @@ export class TsoftSyncScheduler implements OnModuleInit {
   ) {}
 
   async onModuleInit(): Promise<void> {
-    setTimeout(() => {
-      this.runInitialBurst().catch((e) => {
-        this.logger.error(
-          `[TSOFT-SCHED] ilk tur hatası: ${e instanceof Error ? e.message : String(e)}`,
-        );
-      });
-    }, 30_000);
+    // T-Soft pull senkron zamanlayıcıları kapalı (manuel tetikleme kullanılıyor).
+    this.logger.log('[TSOFT-SCHED] pull zamanlayıcıları devre dışı; senkron manuel tetiklenmeli');
   }
 
   private async runInitialBurst(): Promise<void> {
@@ -44,7 +39,7 @@ export class TsoftSyncScheduler implements OnModuleInit {
   }
 
   /** Ürün + varyant + görsel (30 dk) */
-  @Cron('0 */30 * * * *', { name: 'tsoft-product-sync' })
+  // @Cron('0 */30 * * * *', { name: 'tsoft-product-sync' }) — pull zamanlayıcısı kapatıldı
   async runProductSync(): Promise<void> {
     const orgs = await this.listEnabledTsoftOrgs();
     for (const org of orgs) {
@@ -70,7 +65,7 @@ export class TsoftSyncScheduler implements OnModuleInit {
   }
 
   /** Müşteri (60 dk) */
-  @Cron(CronExpression.EVERY_HOUR, { name: 'tsoft-customer-sync' })
+  // @Cron(CronExpression.EVERY_HOUR, { name: 'tsoft-customer-sync' }) — pull zamanlayıcısı kapatıldı
   async runCustomerSync(): Promise<void> {
     const orgs = await this.listEnabledTsoftOrgs();
     for (const org of orgs) {
@@ -112,7 +107,7 @@ export class TsoftSyncScheduler implements OnModuleInit {
   }
 
   /** Sipariş (15 dk) — createdById için org'un bir admin'ini seçer */
-  @Cron('0 */15 * * * *', { name: 'tsoft-order-sync' })
+  // @Cron('0 */15 * * * *', { name: 'tsoft-order-sync' }) — pull zamanlayıcısı kapatıldı
   async runOrderSync(): Promise<void> {
     const orgs = await this.listEnabledTsoftOrgs();
     for (const org of orgs) {
