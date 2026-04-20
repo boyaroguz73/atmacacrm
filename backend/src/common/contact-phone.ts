@@ -190,7 +190,8 @@ export function isFallbackContactName(
   const n = name.trim();
 
   if (/^WhatsApp/i.test(n)) return true;
-  if (/^atmaca\s+of[iı]s$/i.test(n)) return true;
+  // "Atmaca Ofis" bazlı tüm fallback varyasyonlarını yakala (örn: "Atmaca Ofis CRM")
+  if (/\batmaca\s+of[iı]s\b/i.test(n)) return true;
   if (/^Kimlik\b/i.test(n)) return true;
   if (/^LID\b/i.test(n)) return true;
 

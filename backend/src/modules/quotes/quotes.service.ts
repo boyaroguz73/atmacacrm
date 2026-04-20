@@ -384,7 +384,11 @@ export class QuotesService {
     },
   ) {
     const current = await this.findById(id);
-    if (current.order) {
+    const linkedOrder = await this.prisma.salesOrder.findFirst({
+      where: { quoteId: id },
+      select: { id: true },
+    });
+    if (linkedOrder) {
       throw new BadRequestException('Siparişe dönüşmüş teklif düzenlenemez');
     }
 
@@ -559,13 +563,16 @@ export class QuotesService {
   async remove(id: string) {
     const q = await this.prisma.quote.findUnique({
       where: { id },
-      include: { order: { select: { id: true } } },
     });
     if (!q) throw new NotFoundException('Teklif bulunamadı');
     if (q.status !== 'DRAFT') {
       throw new BadRequestException('Sadece taslak teklifler silinebilir');
     }
-    if (q.order) {
+    const linkedOrder = await this.prisma.salesOrder.findFirst({
+      where: { quoteId: id },
+      select: { id: true },
+    });
+    if (linkedOrder) {
       throw new BadRequestException('Siparişe dönüşmüş teklif silinemez');
     }
     await this.prisma.quote.delete({ where: { id } });

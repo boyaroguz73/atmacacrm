@@ -499,20 +499,43 @@ export class TsoftApiService {
   ): Promise<T> {
     const cfg = await this.loadConfig(organizationId);
     const token = await this.getBearerToken(organizationId);
-    const apiRoot = this.resolveApiRoot(organizationId, cfg);
-    const http = this.client(apiRoot, token);
+    const primaryRoot = this.resolveApiRoot(organizationId, cfg);
+    const altRoot =
+      cfg.pathPrefix === '/panel' ? cfg.baseUrl : `${cfg.baseUrl}/panel`;
+    const triedRoots = new Set<string>();
 
-    const res = await http.request<T>({ method, url: path, params: options?.params, data: options?.data });
+    const requestOnRoot = async (root: string) => {
+      const http = this.client(root, token);
+      return http.request<T>({ method, url: path, params: options?.params, data: options?.data });
+    };
+
+    let res = await requestOnRoot(primaryRoot);
+    triedRoots.add(primaryRoot);
 
     if (res.status === 401) {
       this.clearTokenCache(organizationId);
       const retryToken = await this.getBearerToken(organizationId);
-      const http2 = this.client(this.resolveApiRoot(organizationId, cfg), retryToken);
+      const retryRoot = this.resolveApiRoot(organizationId, cfg);
+      const http2 = this.client(retryRoot, retryToken);
       const res2 = await http2.request<T>({ method, url: path, params: options?.params, data: options?.data });
       if (res2.status >= 400) {
         throw new BadRequestException(`T-Soft API hatası (${res2.status})`);
       }
       return res2.data;
+    }
+
+    // Bazı kurulumlarda v3 sadece /panel altında çalışır (veya tersi).
+    if (
+      res.status >= 400 &&
+      (res.status === 403 || res.status === 404) &&
+      !triedRoots.has(altRoot)
+    ) {
+      this.logger.warn(
+        `[TSOFT-v3] ${primaryRoot}${path} -> ${res.status}; alternatif kök deneniyor: ${altRoot}${path}`,
+      );
+      const altRes = await requestOnRoot(altRoot);
+      if (altRes.status < 400) return altRes.data;
+      res = altRes;
     }
 
     if (res.status >= 400) {

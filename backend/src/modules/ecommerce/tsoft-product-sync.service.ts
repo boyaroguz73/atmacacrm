@@ -2,6 +2,10 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { TsoftApiService } from './tsoft-api.service';
+import axios from 'axios';
+import { createHash } from 'crypto';
+import { join, extname as pathExtname } from 'path';
+import { existsSync, mkdirSync, writeFileSync } from 'fs';
 
 /**
  * T-Soft REST1 ürün satırlarını CRM `products` + `product_variants` tablolarına
@@ -151,11 +155,82 @@ function buildVariantName(v: Record<string, unknown>, fallbackCode?: string | nu
 @Injectable()
 export class TsoftProductSyncService {
   private readonly logger = new Logger(TsoftProductSyncService.name);
+  private readonly productImagesDir = join(process.cwd(), 'uploads', 'products');
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly tsoftApi: TsoftApiService,
-  ) {}
+  ) {
+    if (!existsSync(this.productImagesDir)) {
+      mkdirSync(this.productImagesDir, { recursive: true });
+    }
+  }
+
+  private resolveRemoteImageUrl(rawUrl: string, baseUrl: string): string {
+    const s = String(rawUrl || '').trim();
+    if (!s) return '';
+    if (/^https?:\/\//i.test(s)) return s;
+    if (s.startsWith('//')) return `https:${s}`;
+    const normalizedBase = String(baseUrl || '').replace(/\/+$/, '');
+    if (!normalizedBase) return s;
+    if (s.startsWith('/')) return `${normalizedBase}${s}`;
+    return `${normalizedBase}/${s.replace(/^\/+/, '')}`;
+  }
+
+  private detectImageExt(url: string, contentType?: string): string {
+    const ct = String(contentType || '').toLowerCase();
+    if (ct.includes('png')) return '.png';
+    if (ct.includes('webp')) return '.webp';
+    if (ct.includes('gif')) return '.gif';
+    if (ct.includes('bmp')) return '.bmp';
+    if (ct.includes('svg')) return '.svg';
+    const fromPath = pathExtname(String(url || '').split('?')[0]).toLowerCase();
+    if (['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.svg'].includes(fromPath)) {
+      return fromPath === '.jpeg' ? '.jpg' : fromPath;
+    }
+    return '.jpg';
+  }
+
+  private async downloadImageToLocal(remoteUrl: string, fileKey: string, baseUrl: string): Promise<string> {
+    if (!remoteUrl) return remoteUrl;
+    if (remoteUrl.startsWith('/uploads/') || remoteUrl.startsWith('uploads/')) {
+      return remoteUrl.startsWith('/') ? remoteUrl : `/${remoteUrl}`;
+    }
+    const resolvedUrl = this.resolveRemoteImageUrl(remoteUrl, baseUrl);
+    if (!/^https?:\/\//i.test(resolvedUrl)) {
+      return remoteUrl;
+    }
+    const safeKey = String(fileKey || 'img').replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 80);
+    const urlHash = createHash('md5').update(resolvedUrl).digest('hex').slice(0, 10);
+    const prefix = `${safeKey}_${urlHash}`;
+    try {
+      const existing = ['.jpg', '.png', '.webp', '.gif', '.bmp', '.svg']
+        .map((ext) => ({ ext, full: join(this.productImagesDir, `${prefix}${ext}`) }))
+        .find((x) => existsSync(x.full));
+      if (existing) return `/uploads/products/${prefix}${existing.ext}`;
+
+      const res = await axios.get<ArrayBuffer>(resolvedUrl, {
+        responseType: 'arraybuffer',
+        timeout: 60_000,
+        maxContentLength: 12 * 1024 * 1024,
+        validateStatus: (s) => s >= 200 && s < 400,
+        headers: {
+          'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+          Accept: 'image/webp,image/apng,image/*,*/*;q=0.8',
+        },
+      });
+      const ext = this.detectImageExt(resolvedUrl, String(res.headers?.['content-type'] || ''));
+      const filename = `${prefix}${ext}`;
+      writeFileSync(join(this.productImagesDir, filename), Buffer.from(res.data));
+      return `/uploads/products/${filename}`;
+    } catch (e: any) {
+      this.logger.warn(
+        `[TSOFT-PRODUCT-SYNC] görsel indirilemedi (${safeKey}): ${e?.message || e} [url=${resolvedUrl}]`,
+      );
+      return resolvedUrl || remoteUrl;
+    }
+  }
 
   /**
    * T-Soft'tan tüm ürünleri çeker; CRM DB'sine upsert eder.
@@ -172,6 +247,8 @@ export class TsoftProductSyncService {
     const includeDescriptions = opts.descriptions ?? true;
 
     this.logger.log(`[TSOFT-PRODUCT-SYNC] başlıyor org=${organizationId}`);
+    const tsoftCfg = await this.tsoftApi.loadConfig(organizationId);
+    const imageBaseUrl = String(tsoftCfg.baseUrl || '').replace(/\/+$/, '');
 
     const rows = await this.tsoftApi.fetchAllProducts(organizationId, {
       detailed: true,
@@ -200,6 +277,7 @@ export class TsoftProductSyncService {
           includeStock,
           includePrice,
           includeDescriptions,
+          imageBaseUrl,
         });
         if (upserted.skipped) {
           result.skippedPendingPush++;
@@ -257,6 +335,7 @@ export class TsoftProductSyncService {
       includeStock: boolean;
       includePrice: boolean;
       includeDescriptions: boolean;
+      imageBaseUrl: string;
     },
   ): Promise<{ skipped: boolean; tsoftId: string | null; variantCount: number }> {
     const tsoftId = pickString(row.ProductId, row.productId);
@@ -301,7 +380,13 @@ export class TsoftProductSyncService {
       row.isActive === 0
     );
 
-    const images = flags.includeImages ? extractImageUrls(row) : [];
+    const images = flags.includeImages
+      ? await Promise.all(
+          extractImageUrls(row).map((url, idx) =>
+            this.downloadImageToLocal(url, `${sku}_p${idx + 1}`, flags.imageBaseUrl),
+          ),
+        )
+      : [];
     const mainImage = images[0] ?? null;
     const additionalImages = images.length > 1 ? images.slice(1) : null;
 
@@ -375,7 +460,12 @@ export class TsoftProductSyncService {
   private async upsertVariants(
     productId: string,
     row: Record<string, unknown>,
-    flags: { includeImages: boolean; includeStock: boolean; includePrice: boolean },
+    flags: {
+      includeImages: boolean;
+      includeStock: boolean;
+      includePrice: boolean;
+      imageBaseUrl: string;
+    },
   ): Promise<number> {
     const subs = row.SubProducts ?? row.subProducts;
     if (!Array.isArray(subs) || subs.length === 0) return 0;
@@ -408,7 +498,17 @@ export class TsoftProductSyncService {
         v.IsActive === '0'
       );
 
-      const vImages = flags.includeImages ? extractImageUrls(v) : [];
+      const vImages = flags.includeImages
+        ? await Promise.all(
+            extractImageUrls(v).map((url, idx) =>
+              this.downloadImageToLocal(
+                url,
+                `${vExternal}_v${idx + 1}`,
+                flags.imageBaseUrl,
+              ),
+            ),
+          )
+        : [];
       const vImage = vImages[0] ?? null;
       const vAdditional = vImages.length > 1 ? vImages.slice(1) : null;
 

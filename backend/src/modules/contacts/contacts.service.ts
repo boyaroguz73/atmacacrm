@@ -81,12 +81,11 @@ export class ContactsService {
       }
 
       const nm = safeName;
-      if (nm && isFallbackContactName(existing.name, existing.phone) && !existing.surname?.trim()) {
+      if (nm && isFallbackContactName(existing.name, existing.phone)) {
         updates.name = nm;
       } else if (
         !nm &&
-        isFallbackContactName(existing.name, existing.phone) &&
-        !existing.surname?.trim()
+        isFallbackContactName(existing.name, existing.phone)
       ) {
         /** WAHA/webhook bazen isim göndermez; mevcut kayıtta ad boşsa görünen telefonu yaz */
         const fb = formatPhoneDisplay(primary);

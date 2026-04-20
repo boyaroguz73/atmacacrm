@@ -295,34 +295,39 @@ export class PdfService {
 
         const titleBoxW = 190;
         const titleBoxX = doc.page.width - MR - titleBoxW;
-        let logoBottom = 14;
+        const logoX = ML + 6;
+        const logoY = 18;
+        let logoBottom = logoY;
         if (logoBuffer) {
           try {
-            doc.image(logoBuffer, ML, 12, { fit: [150, 40] });
-            logoBottom = 54;
+            // Logo etrafında nefes alanı bırakıp başlıkla çakışmayı önle.
+            doc.image(logoBuffer, logoX, logoY, { fit: [158, 46] });
+            logoBottom = logoY + 46;
           } catch { /* skip */ }
         }
 
-        const metaLines: string[] = [];
-        if (!logoBuffer && settings.companyName) {
-          metaLines.push(this.t(settings.companyName));
-        }
-        if (settings.companyAddress) metaLines.push(this.t(settings.companyAddress));
-        if (settings.companyPhone) metaLines.push(`Tel: ${settings.companyPhone}`);
-        if (settings.companyEmail) metaLines.push(`E-posta: ${settings.companyEmail}`);
-        if (settings.companyWebsite) metaLines.push(settings.companyWebsite);
-        if (settings.companyTaxOffice || settings.companyTaxNumber) {
-          metaLines.push(`VD: ${this.t(settings.companyTaxOffice)}  VN: ${settings.companyTaxNumber}`);
-        }
-        if (settings.companyMersisNo) metaLines.push(`Mersis: ${settings.companyMersisNo}`);
-
-        let cy = logoBottom + 6;
+        let cy = logoBottom + 10;
         const metaW = titleBoxX - ML - 12;
-        if (metaLines.length && metaW > 40) {
-          R(); doc.fontSize(7).fillColor('#555555');
-          const block = metaLines.join(' · ');
-          doc.text(block, ML, cy, { width: metaW, lineBreak: true });
-          cy += doc.heightOfString(block, { width: metaW }) + 6;
+        if (metaW > 40) {
+          const infoLines: string[] = [];
+          // İstek: firma adresi logonun hemen altında olsun.
+          if (settings.companyAddress) infoLines.push(this.t(settings.companyAddress));
+          if (settings.companyPhone) infoLines.push(`Tel: ${settings.companyPhone}`);
+          if (settings.companyEmail) infoLines.push(`E-posta: ${settings.companyEmail}`);
+          if (settings.companyWebsite) infoLines.push(settings.companyWebsite);
+          if (settings.companyTaxOffice || settings.companyTaxNumber) {
+            infoLines.push(`VD: ${this.t(settings.companyTaxOffice)}  VN: ${settings.companyTaxNumber}`);
+          }
+          if (settings.companyMersisNo) infoLines.push(`Mersis: ${settings.companyMersisNo}`);
+          if (!logoBuffer && settings.companyName) infoLines.unshift(this.t(settings.companyName));
+
+          R(); doc.fontSize(7.5).fillColor('#555555');
+          for (const line of infoLines) {
+            if (!line) continue;
+            const lineH = doc.heightOfString(line, { width: metaW });
+            doc.text(line, ML, cy, { width: metaW, lineBreak: true });
+            cy += lineH + 2;
+          }
         }
 
         doc.rect(titleBoxX, 12, titleBoxW, 68).fill('#f5f5f5');
@@ -519,19 +524,17 @@ export class PdfService {
 
         const vatAmt = Number.isFinite(data.vatTotal) ? data.vatTotal : 0;
         const subEx = Math.round((Number(data.subtotal) || 0) * 100) / 100;
-        sumRow(this.t('Toplam Iskontolu Fiyat (KDV haric):'), fmtMoney(subEx), rowY); rowY += 14;
+        const hasGeneralDiscount = (Number(data.discountTotal) || 0) > 0.005;
+        const subtotalLabel = hasGeneralDiscount
+          ? this.t('Toplam Iskontolu Fiyat (KDV haric):')
+          : this.t('Ara Toplam (KDV haric):');
+        sumRow(subtotalLabel, fmtMoney(subEx), rowY); rowY += 14;
         sumRow(this.t('KDV Tutari:'), fmtMoney(vatAmt), rowY); rowY += 14;
 
         // Grand total box — genel toplam KDV dahil (kalem fiyatlari da KDV dahil)
         doc.rect(sumX - 4, rowY - 2, lblW + valW + 8, 22).fill(primary);
         sumRow(this.t('GENEL TOPLAM (KDV dahil):'), fmtMoney(data.grandTotal), rowY + 5, true, '#ffffff');
         rowY += 32;
-        rowY += txt(
-          this.t('* Tablodaki birim fiyat ve satir toplamlari KDV dahildir.'),
-          sumX,
-          rowY,
-          { size: 7, color: '#666666', width: lblW + valW, align: 'right', lineBreak: true },
-        ) + 2;
 
         // ── NOTES / TERMS / BANK ─────────────────────────────────────────
         rowY += 6;
