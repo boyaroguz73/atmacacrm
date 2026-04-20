@@ -150,8 +150,15 @@ export default function OrdersPage() {
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<'' | OrderStatus>('');
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
+  // Varsayılan filtre: son 30 gün. Kullanıcı tarih değiştirirse hem CRM listesi hem T-Soft sync buna göre çalışır.
+  const defaultDateRange = useMemo(() => {
+    const end = new Date();
+    const start = new Date(end.getTime() - 30 * 24 * 60 * 60 * 1000);
+    const fmt = (d: Date) => d.toISOString().slice(0, 10);
+    return { from: fmt(start), to: fmt(end) };
+  }, []);
+  const [dateFrom, setDateFrom] = useState(defaultDateRange.from);
+  const [dateTo, setDateTo] = useState(defaultDateRange.to);
   const [searchQuery, setSearchQuery] = useState('');
   const [siteOrdersOnly, setSiteOrdersOnly] = useState(false);
 
@@ -299,6 +306,8 @@ export default function OrdersPage() {
       {showTsoftTools ? (
         <TsoftStoreOrdersPanel
           defaultOpen={searchParams.get('tsoft') === '1'}
+          dateFrom={dateFrom}
+          dateTo={dateTo}
           onCrmOrdersSynced={() => void fetchOrders(true)}
         />
       ) : null}

@@ -267,8 +267,13 @@ export class EcommerceService {
     };
   }
 
-  async listOrders(organizationId: string, page: number, limit: number) {
-    return this.tsoftApi.listOrders(organizationId, page, limit);
+  async listOrders(
+    organizationId: string,
+    page: number,
+    limit: number,
+    opts: { dateStart?: Date | string | null; dateEnd?: Date | string | null } = {},
+  ) {
+    return this.tsoftApi.listOrders(organizationId, page, limit, opts);
   }
 
   /** T-Soft site müşteri listesi (üyeler) */
@@ -479,12 +484,26 @@ export class EcommerceService {
   /**
    * T-Soft siparişlerini çeker ve CRM SalesOrder tablosuna yazar.
    */
-  async syncTsoftOrders(organizationId: string, userId: string) {
-    this.logger.log(`[TSOFT-SYNC-ORDERS] Başlatılıyor orgId=${organizationId}`);
+  async syncTsoftOrders(
+    organizationId: string,
+    userId: string,
+    opts: { dateStart?: Date | string | null; dateEnd?: Date | string | null } = {},
+  ) {
+    // Varsayılan: son 30 gün. Kullanıcı tarih gönderdiyse onu kullan.
+    const now = new Date();
+    const defaultStart = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    const dateStart = opts.dateStart ? new Date(opts.dateStart) : defaultStart;
+    const dateEnd = opts.dateEnd ? new Date(opts.dateEnd) : now;
+    this.logger.log(
+      `[TSOFT-SYNC-ORDERS] Başlatılıyor orgId=${organizationId} aralık=${dateStart.toISOString()}..${dateEnd.toISOString()}`,
+    );
 
     let allOrders: Record<string, unknown>[] = [];
     for (let page = 1; page <= 50 && allOrders.length < TSOFT_SYNC_ORDERS_MAX; page++) {
-      const { rows } = await this.tsoftApi.listOrders(organizationId, page, 100);
+      const { rows } = await this.tsoftApi.listOrders(organizationId, page, 100, {
+        dateStart,
+        dateEnd,
+      });
       this.logger.debug(`[TSOFT-SYNC-ORDERS] Sayfa ${page}: ${rows.length} sipariş`);
       if (!rows.length) break;
       const remaining = TSOFT_SYNC_ORDERS_MAX - allOrders.length;
@@ -517,8 +536,34 @@ export class EcommerceService {
       }
 
       const externalId = `tsoft_${tsoftId}`;
+      const siteOidRaw = raw.OrderId ?? raw.orderId;
+      const siteOid =
+        siteOidRaw != null && String(siteOidRaw).trim() !== '' ? String(siteOidRaw).trim() : null;
 
-      const existing = await this.prisma.salesOrder.findUnique({ where: { externalId } });
+      // Çakışma koruması: CRM'den push edilmiş sipariş zaten T-Soft'ta var olabilir.
+      // Önce externalId ile ara; yoksa tsoftSiteOrderId veya eski (prefix'siz) externalId ile ara.
+      let existing = await this.prisma.salesOrder.findUnique({ where: { externalId } });
+      if (!existing && siteOid) {
+        existing = await this.prisma.salesOrder.findFirst({
+          where: {
+            OR: [{ tsoftSiteOrderId: siteOid }, { externalId: siteOid }],
+            contact: { organizationId },
+          },
+        });
+        if (existing) {
+          // CRM'den push edilmiş sipariş — externalId'yi birleşik formata backfill et, tekrar oluşturma.
+          await this.prisma.salesOrder.update({
+            where: { id: existing.id },
+            data: {
+              externalId,
+              tsoftSiteOrderId: siteOid,
+            },
+          });
+          this.logger.debug(
+            `[TSOFT-SYNC-ORDERS] Mevcut CRM siparişi T-Soft ID ile eşleşti, externalId backfill: #${tsoftCode}`,
+          );
+        }
+      }
       if (existing) {
         skippedExisting++;
         continue;
@@ -626,9 +671,7 @@ export class EcommerceService {
         }
         const validDate = Number.isFinite(parsedDate.getTime()) ? parsedDate : new Date();
 
-        const siteOid = raw.OrderId ?? raw.orderId;
-        const tsoftSiteOrderId =
-          siteOid != null && String(siteOid).trim() !== '' ? String(siteOid).trim() : null;
+        const tsoftSiteOrderId = siteOid;
 
         await this.prisma.salesOrder.create({
           data: {

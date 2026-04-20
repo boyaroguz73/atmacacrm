@@ -339,7 +339,8 @@ export class TsoftPushService {
         tsoftLastError: null,
       };
       if (tsoftOrderId) {
-        upd.externalId = String(tsoftOrderId);
+        // externalId formatı pull ile aynı olmalı (`tsoft_<id>`), aksi halde sync duplicate yaratır.
+        upd.externalId = `tsoft_${String(tsoftOrderId)}`;
         upd.tsoftSiteOrderId = String(tsoftOrderId);
         upd.source = 'TSOFT';
       }

@@ -9,6 +9,8 @@ type SiteOrderRow = Record<string, unknown>;
 
 type Props = {
   defaultOpen?: boolean;
+  dateFrom?: string;
+  dateTo?: string;
   onCrmOrdersSynced?: () => void;
 };
 
@@ -38,7 +40,12 @@ function summarize(r: unknown) {
   };
 }
 
-export default function TsoftStoreOrdersPanel({ defaultOpen = false, onCrmOrdersSynced }: Props) {
+export default function TsoftStoreOrdersPanel({
+  defaultOpen = false,
+  dateFrom,
+  dateTo,
+  onCrmOrdersSynced,
+}: Props) {
   const [panelOpen, setPanelOpen] = useState(defaultOpen);
   const [rows, setRows] = useState<SiteOrderRow[]>([]);
   const [page, setPage] = useState(1);
@@ -52,7 +59,10 @@ export default function TsoftStoreOrdersPanel({ defaultOpen = false, onCrmOrders
   const load = useCallback(async (p: number) => {
     setLoading(true);
     try {
-      const { data } = await api.get('/ecommerce/tsoft/orders', { params: { page: p, limit: 50 } });
+      const params: Record<string, string | number> = { page: p, limit: 50 };
+      if (dateFrom) params.from = dateFrom;
+      if (dateTo) params.to = dateTo;
+      const { data } = await api.get('/ecommerce/tsoft/orders', { params });
       setRows(Array.isArray(data?.rows) ? data.rows : []);
     } catch (err: unknown) {
       const e = err as { response?: { data?: { message?: string } } };
@@ -61,7 +71,7 @@ export default function TsoftStoreOrdersPanel({ defaultOpen = false, onCrmOrders
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [dateFrom, dateTo]);
 
   useEffect(() => {
     load(page);
@@ -70,7 +80,11 @@ export default function TsoftStoreOrdersPanel({ defaultOpen = false, onCrmOrders
   const refreshAndSync = async () => {
     setSyncing(true);
     try {
-      const { data } = await api.post('/ecommerce/tsoft/sync-orders', {}, { timeout: 120_000 });
+      const { data } = await api.post(
+        '/ecommerce/tsoft/sync-orders',
+        { from: dateFrom || undefined, to: dateTo || undefined },
+        { timeout: 120_000 },
+      );
       const max = data?.maxPerSync != null ? ` (en fazla ${data.maxPerSync} sipariş)` : '';
       toast.success(
         `Siparişler CRM’e aktarıldı: ${data.imported} yeni, ${data.skippedExisting} zaten kayıtlı, ${data.errors || 0} hata${max}`,

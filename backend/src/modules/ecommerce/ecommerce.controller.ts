@@ -92,8 +92,14 @@ export class EcommerceController {
   @Post('tsoft/sync-orders')
   @UseGuards(RolesGuard)
   @Roles('ADMIN')
-  syncTsoftOrders(@CurrentUser() user: { id: string; role?: string; organizationId?: string | null }) {
-    return this.ecommerceService.syncTsoftOrders(this.orgId(user), user.id);
+  syncTsoftOrders(
+    @CurrentUser() user: { id: string; role?: string; organizationId?: string | null },
+    @Body() body: { from?: string; to?: string } = {},
+  ) {
+    return this.ecommerceService.syncTsoftOrders(this.orgId(user), user.id, {
+      dateStart: body?.from || null,
+      dateEnd: body?.to || null,
+    });
   }
 
   /** Admin paneli: T-Soft pull/push özet durumu */
@@ -128,11 +134,14 @@ export class EcommerceController {
     @CurrentUser() user: { role?: string; organizationId?: string | null },
     @Query('page') page = '1',
     @Query('limit') limit = '50',
+    @Query('from') from?: string,
+    @Query('to') to?: string,
   ) {
     return this.ecommerceService.listOrders(
       this.orgId(user),
       Math.max(1, parseInt(page, 10) || 1),
       Math.min(100, Math.max(1, parseInt(limit, 10) || 50)),
+      { dateStart: from || null, dateEnd: to || null },
     );
   }
 

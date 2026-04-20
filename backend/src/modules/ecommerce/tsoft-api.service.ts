@@ -826,9 +826,27 @@ export class TsoftApiService {
 
   // ─── Order endpoints ──────────────────────────────────────────────────
 
-  async listOrders(organizationId: string, page = 1, limit = 50) {
+  async listOrders(
+    organizationId: string,
+    page = 1,
+    limit = 50,
+    opts: { dateStart?: Date | string | null; dateEnd?: Date | string | null } = {},
+  ) {
     if (this.isRest1(organizationId)) {
       const start = (page - 1) * limit;
+      const dateFilter: Record<string, string> = {};
+      const toIso = (v: Date | string | null | undefined): string | null => {
+        if (!v) return null;
+        const d = v instanceof Date ? v : new Date(v);
+        if (!Number.isFinite(d.getTime())) return null;
+        // T-Soft WS datetime: "YYYY-MM-DDTHH:mmZ"
+        return d.toISOString().slice(0, 16) + 'Z';
+      };
+      const dsIso = toIso(opts.dateStart);
+      const deIso = toIso(opts.dateEnd);
+      if (dsIso) dateFilter.OrderDateTimeStart = dsIso;
+      if (deIso) dateFilter.OrderDateTimeEnd = deIso;
+
       /** Bazı T-Soft sürümleri ağır getOrders parametrelerinde 500 döner; kademeli sadeleştirme. */
       const attempts: Array<{
         params?: Record<string, string | number>;
@@ -838,6 +856,7 @@ export class TsoftApiService {
           params: {
             start,
             limit,
+            ...dateFilter,
             FetchProductData: 1,
             FetchCustomerData: 1,
             FetchInvoiceAddress: 1,
@@ -848,14 +867,15 @@ export class TsoftApiService {
           params: {
             start,
             limit,
+            ...dateFilter,
             FetchProductData: 0,
             FetchCustomerData: 1,
             FetchInvoiceAddress: 0,
             FetchDeliveryAddress: 0,
           },
         },
-        { params: { start, limit } },
-        { data: { start, limit } },
+        { params: { start, limit, ...dateFilter } },
+        { data: { start, limit, ...dateFilter } },
       ];
       let lastErr: unknown = null;
       for (const attempt of attempts) {
@@ -881,8 +901,31 @@ export class TsoftApiService {
         }
       }
       if (lastErr instanceof BadRequestException && /\(5\d\d\)/.test(lastErr.message)) {
+        // T-Soft bazen geçersiz token'da 401 yerine 500 döner — bir kez force refresh deneyelim.
+        this.logger.warn(
+          `[TSOFT] getOrders tüm denemelerde 5xx, token yenilenip tek deneme daha yapılacak: ${lastErr.message}`,
+        );
+        try {
+          this.clearTokenCache(organizationId);
+          const retryParams: Record<string, string | number> = {
+            start: (page - 1) * limit,
+            limit,
+            ...dateFilter,
+          };
+          const raw = await this.rest1Request(
+            organizationId,
+            '/rest1/order/getOrders',
+            retryParams,
+          );
+          const list = this.unwrapRest1List(raw);
+          this.logger.log(`[TSOFT] getOrders token refresh sonrası başarılı: ${list.rows.length} kayıt`);
+          return list;
+        } catch (refreshErr: unknown) {
+          const msg = refreshErr instanceof Error ? refreshErr.message : String(refreshErr);
+          this.logger.error(`[TSOFT] getOrders token refresh sonrası da hata: ${msg}`);
+        }
         this.logger.error(
-          `[TSOFT] getOrders tüm denemelerde 5xx döndü, v3 endpoint fallback denenecek: ${lastErr.message}`,
+          `[TSOFT] getOrders v3 endpoint fallback denenecek: ${lastErr.message}`,
         );
         try {
           const v3Data = await this.v3Request<unknown>(
