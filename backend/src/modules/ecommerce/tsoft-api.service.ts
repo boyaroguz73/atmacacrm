@@ -976,6 +976,24 @@ export class TsoftApiService {
           const msg = refreshErr instanceof Error ? refreshErr.message : String(refreshErr);
           this.logger.error(`[TSOFT] getOrders token refresh sonrası da hata: ${msg}`);
         }
+
+        // Bu tenant mutasyonlarda order2/ modülünü kullanıyor; listeleme için de deneyelim.
+        try {
+          const alt = await this.rest1Request(
+            organizationId,
+            '/rest1/order2/getOrders',
+            { start: (page - 1) * limit, limit, ...dateFilter },
+          );
+          const altList = this.unwrapRest1List(alt);
+          this.logger.log(
+            `[TSOFT] getOrders order2/ modülü başarılı: ${altList.rows.length} kayıt`,
+          );
+          return altList;
+        } catch (altErr: unknown) {
+          const msg = altErr instanceof Error ? altErr.message : String(altErr);
+          this.logger.warn(`[TSOFT] order2/getOrders da başarısız: ${msg}`);
+        }
+
         this.logger.error(
           `[TSOFT] getOrders v3 endpoint fallback denenecek: ${lastErr.message}`,
         );
