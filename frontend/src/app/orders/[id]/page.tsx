@@ -16,10 +16,12 @@ import {
   FileText,
   Landmark,
   Loader2,
+  MapPin,
   Package,
   Plus,
   Receipt,
   ReceiptText,
+  Store,
   Trash2,
   User,
   Wallet,
@@ -555,20 +557,23 @@ export default function OrderDetailPage() {
           <div className="px-5 py-4 space-y-5">
             <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
               <div className="xl:col-span-2 space-y-5 min-w-0">
-            <div>
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-2">
-                <h3 className="text-sm font-semibold text-gray-800">Sipariş Ürünleri</h3>
+            <div className="rounded-xl border border-indigo-100 bg-white overflow-hidden shadow-sm">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 px-4 py-2.5 bg-gradient-to-r from-indigo-50 to-indigo-50/40 border-b border-indigo-100">
+                <h3 className="text-xs font-bold text-indigo-900 uppercase tracking-wide flex items-center gap-2">
+                  <Package className="w-4 h-4 text-indigo-700" />
+                  Sipariş Ürünleri
+                </h3>
                 {canEditOrderLines ? (
-                  <p className="text-xs text-gray-500">
-                    Ürün, miktar, fiyat ve renk/ölçü alanlarını düzenleyip <strong>Kaydet</strong> ile kaydedin. Genel toplam otomatik güncellenir.
+                  <p className="text-[11px] text-indigo-800/70">
+                    Düzenleyip <strong>Kaydet</strong> ile güncelleyin.
                   </p>
                 ) : order.invoice ? (
-                  <p className="text-xs text-amber-700">Faturalı siparişte kalem içeriği değiştirilemez.</p>
+                  <p className="text-[11px] text-amber-700">Faturalı siparişte kalem içeriği değiştirilemez.</p>
                 ) : order.status === 'DELIVERED' || order.status === 'CANCELLED' ? (
-                  <p className="text-xs text-gray-500">Bu durumda kalem düzenlenemez.</p>
+                  <p className="text-[11px] text-gray-500">Bu durumda kalem düzenlenemez.</p>
                 ) : null}
               </div>
-              <div className="rounded-xl border border-gray-100 shadow-sm overflow-x-auto">
+              <div className="overflow-x-auto">
                 <table className="w-full text-sm min-w-[980px]">
                   <thead>
                     <tr className="bg-gray-50/80 text-left text-xs font-semibold text-gray-500 uppercase">
@@ -596,7 +601,7 @@ export default function OrderDetailPage() {
                         const draftVat = editable ? draftLineVatAmount(d) : vatAmt;
                         const draftLineTotal = editable ? draftLineGross(d) : item.lineTotal;
                         return (
-                          <tr key={item.id} className="border-t border-gray-50 align-top">
+                          <tr key={item.id} className="border-t border-gray-50 align-top odd:bg-gray-50/30 hover:bg-indigo-50/20 transition-colors">
                             <td className="px-3 py-2.5 align-middle w-16">
                               <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-lg border border-gray-100 bg-gray-50 overflow-hidden">
                                 {item.product?.imageUrl ? (
@@ -816,13 +821,13 @@ export default function OrderDetailPage() {
             </div>
 
             {/* Ödeme / tahsilat paneli */}
-            <div className="rounded-xl border border-gray-100 bg-white p-4 space-y-4">
-              <div className="flex items-center justify-between gap-3 flex-wrap">
-                <h3 className="text-sm font-semibold text-gray-800 flex items-center gap-2">
-                  <Receipt className="w-4 h-4 text-whatsapp" />
+            <div className="rounded-xl border border-emerald-100 bg-white overflow-hidden shadow-sm">
+              <div className="flex items-center justify-between gap-3 flex-wrap px-4 py-2.5 bg-gradient-to-r from-emerald-50 to-emerald-50/40 border-b border-emerald-100">
+                <h3 className="text-xs font-bold text-emerald-900 uppercase tracking-wide flex items-center gap-2">
+                  <Receipt className="w-4 h-4 text-emerald-700" />
                   Tahsilat & Ödeme
                   {order.isFullyPaid ? (
-                    <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-green-100 text-green-700 uppercase tracking-wide">
+                    <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-green-100 text-green-800 uppercase tracking-wide">
                       <CheckCircle2 className="w-3 h-3" />
                       Ödendi
                     </span>
@@ -850,6 +855,7 @@ export default function OrderDetailPage() {
                 </div>
               </div>
 
+              <div className="p-4 space-y-4">
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 <div className="rounded-lg border border-gray-100 bg-gray-50/60 p-3">
                   <div className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Toplam</div>
@@ -963,13 +969,15 @@ export default function OrderDetailPage() {
               ) : (
                 <p className="text-xs text-gray-500 italic">Henüz tahsilat kaydı yok.</p>
               )}
+              </div>
             </div>
 
-            <div className="rounded-xl border border-gray-100 bg-gray-50/40 p-4 space-y-3">
-              <div className="flex items-center gap-2 text-sm font-semibold text-gray-800">
-                <Calendar className="w-4 h-4 text-whatsapp" />
-                Sipariş notları ve teslimat
+            <div className="rounded-xl border border-teal-100 bg-white overflow-hidden shadow-sm">
+              <div className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-teal-50 to-teal-50/40 border-b border-teal-100">
+                <Calendar className="w-4 h-4 text-teal-700" />
+                <h3 className="text-xs font-bold text-teal-900 uppercase tracking-wide">Sipariş Notları ve Teslimat</h3>
               </div>
+              <div className="p-4 space-y-3">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div className="space-y-1">
                   <label className="text-[11px] font-semibold text-gray-500 uppercase">Planlanan teslim</label>
@@ -1010,136 +1018,165 @@ export default function OrderDetailPage() {
                 {metaSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
                 Bilgileri kaydet
               </button>
+              </div>
             </div>
               </div>
 
               <aside className="space-y-4">
-                <div className="rounded-xl border border-gray-100 bg-white p-4 space-y-3">
-                  <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Sipariş bilgileri</h3>
-                  <div className="space-y-1">
-                    <label htmlFor="order-status" className="text-[11px] font-semibold text-gray-500 uppercase">Durum</label>
-                    <select
-                      id="order-status"
-                      value={order.status}
-                      disabled={statusSaving}
-                      onChange={(e) => void patchStatus(e.target.value as OrderStatus)}
-                      className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm bg-white"
-                    >
-                      {(Object.keys(STATUS_LABELS) as OrderStatus[]).map((s) => (
-                        <option key={s} value={s}>{STATUS_LABELS[s]}</option>
-                      ))}
-                    </select>
+                <div className="rounded-xl border border-blue-100 bg-white overflow-hidden shadow-sm">
+                  <div className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-blue-50 to-blue-50/40 border-b border-blue-100">
+                    <Package className="w-4 h-4 text-blue-700" />
+                    <h3 className="text-xs font-bold text-blue-900 uppercase tracking-wide">Sipariş Bilgileri</h3>
                   </div>
-                  <dl className="text-xs space-y-1.5">
-                    <div className="flex justify-between gap-2">
-                      <dt className="text-gray-500">Sipariş no</dt>
-                      <dd className="font-mono font-semibold text-gray-900">{formatOrderNo(order.orderNumber)}</dd>
+                  <div className="p-4 space-y-3">
+                    <div className="space-y-1">
+                      <label htmlFor="order-status" className="text-[11px] font-semibold text-gray-500 uppercase">Durum</label>
+                      <select
+                        id="order-status"
+                        value={order.status}
+                        disabled={statusSaving}
+                        onChange={(e) => void patchStatus(e.target.value as OrderStatus)}
+                        className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm bg-white"
+                      >
+                        {(Object.keys(STATUS_LABELS) as OrderStatus[]).map((s) => (
+                          <option key={s} value={s}>{STATUS_LABELS[s]}</option>
+                        ))}
+                      </select>
                     </div>
-                    <div className="flex justify-between gap-2">
-                      <dt className="text-gray-500">Oluşturulma</dt>
-                      <dd className="text-gray-700">{formatDateTime(order.createdAt)}</dd>
-                    </div>
-                    {order.expectedDeliveryDate ? (
+                    <dl className="text-xs space-y-1.5">
                       <div className="flex justify-between gap-2">
-                        <dt className="text-gray-500">Planlanan teslim</dt>
-                        <dd className="text-gray-700">{new Date(order.expectedDeliveryDate).toLocaleDateString('tr-TR')}</dd>
+                        <dt className="text-gray-500">Sipariş no</dt>
+                        <dd className="font-mono font-semibold text-gray-900">{formatOrderNo(order.orderNumber)}</dd>
                       </div>
-                    ) : null}
-                    {order.quote ? (
                       <div className="flex justify-between gap-2">
-                        <dt className="text-gray-500">Teklif</dt>
-                        <dd className="font-mono font-medium text-gray-700">{formatQuoteNo(order.quote.quoteNumber)}</dd>
+                        <dt className="text-gray-500">Oluşturulma</dt>
+                        <dd className="text-gray-700">{formatDateTime(order.createdAt)}</dd>
                       </div>
-                    ) : null}
-                    {order.createdBy?.name ? (
-                      <div className="flex justify-between gap-2">
-                        <dt className="text-gray-500">Oluşturan</dt>
-                        <dd className="text-gray-700">{order.createdBy.name}</dd>
-                      </div>
-                    ) : null}
-                  </dl>
-                </div>
-
-                <div className="rounded-xl border border-gray-100 bg-gradient-to-br from-slate-50 to-white p-4 space-y-1.5">
-                  <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Sipariş özeti</h3>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-500">Ara toplam</span>
-                    <span className="tabular-nums font-medium text-gray-800">{formatMoney(order.subtotal ?? 0, order.currency)}</span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-500">KDV</span>
-                    <span className="tabular-nums font-medium text-gray-800">{formatMoney(order.vatTotal ?? 0, order.currency)}</span>
-                  </div>
-                  <div className="flex justify-between text-sm pt-2 border-t border-gray-100">
-                    <span className="text-gray-700 font-medium">Genel toplam</span>
-                    <span className="tabular-nums font-bold text-whatsapp">{formatMoney(order.grandTotal, order.currency)}</span>
+                      {order.expectedDeliveryDate ? (
+                        <div className="flex justify-between gap-2">
+                          <dt className="text-gray-500">Planlanan teslim</dt>
+                          <dd className="text-gray-700">{new Date(order.expectedDeliveryDate).toLocaleDateString('tr-TR')}</dd>
+                        </div>
+                      ) : null}
+                      {order.quote ? (
+                        <div className="flex justify-between gap-2">
+                          <dt className="text-gray-500">Teklif</dt>
+                          <dd className="font-mono font-medium text-gray-700">{formatQuoteNo(order.quote.quoteNumber)}</dd>
+                        </div>
+                      ) : null}
+                      {order.createdBy?.name ? (
+                        <div className="flex justify-between gap-2">
+                          <dt className="text-gray-500">Oluşturan</dt>
+                          <dd className="text-gray-700">{order.createdBy.name}</dd>
+                        </div>
+                      ) : null}
+                    </dl>
                   </div>
                 </div>
 
-                <div className="rounded-xl border border-gray-100 bg-white p-4 space-y-1.5">
-                  <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Müşteri</h3>
-                  <p className="text-sm font-medium text-gray-900">{contactDisplayName(order.contact)}</p>
-                  <p className="text-xs text-gray-500">{formatPhone(order.contact.phone)}</p>
-                  {order.contact.company ? (
-                    <p className="text-xs text-gray-700">{order.contact.company}</p>
-                  ) : null}
-                  {order.contact.email ? (
-                    <p className="text-xs text-gray-600 break-all">{order.contact.email}</p>
-                  ) : null}
-                  {order.contact.taxOffice || order.contact.taxNumber ? (
-                    <p className="text-xs text-gray-600">
-                      VD: {order.contact.taxOffice || '—'} · VN: {order.contact.taxNumber || '—'}
-                    </p>
-                  ) : null}
+                <div className="rounded-xl border border-whatsapp/30 bg-white overflow-hidden shadow-sm">
+                  <div className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-whatsapp/10 to-whatsapp/5 border-b border-whatsapp/20">
+                    <Wallet className="w-4 h-4 text-whatsapp" />
+                    <h3 className="text-xs font-bold text-green-900 uppercase tracking-wide">Sipariş Özeti</h3>
+                  </div>
+                  <div className="p-4 space-y-1.5">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-500">Ara toplam</span>
+                      <span className="tabular-nums font-medium text-gray-800">{formatMoney(order.subtotal ?? 0, order.currency)}</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-500">KDV</span>
+                      <span className="tabular-nums font-medium text-gray-800">{formatMoney(order.vatTotal ?? 0, order.currency)}</span>
+                    </div>
+                    <div className="flex justify-between items-baseline pt-2 mt-1 border-t border-gray-100">
+                      <span className="text-sm text-gray-700 font-semibold">Genel toplam</span>
+                      <span className="tabular-nums font-bold text-whatsapp text-lg">{formatMoney(order.grandTotal, order.currency)}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-purple-100 bg-white overflow-hidden shadow-sm">
+                  <div className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-purple-50 to-purple-50/40 border-b border-purple-100">
+                    <User className="w-4 h-4 text-purple-700" />
+                    <h3 className="text-xs font-bold text-purple-900 uppercase tracking-wide">Müşteri</h3>
+                  </div>
+                  <div className="p-4 space-y-1.5">
+                    <p className="text-sm font-semibold text-gray-900">{contactDisplayName(order.contact)}</p>
+                    <p className="text-xs text-gray-500">{formatPhone(order.contact.phone)}</p>
+                    {order.contact.company ? (
+                      <p className="text-xs text-gray-700">{order.contact.company}</p>
+                    ) : null}
+                    {order.contact.email ? (
+                      <p className="text-xs text-gray-600 break-all">{order.contact.email}</p>
+                    ) : null}
+                    {order.contact.taxOffice || order.contact.taxNumber ? (
+                      <p className="text-xs text-gray-600 pt-1 border-t border-gray-50">
+                        <span className="text-gray-400">VD:</span> {order.contact.taxOffice || '—'} · <span className="text-gray-400">VN:</span> {order.contact.taxNumber || '—'}
+                      </p>
+                    ) : null}
+                  </div>
                 </div>
 
                 {order.contact.billingAddress || order.shippingAddress ? (
-                  <div className="rounded-xl border border-gray-100 bg-white p-4 space-y-2">
-                    <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Adresler</h3>
-                    {order.contact.billingAddress ? (
-                      <div>
-                        <p className="text-[10px] font-semibold text-gray-400 uppercase">Fatura</p>
-                        <p className="text-xs text-gray-700 whitespace-pre-wrap">{order.contact.billingAddress}</p>
-                      </div>
-                    ) : null}
-                    {order.shippingAddress ? (
-                      <div>
-                        <p className="text-[10px] font-semibold text-gray-400 uppercase">Sevk</p>
-                        <p className="text-xs text-gray-700 whitespace-pre-wrap">{order.shippingAddress}</p>
-                      </div>
-                    ) : null}
+                  <div className="rounded-xl border border-slate-200 bg-white overflow-hidden shadow-sm">
+                    <div className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-slate-50 to-slate-50/40 border-b border-slate-200">
+                      <MapPin className="w-4 h-4 text-slate-700" />
+                      <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wide">Adresler</h3>
+                    </div>
+                    <div className="p-4 space-y-2.5">
+                      {order.contact.billingAddress ? (
+                        <div>
+                          <p className="text-[10px] font-semibold text-gray-400 uppercase mb-0.5">Fatura</p>
+                          <p className="text-xs text-gray-700 whitespace-pre-wrap leading-relaxed">{order.contact.billingAddress}</p>
+                        </div>
+                      ) : null}
+                      {order.shippingAddress ? (
+                        <div>
+                          <p className="text-[10px] font-semibold text-gray-400 uppercase mb-0.5">Sevk</p>
+                          <p className="text-xs text-gray-700 whitespace-pre-wrap leading-relaxed">{order.shippingAddress}</p>
+                        </div>
+                      ) : null}
+                    </div>
                   </div>
                 ) : null}
 
                 {order.source === 'TSOFT' || order.externalId || order.tsoftSiteOrderId || order.pushToTsoft ? (
-                  <div className="rounded-xl border border-indigo-100 bg-indigo-50/40 p-4 space-y-1">
-                    <h3 className="text-xs font-semibold text-indigo-800 uppercase tracking-wide">E-ticaret / T-Soft</h3>
-                    <p className="text-xs text-gray-700">
-                      <span className="text-gray-500">Kaynak:</span>{' '}
-                      <span className="font-medium">{order.source || 'MANUAL'}</span>
-                    </p>
-                    {order.tsoftSiteOrderId ? (
-                      <p className="text-xs font-mono text-gray-700">
-                        <span className="text-gray-500">Site OrderId:</span> {order.tsoftSiteOrderId}
+                  <div className="rounded-xl border border-amber-200 bg-white overflow-hidden shadow-sm">
+                    <div className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-amber-50 to-amber-50/40 border-b border-amber-200">
+                      <Store className="w-4 h-4 text-amber-700" />
+                      <h3 className="text-xs font-bold text-amber-900 uppercase tracking-wide">E-ticaret / T-Soft</h3>
+                    </div>
+                    <div className="p-4 space-y-1">
+                      <p className="text-xs text-gray-700">
+                        <span className="text-gray-500">Kaynak:</span>{' '}
+                        <span className="font-medium">{order.source || 'MANUAL'}</span>
                       </p>
-                    ) : null}
-                    {order.externalId ? (
-                      <p className="text-xs font-mono break-all text-gray-700">
-                        <span className="text-gray-500">Harici ID:</span> {order.externalId}
-                      </p>
-                    ) : null}
-                    {order.tsoftPushedAt ? (
-                      <p className="text-xs text-emerald-700">İtildi: {formatDateTime(order.tsoftPushedAt)}</p>
-                    ) : null}
-                    {order.tsoftLastError ? (
-                      <p className="text-[11px] text-red-700 whitespace-pre-wrap break-words">{order.tsoftLastError}</p>
-                    ) : null}
+                      {order.tsoftSiteOrderId ? (
+                        <p className="text-xs font-mono text-gray-700">
+                          <span className="text-gray-500 font-sans">Site OrderId:</span> {order.tsoftSiteOrderId}
+                        </p>
+                      ) : null}
+                      {order.externalId ? (
+                        <p className="text-xs font-mono break-all text-gray-700">
+                          <span className="text-gray-500 font-sans">Harici ID:</span> {order.externalId}
+                        </p>
+                      ) : null}
+                      {order.tsoftPushedAt ? (
+                        <p className="text-xs text-emerald-700">İtildi: {formatDateTime(order.tsoftPushedAt)}</p>
+                      ) : null}
+                      {order.tsoftLastError ? (
+                        <p className="text-[11px] text-red-700 whitespace-pre-wrap break-words">{order.tsoftLastError}</p>
+                      ) : null}
+                    </div>
                   </div>
                 ) : null}
 
-                <div className="rounded-xl border border-gray-100 bg-white p-4 space-y-2">
-                  <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Sipariş onay PDF’i</h3>
-                  <div className="flex flex-wrap items-center gap-2">
+                <div className="rounded-xl border border-rose-100 bg-white overflow-hidden shadow-sm">
+                  <div className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-rose-50 to-rose-50/40 border-b border-rose-100">
+                    <FileText className="w-4 h-4 text-rose-700" />
+                    <h3 className="text-xs font-bold text-rose-900 uppercase tracking-wide">Sipariş Onay PDF’i</h3>
+                  </div>
+                  <div className="p-4 flex flex-wrap items-center gap-2">
                     {order.confirmationPdfUrl ? (
                       <a
                         href={`${backendPublicUrl()}${order.confirmationPdfUrl}`}
