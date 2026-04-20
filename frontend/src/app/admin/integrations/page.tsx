@@ -30,6 +30,8 @@ import {
   Key,
   Globe,
   Bug,
+  ImageIcon,
+  MessageSquareMore,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -76,6 +78,8 @@ interface Session {
   status: string;
   wahaStatus: string | null;
 }
+
+const AVATAR_REFRESH_FORCE_KEY = 'crm_settings_avatar_refresh_force';
 
 const CATEGORY_ICONS: Record<string, any> = {
   messaging: MessageSquare,
@@ -447,9 +451,33 @@ function WhatsAppPanel({ integration, onRefreshCatalog }: { integration: Integra
   const [sessions, setSessions] = useState<Session[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
+  const [syncingMessages, setSyncingMessages] = useState(false);
+  const [syncingAvatars, setSyncingAvatars] = useState(false);
+  const [resettingAvatars, setResettingAvatars] = useState(false);
+  const [avatarRefreshForce, setAvatarRefreshForce] = useState(false);
   const [newSessionName, setNewSessionName] = useState('');
   const [qrData, setQrData] = useState<Record<string, string>>({});
   const [qrLoading, setQrLoading] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    try {
+      if (localStorage.getItem(AVATAR_REFRESH_FORCE_KEY) === '1') {
+        setAvatarRefreshForce(true);
+      }
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  const setAvatarRefreshForcePersist = (value: boolean) => {
+    setAvatarRefreshForce(value);
+    try {
+      if (value) localStorage.setItem(AVATAR_REFRESH_FORCE_KEY, '1');
+      else localStorage.removeItem(AVATAR_REFRESH_FORCE_KEY);
+    } catch {
+      /* ignore */
+    }
+  };
 
   const fetchSessions = useCallback(async () => {
     try {
@@ -572,6 +600,46 @@ function WhatsAppPanel({ integration, onRefreshCatalog }: { integration: Integra
     setNewSessionName('');
   };
 
+  const syncMessages = async () => {
+    setSyncingMessages(true);
+    try {
+      const { data } = await api.post('/conversations/sync-all');
+      toast.success(data?.message || `${data?.totalSynced ?? 0} mesaj senkronize edildi`);
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, 'Mesaj senkronizasyonu başarısız'));
+    } finally {
+      setSyncingMessages(false);
+    }
+  };
+
+  const syncAvatars = async () => {
+    setSyncingAvatars(true);
+    try {
+      const { data } = await api.post('/contacts/refresh-all-avatars', {
+        force: !!avatarRefreshForce,
+      });
+      toast.success(data?.message || 'Fotoğraf güncelleme başlatıldı');
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, 'Fotoğraf güncelleme başarısız'));
+    } finally {
+      setSyncingAvatars(false);
+    }
+  };
+
+  const resetAndSyncAvatars = async () => {
+    if (!confirm('Tüm kişi fotoğrafları sıfırlanacak ve yeniden indirilecek. Devam edilsin mi?')) return;
+    setResettingAvatars(true);
+    try {
+      await api.post('/contacts/reset-all-avatars', {});
+      const { data } = await api.post('/contacts/refresh-all-avatars', { force: true });
+      toast.success(data?.message || 'Fotoğraflar sıfırlandı ve güncelleme başlatıldı');
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, 'İşlem başarısız'));
+    } finally {
+      setResettingAvatars(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -625,6 +693,66 @@ function WhatsAppPanel({ integration, onRefreshCatalog }: { integration: Integra
           <RefreshCw className="w-3.5 h-3.5" />
           Yenile
         </button>
+      </div>
+
+      <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-4">
+        <h3 className="text-sm font-semibold text-gray-900">Veri Senkronizasyonu</h3>
+
+        <div className="flex items-center justify-between p-4 bg-gray-50 rounded-xl">
+          <div>
+            <p className="font-medium text-sm text-gray-900">Mesajları Senkronize Et</p>
+            <p className="text-xs text-gray-400 mt-0.5">
+              Bu organizasyona ait çalışan oturumlar ve konuşmalar için WAHA&apos;dan eksik mesajları çeker.
+            </p>
+          </div>
+          <button
+            onClick={syncMessages}
+            disabled={syncingMessages}
+            className="flex items-center gap-2 px-4 py-2 bg-orange-50 text-orange-700 rounded-lg text-xs font-medium hover:bg-orange-100 transition-colors disabled:opacity-50"
+          >
+            {syncingMessages ? <Loader2 className="w-4 h-4 animate-spin" /> : <MessageSquareMore className="w-4 h-4" />}
+            Senkronize Et
+          </button>
+        </div>
+
+        <div className="flex items-center justify-between p-4 bg-gray-50 rounded-xl">
+          <div>
+            <p className="font-medium text-sm text-gray-900">Profil Fotoğraflarını Güncelle</p>
+            <p className="text-xs text-gray-400 mt-0.5">Fotoğrafı olmayan kişiler için güncelleme yapar.</p>
+            <label className="flex items-center gap-2 mt-2 text-xs text-gray-600 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={avatarRefreshForce}
+                onChange={(e) => setAvatarRefreshForcePersist(e.target.checked)}
+                className="rounded border-gray-300 text-whatsapp focus:ring-whatsapp"
+              />
+              Fotoğrafı olanları da yenile (değişen fotoğraflar güncellenir)
+            </label>
+          </div>
+          <button
+            onClick={syncAvatars}
+            disabled={syncingAvatars}
+            className="flex items-center gap-2 px-4 py-2 bg-purple-50 text-purple-700 rounded-lg text-xs font-medium hover:bg-purple-100 transition-colors disabled:opacity-50"
+          >
+            {syncingAvatars ? <Loader2 className="w-4 h-4 animate-spin" /> : <ImageIcon className="w-4 h-4" />}
+            Güncelle
+          </button>
+        </div>
+
+        <div className="flex items-center justify-between p-4 bg-amber-50 rounded-xl border border-amber-100">
+          <div>
+            <p className="font-medium text-sm text-amber-800">Kişi Fotoğraflarını Sıfırla ve Güncelle</p>
+            <p className="text-xs text-amber-600 mt-0.5">Tüm fotoğrafları temizler ve yeniden indirir.</p>
+          </div>
+          <button
+            onClick={resetAndSyncAvatars}
+            disabled={resettingAvatars}
+            className="flex-shrink-0 flex items-center gap-2 px-4 py-2 bg-amber-100 text-amber-700 rounded-lg text-xs font-medium hover:bg-amber-200 transition-colors disabled:opacity-50"
+          >
+            {resettingAvatars ? <Loader2 className="w-4 h-4 animate-spin" /> : <ImageIcon className="w-4 h-4" />}
+            Sıfırla ve Güncelle
+          </button>
+        </div>
       </div>
 
       {/* Sessions List */}

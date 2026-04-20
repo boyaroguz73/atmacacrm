@@ -581,26 +581,6 @@ export class QuotesService {
       quote.documentKind === 'QUOTE' ? 'QUOTE' : 'PROFORMA';
     const title = docKind === 'QUOTE' ? 'SATIŞ TEKLİFİ' : 'PROFORMA TEKLİF';
 
-    // PDF'de indirim satırı: kalem indirimi + genel indirim toplamı (UI beklentisi)
-    const lineDiscountTotal = (quote.items || []).reduce((acc: number, it: any) => {
-      const qty = Number(it.quantity || 0);
-      const unit = Number(it.unitPrice || 0);
-      const vat = Number(it.vatRate || 0);
-      const r = vat / 100;
-      const pic = it.priceIncludesVat !== false;
-      const gross = pic ? Math.max(0, qty * unit) : Math.max(0, qty * unit * (1 + r));
-      const dv = Number(it.discountValue || 0);
-      if (!Number.isFinite(dv) || dv <= 0 || gross <= 0) return acc;
-      const dt = String(it.discountType || 'PERCENT').toUpperCase();
-      const raw =
-        dt === 'AMOUNT'
-          ? dv
-          : gross * (dv / 100);
-      const applied = Math.min(gross, Math.max(0, raw));
-      return acc + applied;
-    }, 0);
-    const pdfDiscountTotal = Math.round(((Number(lineDiscountTotal) || 0) + (Number(quote.discountTotal) || 0)) * 100) / 100;
-
     const addr =
       (c.billingAddress && String(c.billingAddress).trim()) ||
       (c.address && String(c.address).trim()) ||
@@ -646,7 +626,8 @@ export class QuotesService {
       }),
       currency: quote.currency,
       subtotal: quote.subtotal,
-      discountTotal: pdfDiscountTotal,
+      /** Yalnızca genel iskonto (KDV hariç); PDF özetinde iskonto öncesi/sonrası satırları için */
+      discountTotal: Number(quote.discountTotal) || 0,
       vatTotal: quote.vatTotal,
       grandTotal: (quote as any).grandTotalOverride ?? quote.grandTotal,
       notes: quote.notes || undefined,

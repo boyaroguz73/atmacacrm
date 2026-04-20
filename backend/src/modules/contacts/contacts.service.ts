@@ -70,6 +70,9 @@ export class ContactsService {
       where: { phone: { in: keys } },
     });
 
+    const rawName = (name || '').trim();
+    const safeName = rawName && !isFallbackContactName(rawName, primary) ? rawName : '';
+
     if (existing) {
       const updates: { phone?: string; organizationId?: string; name?: string } = {};
 
@@ -77,7 +80,7 @@ export class ContactsService {
         updates.phone = primary;
       }
 
-      const nm = name?.trim();
+      const nm = safeName;
       if (nm && isFallbackContactName(existing.name, existing.phone) && !existing.surname?.trim()) {
         updates.name = nm;
       } else if (
@@ -114,7 +117,7 @@ export class ContactsService {
       return await this.prisma.contact.create({
         data: {
           phone: primary,
-          name: (name && name.trim()) || formatPhoneDisplay(primary) || null,
+          name: safeName || formatPhoneDisplay(primary) || null,
           organizationId: organizationId || null,
         },
       });

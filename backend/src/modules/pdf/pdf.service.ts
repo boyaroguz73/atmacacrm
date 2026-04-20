@@ -366,14 +366,12 @@ export class PdfService {
         const COL_NAME = 196;
         const COL_QTY = 52;
         const COL_UNIT = 80;
-        const COL_DISC = 48;
-        const COL_TOT = PW - COL_IDX - COL_NAME - COL_QTY - COL_UNIT - COL_DISC;
+        const COL_TOT = PW - COL_IDX - COL_NAME - COL_QTY - COL_UNIT;
         const cols = [
           { label: '#', w: COL_IDX },
           { label: this.t('Urun / Hizmet'), w: COL_NAME },
           { label: this.t('Miktar'), w: COL_QTY },
           { label: `${this.t('B.Fiyat')} (${cs})`, w: COL_UNIT },
-          { label: this.t('Indirim'), w: COL_DISC },
           { label: `${this.t('Toplam')} (${cs})`, w: COL_TOT },
         ];
 
@@ -468,10 +466,8 @@ export class PdfService {
             rx += cols[2].w;
             doc.text(item.unitPrice.toFixed(2), rx, rowY + 10, { width: cols[3].w - 6, align: 'right', lineBreak: false });
             rx += cols[3].w;
-            doc.text(item.discountText ? this.t(item.discountText) : '-', rx, rowY + 10, { width: cols[4].w - 6, align: 'right', lineBreak: false });
-            rx += cols[4].w;
             B(); doc.fillColor(primary);
-            doc.text(item.lineTotal.toFixed(2), rx, rowY + 10, { width: cols[5].w - 6, align: 'right', lineBreak: false });
+            doc.text(item.lineTotal.toFixed(2), rx, rowY + 10, { width: cols[4].w - 6, align: 'right', lineBreak: false });
             rowY += itemH + 6;
           } else {
             if (idx % 2 === 1) {
@@ -502,8 +498,7 @@ export class PdfService {
             rx += cols[1].w;
             txt(String(item.quantity), rx + 3, rowY + 6, { size: 8, width: cols[2].w - 6, align: 'right' }); rx += cols[2].w;
             txt(item.unitPrice.toFixed(2), rx + 3, rowY + 6, { size: 8, width: cols[3].w - 6, align: 'right' }); rx += cols[3].w;
-            txt(item.discountText ? this.t(item.discountText) : '-', rx + 3, rowY + 6, { size: 8, width: cols[4].w - 6, align: 'right' }); rx += cols[4].w;
-            txt(item.lineTotal.toFixed(2), rx + 3, rowY + 6, { size: 8, width: cols[5].w - 6, align: 'right' });
+            txt(item.lineTotal.toFixed(2), rx + 3, rowY + 6, { size: 8, width: cols[4].w - 6, align: 'right' });
             rowY += rowHDefault;
           }
         });
@@ -523,15 +518,9 @@ export class PdfService {
         };
 
         const vatAmt = Number.isFinite(data.vatTotal) ? data.vatTotal : 0;
-        // KDV dahil brut = ara toplam + KDV (indirimden once)
-        const grossVatIncluded = (data.subtotal || 0) + vatAmt;
-        sumRow(this.t('Ara Toplam (KDV haric):'), fmtMoney(data.subtotal), rowY); rowY += 14;
+        const subEx = Math.round((Number(data.subtotal) || 0) * 100) / 100;
+        sumRow(this.t('Toplam Iskontolu Fiyat (KDV haric):'), fmtMoney(subEx), rowY); rowY += 14;
         sumRow(this.t('KDV Tutari:'), fmtMoney(vatAmt), rowY); rowY += 14;
-        if (data.discountTotal > 0) {
-          // Indirim oncesi brut satiri, ardindan indirim kirilimi
-          sumRow(this.t('Toplam (KDV dahil):'), fmtMoney(grossVatIncluded), rowY); rowY += 14;
-          sumRow(this.t('Indirim:'), `-${fmtMoney(data.discountTotal)}`, rowY, false, '#cc0000'); rowY += 14;
-        }
 
         // Grand total box — genel toplam KDV dahil (kalem fiyatlari da KDV dahil)
         doc.rect(sumX - 4, rowY - 2, lblW + valW + 8, 22).fill(primary);
@@ -669,11 +658,11 @@ export class PdfService {
   /** Tekliften oluşan sipariş için onay PDF’i (logo, banka, şartlar, imza alanları — yumuşak kalem blokları) */
   async generateOrderConfirmationPdf(data: OrderConfirmationPdfData): Promise<string> {
     const discountLine =
-      data.discountTotal > 0 && data.discountLabel
-        ? `${data.discountLabel} (-${data.discountTotal.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ${data.currency})`
-        : data.discountTotal > 0
-          ? `Iskonto (-${data.discountTotal.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ${data.currency})`
-          : '';
+      data.discountTotal > 0.005
+        ? data.discountLabel
+          ? `${this.t('Genel iskonto uygulandi')}: ${this.t(data.discountLabel)}`
+          : this.t('Genel iskonto uygulandi')
+        : '';
     const noteParts = [
       data.quoteRef ? `Teklif referansi: ${data.quoteRef}` : '',
       discountLine,

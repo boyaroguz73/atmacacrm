@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import api, { getApiErrorMessage } from '@/lib/api';
 import { formatPhone } from '@/lib/utils';
@@ -19,8 +19,10 @@ import {
   Search,
   Trash2,
   Plus,
+  Store,
 } from 'lucide-react';
 import PanelEditedBadge from '@/components/ui/PanelEditedBadge';
+import TsoftStoreOrdersPanel from '@/components/ecommerce/TsoftStoreOrdersPanel';
 
 type OrderStatus = 'PENDING' | 'PROCESSING' | 'SHIPPED' | 'DELIVERED' | 'CANCELLED';
 
@@ -37,6 +39,7 @@ interface OrderItemRow {
 interface SalesOrder {
   id: string;
   orderNumber: number;
+  /** T-Soft upsert anahtarı: tsoft_… */
   externalId?: string | null;
   source?: string;
   quoteId: string | null;
@@ -129,9 +132,15 @@ function contactDisplayName(o: SalesOrder['contact']) {
   return formatPhone(o.phone);
 }
 
+function isSiteImportedOrder(o: SalesOrder) {
+  return o.source === 'TSOFT' || (o.externalId?.startsWith('tsoft_') ?? false);
+}
+
 export default function OrdersPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { user, loadFromStorage } = useAuthStore();
+  const showTsoftTools = user?.role === 'ADMIN';
   const canRegenerateOrderPdf =
     user?.role === 'ADMIN' || user?.role === 'SUPERADMIN' || user?.role === 'ACCOUNTANT';
   const canDeleteOrder =
@@ -144,6 +153,7 @@ export default function OrdersPage() {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  const [siteOrdersOnly, setSiteOrdersOnly] = useState(false);
 
   const totalPages = useMemo(() => Math.max(1, Math.ceil(total / LIMIT)), [total]);
 
@@ -155,6 +165,7 @@ export default function OrdersPage() {
       if (dateFrom) params.from = dateFrom;
       if (dateTo) params.to = dateTo;
       if (searchQuery.trim()) params.search = searchQuery.trim();
+      if (siteOrdersOnly) params.source = 'TSOFT';
       const { data } = await api.get('/orders', { params });
       setOrders(data.orders ?? []);
       setTotal(typeof data.total === 'number' ? data.total : 0);
@@ -169,7 +180,7 @@ export default function OrdersPage() {
     } finally {
       if (!background) setLoading(false);
     }
-  }, [page, statusFilter, dateFrom, dateTo, searchQuery]);
+  }, [page, statusFilter, dateFrom, dateTo, searchQuery, siteOrdersOnly]);
 
   useEffect(() => {
     loadFromStorage();
@@ -225,7 +236,7 @@ export default function OrdersPage() {
       </div>
 
       <div className="flex flex-col xl:flex-row xl:items-center gap-4">
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2 items-center">
           {STATUS_FILTERS.map((f) => (
             <button
               key={f.value || 'all'}
@@ -243,6 +254,21 @@ export default function OrdersPage() {
               {f.label}
             </button>
           ))}
+          <button
+            type="button"
+            onClick={() => {
+              setSiteOrdersOnly((v) => !v);
+              setPage(1);
+            }}
+            className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-sm font-medium border shadow-sm transition-colors ${
+              siteOrdersOnly
+                ? 'bg-amber-100 text-amber-900 border-amber-300'
+                : 'bg-white text-gray-600 border-gray-200 hover:border-amber-300/50 hover:text-gray-900'
+            }`}
+          >
+            <Store className="w-4 h-4 shrink-0 opacity-80" />
+            Site siparişleri
+          </button>
         </div>
         <div className="flex flex-wrap items-center gap-3 xl:ml-auto xl:justify-end xl:flex-nowrap w-full xl:w-auto">
           <DateRangePicker
@@ -269,6 +295,13 @@ export default function OrdersPage() {
           </div>
         </div>
       </div>
+
+      {showTsoftTools ? (
+        <TsoftStoreOrdersPanel
+          defaultOpen={searchParams.get('tsoft') === '1'}
+          onCrmOrdersSynced={() => void fetchOrders(true)}
+        />
+      ) : null}
 
       <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
@@ -319,11 +352,16 @@ export default function OrdersPage() {
                     className="border-b border-gray-50 hover:bg-green-50/30 transition-colors cursor-pointer"
                   >
                     <td className="px-5 py-3 font-mono text-xs font-semibold text-gray-900">
-                      <span className="flex items-center gap-1.5">
+                      <span className="flex items-center gap-1.5 flex-wrap">
                         {formatOrderNo(order.orderNumber)}
-                        {order.source === 'TSOFT' && (
-                          <span className="inline-flex text-[9px] font-bold px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700 uppercase tracking-wide">Site</span>
-                        )}
+                        {isSiteImportedOrder(order) ? (
+                          <span
+                            className="inline-flex text-[10px] font-semibold px-2 py-0.5 rounded-md bg-amber-100 text-amber-900 border border-amber-200/80 whitespace-nowrap"
+                            title="İnternet mağazasından aktarılmış sipariş"
+                          >
+                            Site siparişi
+                          </span>
+                        ) : null}
                       </span>
                       <PanelEditedBadge at={order.panelEditedAt} />
                     </td>

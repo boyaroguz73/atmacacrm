@@ -301,6 +301,7 @@ export class ProductsService {
     const product = await this.findById(productId);
     const fallbackImage =
       product.imageUrl && String(product.imageUrl).trim() !== '' ? String(product.imageUrl).trim() : null;
+    const productBaseName = String(product.name ?? '').trim() || 'Ürün';
 
     const variants = await this.prisma.productVariant.findMany({
       where: { productId, isActive: true },
@@ -326,13 +327,35 @@ export class ProductsService {
     });
 
     const withResolvedImages = variants.map((v) => {
-      const vImg = v.imageUrl && String(v.imageUrl).trim() !== '' ? String(v.imageUrl).trim() : null;
-      return { ...v, imageUrl: vImg || fallbackImage };
+      const directImage = v.imageUrl && String(v.imageUrl).trim() !== '' ? String(v.imageUrl).trim() : null;
+      let extraImage: string | null = null;
+      if (!directImage && v.additionalImages) {
+        try {
+          const parsed = Array.isArray(v.additionalImages)
+            ? v.additionalImages
+            : JSON.parse(String(v.additionalImages));
+          if (Array.isArray(parsed)) {
+            const first = parsed.find((x) => typeof x === 'string' && String(x).trim() !== '');
+            if (typeof first === 'string') extraImage = first.trim();
+          }
+        } catch {
+          /* ignore malformed additionalImages payload */
+        }
+      }
+
+      const rawName = String(v.name ?? '').trim();
+      const fallbackName =
+        String(v.externalId ?? '').trim() ||
+        String(v.sku ?? '').trim() ||
+        productBaseName;
+      const resolvedName = rawName || fallbackName;
+
+      return { ...v, name: resolvedName, imageUrl: directImage || extraImage || fallbackImage };
     });
 
     if (withResolvedImages.length === 0) return withResolvedImages;
 
-    const baseName = String(product.name ?? '').trim() || 'Ürün';
+    const baseName = productBaseName;
     const basePrice = Number(product.unitPrice);
     const sku = String(product.sku ?? '');
     const isGoogleVariantParent = sku.startsWith('IG-') && basePrice <= 0 && product.stock == null;

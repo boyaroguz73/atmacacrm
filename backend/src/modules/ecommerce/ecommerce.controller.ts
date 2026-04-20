@@ -136,6 +136,21 @@ export class EcommerceController {
     );
   }
 
+  @Get('tsoft/customers')
+  @UseGuards(RolesGuard)
+  @Roles('ADMIN')
+  listCustomers(
+    @CurrentUser() user: { role?: string; organizationId?: string | null },
+    @Query('page') page = '1',
+    @Query('limit') limit = '50',
+  ) {
+    return this.ecommerceService.listCustomers(
+      this.orgId(user),
+      Math.max(1, parseInt(page, 10) || 1),
+      Math.min(100, Math.max(1, parseInt(limit, 10) || 50)),
+    );
+  }
+
   @Post('tsoft/contacts/:contactId/customer')
   @UseGuards(RolesGuard)
   @Roles('ADMIN', 'AGENT')

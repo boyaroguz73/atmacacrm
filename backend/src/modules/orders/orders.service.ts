@@ -96,13 +96,16 @@ export class OrdersService {
     from?: string;
     to?: string;
     search?: string;
+    source?: string;
     page?: number; 
     limit?: number;
   }) {
-    const { status, contactId, from, to, search, page = 1, limit = 50 } = params;
+    const { status, contactId, from, to, search, source, page = 1, limit = 50 } = params;
     const where: any = {};
     if (status) where.status = status;
     if (contactId) where.contactId = contactId;
+    const src = typeof source === 'string' ? source.trim().toUpperCase() : '';
+    if (src === 'TSOFT') where.source = 'TSOFT';
     
     // Tarih filtresi
     if (from || to) {

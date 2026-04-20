@@ -1,11 +1,12 @@
 'use client';
 
 import { Suspense, useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useAuthStore } from '@/store/auth';
 import api from '@/lib/api';
 import { connectSocket, disconnectSocket } from '@/lib/socket';
 import Sidebar from './Sidebar';
+import { Menu } from 'lucide-react';
 
 function SidebarFallback() {
   return (
@@ -26,7 +27,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const { user, organization, loadFromStorage, updateOrganization } =
     useAuthStore();
   const router = useRouter();
+  const pathname = usePathname();
   const [authReady, setAuthReady] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   useEffect(() => {
     loadFromStorage();
@@ -88,6 +91,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     }
   }, [organization?.name]);
 
+  useEffect(() => {
+    setMobileMenuOpen(false);
+  }, [pathname]);
+
   // Dinamik CSS değişkenleri
   useEffect(() => {
     const root = document.documentElement;
@@ -119,9 +126,21 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex h-screen overflow-hidden bg-gray-50">
       <Suspense fallback={<SidebarFallback />}>
-        <Sidebar />
+        <Sidebar mobileOpen={mobileMenuOpen} onClose={() => setMobileMenuOpen(false)} />
       </Suspense>
-      <main className="flex-1 overflow-auto">{children}</main>
+      <main className="flex-1 overflow-auto">
+        <div className="md:hidden sticky top-0 z-20 bg-white/95 backdrop-blur border-b border-gray-200 px-3 py-2">
+          <button
+            type="button"
+            onClick={() => setMobileMenuOpen(true)}
+            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 text-gray-700 bg-white"
+          >
+            <Menu className="w-4 h-4" />
+            Menü
+          </button>
+        </div>
+        {children}
+      </main>
     </div>
   );
 }

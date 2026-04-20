@@ -1065,18 +1065,20 @@ export default function QuoteDetailPage() {
                 Özet
               </h3>
               <dl className="space-y-3 text-sm">
+                {totals.discountTotal > 0 ? (
+                  <div className="flex justify-between gap-2 text-gray-600">
+                    <dt>İskonto öncesi toplam (KDV hariç)</dt>
+                    <dd className="font-medium text-gray-900 tabular-nums">
+                      {sym}
+                      {fmtNum(totals.subtotal + totals.discountTotal)}
+                    </dd>
+                  </div>
+                ) : null}
                 <div className="flex justify-between gap-2 text-gray-600">
-                  <dt>Ara Toplam</dt>
+                  <dt>İskontolu toplam (KDV hariç)</dt>
                   <dd className="font-medium text-gray-900 tabular-nums">
                     {sym}
                     {fmtNum(totals.subtotal)}
-                  </dd>
-                </div>
-                <div className="flex justify-between gap-2 text-gray-600">
-                  <dt>İndirim</dt>
-                  <dd className="font-medium text-red-600 tabular-nums">
-                    −{sym}
-                    {fmtNum(totals.discountTotal)}
                   </dd>
                 </div>
                 <div className="flex justify-between gap-2 text-gray-600">
@@ -1096,7 +1098,7 @@ export default function QuoteDetailPage() {
                   </div>
                 )}
                 <div className="pt-3 border-t border-green-100 flex justify-between items-baseline gap-2">
-                  <dt className="text-base font-bold text-gray-900">GENEL TOPLAM</dt>
+                  <dt className="text-base font-bold text-gray-900">GENEL TOPLAM (KDV dahil)</dt>
                   <dd className="text-2xl font-extrabold text-whatsapp tabular-nums">
                     {sym}
                     {fmtNum(displayGrandTotal)}
@@ -1544,16 +1546,18 @@ export default function QuoteDetailPage() {
 
         <div className="xl:col-span-3 space-y-4 order-3">
           <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5 space-y-3">
-            <div className="flex justify-between text-sm">
-              <span className="text-gray-500">Ara Toplam</span>
-              <span>{fmt(quote.subtotal)}</span>
-            </div>
-            {quote.discountTotal > 0 && (
+            {Number(quote.discountTotal) > 0 && (
               <div className="flex justify-between text-sm">
-                <span className="text-gray-500">İndirim</span>
-                <span className="text-red-500">-{fmt(quote.discountTotal)}</span>
+                <span className="text-gray-500">İskonto öncesi toplam (KDV hariç)</span>
+                <span>
+                  {fmt(Number(quote.subtotal) + Number(quote.discountTotal))}
+                </span>
               </div>
             )}
+            <div className="flex justify-between text-sm">
+              <span className="text-gray-500">İskontolu toplam (KDV hariç)</span>
+              <span>{fmt(quote.subtotal)}</span>
+            </div>
             <div className="flex justify-between text-sm">
               <span className="text-gray-500">KDV</span>
               <span>{fmt(quote.vatTotal)}</span>
@@ -1565,7 +1569,7 @@ export default function QuoteDetailPage() {
               </div>
             )}
             <div className="border-t pt-3 flex justify-between">
-              <span className="font-bold text-gray-900">GENEL TOPLAM</span>
+              <span className="font-bold text-gray-900">GENEL TOPLAM (KDV dahil)</span>
               <span className="font-bold text-lg text-whatsapp">
                 {fmt(quote.grandTotalOverride || quote.grandTotal)}
               </span>

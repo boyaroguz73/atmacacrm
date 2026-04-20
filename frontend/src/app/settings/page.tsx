@@ -17,17 +17,13 @@ import {
   Settings2,
   ToggleLeft,
   ToggleRight,
-  Database,
   ImageIcon,
-  MessageSquareMore,
   Trash2,
   Building2,
   ChevronRight,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { rewriteMediaUrlForClient } from '@/lib/utils';
-
-const AVATAR_REFRESH_FORCE_KEY = 'crm_settings_avatar_refresh_force';
 
 interface UserItem {
   id: string;
@@ -67,28 +63,6 @@ export default function SettingsPage() {
 
   const [settings, setSettings] = useState<SystemSettingItem[]>([]);
   const [internalChatEnabled, setInternalChatEnabled] = useState(false);
-  /** Toplu avatar: true ise zaten fotoğrafı olan kişiler de WAHA'dan yeniden çekilir */
-  const [avatarRefreshForce, setAvatarRefreshForce] = useState(false);
-
-  useEffect(() => {
-    try {
-      if (localStorage.getItem(AVATAR_REFRESH_FORCE_KEY) === '1') {
-        setAvatarRefreshForce(true);
-      }
-    } catch {
-      /* ignore */
-    }
-  }, []);
-
-  const setAvatarRefreshForcePersist = (value: boolean) => {
-    setAvatarRefreshForce(value);
-    try {
-      if (value) localStorage.setItem(AVATAR_REFRESH_FORCE_KEY, '1');
-      else localStorage.removeItem(AVATAR_REFRESH_FORCE_KEY);
-    } catch {
-      /* ignore */
-    }
-  };
 
   const fetchUsers = async () => {
     try {
@@ -404,122 +378,7 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      {/* Data Sync */}
-      <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-6">
-        <div className="flex items-center gap-2 mb-5">
-          <Database className="w-5 h-5 text-orange-500" />
-          <h2 className="text-lg font-semibold text-gray-900">
-            Veri Senkronizasyonu
-          </h2>
-        </div>
-
-        <div className="space-y-4">
-          <div className="flex items-center justify-between p-4 bg-gray-50 rounded-xl">
-            <div>
-              <p className="font-medium text-sm text-gray-900">
-                Mesajları Senkronize Et
-              </p>
-              <p className="text-xs text-gray-400 mt-0.5">
-                Bu organizasyona ait çalışan oturumlar ve konuşmalar için WAHA&apos;dan
-                eksik mesajları çeker
-              </p>
-            </div>
-            <button
-              onClick={async () => {
-                const btn = document.getElementById('sync-msgs-btn');
-                if (btn) btn.setAttribute('disabled', 'true');
-                try {
-                  const { data } = await api.post('/conversations/sync-all');
-                  toast.success(data.message || `${data.totalSynced} mesaj senkronize edildi`);
-                } catch (err) {
-                  toast.error(
-                    getApiErrorMessage(err, 'Mesaj senkronizasyonu başarısız'),
-                  );
-                } finally {
-                  if (btn) btn.removeAttribute('disabled');
-                }
-              }}
-              id="sync-msgs-btn"
-              className="flex items-center gap-2 px-4 py-2 bg-orange-50 text-orange-700 rounded-lg text-xs font-medium hover:bg-orange-100 transition-colors disabled:opacity-50"
-            >
-              <MessageSquareMore className="w-4 h-4" />
-              Senkronize Et
-            </button>
-          </div>
-
-          <div className="flex items-center justify-between p-4 bg-gray-50 rounded-xl">
-            <div>
-              <p className="font-medium text-sm text-gray-900">
-                Profil Fotoğraflarını Güncelle
-              </p>
-              <p className="text-xs text-gray-400 mt-0.5">
-                Fotoğrafı olmayan kişiler için güncelleme yapar.
-              </p>
-              <label className="flex items-center gap-2 mt-2 text-xs text-gray-600 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={avatarRefreshForce}
-                  onChange={(e) => setAvatarRefreshForcePersist(e.target.checked)}
-                  className="rounded border-gray-300 text-whatsapp focus:ring-whatsapp"
-                />
-                Fotoğrafı olanları da yenile (değişen fotoğraflar güncellenir)
-              </label>
-            </div>
-            <button
-              onClick={async () => {
-                const btn = document.getElementById('sync-avatars-btn');
-                if (btn) btn.setAttribute('disabled', 'true');
-                try {
-                  const { data } = await api.post('/contacts/refresh-all-avatars', {
-                    force: !!avatarRefreshForce,
-                  });
-                  toast.success(data.message || `Güncelleme başlatıldı`);
-                } catch (err) {
-                  toast.error(getApiErrorMessage(err, 'Fotoğraf güncelleme başarısız'));
-                } finally {
-                  if (btn) btn.removeAttribute('disabled');
-                }
-              }}
-              id="sync-avatars-btn"
-              className="flex items-center gap-2 px-4 py-2 bg-purple-50 text-purple-700 rounded-lg text-xs font-medium hover:bg-purple-100 transition-colors disabled:opacity-50"
-            >
-              <ImageIcon className="w-4 h-4" />
-              Güncelle
-            </button>
-          </div>
-
-          <div className="flex items-center justify-between p-4 bg-amber-50 rounded-xl border border-amber-100">
-            <div>
-              <p className="font-medium text-sm text-amber-800">Kişi Fotoğraflarını Sıfırla ve Güncelle</p>
-              <p className="text-xs text-amber-600 mt-0.5">
-                Tüm fotoğrafları temizler ve yeniden indirir.
-              </p>
-            </div>
-            <button
-              onClick={async () => {
-                if (!confirm('Tüm kişi fotoğrafları sıfırlanacak ve yeniden indirilecek. Devam edilsin mi?')) return;
-                const btn = document.getElementById('reset-avatars-btn');
-                if (btn) btn.setAttribute('disabled', 'true');
-                try {
-                  await api.post('/contacts/reset-all-avatars', {});
-                  const { data } = await api.post('/contacts/refresh-all-avatars', { force: true });
-                  toast.success(data.message || 'Fotoğraflar sıfırlandı ve güncelleme başlatıldı');
-                } catch (err) {
-                  toast.error(getApiErrorMessage(err, 'İşlem başarısız'));
-                } finally {
-                  if (btn) btn.removeAttribute('disabled');
-                }
-              }}
-              id="reset-avatars-btn"
-              className="flex-shrink-0 flex items-center gap-2 px-4 py-2 bg-amber-100 text-amber-700 rounded-lg text-xs font-medium hover:bg-amber-200 transition-colors disabled:opacity-50"
-            >
-              <ImageIcon className="w-4 h-4" />
-              Sıfırla ve Güncelle
-            </button>
-          </div>
-        </div>
-
-        {/* PDF Şablon Ayarları */}
+      {/* PDF Şablon Ayarları */}
         {(currentUser?.role === 'ADMIN' || currentUser?.role === 'SUPERADMIN') && (
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 space-y-5">
             <div>
@@ -797,7 +656,6 @@ export default function SettingsPage() {
             </div>
           </div>
         )}
-      </div>
 
       {/* Add User Modal */}
       {showAddUser && (

@@ -43,6 +43,7 @@ import {
   Calculator,
   Truck,
   Warehouse,
+  X,
 } from 'lucide-react';
 
 interface SubItem {
@@ -86,7 +87,6 @@ const menuItems: MenuItem[] = [
   },
   { href: '/contacts', label: 'Kişiler', icon: Users, menuKey: 'contacts' },
   { href: '/leads', label: 'Potansiyel Müşteriler', icon: Target, menuKey: 'leads' },
-  { href: '/products', label: 'Ürünler', icon: ShoppingBag, adminOnly: true, menuKey: 'products' },
   {
     href: '/quotes',
     label: 'Teklifler',
@@ -148,7 +148,33 @@ const menuItems: MenuItem[] = [
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL?.replace('/api', '') || 'http://localhost:3002';
 
-export default function Sidebar() {
+/** Alt menü `href` değeri query içeriyorsa (örn. /orders?tsoft=1) pathname + search ile eşleştirir */
+function childHrefMatches(pathname: string, searchParams: URLSearchParams, href: string): boolean {
+  if (!href.includes('?')) {
+    return pathname === href || pathname.startsWith(`${href}/`);
+  }
+  let url: URL;
+  try {
+    url = new URL(href, 'http://localhost');
+  } catch {
+    return pathname === href;
+  }
+  if (pathname !== url.pathname) return false;
+  const keys = Array.from(url.searchParams.keys());
+  for (let i = 0; i < keys.length; i++) {
+    const key = keys[i];
+    if (url.searchParams.get(key) !== searchParams.get(key)) return false;
+  }
+  return true;
+}
+
+export default function Sidebar({
+  mobileOpen = false,
+  onClose,
+}: {
+  mobileOpen?: boolean;
+  onClose?: () => void;
+}) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const { user, organization, logout } = useAuthStore();
@@ -250,7 +276,8 @@ export default function Sidebar() {
         menuKey: 'ecommerce',
         children: [
           { href: '/ecommerce/products', label: 'Ürünler', icon: Package, key: 'ecom_products' },
-          { href: '/ecommerce/orders', label: 'Siparişler', icon: ShoppingBag, key: 'ecom_orders' },
+          { href: '/ecommerce/customers', label: 'Üyeler', icon: Users, key: 'ecom_customers' },
+          { href: '/orders?tsoft=1', label: 'Mağaza (T-Soft)', icon: ShoppingBag, key: 'ecom_orders' },
         ],
       };
       if (idx >= 0) {
@@ -288,7 +315,7 @@ export default function Sidebar() {
           return pathname === '/leads' && currentStatus === s;
         }
         if (c.href === '/inbox' && !c.param) return pathname === '/inbox' && !currentFilter;
-        return pathname === c.href || pathname.startsWith(c.href);
+        return childHrefMatches(pathname, searchParams, c.href);
       })) {
         active.push(item.href);
       }
@@ -315,13 +342,19 @@ export default function Sidebar() {
         prev.includes(activeParent.href) ? prev : [...prev, activeParent.href],
       );
     }
-  }, [pathname, currentFilter, visibleMenuItems]);
+  }, [pathname, currentFilter, searchParams, visibleMenuItems]);
 
   useEffect(() => {
     if (pathname.startsWith('/ecommerce') && ecommerceMenuVisible) {
       setExpandedMenus((prev) => (prev.includes('/ecommerce') ? prev : [...prev, '/ecommerce']));
     }
   }, [pathname, ecommerceMenuVisible]);
+
+  useEffect(() => {
+    if (pathname === '/orders' && searchParams.get('tsoft') === '1' && ecommerceMenuVisible) {
+      setExpandedMenus((prev) => (prev.includes('/ecommerce') ? prev : [...prev, '/ecommerce']));
+    }
+  }, [pathname, searchParams, ecommerceMenuVisible]);
 
   /** SuperAdmin: sadece SaaS Panel ve alt menüleri; CRM sayfaları sidebar’da gösterilmez */
 
@@ -345,7 +378,7 @@ export default function Sidebar() {
     if (child.href === '/superadmin') {
       return pathname === '/superadmin';
     }
-    return pathname === child.href || pathname.startsWith(child.href + '/');
+    return childHrefMatches(pathname, searchParams, child.href);
   };
 
   const isParentActive = (item: MenuItem) => {
@@ -355,8 +388,26 @@ export default function Sidebar() {
     return pathname.startsWith(item.href);
   };
 
+  const handleMobileNavigate = () => {
+    if (onClose) onClose();
+  };
+
   return (
-    <aside className="w-64 bg-sidebar text-white flex flex-col h-screen sticky top-0">
+    <>
+      <div
+        className={cn(
+          'fixed inset-0 z-40 bg-black/40 transition-opacity md:hidden',
+          mobileOpen ? 'opacity-100' : 'opacity-0 pointer-events-none',
+        )}
+        onClick={onClose}
+      />
+      <aside
+        className={cn(
+          'w-64 bg-sidebar text-white flex flex-col h-screen md:sticky top-0 z-50 fixed md:relative left-0',
+          'transition-transform md:translate-x-0',
+          mobileOpen ? 'translate-x-0' : '-translate-x-full',
+        )}
+      >
       <div className="p-5 border-b border-white/10">
         <div className="flex items-center gap-3">
           {organization?.logo ? (
@@ -389,6 +440,14 @@ export default function Sidebar() {
                       : 'Müşteri Yönetimi'}
             </p>
           </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="ml-auto md:hidden p-2 rounded-lg hover:bg-white/10"
+            aria-label="Menüyü kapat"
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
       </div>
 
@@ -436,6 +495,7 @@ export default function Sidebar() {
                             <Link
                               key={child.href + (child.param || '')}
                               href={child.href}
+                              onClick={handleMobileNavigate}
                               className={cn(
                                 'flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-xs font-medium transition-all',
                                 active
@@ -460,6 +520,7 @@ export default function Sidebar() {
                 {item.separator && <div className="my-2 border-t border-white/10" />}
                 <Link
                   href={item.href}
+                  onClick={handleMobileNavigate}
                   className={cn(
                     'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all',
                     isActive
@@ -507,6 +568,7 @@ export default function Sidebar() {
           Çıkış Yap
         </button>
       </div>
-    </aside>
+      </aside>
+    </>
   );
 }

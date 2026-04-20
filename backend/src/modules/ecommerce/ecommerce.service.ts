@@ -271,6 +271,39 @@ export class EcommerceService {
     return this.tsoftApi.listOrders(organizationId, page, limit);
   }
 
+  /** T-Soft site müşteri listesi (üyeler) */
+  async listCustomers(organizationId: string, page: number, limit: number) {
+    const result = await this.tsoftApi.listCustomersPage(organizationId, page, limit);
+    const rows = Array.isArray(result?.rows) ? result.rows : [];
+    const normalized = rows.map((raw) => {
+      const r = raw as Record<string, unknown>;
+      const id = String(r.CustomerId ?? r.id ?? r.ID ?? r.customerId ?? '').trim();
+      const name = String(r.Name ?? r.name ?? r.firstName ?? '').trim();
+      const surname = String(r.Surname ?? r.surname ?? r.lastName ?? '').trim();
+      const fullName = [name, surname].filter(Boolean).join(' ').trim();
+      return {
+        id: id || '—',
+        name: fullName || String(r.CustomerName ?? r.customerName ?? '').trim() || '—',
+        email: String(r.Email ?? r.email ?? '').trim() || null,
+        phone:
+          String(
+            r.Mobile ?? r.mobilePhone ?? r.customerPhone ?? r.Phone ?? r.phone ?? '',
+          ).trim() || null,
+        company: String(r.CompanyName ?? r.companyName ?? r.company ?? '').trim() || null,
+        city: String(r.City ?? r.city ?? r.cityName ?? '').trim() || null,
+        raw,
+      };
+    });
+    const totalPages =
+      Number((result as { totalPages?: number } | undefined)?.totalPages ?? 1) || 1;
+    return {
+      rows: normalized,
+      total: Number(result?.total ?? normalized.length) || normalized.length,
+      page,
+      totalPages,
+    };
+  }
+
   /**
    * Org için WORKING WhatsApp oturumu varsa kişiyle boş sohbet kaydı açar (inbox’ta görünür).
    */

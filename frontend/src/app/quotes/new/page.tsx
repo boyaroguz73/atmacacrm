@@ -1451,10 +1451,10 @@ export default function NewQuotePage() {
             <dl className="space-y-3 text-sm">
               {totals.discountTotal > 0 ? (
                 <div className="flex justify-between gap-2 text-gray-600">
-                  <dt>Genel iskonto</dt>
-                  <dd className="font-medium text-red-600 tabular-nums">
-                    −{sym}
-                    {fmt(totals.discountTotal)}
+                  <dt>İskonto öncesi toplam (KDV hariç)</dt>
+                  <dd className="font-medium text-gray-900 tabular-nums">
+                    {sym}
+                    {fmt(totals.subtotal + totals.discountTotal)}
                   </dd>
                 </div>
               ) : null}

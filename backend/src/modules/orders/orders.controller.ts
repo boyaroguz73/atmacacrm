@@ -22,11 +22,13 @@ export class OrdersController {
     @Query('from') from?: string,
     @Query('to') to?: string,
     @Query('search') search?: string,
+    /** Örn. TSOFT — yalnızca site / entegrasyon kaynaklı siparişler */
+    @Query('source') source?: string,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
   ) {
     return this.ordersService.findAll({
-      status, contactId, from, to, search,
+      status, contactId, from, to, search, source,
       page: page ? parseInt(page) : 1,
       limit: limit ? parseInt(limit) : 50,
     });

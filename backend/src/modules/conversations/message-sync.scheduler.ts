@@ -4,7 +4,7 @@ import { WahaService } from '../waha/waha.service';
 import { ContactsService } from '../contacts/contacts.service';
 import { ConversationsService } from './conversations.service';
 import { ConversationsController } from './conversations.controller';
-import { canonicalContactPhone } from '../../common/contact-phone';
+import { canonicalContactPhone, isFallbackContactName } from '../../common/contact-phone';
 
 @Injectable()
 export class MessageSyncScheduler implements OnModuleInit {
@@ -80,7 +80,11 @@ export class MessageSyncScheduler implements OnModuleInit {
               if (!rawPhone || rawPhone.length < 6) continue;
               const phone = canonicalContactPhone(rawPhone) || rawPhone;
 
-              const contactName = chat.name || chat.pushname || phone;
+              // WAHA'da chat.name bazı hesaplarda kendi işletme adını dönebilir; pushname'i öncele.
+              const candidateName = chat.pushname || chat.name || '';
+              const contactName = !isFallbackContactName(candidateName, phone)
+                ? candidateName
+                : undefined;
               const contact = await this.contactsService.findOrCreate(phone, contactName, session.organizationId);
               const conversation = await this.conversationsService.findOrCreate(
                 contact.id,
