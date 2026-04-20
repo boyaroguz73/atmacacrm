@@ -858,8 +858,31 @@ export class TsoftApiService {
         }
       }
       if (lastErr instanceof BadRequestException && /\(5\d\d\)/.test(lastErr.message)) {
-        this.logger.error(`[TSOFT] getOrders tüm denemelerde 5xx döndü, boş listeye düşülüyor: ${lastErr.message}`);
-        return { rows: [], total: 0 };
+        this.logger.error(
+          `[TSOFT] getOrders tüm denemelerde 5xx döndü, v3 endpoint fallback denenecek: ${lastErr.message}`,
+        );
+        try {
+          const v3Data = await this.v3Request<unknown>(
+            organizationId,
+            'GET',
+            '/api/v3/admin/orders/order',
+            {
+              params: { page, limit, sort: '-id' },
+            },
+          );
+          const v3List = this.unwrapV3List(v3Data);
+          this.logger.warn(
+            `[TSOFT] getOrders REST1 yerine v3 fallback başarılı: ${v3List.rows.length} kayıt`,
+          );
+          return v3List;
+        } catch (fallbackErr: unknown) {
+          const fallbackMsg =
+            fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr);
+          this.logger.error(
+            `[TSOFT] v3 fallback da başarısız, boş listeye düşülüyor: ${fallbackMsg}`,
+          );
+          return { rows: [], total: 0 };
+        }
       }
       throw lastErr instanceof Error ? lastErr : new BadRequestException('T-Soft sipariş listesi alınamadı');
     }
