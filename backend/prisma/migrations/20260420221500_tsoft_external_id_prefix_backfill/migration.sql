@@ -1,8 +1,12 @@
--- CRM'den T-Soft'a push edilen siparişler ham OrderId ile yazılıyordu;
+-- CRM→T-Soft push edilen siparişler ham OrderId ile yazılıyordu;
 -- pull tarafı `tsoft_<id>` formatı kullandığı için dedup kırılıyor ve duplicate oluşabiliyordu.
--- Aynı formata hizala.
-UPDATE "SalesOrder"
-SET "externalId" = 'tsoft_' || "externalId"
-WHERE "externalId" IS NOT NULL
-  AND "externalId" NOT LIKE 'tsoft\_%' ESCAPE '\'
-  AND "tsoftSiteOrderId" IS NOT NULL;
+-- Yalnızca prefix'siz + `tsoft_<id>` karşılığı HENÜZ yoksa güvenle güncelle (unique çakışmasını atla).
+UPDATE "SalesOrder" s
+SET "externalId" = 'tsoft_' || s."externalId"
+WHERE s."externalId" IS NOT NULL
+  AND s."tsoftSiteOrderId" IS NOT NULL
+  AND left(s."externalId", 6) <> 'tsoft_'
+  AND NOT EXISTS (
+    SELECT 1 FROM "SalesOrder" t
+    WHERE t."externalId" = 'tsoft_' || s."externalId"
+  );
