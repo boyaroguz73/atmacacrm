@@ -826,6 +826,58 @@ export class TsoftApiService {
 
   // ─── Order endpoints ──────────────────────────────────────────────────
 
+  private shouldTryNextV3Endpoint(err: unknown): boolean {
+    if (!(err instanceof BadRequestException)) return false;
+    const msg = String(err.message || '');
+    const m = msg.match(/\((\d{3})\)/);
+    const status = m ? Number(m[1]) : NaN;
+    return [400, 403, 404, 405, 422].includes(status);
+  }
+
+  private async listOrdersViaV3Fallback(
+    organizationId: string,
+    page: number,
+    limit: number,
+  ): Promise<{ rows: Record<string, unknown>[]; total?: number }> {
+    const candidates: Array<{
+      method: 'GET' | 'POST';
+      path: string;
+      params?: Record<string, string | number>;
+      data?: Record<string, string | number>;
+    }> = [
+      { method: 'GET', path: '/api/v3/admin/orders/order', params: { page, limit, sort: '-id' } },
+      { method: 'GET', path: '/api/v3/admin/orders', params: { page, limit, sort: '-id' } },
+      { method: 'GET', path: '/api/v3/orders/order', params: { page, limit, sort: '-id' } },
+      { method: 'GET', path: '/api/v3/orders', params: { page, limit, sort: '-id' } },
+      { method: 'POST', path: '/api/v3/admin/orders/order', data: { page, limit } },
+      { method: 'POST', path: '/api/v3/admin/orders/order', data: { start: (page - 1) * limit, limit } },
+      { method: 'POST', path: '/api/v3/admin/orders', data: { page, limit } },
+      { method: 'POST', path: '/api/v3/orders/order', data: { page, limit } },
+    ];
+
+    let lastErr: unknown = null;
+    for (const c of candidates) {
+      try {
+        const raw = await this.v3Request<unknown>(organizationId, c.method, c.path, {
+          params: c.params,
+          data: c.data,
+        });
+        const parsed = this.unwrapV3List(raw);
+        this.logger.warn(
+          `[TSOFT] v3 fallback başarılı (${c.method} ${c.path}): ${parsed.rows.length} kayıt`,
+        );
+        return parsed;
+      } catch (e) {
+        lastErr = e;
+        if (this.shouldTryNextV3Endpoint(e)) {
+          continue;
+        }
+        throw e;
+      }
+    }
+    throw lastErr instanceof Error ? lastErr : new BadRequestException('T-Soft v3 sipariş listesi alınamadı');
+  }
+
   async listOrders(
     organizationId: string,
     page = 1,
@@ -928,19 +980,7 @@ export class TsoftApiService {
           `[TSOFT] getOrders v3 endpoint fallback denenecek: ${lastErr.message}`,
         );
         try {
-          const v3Data = await this.v3Request<unknown>(
-            organizationId,
-            'GET',
-            '/api/v3/admin/orders/order',
-            {
-              params: { page, limit, sort: '-id' },
-            },
-          );
-          const v3List = this.unwrapV3List(v3Data);
-          this.logger.warn(
-            `[TSOFT] getOrders REST1 yerine v3 fallback başarılı: ${v3List.rows.length} kayıt`,
-          );
-          return v3List;
+          return await this.listOrdersViaV3Fallback(organizationId, page, limit);
         } catch (fallbackErr: unknown) {
           const fallbackMsg =
             fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr);
@@ -952,10 +992,7 @@ export class TsoftApiService {
       }
       throw lastErr instanceof Error ? lastErr : new BadRequestException('T-Soft sipariş listesi alınamadı');
     }
-    const data = await this.v3Request<unknown>(organizationId, 'GET', '/api/v3/admin/orders/order', {
-      params: { page, limit, sort: '-id' },
-    });
-    return this.unwrapV3List(data);
+    return this.listOrdersViaV3Fallback(organizationId, page, limit);
   }
 
   async getOrderStatusList(organizationId: string) {

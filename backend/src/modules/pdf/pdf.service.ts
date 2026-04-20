@@ -290,27 +290,40 @@ export class PdfService {
         const PW = doc.page.width - ML - MR; // 515
         const PAGE_H = doc.page.height; // 841.89
 
-        // ── HEADER (birleşik bant: küçük logo + iletişim/vergi tek blokta; ayrı ünvan satırı yok) ──
+        // ── HEADER ───────────────────────────────────────────────────────
         doc.rect(0, 0, doc.page.width, 8).fill(primary);
 
         const titleBoxW = 190;
         const titleBoxX = doc.page.width - MR - titleBoxW;
+
+        // Sağ sütun (başlık kutusu) için dinamik yükseklik hesapla.
+        // Böylece içerik kutu dışına taşmaz.
+        const rightMetaCount = 2  // No + Tarih
+          + (data.validUntil   ? 1 : 0)
+          + (data.deliveryDate ? 1 : 0)
+          + (data.dueDate      ? 1 : 0);
+        const TITLE_H = 22;          // başlık satırı yüksekliği
+        const META_LINE_H = 13;      // meta satır yüksekliği
+        const BOX_PAD = 10;          // üst + alt iç boşluk
+        const titleBoxH = Math.max(72, BOX_PAD + TITLE_H + rightMetaCount * META_LINE_H + BOX_PAD);
+        const TITLE_BOX_Y = 10;      // renk bandının hemen altı (8px)
+
+        // Sol sütun: logo + firma bilgileri
         const logoX = ML + 6;
-        const logoY = 18;
+        const logoY = TITLE_BOX_Y + 4;
         let logoBottom = logoY;
         if (logoBuffer) {
           try {
-            // Logo etrafında nefes alanı bırakıp başlıkla çakışmayı önle.
-            doc.image(logoBuffer, logoX, logoY, { fit: [158, 46] });
-            logoBottom = logoY + 46;
+            doc.image(logoBuffer, logoX, logoY, { fit: [150, 44] });
+            logoBottom = logoY + 44;
           } catch { /* skip */ }
         }
 
-        let cy = logoBottom + 10;
-        const metaW = titleBoxX - ML - 12;
+        let cy = logoBottom + 8;
+        const metaW = titleBoxX - ML - 16;
         if (metaW > 40) {
           const infoLines: string[] = [];
-          // İstek: firma adresi logonun hemen altında olsun.
+          if (!logoBuffer && settings.companyName) infoLines.push(this.t(settings.companyName));
           if (settings.companyAddress) infoLines.push(this.t(settings.companyAddress));
           if (settings.companyPhone) infoLines.push(`Tel: ${settings.companyPhone}`);
           if (settings.companyEmail) infoLines.push(`E-posta: ${settings.companyEmail}`);
@@ -319,27 +332,32 @@ export class PdfService {
             infoLines.push(`VD: ${this.t(settings.companyTaxOffice)}  VN: ${settings.companyTaxNumber}`);
           }
           if (settings.companyMersisNo) infoLines.push(`Mersis: ${settings.companyMersisNo}`);
-          if (!logoBuffer && settings.companyName) infoLines.unshift(this.t(settings.companyName));
 
           R(); doc.fontSize(7.5).fillColor('#555555');
           for (const line of infoLines) {
             if (!line) continue;
             const lineH = doc.heightOfString(line, { width: metaW });
             doc.text(line, ML, cy, { width: metaW, lineBreak: true });
-            cy += lineH + 2;
+            cy += lineH + 3;
           }
         }
 
-        doc.rect(titleBoxX, 12, titleBoxW, 68).fill('#f5f5f5');
-        txt(this.t(data.title), titleBoxX + 8, 18, { size: 14, bold: true, color: primary, width: titleBoxW - 16 });
-        let ry2 = 38;
-        txt(`No: ${data.documentNumber}`, titleBoxX + 8, ry2, { size: 8, color: '#444', width: titleBoxW - 16 }); ry2 += 11;
-        txt(`Tarih: ${data.date}`, titleBoxX + 8, ry2, { size: 8, color: '#444', width: titleBoxW - 16 }); ry2 += 11;
-        if (data.validUntil)   { txt(`Gecerlilik: ${data.validUntil}`, titleBoxX + 8, ry2, { size: 8, color: '#444', width: titleBoxW - 16 }); ry2 += 11; }
-        if (data.deliveryDate) { txt(`Teslim: ${data.deliveryDate}`, titleBoxX + 8, ry2, { size: 8, color: '#444', width: titleBoxW - 16 }); ry2 += 11; }
-        if (data.dueDate)      { txt(`Vade: ${data.dueDate}`, titleBoxX + 8, ry2, { size: 8, color: '#444', width: titleBoxW - 16 }); }
+        // Sağ sütun: başlık kutusu
+        doc.rect(titleBoxX, TITLE_BOX_Y, titleBoxW, titleBoxH).fill('#f5f5f5');
+        let ry2 = TITLE_BOX_Y + BOX_PAD;
+        B(); doc.fontSize(12).fillColor(primary);
+        doc.text(this.t(data.title), titleBoxX + 8, ry2, { width: titleBoxW - 16, lineBreak: false });
+        ry2 += TITLE_H;
+        R(); doc.fontSize(8).fillColor('#444444');
+        doc.text(`No: ${data.documentNumber}`, titleBoxX + 8, ry2, { width: titleBoxW - 16, lineBreak: false }); ry2 += META_LINE_H;
+        doc.text(`Tarih: ${data.date}`,         titleBoxX + 8, ry2, { width: titleBoxW - 16, lineBreak: false }); ry2 += META_LINE_H;
+        if (data.validUntil)   { doc.text(`Gecerlilik: ${data.validUntil}`, titleBoxX + 8, ry2, { width: titleBoxW - 16, lineBreak: false }); ry2 += META_LINE_H; }
+        if (data.deliveryDate) { doc.text(`Teslim: ${data.deliveryDate}`,   titleBoxX + 8, ry2, { width: titleBoxW - 16, lineBreak: false }); ry2 += META_LINE_H; }
+        if (data.dueDate)      { doc.text(`Vade: ${data.dueDate}`,          titleBoxX + 8, ry2, { width: titleBoxW - 16, lineBreak: false }); }
 
-        const headerBottom = Math.max(cy, logoBottom + 28, 82) + 8;
+        // headerBottom: her iki sütunun (sol ve sağ) en aşağı noktasının altından çizgi
+        const titleBoxBottom = TITLE_BOX_Y + titleBoxH;
+        const headerBottom = Math.max(cy + 6, titleBoxBottom + 6);
         doc.moveTo(ML, headerBottom).lineTo(ML + PW, headerBottom).lineWidth(1).strokeColor(primary).stroke();
 
         // ── CUSTOMER INFO ────────────────────────────────────────────────
@@ -525,13 +543,14 @@ export class PdfService {
         const vatAmt = Number.isFinite(data.vatTotal) ? data.vatTotal : 0;
         const subEx = Math.round((Number(data.subtotal) || 0) * 100) / 100;
         const hasGeneralDiscount = (Number(data.discountTotal) || 0) > 0.005;
-        const subtotalLabel = hasGeneralDiscount
-          ? this.t('Toplam Iskontolu Fiyat (KDV haric):')
-          : this.t('Ara Toplam (KDV haric):');
-        sumRow(subtotalLabel, fmtMoney(subEx), rowY); rowY += 14;
+
+        // İskonto varsa "İskontolu Fiyat" satırını göster; yoksa hiç gösterme.
+        if (hasGeneralDiscount) {
+          sumRow(this.t('Toplam Iskontolu Fiyat (KDV haric):'), fmtMoney(subEx), rowY); rowY += 14;
+        }
         sumRow(this.t('KDV Tutari:'), fmtMoney(vatAmt), rowY); rowY += 14;
 
-        // Grand total box — genel toplam KDV dahil (kalem fiyatlari da KDV dahil)
+        // Grand total box
         doc.rect(sumX - 4, rowY - 2, lblW + valW + 8, 22).fill(primary);
         sumRow(this.t('GENEL TOPLAM (KDV dahil):'), fmtMoney(data.grandTotal), rowY + 5, true, '#ffffff');
         rowY += 32;
