@@ -122,7 +122,7 @@ export class TsoftSyncScheduler implements OnModuleInit {
         const admin = await this.prisma.user.findFirst({
           where: {
             organizationId: org.organizationId,
-            role: { in: ['OWNER', 'ADMIN'] } as any,
+            role: { in: ['SUPERADMIN', 'ADMIN'] } as any,
             isActive: true,
           },
           select: { id: true },
