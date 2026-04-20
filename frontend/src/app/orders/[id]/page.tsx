@@ -26,6 +26,7 @@ import {
   X,
 } from 'lucide-react';
 import PanelEditedBadge from '@/components/ui/PanelEditedBadge';
+import SiteOrderDetailsPanel from '@/components/orders/SiteOrderDetailsPanel';
 
 type OrderStatus = 'PENDING' | 'PROCESSING' | 'SHIPPED' | 'DELIVERED' | 'CANCELLED';
 
@@ -86,6 +87,7 @@ interface SalesOrder {
   pushToTsoft?: boolean;
   tsoftPushedAt?: string | null;
   tsoftLastError?: string | null;
+  siteOrderData?: Record<string, unknown> | null;
   invoice?: { id: string } | null;
   createdBy?: { id: string; name: string | null } | null;
   contact: {
@@ -657,6 +659,10 @@ export default function OrderDetailPage() {
                 </div>
               </div>
             </div>
+
+            {order.siteOrderData ? (
+              <SiteOrderDetailsPanel data={order.siteOrderData} />
+            ) : null}
 
             <div className="rounded-xl border border-gray-100 bg-gray-50/40 p-4 space-y-3">
               <div className="flex items-center gap-2 text-sm font-semibold text-gray-800">

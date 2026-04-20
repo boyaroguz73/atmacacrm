@@ -974,6 +974,8 @@ model SalesOrder {
   tsoftPushedAt              DateTime?
   /// Son T-Soft push hatası (retry sonrasında)
   tsoftLastError             String?
+  /// T-Soft getOrders yanıtının ham içeriği (site sipariş detayı için). Pull sırasında doldurulur.
+  siteOrderData              Json?
 
   createdAt                  DateTime    @default(now())
   updatedAt                  DateTime    @updatedAt

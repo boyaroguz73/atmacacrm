@@ -552,11 +552,13 @@ export class EcommerceService {
         });
         if (existing) {
           // CRM'den push edilmiş sipariş — externalId'yi birleşik formata backfill et, tekrar oluşturma.
+          // siteOrderData'yı da doldur ki detay sayfasında T-Soft alanları görünsün.
           await this.prisma.salesOrder.update({
             where: { id: existing.id },
             data: {
               externalId,
               tsoftSiteOrderId: siteOid,
+              siteOrderData: raw as Prisma.InputJsonValue,
             },
           });
           this.logger.debug(
@@ -677,6 +679,7 @@ export class EcommerceService {
           data: {
             externalId,
             tsoftSiteOrderId,
+            siteOrderData: raw as Prisma.InputJsonValue,
             source: TSOFT_SOURCE,
             contactId: contact.id,
             createdById: userId,
