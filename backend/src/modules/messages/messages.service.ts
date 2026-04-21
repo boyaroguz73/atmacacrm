@@ -483,7 +483,7 @@ export class MessagesService implements OnModuleInit {
     }
 
     const effName = variant
-      ? `${product.name} — ${variant.name}`
+      ? (variant.name.includes(product.name) ? variant.name : `${product.name} — ${variant.name}`)
       : product.name;
     const unitPrice = Number(variant?.unitPrice ?? product.unitPrice ?? 0);
     const currency = variant?.currency || product.currency;

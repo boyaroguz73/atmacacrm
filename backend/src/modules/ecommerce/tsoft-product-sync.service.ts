@@ -532,7 +532,7 @@ export class TsoftProductSyncService {
       if (!vExternal) continue;
 
       const vSku = pickString(v.ProductCode, v.VariantCode, v.Barcode);
-      const vName = mainProductName.trim() || buildVariantDisplayName(v, mainProductName, vExternal);
+      const vName = buildVariantDisplayName(v, mainProductName, vExternal);
       const vSellingPrice = toNullableNumber(v.SellingPrice ?? v.sellingPrice ?? v.SalePrice);
       const vDiscountedPrice = toNullableNumber(v.DiscountedSellingPrice ?? v.discountedSellingPrice);
       const vList = toNullableNumber(v.ListPrice ?? v.listPrice);
