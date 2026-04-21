@@ -530,13 +530,15 @@ export class TsoftProductSyncService {
       if (!vExternal) continue;
 
       const vSku = pickString(v.ProductCode, v.VariantCode, v.Barcode);
-      const vName = buildVariantDisplayName(v, mainProductName, vExternal);
+      const vName = mainProductName.trim() || buildVariantDisplayName(v, mainProductName, vExternal);
       const vSellingPrice = toNullableNumber(v.SellingPrice ?? v.sellingPrice ?? v.SalePrice);
       const vDiscountedPrice = toNullableNumber(v.DiscountedSellingPrice ?? v.discountedSellingPrice);
       const vList = toNullableNumber(v.ListPrice ?? v.listPrice);
-      // Birim fiyat: önce indirimli satış (DiscountedSellingPrice), yoksa satış/liste
-      const vUnitPrice = vDiscountedPrice ?? vSellingPrice ?? vList ?? 0;
-      const vSale = vDiscountedPrice ?? vSellingPrice;
+      // Birim fiyat: önce alt ürün indirimli, yoksa ana ürünün indirimli, sonra satış/liste
+      const parentDiscounted = toNullableNumber(row.DiscountedSellingPrice ?? row.discountedSellingPrice);
+      const parentSelling = toNullableNumber(row.SellingPrice ?? row.sellingPrice ?? row.SalePrice);
+      const vUnitPrice = vDiscountedPrice ?? parentDiscounted ?? vSellingPrice ?? parentSelling ?? vList ?? 0;
+      const vSale = vDiscountedPrice ?? parentDiscounted ?? vSellingPrice;
       const vStock = flags.includeStock
         ? toNullableInt(v.Stock ?? v.stock)
         : null;
