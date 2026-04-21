@@ -573,13 +573,13 @@ export default function OrderDetailPage() {
   );
 
   return (
-    <div className="p-4 sm:p-6 w-full max-w-none space-y-5">
+    <div className="p-3 sm:p-4 w-full max-w-[1600px] mx-auto space-y-3">
       <button
         type="button"
         onClick={() => router.push('/orders')}
-        className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-gray-200 text-sm text-gray-700 hover:bg-gray-50"
+        className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-gray-200 text-xs text-gray-700 hover:bg-gray-50"
       >
-        <ArrowLeft className="w-4 h-4" />
+        <ArrowLeft className="w-3.5 h-3.5" />
         Siparişlere dön
       </button>
 
@@ -590,240 +590,99 @@ export default function OrderDetailPage() {
         </div>
       ) : (
         <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-          <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-gray-100 bg-gray-50/50">
-            <div>
-              <h1 className="text-lg font-bold text-gray-900 flex items-center gap-2 flex-wrap">
-                <Package className="w-5 h-5 text-whatsapp" />
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 px-3 py-2.5 sm:px-4 border-b border-gray-100 bg-gray-50/50">
+            <div className="min-w-0">
+              <h1 className="text-base sm:text-lg font-bold text-gray-900 flex items-center gap-2 flex-wrap">
+                <Package className="w-4 h-4 sm:w-5 sm:h-5 text-whatsapp shrink-0" />
                 {formatOrderNo(order.orderNumber)}
                 {order.source === 'TSOFT' && (
-                  <span className="inline-flex text-[9px] font-bold px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700 uppercase tracking-wide">Site Siparişi</span>
+                  <span className="inline-flex text-[9px] font-bold px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700 uppercase tracking-wide">Site</span>
                 )}
                 <PanelEditedBadge at={order.panelEditedAt} />
               </h1>
-              <p className="text-sm text-gray-500 mt-0.5">
+              <p className="text-xs text-gray-500 mt-0.5 truncate">
                 {contactDisplayName(order.contact)} · {formatPhone(order.contact.phone)}
               </p>
               {order.createdBy?.name ? (
-                <p className="text-xs text-gray-400 mt-1 flex items-center gap-1">
-                  <User className="w-3.5 h-3.5 shrink-0" />
-                  Oluşturan: <span className="font-medium text-gray-600">{order.createdBy.name}</span>
+                <p className="text-[11px] text-gray-400 mt-0.5 flex items-center gap-1">
+                  <User className="w-3 h-3 shrink-0" />
+                  {order.createdBy.name}
                 </p>
               ) : null}
             </div>
+            <div className="text-right shrink-0">
+              <p className="text-[10px] uppercase tracking-wide text-gray-400">Genel toplam</p>
+              <p className="text-base font-bold text-whatsapp tabular-nums">{formatMoney(order.grandTotal, order.currency)}</p>
+            </div>
           </div>
 
-          <div className="px-5 py-4 space-y-5">
-            <div className="flex flex-col sm:flex-row sm:items-end gap-4">
-              <div className="flex-1 space-y-1">
-                <label htmlFor="order-status" className="text-xs font-semibold text-gray-500 uppercase">
-                  Sipariş durumu
-                </label>
-                <select
-                  id="order-status"
-                  value={order.status}
-                  disabled={statusSaving}
-                  onChange={(e) => void patchStatus(e.target.value as OrderStatus)}
-                  className="w-full sm:max-w-xs px-3 py-2.5 rounded-xl border border-gray-200 text-sm bg-white"
-                >
-                  {(Object.keys(STATUS_LABELS) as OrderStatus[]).map((s) => (
-                    <option key={s} value={s}>{STATUS_LABELS[s]}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="text-sm">
-                <span className="text-gray-400 text-xs block">Genel toplam</span>
-                <span className="font-semibold text-whatsapp tabular-nums">
-                  {formatMoney(order.grandTotal, order.currency)}
-                </span>
-              </div>
-            </div>
-
-            {order.quote ? (
-              <p className="text-xs text-gray-500">
-                Teklif: <span className="font-mono font-medium text-gray-700">{formatQuoteNo(order.quote.quoteNumber)}</span>
-              </p>
-            ) : null}
-
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-              <div className="rounded-xl border border-gray-100 bg-gradient-to-br from-slate-50 to-white p-4 space-y-2">
-                <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Finansal özet</h3>
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">Ara toplam</span>
-                  <span className="tabular-nums font-medium text-gray-800">
-                    {formatMoney(order.subtotal ?? 0, order.currency)}
-                  </span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">KDV</span>
-                  <span className="tabular-nums font-medium text-gray-800">
-                    {formatMoney(order.vatTotal ?? 0, order.currency)}
-                  </span>
-                </div>
-                <div className="flex justify-between text-sm pt-2 border-t border-gray-100">
-                  <span className="text-gray-700 font-medium">Genel toplam</span>
-                  <span className="tabular-nums font-bold text-whatsapp">
-                    {formatMoney(order.grandTotal, order.currency)}
-                  </span>
-                </div>
-                <p className="text-[10px] text-gray-400">Oluşturulma: {formatDateTime(order.createdAt)}</p>
-              </div>
-
-              <div className="rounded-xl border border-gray-100 bg-white p-4 space-y-2">
-                <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Müşteri</h3>
-                {order.contact.company ? (
-                  <p className="text-sm font-medium text-gray-900">{order.contact.company}</p>
-                ) : null}
-                {order.contact.email ? (
-                  <p className="text-xs text-gray-600">{order.contact.email}</p>
-                ) : null}
-                {order.contact.billingAddress ? (
-                  <div>
-                    <p className="text-[10px] font-semibold text-gray-400 uppercase">Fatura</p>
-                    <p className="text-xs text-gray-700 whitespace-pre-wrap">{order.contact.billingAddress}</p>
-                  </div>
-                ) : null}
-                {order.contact.taxOffice || order.contact.taxNumber ? (
-                  <p className="text-xs text-gray-600">
-                    VD: {order.contact.taxOffice || '—'} · VN: {order.contact.taxNumber || '—'}
-                  </p>
-                ) : null}
-              </div>
-
-              <div className="rounded-xl border border-indigo-100 bg-indigo-50/40 p-4 space-y-2">
-                <h3 className="text-xs font-semibold text-indigo-800 uppercase tracking-wide">E-ticaret / T-Soft</h3>
-                <div className="text-xs space-y-1 text-gray-700">
-                  <p>
-                    <span className="text-gray-500">Kaynak:</span>{' '}
-                    <span className="font-medium">{order.source || 'MANUAL'}</span>
-                  </p>
-                  {order.externalId ? (
-                    <p className="font-mono break-all">
-                      <span className="text-gray-500">Harici ID:</span> {order.externalId}
-                    </p>
-                  ) : null}
-                  {order.tsoftSiteOrderId ? (
-                    <p className="font-mono">
-                      <span className="text-gray-500">Site OrderId:</span> {order.tsoftSiteOrderId}
-                    </p>
-                  ) : null}
-                  <p>
-                    <span className="text-gray-500">Panele it:</span>{' '}
-                    {order.pushToTsoft ? 'Evet' : 'Hayır'}
-                  </p>
-                  {order.tsoftPushedAt ? (
-                    <p className="text-emerald-700">İtildi: {formatDateTime(order.tsoftPushedAt)}</p>
-                  ) : null}
-                  {order.tsoftLastError ? (
-                    <p className="text-red-700 text-[11px] whitespace-pre-wrap break-words">{order.tsoftLastError}</p>
-                  ) : null}
-                </div>
-              </div>
-            </div>
-
-            <div className="rounded-xl border border-gray-100 bg-gray-50/40 p-4 space-y-3">
-              <div className="flex items-center gap-2 text-sm font-semibold text-gray-800">
-                <Calendar className="w-4 h-4 text-whatsapp" />
-                Tarih ve adres
-              </div>
-              <input
-                type="date"
-                value={expectedDeliveryDraft}
-                onChange={(e) => setExpectedDeliveryDraft(e.target.value)}
-                className="w-full max-w-xs px-3 py-2 rounded-xl border border-gray-200 text-sm"
-              />
-              <textarea
-                value={shippingDraft}
-                onChange={(e) => setShippingDraft(e.target.value)}
-                rows={2}
-                placeholder="Sevk adresi"
-                className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm"
-              />
-              <textarea
-                value={notesDraft}
-                onChange={(e) => setNotesDraft(e.target.value)}
-                rows={2}
-                placeholder="Notlar"
-                className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm"
-              />
-              <button
-                type="button"
-                disabled={metaSaving || statusSaving}
-                onClick={() => void saveOrderMeta()}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-gray-900 text-white text-sm"
-              >
-                {metaSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-                Bilgileri kaydet
-              </button>
-            </div>
-
-            {/* Kargo Takip Bolumu - sadece SHIPPED durumunda */}
+          <div className="grid grid-cols-1 xl:grid-cols-12 gap-3 xl:gap-4 px-3 py-2.5 sm:px-4">
+            {/* Sol: kalemler, ödeme, notlar — mobilde altta */}
+            <div className="order-2 xl:order-1 xl:col-span-8 space-y-3 min-w-0">
             {order.status === 'SHIPPED' ? (
-              <div className="rounded-xl border border-blue-100 bg-blue-50/40 p-4 space-y-3">
-                <div className="flex items-center gap-2 text-sm font-semibold text-blue-800">
-                  <Truck className="w-4 h-4" />
+              <div className="rounded-xl border border-blue-100 bg-blue-50/40 p-3 space-y-2">
+                <div className="flex items-center gap-1.5 text-xs font-semibold text-blue-800">
+                  <Truck className="w-3.5 h-3.5" />
                   Kargo Bilgileri
                 </div>
 
-                <div className="space-y-3">
-                  <div>
-                    <label className="text-xs font-semibold text-gray-600 block mb-1">
-                      Kargo firması
-                    </label>
-                    <select
-                      value={cargoCompanyDraft}
-                      onChange={(e) => setCargoCompanyDraft(e.target.value)}
-                      className="w-full sm:max-w-xs px-3 py-2 rounded-xl border border-gray-200 text-sm bg-white"
-                    >
-                      <option value="">Firma seçin</option>
-                      {cargoCompanies.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.name}{c.isAmbar ? ' (Ambar)' : ''}
-                        </option>
-                      ))}
-                    </select>
+                <div className="space-y-2">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-[10px] font-semibold text-gray-500 block mb-0.5">Kargo firması</label>
+                      <select
+                        value={cargoCompanyDraft}
+                        onChange={(e) => setCargoCompanyDraft(e.target.value)}
+                        className="w-full px-2 py-1.5 rounded-lg border border-gray-200 text-xs bg-white"
+                      >
+                        <option value="">Firma seçin</option>
+                        {cargoCompanies.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.name}{c.isAmbar ? ' (Ambar)' : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    {selectedCargoCompany && !selectedCargoCompany.isAmbar ? (
+                      <div>
+                        <label className="text-[10px] font-semibold text-gray-500 block mb-0.5">Takip numarası</label>
+                        <input
+                          type="text"
+                          value={cargoTrackingDraft}
+                          onChange={(e) => setCargoTrackingDraft(e.target.value)}
+                          placeholder="Takip no"
+                          className="w-full px-2 py-1.5 rounded-lg border border-gray-200 text-xs"
+                        />
+                      </div>
+                    ) : null}
                   </div>
 
-                  {selectedCargoCompany && !selectedCargoCompany.isAmbar ? (
-                    <div>
-                      <label className="text-xs font-semibold text-gray-600 block mb-1">
-                        Kargo takip numarası
-                      </label>
-                      <input
-                        type="text"
-                        value={cargoTrackingDraft}
-                        onChange={(e) => setCargoTrackingDraft(e.target.value)}
-                        placeholder="Takip numarasını girin"
-                        className="w-full sm:max-w-xs px-3 py-2 rounded-xl border border-gray-200 text-sm"
-                      />
-                    </div>
-                  ) : null}
-
                   {selectedCargoCompany?.isAmbar ? (
-                    <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
-                      Ambar teslimatı seçildi. Müşteriye takip kodu gönderilmeyecek; ambar bildirim mesajı gönderilecektir.
+                    <div className="rounded-md bg-amber-50 border border-amber-200 px-2 py-1.5 text-[11px] text-amber-800">
+                      Ambar teslimatı — takip kodu gönderilmeyecek.
                     </div>
                   ) : null}
 
-                  <div className="flex flex-wrap gap-2 pt-1">
+                  <div className="flex flex-wrap gap-1.5">
                     <button
                       type="button"
                       disabled={cargoSaving || !cargoCompanyDraft}
                       onClick={() => void saveCargoInfo()}
-                      className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-gray-900 text-white text-sm disabled:opacity-50"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gray-900 text-white text-xs disabled:opacity-50"
                     >
-                      {cargoSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                      {cargoSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
                       Kaydet
                     </button>
                     <button
                       type="button"
                       disabled={cargoNotifSending || !order.cargoCompanyId}
                       onClick={() => void sendCargoNotification()}
-                      className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-whatsapp text-white text-sm disabled:opacity-50 hover:bg-green-600"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-whatsapp text-white text-xs disabled:opacity-50 hover:bg-green-600"
                     >
                       {cargoNotifSending ? (
-                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
                       ) : (
-                        <Send className="w-4 h-4" />
+                        <Send className="w-3.5 h-3.5" />
                       )}
                       Müşteriye Gönder
                     </button>
@@ -857,39 +716,9 @@ export default function OrderDetailPage() {
               </div>
             ) : null}
 
-            <div className="rounded-xl border border-gray-100 bg-white p-4 space-y-2">
-              <h3 className="text-sm font-semibold text-gray-800">Sipariş onay PDF’i</h3>
-              <div className="flex flex-wrap items-center gap-2">
-                {order.confirmationPdfUrl ? (
-                  <a
-                    href={`${backendPublicUrl()}${order.confirmationPdfUrl}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 text-sm font-medium text-whatsapp hover:underline"
-                  >
-                    <ExternalLink className="w-4 h-4" />
-                    PDF’yi aç
-                  </a>
-                ) : (
-                  <span className="text-xs text-amber-700">Henüz PDF yok.</span>
-                )}
-                {canRegenerateOrderPdf ? (
-                  <button
-                    type="button"
-                    disabled={pdfRegenLoading}
-                    onClick={() => void regenerateOrderPdf()}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 text-xs font-medium text-gray-700"
-                  >
-                    {pdfRegenLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />}
-                    PDF yenile
-                  </button>
-                ) : null}
-              </div>
-            </div>
-
             <div>
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-2">
-                <h3 className="text-sm font-semibold text-gray-800">Kalemler</h3>
+              <div className="flex items-center justify-between gap-1.5 mb-1">
+                <h3 className="text-[11px] font-bold text-gray-800 uppercase tracking-wide">Ürünler</h3>
                 {canEditOrderLines ? (
                   <p className="text-[11px] text-indigo-800/70">
                     Düzenleyip <strong>Kaydet</strong> ile güncelleyin.
@@ -900,23 +729,23 @@ export default function OrderDetailPage() {
                   <p className="text-[11px] text-gray-500">Bu durumda kalem düzenlenemez.</p>
                 ) : null}
               </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm min-w-[980px]">
+              <div className="overflow-x-auto rounded-lg border border-gray-100">
+                <table className="w-full text-xs min-w-[920px]">
                   <thead>
-                    <tr className="bg-gray-50/80 text-left text-xs font-semibold text-gray-500 uppercase">
-                      <th className="px-3 py-2.5 w-16">Görsel</th>
-                      <th className="px-3 py-2.5 min-w-[120px]">Ürün</th>
-                      <th className="px-3 py-2.5 min-w-[100px]">Renk/Kumaş</th>
-                      <th className="px-3 py-2.5 min-w-[100px]">Ölçü</th>
-                      <th className="px-3 py-2.5 text-right w-20">Miktar</th>
-                      <th className="px-3 py-2.5 text-right min-w-[90px]">Birim fiyat</th>
-                      <th className="px-3 py-2.5 text-center min-w-[96px]">Fiyat tipi</th>
-                      <th className="px-3 py-2.5 text-right min-w-[72px]">KDV</th>
-                      <th className="px-3 py-2.5 text-left">Kaynak</th>
-                      <th className="px-3 py-2.5 text-left">Tedarikçi</th>
-                      <th className="px-3 py-2.5 text-left">Sipariş no</th>
-                      <th className="px-3 py-2.5 text-right min-w-[88px]">Satır toplamı</th>
-                      {canEditOrderLines ? <th className="px-3 py-2.5 w-24">İşlem</th> : null}
+                    <tr className="bg-gray-50/80 text-left text-[10px] font-semibold text-gray-500 uppercase">
+                      <th className="px-2 py-1.5 w-14">Görsel</th>
+                      <th className="px-2 py-1.5 min-w-[110px]">Ürün</th>
+                      <th className="px-2 py-1.5 min-w-[88px]">Renk/Kumaş</th>
+                      <th className="px-2 py-1.5 min-w-[88px]">Ölçü</th>
+                      <th className="px-2 py-1.5 text-right w-[4.5rem]">Miktar</th>
+                      <th className="px-2 py-1.5 text-right min-w-[78px]">Birim</th>
+                      <th className="px-2 py-1.5 text-center min-w-[80px]">Fiyat tipi</th>
+                      <th className="px-2 py-1.5 text-right min-w-[56px]">KDV</th>
+                      <th className="px-2 py-1.5 text-left">Kaynak</th>
+                      <th className="px-2 py-1.5 text-left">Tedarikçi</th>
+                      <th className="px-2 py-1.5 text-left">Sip. no</th>
+                      <th className="px-2 py-1.5 text-right min-w-[78px]">Toplam</th>
+                      {canEditOrderLines ? <th className="px-2 py-1.5 w-[4.5rem]">İşlem</th> : null}
                     </tr>
                   </thead>
                   <tbody>
@@ -929,8 +758,8 @@ export default function OrderDetailPage() {
                         const draftLineTotal = editable ? draftLineGross(d) : item.lineTotal;
                         return (
                           <tr key={item.id} className="border-t border-gray-50 align-top odd:bg-gray-50/30 hover:bg-indigo-50/20 transition-colors">
-                            <td className="px-3 py-2.5 align-middle w-16">
-                              <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-lg border border-gray-100 bg-gray-50 overflow-hidden">
+                            <td className="px-1.5 py-1 align-middle w-10">
+                              <div className="w-9 h-9 rounded border border-gray-100 bg-gray-50 overflow-hidden">
                                 {item.product?.imageUrl ? (
                                   <img src={rewriteMediaUrlForClient(item.product.imageUrl)} alt="" className="w-full h-full object-cover" />
                                 ) : (
@@ -938,7 +767,7 @@ export default function OrderDetailPage() {
                                 )}
                               </div>
                             </td>
-                            <td className="px-3 py-2.5">
+                            <td className="px-2 py-1.5">
                               <div className="space-y-1">
                                 {editable ? (
                                   <input
@@ -960,7 +789,7 @@ export default function OrderDetailPage() {
                                 ) : null}
                               </div>
                             </td>
-                            <td className="px-3 py-2.5">
+                            <td className="px-2 py-1.5">
                               {editable ? (
                                 <textarea
                                   value={d.colorFabricInfo}
@@ -973,7 +802,7 @@ export default function OrderDetailPage() {
                                 <span className="text-sm text-gray-700">{item.colorFabricInfo?.trim() || '—'}</span>
                               )}
                             </td>
-                            <td className="px-3 py-2.5">
+                            <td className="px-2 py-1.5">
                               {editable ? (
                                 <textarea
                                   value={d.measurementInfo}
@@ -986,7 +815,7 @@ export default function OrderDetailPage() {
                                 <span className="text-sm text-gray-700 whitespace-pre-wrap max-w-[200px]">{item.measurementInfo?.trim() || '—'}</span>
                               )}
                             </td>
-                            <td className="px-3 py-2.5 text-right">
+                            <td className="px-2 py-1.5 text-right">
                               {editable ? (
                                 <input
                                   type="number"
@@ -1002,7 +831,7 @@ export default function OrderDetailPage() {
                                 item.quantity
                               )}
                             </td>
-                            <td className="px-3 py-2.5 text-right">
+                            <td className="px-2 py-1.5 text-right">
                               {editable ? (
                                 <input
                                   type="number"
@@ -1023,7 +852,7 @@ export default function OrderDetailPage() {
                                 </div>
                               )}
                             </td>
-                            <td className="px-3 py-2.5 text-center">
+                            <td className="px-2 py-1.5 text-center">
                               {editable ? (
                                 <select
                                   value={d.priceIncludesVat ? 'incl' : 'excl'}
@@ -1049,7 +878,7 @@ export default function OrderDetailPage() {
                                 </span>
                               )}
                             </td>
-                            <td className="px-3 py-2.5 text-right">
+                            <td className="px-2 py-1.5 text-right">
                               {editable ? (
                                 <input
                                   type="number"
@@ -1068,7 +897,7 @@ export default function OrderDetailPage() {
                                 ({formatMoney(draftVat, order.currency)})
                               </span>
                             </td>
-                            <td className="px-3 py-2.5">
+                            <td className="px-2 py-1.5">
                               <label className="inline-flex items-center gap-2 text-xs">
                                 <input
                                   type="checkbox"
@@ -1086,7 +915,7 @@ export default function OrderDetailPage() {
                                 Stoktan
                               </label>
                             </td>
-                            <td className="px-3 py-2.5">
+                            <td className="px-2 py-1.5">
                               <select
                                 value={item.supplierId || ''}
                                 disabled={!!item.isFromStock || itemSavingId === item.id || !canEditOrderLines}
@@ -1103,7 +932,7 @@ export default function OrderDetailPage() {
                                 ))}
                               </select>
                             </td>
-                            <td className="px-3 py-2.5">
+                            <td className="px-2 py-1.5">
                               <input
                                 key={item.supplierOrderNo ?? 'empty'}
                                 defaultValue={item.supplierOrderNo || ''}
@@ -1117,11 +946,11 @@ export default function OrderDetailPage() {
                                 className="px-2 py-1.5 rounded border border-gray-200 text-xs min-w-[140px] disabled:bg-gray-100"
                               />
                             </td>
-                            <td className="px-3 py-2.5 text-right font-medium tabular-nums">
+                            <td className="px-2 py-1.5 text-right font-medium tabular-nums">
                               {formatMoney(editable ? draftLineTotal : item.lineTotal, order.currency)}
                             </td>
                             {canEditOrderLines ? (
-                              <td className="px-3 py-2.5">
+                              <td className="px-2 py-1.5">
                                 <button
                                   type="button"
                                   disabled={itemSavingId === item.id || !d}
@@ -1149,80 +978,56 @@ export default function OrderDetailPage() {
 
             {/* Ödeme / tahsilat paneli */}
             <div className="rounded-xl border border-emerald-100 bg-white overflow-hidden shadow-sm">
-              <div className="flex items-center justify-between gap-3 flex-wrap px-4 py-2.5 bg-gradient-to-r from-emerald-50 to-emerald-50/40 border-b border-emerald-100">
-                <h3 className="text-xs font-bold text-emerald-900 uppercase tracking-wide flex items-center gap-2">
-                  <Receipt className="w-4 h-4 text-emerald-700" />
-                  Tahsilat & Ödeme
+              <div className="flex items-center justify-between gap-2 flex-wrap px-3 py-1.5 bg-emerald-50/60 border-b border-emerald-100">
+                <h3 className="text-[11px] font-bold text-emerald-900 uppercase tracking-wide flex items-center gap-1.5">
+                  <Receipt className="w-3.5 h-3.5 text-emerald-700" />
+                  Tahsilat
                   {order.isFullyPaid ? (
-                    <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-green-100 text-green-800 uppercase tracking-wide">
-                      <CheckCircle2 className="w-3 h-3" />
+                    <span className="inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-green-100 text-green-800">
+                      <CheckCircle2 className="w-2.5 h-2.5" />
                       Ödendi
                     </span>
                   ) : null}
                 </h3>
-                <div className="flex gap-2 flex-wrap">
+                <div className="flex gap-1.5">
                   {order.remainingTotal && order.remainingTotal > 0 ? (
                     <button
                       type="button"
                       onClick={() => openPaymentForm(true)}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-whatsapp text-white text-xs font-semibold hover:bg-green-600"
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-whatsapp text-white text-[10px] font-semibold hover:bg-green-600"
                     >
-                      <CheckCircle2 className="w-3.5 h-3.5" />
-                      Kalanı tam tahsil et
+                      <CheckCircle2 className="w-3 h-3" />
+                      Tam tahsil
                     </button>
                   ) : null}
                   <button
                     type="button"
                     onClick={() => openPaymentForm(false)}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md border border-gray-200 text-[10px] font-semibold text-gray-700 hover:bg-gray-50"
                   >
-                    <Plus className="w-3.5 h-3.5" />
-                    Tahsilat / İade ekle
+                    <Plus className="w-3 h-3" />
+                    Ekle
                   </button>
                 </div>
               </div>
 
-              <div className="p-4 space-y-4">
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <div className="rounded-lg border border-gray-100 bg-gray-50/60 p-3">
-                  <div className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Toplam</div>
-                  <div className="text-base font-semibold text-gray-900 tabular-nums mt-0.5">
-                    {formatMoney(order.grandTotal, order.currency)}
-                  </div>
+              <div className="p-3 space-y-3">
+              <div className="grid grid-cols-4 gap-2">
+                <div className="rounded-lg border border-gray-100 bg-gray-50/60 px-2.5 py-1.5">
+                  <div className="text-[9px] font-semibold text-gray-400 uppercase">Toplam</div>
+                  <div className="text-sm font-semibold text-gray-900 tabular-nums">{formatMoney(order.grandTotal, order.currency)}</div>
                 </div>
-                <div className="rounded-lg border border-green-100 bg-green-50/60 p-3">
-                  <div className="text-[10px] font-semibold text-green-700 uppercase tracking-wide">Tahsil edilen</div>
-                  <div className="text-base font-semibold text-green-800 tabular-nums mt-0.5">
-                    {formatMoney(order.paidTotal ?? 0, order.currency)}
-                  </div>
+                <div className="rounded-lg border border-green-100 bg-green-50/60 px-2.5 py-1.5">
+                  <div className="text-[9px] font-semibold text-green-600 uppercase">Tahsil</div>
+                  <div className="text-sm font-semibold text-green-800 tabular-nums">{formatMoney(order.paidTotal ?? 0, order.currency)}</div>
                 </div>
-                <div className="rounded-lg border border-amber-100 bg-amber-50/60 p-3">
-                  <div className="text-[10px] font-semibold text-amber-700 uppercase tracking-wide">İade</div>
-                  <div className="text-base font-semibold text-amber-800 tabular-nums mt-0.5">
-                    {formatMoney(order.refundedTotal ?? 0, order.currency)}
-                  </div>
+                <div className="rounded-lg border border-amber-100 bg-amber-50/60 px-2.5 py-1.5">
+                  <div className="text-[9px] font-semibold text-amber-600 uppercase">İade</div>
+                  <div className="text-sm font-semibold text-amber-800 tabular-nums">{formatMoney(order.refundedTotal ?? 0, order.currency)}</div>
                 </div>
-                <div
-                  className={`rounded-lg border p-3 ${
-                    (order.remainingTotal ?? 0) > 0
-                      ? 'border-red-100 bg-red-50/60'
-                      : 'border-green-100 bg-green-50/80'
-                  }`}
-                >
-                  <div
-                    className={`text-[10px] font-semibold uppercase tracking-wide ${
-                      (order.remainingTotal ?? 0) > 0 ? 'text-red-700' : 'text-green-700'
-                    }`}
-                  >
-                    Kalan bakiye
-                  </div>
-                  <div
-                    className={`text-base font-semibold tabular-nums mt-0.5 ${
-                      (order.remainingTotal ?? 0) > 0 ? 'text-red-800' : 'text-green-800'
-                    }`}
-                  >
-                    {formatMoney(Math.max(0, order.remainingTotal ?? 0), order.currency)}
-                  </div>
+                <div className={`rounded-lg border px-2.5 py-1.5 ${(order.remainingTotal ?? 0) > 0 ? 'border-red-100 bg-red-50/60' : 'border-green-100 bg-green-50/80'}`}>
+                  <div className={`text-[9px] font-semibold uppercase ${(order.remainingTotal ?? 0) > 0 ? 'text-red-600' : 'text-green-600'}`}>Kalan</div>
+                  <div className={`text-sm font-semibold tabular-nums ${(order.remainingTotal ?? 0) > 0 ? 'text-red-800' : 'text-green-800'}`}>{formatMoney(Math.max(0, order.remainingTotal ?? 0), order.currency)}</div>
                 </div>
               </div>
 
@@ -1231,19 +1036,19 @@ export default function OrderDetailPage() {
                   <table className="w-full text-xs">
                     <thead>
                       <tr className="bg-gray-50 text-left text-gray-500 uppercase text-[10px] font-semibold">
-                        <th className="px-3 py-2">Tarih</th>
-                        <th className="px-3 py-2">Yöntem</th>
-                        <th className="px-3 py-2">Açıklama / Ref</th>
-                        <th className="px-3 py-2">Kaydeden</th>
-                        <th className="px-3 py-2 text-right">Tutar</th>
-                        {canDeletePayment ? <th className="px-3 py-2 w-10" /> : null}
+                        <th className="px-2 py-1.5">Tarih</th>
+                        <th className="px-2 py-1.5">Yöntem</th>
+                        <th className="px-2 py-1.5">Açıklama / Ref</th>
+                        <th className="px-2 py-1.5">Kaydeden</th>
+                        <th className="px-2 py-1.5 text-right">Tutar</th>
+                        {canDeletePayment ? <th className="px-2 py-1.5 w-10" /> : null}
                       </tr>
                     </thead>
                     <tbody>
                       {order.payments.map((p) => (
                         <tr key={p.id} className="border-t border-gray-50">
-                          <td className="px-3 py-2 whitespace-nowrap text-gray-700">{formatDateTime(p.occurredAt)}</td>
-                          <td className="px-3 py-2">
+                          <td className="px-2 py-1.5 whitespace-nowrap text-gray-700">{formatDateTime(p.occurredAt)}</td>
+                          <td className="px-2 py-1.5">
                             <span
                               className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-medium ${
                                 p.direction === 'INCOME'
@@ -1256,15 +1061,15 @@ export default function OrderDetailPage() {
                               {p.direction === 'EXPENSE' ? ' · İade' : ''}
                             </span>
                           </td>
-                          <td className="px-3 py-2 text-gray-700">
+                          <td className="px-2 py-1.5 text-gray-700">
                             <div>{p.description}</div>
                             {p.reference ? (
                               <div className="text-[11px] text-gray-400">Ref: {p.reference}</div>
                             ) : null}
                           </td>
-                          <td className="px-3 py-2 text-gray-600">{p.user?.name ?? '—'}</td>
+                          <td className="px-2 py-1.5 text-gray-600">{p.user?.name ?? '—'}</td>
                           <td
-                            className={`px-3 py-2 text-right tabular-nums font-semibold ${
+                            className={`px-2 py-1.5 text-right tabular-nums font-semibold ${
                               p.direction === 'INCOME' ? 'text-green-700' : 'text-amber-700'
                             }`}
                           >
@@ -1272,7 +1077,7 @@ export default function OrderDetailPage() {
                             {formatMoney(p.amount, order.currency)}
                           </td>
                           {canDeletePayment ? (
-                            <td className="px-3 py-2 text-right">
+                            <td className="px-2 py-1.5 text-right">
                               <button
                                 type="button"
                                 disabled={paymentDeletingId === p.id}
@@ -1299,267 +1104,225 @@ export default function OrderDetailPage() {
               </div>
             </div>
 
-            <div className="rounded-xl border border-teal-100 bg-white overflow-hidden shadow-sm">
-              <div className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-teal-50 to-teal-50/40 border-b border-teal-100">
-                <Calendar className="w-4 h-4 text-teal-700" />
-                <h3 className="text-xs font-bold text-teal-900 uppercase tracking-wide">Sipariş Notları ve Teslimat</h3>
-              </div>
-              <div className="p-4 space-y-3">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <label className="text-[11px] font-semibold text-gray-500 uppercase">Planlanan teslim</label>
-                  <input
-                    type="date"
-                    value={expectedDeliveryDraft}
-                    onChange={(e) => setExpectedDeliveryDraft(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm"
-                  />
+            <div className="rounded-xl border border-gray-100 bg-white overflow-hidden shadow-sm">
+              <div className="flex items-center justify-between gap-2 px-3 py-1.5 bg-gray-50/60 border-b border-gray-100">
+                <div className="flex items-center gap-1.5">
+                  <Calendar className="w-3 h-3 text-teal-600" />
+                  <h3 className="text-[10px] font-bold text-gray-700 uppercase tracking-wide">Notlar & Teslimat</h3>
                 </div>
-                <div className="space-y-1">
-                  <label className="text-[11px] font-semibold text-gray-500 uppercase">Sevk adresi</label>
-                  <textarea
-                    value={shippingDraft}
-                    onChange={(e) => setShippingDraft(e.target.value)}
-                    rows={2}
-                    placeholder="Sevk adresi"
-                    className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm"
-                  />
+                <button
+                  type="button"
+                  disabled={metaSaving || statusSaving}
+                  onClick={() => void saveOrderMeta()}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-gray-900 text-white text-[10px]"
+                >
+                  {metaSaving ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
+                  Kaydet
+                </button>
+              </div>
+              <div className="p-2.5 space-y-2">
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="space-y-0.5">
+                    <label className="text-[9px] font-semibold text-gray-400 uppercase">Teslim tarihi</label>
+                    <input
+                      type="date"
+                      value={expectedDeliveryDraft}
+                      onChange={(e) => setExpectedDeliveryDraft(e.target.value)}
+                      className="w-full px-2 py-1 rounded border border-gray-200 text-[11px]"
+                    />
+                  </div>
+                  <div className="space-y-0.5">
+                    <label className="text-[9px] font-semibold text-gray-400 uppercase">Sevk adresi</label>
+                    <textarea
+                      value={shippingDraft}
+                      onChange={(e) => setShippingDraft(e.target.value)}
+                      rows={1}
+                      placeholder="Sevk adresi"
+                      className="w-full px-2 py-1 rounded border border-gray-200 text-[11px]"
+                    />
+                  </div>
+                  <div className="space-y-0.5">
+                    <label className="text-[9px] font-semibold text-gray-400 uppercase">Notlar</label>
+                    <textarea
+                      value={notesDraft}
+                      onChange={(e) => setNotesDraft(e.target.value)}
+                      rows={1}
+                      placeholder="Not"
+                      className="w-full px-2 py-1 rounded border border-gray-200 text-[11px]"
+                    />
+                  </div>
                 </div>
-              </div>
-              <div className="space-y-1">
-                <label className="text-[11px] font-semibold text-gray-500 uppercase">Notlar</label>
-                <textarea
-                  value={notesDraft}
-                  onChange={(e) => setNotesDraft(e.target.value)}
-                  rows={3}
-                  placeholder="Siparişle ilgili notlar"
-                  className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm"
-                />
-              </div>
-              <button
-                type="button"
-                disabled={metaSaving || statusSaving}
-                onClick={() => void saveOrderMeta()}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-gray-900 text-white text-sm"
-              >
-                {metaSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-                Bilgileri kaydet
-              </button>
               </div>
             </div>
 
-            <aside className="space-y-4">
-                <div className="rounded-xl border border-blue-100 bg-white overflow-hidden shadow-sm">
-                  <div className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-blue-50 to-blue-50/40 border-b border-blue-100">
-                    <Package className="w-4 h-4 text-blue-700" />
-                    <h3 className="text-xs font-bold text-blue-900 uppercase tracking-wide">Sipariş Bilgileri</h3>
-                  </div>
-                  <div className="p-4 space-y-3">
-                    <div className="space-y-1">
-                      <label htmlFor="order-status" className="text-[11px] font-semibold text-gray-500 uppercase">Durum</label>
-                      <select
-                        id="order-status"
-                        value={order.status}
-                        disabled={statusSaving}
-                        onChange={(e) => void patchStatus(e.target.value as OrderStatus)}
-                        className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm bg-white"
-                      >
-                        {(Object.keys(STATUS_LABELS) as OrderStatus[]).map((s) => (
-                          <option key={s} value={s}>{STATUS_LABELS[s]}</option>
-                        ))}
-                      </select>
+            {order.siteOrderData ? (
+              <SiteOrderDetailsPanel data={order.siteOrderData} />
+            ) : null}
+            </div>
+
+            <aside className="order-1 xl:order-2 xl:col-span-4 xl:sticky xl:top-4 xl:self-start xl:max-h-[calc(100vh-6rem)] xl:overflow-y-auto space-y-2.5 min-w-0">
+                {/* Siparis + Ozet */}
+                <div className="rounded-xl border border-gray-200 bg-white overflow-hidden shadow-sm">
+                  <div className="px-3 py-2 bg-gray-50/80 border-b border-gray-100 flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5">
+                      <Package className="w-3.5 h-3.5 text-whatsapp" />
+                      <span className="text-[11px] font-bold text-gray-800 uppercase tracking-wide">Sipariş</span>
                     </div>
-                    <dl className="text-xs space-y-1.5">
-                      <div className="flex justify-between gap-2">
-                        <dt className="text-gray-500">Sipariş no</dt>
-                        <dd className="font-mono font-semibold text-gray-900">{formatOrderNo(order.orderNumber)}</dd>
-                      </div>
-                      <div className="flex justify-between gap-2">
-                        <dt className="text-gray-500">Oluşturulma</dt>
-                        <dd className="text-gray-700">{formatDateTime(order.createdAt)}</dd>
-                      </div>
+                    <span className="text-[10px] text-gray-400">{formatDateTime(order.createdAt)}</span>
+                  </div>
+                  <div className="p-3 space-y-2.5">
+                    <select
+                      id="order-status"
+                      value={order.status}
+                      disabled={statusSaving}
+                      onChange={(e) => void patchStatus(e.target.value as OrderStatus)}
+                      className="w-full px-2.5 py-1.5 rounded-lg border border-gray-200 text-xs bg-white font-medium"
+                    >
+                      {(Object.keys(STATUS_LABELS) as OrderStatus[]).map((s) => (
+                        <option key={s} value={s}>{STATUS_LABELS[s]}</option>
+                      ))}
+                    </select>
+                    <dl className="text-[11px] space-y-1">
                       {order.expectedDeliveryDate ? (
                         <div className="flex justify-between gap-2">
-                          <dt className="text-gray-500">Planlanan teslim</dt>
+                          <dt className="text-gray-400">Teslim</dt>
                           <dd className="text-gray-700">{new Date(order.expectedDeliveryDate).toLocaleDateString('tr-TR')}</dd>
                         </div>
                       ) : null}
                       {order.quote ? (
                         <div className="flex justify-between gap-2">
-                          <dt className="text-gray-500">Teklif</dt>
+                          <dt className="text-gray-400">Teklif</dt>
                           <dd className="font-mono font-medium text-gray-700">{formatQuoteNo(order.quote.quoteNumber)}</dd>
                         </div>
                       ) : null}
                       {order.createdBy?.name ? (
                         <div className="flex justify-between gap-2">
-                          <dt className="text-gray-500">Oluşturan</dt>
+                          <dt className="text-gray-400">Oluşturan</dt>
                           <dd className="text-gray-700">{order.createdBy.name}</dd>
                         </div>
                       ) : null}
                     </dl>
-                  </div>
-                </div>
-
-                <div className="rounded-xl border border-whatsapp/30 bg-white overflow-hidden shadow-sm">
-                  <div className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-whatsapp/10 to-whatsapp/5 border-b border-whatsapp/20">
-                    <Wallet className="w-4 h-4 text-whatsapp" />
-                    <h3 className="text-xs font-bold text-green-900 uppercase tracking-wide">Sipariş Özeti</h3>
-                  </div>
-                  <div className="p-4 space-y-1.5">
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-500">Ara toplam</span>
-                      <span className="tabular-nums font-medium text-gray-800">{formatMoney(order.subtotal ?? 0, order.currency)}</span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-500">KDV</span>
-                      <span className="tabular-nums font-medium text-gray-800">{formatMoney(order.vatTotal ?? 0, order.currency)}</span>
-                    </div>
-                    <div className="flex justify-between items-baseline pt-2 mt-1 border-t border-gray-100">
-                      <span className="text-sm text-gray-700 font-semibold">Genel toplam</span>
-                      <span className="tabular-nums font-bold text-whatsapp text-lg">{formatMoney(order.grandTotal, order.currency)}</span>
+                    <div className="border-t border-gray-100 pt-2 space-y-0.5">
+                      <div className="flex justify-between text-[11px]">
+                        <span className="text-gray-400">Ara toplam</span>
+                        <span className="tabular-nums text-gray-700">{formatMoney(order.subtotal ?? 0, order.currency)}</span>
+                      </div>
+                      <div className="flex justify-between text-[11px]">
+                        <span className="text-gray-400">KDV</span>
+                        <span className="tabular-nums text-gray-700">{formatMoney(order.vatTotal ?? 0, order.currency)}</span>
+                      </div>
+                      <div className="flex justify-between items-baseline pt-1.5 mt-1 border-t border-gray-100">
+                        <span className="text-xs font-semibold text-gray-700">Toplam</span>
+                        <span className="tabular-nums font-bold text-whatsapp text-base">{formatMoney(order.grandTotal, order.currency)}</span>
+                      </div>
                     </div>
                   </div>
                 </div>
 
-                <div className="rounded-xl border border-purple-100 bg-white overflow-hidden shadow-sm">
-                  <div className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-purple-50 to-purple-50/40 border-b border-purple-100">
-                    <User className="w-4 h-4 text-purple-700" />
-                    <h3 className="text-xs font-bold text-purple-900 uppercase tracking-wide">Müşteri</h3>
+                {/* Musteri + Adresler */}
+                <div className="rounded-xl border border-gray-200 bg-white overflow-hidden shadow-sm">
+                  <div className="px-3 py-2 bg-gray-50/80 border-b border-gray-100 flex items-center gap-1.5">
+                    <User className="w-3.5 h-3.5 text-purple-600" />
+                    <span className="text-[11px] font-bold text-gray-800 uppercase tracking-wide">Müşteri</span>
                   </div>
-                  <div className="p-4 space-y-1.5">
-                    <p className="text-sm font-semibold text-gray-900">{contactDisplayName(order.contact)}</p>
-                    <p className="text-xs text-gray-500">{formatPhone(order.contact.phone)}</p>
-                    {order.contact.company ? (
-                      <p className="text-xs text-gray-700">{order.contact.company}</p>
-                    ) : null}
-                    {order.contact.email ? (
-                      <p className="text-xs text-gray-600 break-all">{order.contact.email}</p>
-                    ) : null}
+                  <div className="p-3 space-y-1">
+                    <p className="text-xs font-semibold text-gray-900">{contactDisplayName(order.contact)}</p>
+                    <p className="text-[11px] text-gray-500">{formatPhone(order.contact.phone)}</p>
+                    {order.contact.company ? <p className="text-[11px] text-gray-600">{order.contact.company}</p> : null}
+                    {order.contact.email ? <p className="text-[11px] text-gray-500 break-all">{order.contact.email}</p> : null}
                     {order.contact.taxOffice || order.contact.taxNumber ? (
-                      <p className="text-xs text-gray-600 pt-1 border-t border-gray-50">
-                        <span className="text-gray-400">VD:</span> {order.contact.taxOffice || '—'} · <span className="text-gray-400">VN:</span> {order.contact.taxNumber || '—'}
+                      <p className="text-[11px] text-gray-500 pt-1 border-t border-gray-50">
+                        VD: {order.contact.taxOffice || '—'} · VN: {order.contact.taxNumber || '—'}
                       </p>
+                    ) : null}
+                    {order.contact.billingAddress ? (
+                      <div className="pt-1.5 border-t border-gray-50">
+                        <p className="text-[9px] font-semibold text-gray-400 uppercase">Fatura adresi</p>
+                        <p className="text-[11px] text-gray-600 whitespace-pre-wrap leading-snug">{order.contact.billingAddress}</p>
+                      </div>
+                    ) : null}
+                    {order.shippingAddress ? (
+                      <div className="pt-1">
+                        <p className="text-[9px] font-semibold text-gray-400 uppercase">Sevk adresi</p>
+                        <p className="text-[11px] text-gray-600 whitespace-pre-wrap leading-snug">{order.shippingAddress}</p>
+                      </div>
                     ) : null}
                   </div>
                 </div>
 
-                {order.contact.billingAddress || order.shippingAddress ? (
-                  <div className="rounded-xl border border-slate-200 bg-white overflow-hidden shadow-sm">
-                    <div className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-slate-50 to-slate-50/40 border-b border-slate-200">
-                      <MapPin className="w-4 h-4 text-slate-700" />
-                      <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wide">Adresler</h3>
+                {/* PDF + E-ticaret */}
+                <div className="rounded-xl border border-gray-200 bg-white overflow-hidden shadow-sm">
+                  <div className="px-3 py-2 bg-gray-50/80 border-b border-gray-100 flex items-center justify-between">
+                    <div className="flex items-center gap-1.5">
+                      <FileText className="w-3.5 h-3.5 text-gray-500" />
+                      <span className="text-[11px] font-bold text-gray-800 uppercase tracking-wide">Doküman</span>
                     </div>
-                    <div className="p-4 space-y-2.5">
-                      {order.contact.billingAddress ? (
-                        <div>
-                          <p className="text-[10px] font-semibold text-gray-400 uppercase mb-0.5">Fatura</p>
-                          <p className="text-xs text-gray-700 whitespace-pre-wrap leading-relaxed">{order.contact.billingAddress}</p>
-                        </div>
-                      ) : null}
-                      {order.shippingAddress ? (
-                        <div>
-                          <p className="text-[10px] font-semibold text-gray-400 uppercase mb-0.5">Sevk</p>
-                          <p className="text-xs text-gray-700 whitespace-pre-wrap leading-relaxed">{order.shippingAddress}</p>
-                        </div>
+                    <div className="flex items-center gap-1.5">
+                      {order.confirmationPdfUrl ? (
+                        <a
+                          href={`${backendPublicUrl()}${order.confirmationPdfUrl}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-[11px] font-medium text-whatsapp hover:underline"
+                        >
+                          <ExternalLink className="w-3 h-3" />
+                          PDF
+                        </a>
+                      ) : (
+                        <span className="text-[10px] text-amber-600">PDF yok</span>
+                      )}
+                      {canRegenerateOrderPdf ? (
+                        <button
+                          type="button"
+                          disabled={pdfRegenLoading}
+                          onClick={() => void regenerateOrderPdf()}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded border border-gray-200 text-[10px] font-medium text-gray-600 hover:bg-gray-50"
+                        >
+                          {pdfRegenLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <FileText className="w-3 h-3" />}
+                          Yenile
+                        </button>
                       ) : null}
                     </div>
                   </div>
-                ) : null}
-
-                {order.source === 'TSOFT' || order.externalId || order.tsoftSiteOrderId || order.pushToTsoft ? (
-                  <div className="rounded-xl border border-amber-200 bg-white overflow-hidden shadow-sm">
-                    <div className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-amber-50 to-amber-50/40 border-b border-amber-200">
-                      <Store className="w-4 h-4 text-amber-700" />
-                      <h3 className="text-xs font-bold text-amber-900 uppercase tracking-wide">E-ticaret / T-Soft</h3>
-                    </div>
-                    <div className="p-4 space-y-1">
-                      <p className="text-xs text-gray-700">
-                        <span className="text-gray-500">Kaynak:</span>{' '}
-                        <span className="font-medium">{order.source || 'MANUAL'}</span>
+                  {order.source === 'TSOFT' || order.externalId || order.tsoftSiteOrderId || order.pushToTsoft ? (
+                    <div className="px-3 py-2 text-[11px] space-y-0.5">
+                      <p className="text-gray-600">
+                        <span className="text-gray-400">Kaynak:</span> <span className="font-medium">{order.source || 'MANUAL'}</span>
+                        {order.tsoftSiteOrderId ? <span className="ml-2 text-gray-400">OrderId: <span className="font-mono">{order.tsoftSiteOrderId}</span></span> : null}
                       </p>
-                      {order.tsoftSiteOrderId ? (
-                        <p className="text-xs font-mono text-gray-700">
-                          <span className="text-gray-500 font-sans">Site OrderId:</span> {order.tsoftSiteOrderId}
-                        </p>
-                      ) : null}
-                      {order.externalId ? (
-                        <p className="text-xs font-mono break-all text-gray-700">
-                          <span className="text-gray-500 font-sans">Harici ID:</span> {order.externalId}
-                        </p>
-                      ) : null}
-                      {order.tsoftPushedAt ? (
-                        <p className="text-xs text-emerald-700">İtildi: {formatDateTime(order.tsoftPushedAt)}</p>
-                      ) : null}
-                      {order.tsoftLastError ? (
-                        <p className="text-[11px] text-red-700 whitespace-pre-wrap break-words">{order.tsoftLastError}</p>
-                      ) : null}
+                      {order.externalId ? <p className="font-mono text-gray-500 break-all text-[10px]">{order.externalId}</p> : null}
+                      {order.tsoftPushedAt ? <p className="text-emerald-600">İtildi: {formatDateTime(order.tsoftPushedAt)}</p> : null}
+                      {order.tsoftLastError ? <p className="text-red-600 text-[10px] break-words">{order.tsoftLastError}</p> : null}
                     </div>
-                  </div>
-                ) : null}
-
-                <div className="rounded-xl border border-rose-100 bg-white overflow-hidden shadow-sm">
-                  <div className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-rose-50 to-rose-50/40 border-b border-rose-100">
-                    <FileText className="w-4 h-4 text-rose-700" />
-                    <h3 className="text-xs font-bold text-rose-900 uppercase tracking-wide">Sipariş Onay PDF’i</h3>
-                  </div>
-                  <div className="p-4 flex flex-wrap items-center gap-2">
-                    {order.confirmationPdfUrl ? (
-                      <a
-                        href={`${backendPublicUrl()}${order.confirmationPdfUrl}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1.5 text-sm font-medium text-whatsapp hover:underline"
-                      >
-                        <ExternalLink className="w-4 h-4" />
-                        PDF’yi aç
-                      </a>
-                    ) : (
-                      <span className="text-xs text-amber-700">Henüz PDF yok.</span>
-                    )}
-                    {canRegenerateOrderPdf ? (
-                      <button
-                        type="button"
-                        disabled={pdfRegenLoading}
-                        onClick={() => void regenerateOrderPdf()}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 text-xs font-medium text-gray-700"
-                      >
-                        {pdfRegenLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />}
-                        PDF yenile
-                      </button>
-                    ) : null}
-                  </div>
+                  ) : null}
                 </div>
               </aside>
-
-            {order.siteOrderData ? (
-              <SiteOrderDetailsPanel data={order.siteOrderData} />
-            ) : null}
           </div>
 
-          <div className="px-5 py-4 border-t border-gray-100 bg-gray-50/40 flex flex-col sm:flex-row gap-2 sm:justify-end">
+          <div className="px-3 py-2 sm:px-4 border-t border-gray-100 bg-gray-50/40 flex items-center gap-2 justify-end flex-wrap">
             {canDeleteOrder && (order.status === 'AWAITING_PAYMENT' || order.status === 'AWAITING_CHECKOUT') && !order.invoice ? (
               <button
                 type="button"
                 onClick={() => void removeOrder()}
-                className="inline-flex items-center px-4 py-2.5 rounded-xl border border-red-200 bg-red-50 text-sm font-medium text-red-700 sm:mr-auto gap-2"
+                className="inline-flex items-center px-3 py-1.5 rounded-lg border border-red-200 bg-red-50 text-xs font-medium text-red-700 mr-auto gap-1.5"
               >
-                <Trash2 className="w-4 h-4" />
-                Siparişi sil
+                <Trash2 className="w-3.5 h-3.5" />
+                Sil
               </button>
             ) : null}
             <input
               type="date"
               value={invoiceDueDraft}
               onChange={(e) => setInvoiceDueDraft(e.target.value)}
-              className="px-3 py-2 rounded-xl border border-gray-200 text-sm"
+              className="px-2.5 py-1.5 rounded-lg border border-gray-200 text-xs"
             />
             <button
               type="button"
               disabled={invoiceSaving || order.status === 'CANCELLED'}
               onClick={() => void createInvoiceFromOrder()}
-              className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-whatsapp text-white text-sm font-medium disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-whatsapp text-white text-xs font-medium disabled:opacity-50"
             >
-              {invoiceSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
+              {invoiceSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />}
               Muhasebeye Gönder
             </button>
           </div>
