@@ -57,6 +57,7 @@ interface SalesOrder {
   tsoftSiteOrderId?: string | null;
   tsoftPushedAt?: string | null;
   tsoftLastError?: string | null;
+  siteOrderData?: Record<string, unknown> | null;
   invoice?: { id: string } | null;
   createdBy?: { id: string; name: string | null } | null;
   contact: {
@@ -66,10 +67,50 @@ interface SalesOrder {
     phone: string;
     email: string | null;
     company: string | null;
+    address?: string | null;
   };
   quote: { id: string; quoteNumber: number } | null;
   items: OrderItemRow[];
   confirmationPdfUrl?: string | null;
+}
+
+const TSOFT_LOGO_URL = 'https://panel.tsoftstatic.com/images/logo/logo.svg';
+
+function siteField(o: SalesOrder, ...keys: string[]): string {
+  const d = o.siteOrderData;
+  if (!d || typeof d !== 'object') return '';
+  for (const k of keys) {
+    const v = (d as Record<string, unknown>)[k];
+    if (v != null && String(v).trim()) return String(v).trim();
+  }
+  return '';
+}
+
+function cityFor(o: SalesOrder): string {
+  const c = siteField(o, 'DeliveryCity', 'InvoiceCity');
+  if (c) return c;
+  return '';
+}
+
+function paymentTypeFor(o: SalesOrder): string {
+  const p = siteField(o, 'PaymentType', 'PaymentInfo');
+  if (p) return p;
+  return o.source === 'TSOFT' ? '—' : 'Manuel';
+}
+
+function cargoFor(o: SalesOrder): string {
+  return siteField(o, 'Cargo') || '—';
+}
+
+function packagingFor(o: SalesOrder): string {
+  const p = siteField(o, 'PackageStatus', 'PackageStatusLabel', 'PackagingStatus');
+  if (p) return p;
+  if (o.status === 'SHIPPED' || o.status === 'DELIVERED') return 'Paketlendi';
+  return '—';
+}
+
+function isTsoftOrder(o: SalesOrder) {
+  return o.source === 'TSOFT' || (o.externalId?.startsWith('tsoft_') ?? false);
 }
 
 const LIMIT = 20;
@@ -93,10 +134,6 @@ const STATUS_LABELS: Record<OrderStatus, string> = {
 
 function formatOrderNo(n: number) {
   return `SIP-${String(n).padStart(5, '0')}`;
-}
-
-function formatQuoteNo(n: number) {
-  return `TKL-${String(n).padStart(5, '0')}`;
 }
 
 function formatMoney(amount: number, currency: string) {
@@ -331,25 +368,26 @@ export default function OrdersPage() {
 
       <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1080px] text-sm">
+          <table className="w-full min-w-[1280px] text-sm">
             <thead>
-              <tr className="border-b border-gray-100 bg-gray-50/50 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                <th className="px-5 py-3">Sipariş No</th>
-                <th className="px-5 py-3">Kişi</th>
-                <th className="px-5 py-3">Teklif No</th>
-                <th className="px-5 py-3">Durum</th>
-                <th className="px-5 py-3">Para Birimi</th>
-                <th className="px-5 py-3 text-right">Toplam</th>
-                <th className="px-5 py-3">Plan. teslim</th>
-                <th className="px-5 py-3">Sipariş tarihi</th>
-                <th className="px-5 py-3">Temsilci</th>
-                {canDeleteOrder ? <th className="px-5 py-3 w-12" /> : null}
+              <tr className="border-b border-gray-100 bg-gray-50/60 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                <th className="px-3 py-3 w-10" />
+                <th className="px-4 py-3">Sipariş No</th>
+                <th className="px-4 py-3">Üye Adı</th>
+                <th className="px-4 py-3">Tarih</th>
+                <th className="px-4 py-3">Şehir</th>
+                <th className="px-4 py-3 text-right">Tutar</th>
+                <th className="px-4 py-3">Ödeme Tipi</th>
+                <th className="px-4 py-3">Kargo Firması</th>
+                <th className="px-4 py-3">Paketleme Durumu</th>
+                <th className="px-4 py-3">Sipariş Süreci</th>
+                {canDeleteOrder ? <th className="px-3 py-3 w-12" /> : null}
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={canDeleteOrder ? 10 : 9} className="text-center py-16 text-gray-400">
+                  <td colSpan={canDeleteOrder ? 11 : 10} className="text-center py-16 text-gray-400">
                     <div className="flex flex-col items-center gap-2">
                       <Loader2 className="w-8 h-8 animate-spin text-whatsapp" />
                       <span className="text-sm">Yükleniyor…</span>
@@ -358,7 +396,7 @@ export default function OrdersPage() {
                 </tr>
               ) : orders.length === 0 ? (
                 <tr>
-                  <td colSpan={canDeleteOrder ? 10 : 9} className="text-center py-16 text-gray-400 text-sm">
+                  <td colSpan={canDeleteOrder ? 11 : 10} className="text-center py-16 text-gray-400 text-sm">
                     Sipariş bulunamadı
                   </td>
                 </tr>
@@ -377,59 +415,26 @@ export default function OrdersPage() {
                     }}
                     className="border-b border-gray-50 hover:bg-green-50/30 transition-colors cursor-pointer"
                   >
-                    <td className="px-5 py-3 font-mono text-xs font-semibold text-gray-900">
-                      <span className="flex items-center gap-1.5 flex-wrap">
-                        {formatOrderNo(order.orderNumber)}
-                      </span>
+                    <td className="px-3 py-3">
+                      {isTsoftOrder(order) ? (
+                        <img
+                          src={TSOFT_LOGO_URL}
+                          alt="T-Soft"
+                          title="T-Soft mağaza siparişi"
+                          className="w-6 h-6 object-contain"
+                          loading="lazy"
+                        />
+                      ) : null}
+                    </td>
+                    <td className="px-4 py-3 font-mono text-xs font-semibold text-gray-900 whitespace-nowrap">
+                      {formatOrderNo(order.orderNumber)}
                       <PanelEditedBadge at={order.panelEditedAt} />
                     </td>
-                    <td className="px-5 py-3">
+                    <td className="px-4 py-3">
                       <div className="font-medium text-gray-900">{contactDisplayName(order.contact)}</div>
                       <div className="text-xs text-gray-400">{formatPhone(order.contact.phone)}</div>
                     </td>
-                    <td className="px-5 py-3 text-gray-600">
-                      {order.quote ? (
-                        <span className="font-mono text-xs font-medium">{formatQuoteNo(order.quote.quoteNumber)}</span>
-                      ) : (
-                        <span className="text-gray-300">—</span>
-                      )}
-                    </td>
-                    <td className="px-5 py-3">
-                      <div className="flex flex-col gap-1">
-                        <span className={`inline-flex text-[10px] font-semibold px-2.5 py-1 rounded-full w-fit ${statusBadgeClass(order.status)}`}>
-                          {STATUS_LABELS[order.status]}
-                        </span>
-                        {order.tsoftSiteOrderId ? (
-                          <span
-                            className="inline-flex text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 w-fit"
-                            title={`T-Soft sipariş #${order.tsoftSiteOrderId}${order.tsoftPushedAt ? ` • ${new Date(order.tsoftPushedAt).toLocaleString('tr-TR')}` : ''}`}
-                          >
-                            T-Soft ✓
-                          </span>
-                        ) : order.pushToTsoft && order.tsoftLastError ? (
-                          <span
-                            className="inline-flex text-[10px] font-semibold px-2 py-0.5 rounded-full bg-red-50 text-red-700 w-fit"
-                            title={order.tsoftLastError}
-                          >
-                            T-Soft ✕
-                          </span>
-                        ) : order.pushToTsoft ? (
-                          <span className="inline-flex text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 w-fit">
-                            T-Soft kuyrukta…
-                          </span>
-                        ) : null}
-                      </div>
-                    </td>
-                    <td className="px-5 py-3 text-gray-600">{order.currency || 'TRY'}</td>
-                    <td className="px-5 py-3 text-right font-medium text-gray-900 tabular-nums">
-                      {formatMoney(order.grandTotal, order.currency)}
-                    </td>
-                    <td className="px-5 py-3 text-xs text-gray-500 whitespace-nowrap">
-                      {order.expectedDeliveryDate
-                        ? new Date(order.expectedDeliveryDate).toLocaleDateString('tr-TR')
-                        : '—'}
-                    </td>
-                    <td className="px-5 py-3 text-xs text-gray-500 whitespace-nowrap">
+                    <td className="px-4 py-3 text-xs text-gray-600 whitespace-nowrap">
                       {new Date(order.createdAt).toLocaleString('tr-TR', {
                         day: '2-digit',
                         month: '2-digit',
@@ -438,8 +443,35 @@ export default function OrdersPage() {
                         minute: '2-digit',
                       })}
                     </td>
-                    <td className="px-5 py-3 text-xs text-gray-600 whitespace-nowrap">
-                      {order.createdBy?.name || '—'}
+                    <td className="px-4 py-3 text-sm text-gray-700 whitespace-nowrap">
+                      {cityFor(order) || <span className="text-gray-300">—</span>}
+                    </td>
+                    <td className="px-4 py-3 text-right font-semibold text-gray-900 tabular-nums whitespace-nowrap">
+                      {formatMoney(order.grandTotal, order.currency)}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-700 whitespace-nowrap">
+                      {paymentTypeFor(order)}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-700 whitespace-nowrap">
+                      {cargoFor(order)}
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className="inline-flex text-[11px] font-medium px-2.5 py-1 rounded-md bg-gray-100 text-gray-700 whitespace-nowrap">
+                        {packagingFor(order)}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={`inline-flex text-[10px] font-semibold px-2.5 py-1 rounded-full whitespace-nowrap ${statusBadgeClass(order.status)}`}>
+                        {STATUS_LABELS[order.status]}
+                      </span>
+                      {order.pushToTsoft && order.tsoftLastError && !order.tsoftSiteOrderId ? (
+                        <div
+                          className="mt-1 inline-flex text-[10px] font-semibold px-2 py-0.5 rounded-full bg-red-50 text-red-700"
+                          title={order.tsoftLastError}
+                        >
+                          T-Soft ✕
+                        </div>
+                      ) : null}
                     </td>
                     {canDeleteOrder ? (
                       <td className="px-5 py-3 text-right">
