@@ -485,14 +485,18 @@ export class MessagesService implements OnModuleInit {
     const effName = variant
       ? (variant.name.includes(product.name) ? variant.name : `${product.name} — ${variant.name}`)
       : product.name;
-    const unitPrice = Number(variant?.unitPrice ?? product.unitPrice ?? 0);
+    const regularPrice = Number(variant?.unitPrice ?? product.unitPrice ?? 0);
+    const salePrice = Number(variant?.salePriceAmount ?? product.salePriceAmount ?? 0);
+    const hasDiscount = salePrice > 0 && salePrice < regularPrice;
+    const displayPrice = hasDiscount ? salePrice : regularPrice;
     const currency = variant?.currency || product.currency;
     const priceIncludesVat = variant?.priceIncludesVat ?? product.priceIncludesVat;
-    const priceStr = `${unitPrice.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ${currency}`;
-    // Entegrasyon (T-Soft vb.) fiyatları genelde KDV hariç; mesajda +KDV ile göster
-    const priceLine = priceIncludesVat
-      ? `Fiyat (KDV Dahil): ${priceStr}`
-      : `Fiyat: ${priceStr} +KDV`;
+    const fmtPrice = (n: number) => `${n.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ${currency}`;
+    const vatSuffix = priceIncludesVat ? '' : ' +KDV';
+    const vatLabel = priceIncludesVat ? ' (KDV Dahil)' : '';
+    const priceLine = hasDiscount
+      ? `~${fmtPrice(regularPrice)}~ → *${fmtPrice(displayPrice)}${vatSuffix}*`
+      : `Fiyat${vatLabel}: ${fmtPrice(displayPrice)}${vatSuffix}`;
     const siteLink = (product.productUrl || '').trim();
     const caption = [
       effName,

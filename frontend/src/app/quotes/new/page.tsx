@@ -501,7 +501,6 @@ export default function NewQuotePage() {
       imageUrl?: string | null;
     },
   ) => {
-    // İndirimli fiyat varsa onu kullan: KDV hariç, %10 KDV
     const variantSale = variant?.salePriceAmount != null && variant.salePriceAmount > 0
       ? variant.salePriceAmount
       : null;
@@ -510,30 +509,19 @@ export default function NewQuotePage() {
       : null;
     const salePrice = variantSale ?? productSale;
 
-    let effectiveUnitPrice: number;
-    let effectiveVat: number;
-    let effectivePic: boolean;
-
-    if (salePrice != null) {
-      // DiscountedSellingPrice: KDV hariç fiyat, %10 KDV
-      effectiveUnitPrice = salePrice;
-      effectiveVat = 10;
-      effectivePic = false;
-    } else {
-      effectiveUnitPrice = variant ? variant.unitPrice : p.unitPrice;
-      effectiveVat =
-        variant?.vatRate != null && Number.isFinite(Number(variant.vatRate))
-          ? Math.round(Number(variant.vatRate))
-          : p.vatRate != null && Number.isFinite(Number(p.vatRate))
-            ? Math.round(Number(p.vatRate))
-            : 20;
-      effectivePic =
-        variant?.priceIncludesVat !== undefined
-          ? variant.priceIncludesVat
-          : p.priceIncludesVat !== undefined
-            ? p.priceIncludesVat
-            : true;
-    }
+    const effectiveUnitPrice = salePrice ?? (variant ? variant.unitPrice : p.unitPrice);
+    const effectiveVat =
+      variant?.vatRate != null && Number.isFinite(Number(variant.vatRate))
+        ? Math.round(Number(variant.vatRate))
+        : p.vatRate != null && Number.isFinite(Number(p.vatRate))
+          ? Math.round(Number(p.vatRate))
+          : 20;
+    const effectivePic =
+      variant?.priceIncludesVat !== undefined
+        ? variant.priceIncludesVat
+        : p.priceIncludesVat !== undefined
+          ? p.priceIncludesVat
+          : true;
 
     setLines((prev) => [
       ...prev,

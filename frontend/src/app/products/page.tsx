@@ -460,7 +460,16 @@ export default function ProductsPage() {
                         <td className="px-4 py-3 text-gray-600 max-w-[220px] truncate" title={p.category || ''}>
                           {p.category || '—'}
                         </td>
-                        <td className="px-4 py-3 text-gray-700 tabular-nums">{formatMoney(p.unitPrice, p.currency)}</td>
+                        <td className="px-4 py-3 tabular-nums">
+                          {p.salePriceAmount != null && p.salePriceAmount > 0 && p.salePriceAmount < p.unitPrice ? (
+                            <span className="flex flex-col">
+                              <span className="text-green-600 font-medium">{formatMoney(p.salePriceAmount, p.currency)}</span>
+                              <span className="text-gray-400 text-xs line-through">{formatMoney(p.unitPrice, p.currency)}</span>
+                            </span>
+                          ) : (
+                            <span className="text-gray-700">{formatMoney(p.unitPrice, p.currency)}</span>
+                          )}
+                        </td>
                         <td className="px-4 py-3 text-gray-600">{p.currency}</td>
                         <td className="px-4 py-3 text-gray-600">{p.vatRate}</td>
                         <td className="px-4 py-3 text-gray-600 tabular-nums">{p.stock != null ? p.stock : '—'}</td>

@@ -403,8 +403,8 @@ export class TsoftProductSyncService {
     const priceSelling = toNullableNumber(row.SellingPrice ?? row.sellingPrice ?? row.SalePrice);
     const discountedSelling = toNullableNumber(row.DiscountedSellingPrice ?? row.discountedSellingPrice);
     const priceList = toNullableNumber(row.ListPrice ?? row.listPrice);
-    // Satış fiyatı: indirimli (DiscountedSellingPrice) varsa o; yoksa liste/satış
-    const unitPrice = discountedSelling ?? priceSelling ?? priceList ?? 0;
+    // unitPrice = normal satış fiyatı; salePriceAmount = indirimli fiyat (farklıysa)
+    const unitPrice = priceSelling ?? priceList ?? discountedSelling ?? 0;
     const productUrlRaw = pickString(
       row.ProductUrl,
       row.productUrl,
@@ -464,7 +464,9 @@ export class TsoftProductSyncService {
       brand,
       category: categoryName,
       listPrice: flags.includePrice ? priceList : existing?.listPrice ?? null,
-      salePriceAmount: flags.includePrice ? (discountedSelling ?? priceSelling) : existing?.salePriceAmount ?? null,
+      salePriceAmount: flags.includePrice
+        ? (discountedSelling != null && discountedSelling < unitPrice ? discountedSelling : null)
+        : existing?.salePriceAmount ?? null,
       productUrl: productUrlResolved ?? existing?.productUrl ?? null,
     };
 
@@ -536,11 +538,12 @@ export class TsoftProductSyncService {
       const vSellingPrice = toNullableNumber(v.SellingPrice ?? v.sellingPrice ?? v.SalePrice);
       const vDiscountedPrice = toNullableNumber(v.DiscountedSellingPrice ?? v.discountedSellingPrice);
       const vList = toNullableNumber(v.ListPrice ?? v.listPrice);
-      // Birim fiyat: önce alt ürün indirimli, yoksa ana ürünün indirimli, sonra satış/liste
-      const parentDiscounted = toNullableNumber(row.DiscountedSellingPrice ?? row.discountedSellingPrice);
       const parentSelling = toNullableNumber(row.SellingPrice ?? row.sellingPrice ?? row.SalePrice);
-      const vUnitPrice = vDiscountedPrice ?? parentDiscounted ?? vSellingPrice ?? parentSelling ?? vList ?? 0;
-      const vSale = vDiscountedPrice ?? parentDiscounted ?? vSellingPrice;
+      const parentDiscounted = toNullableNumber(row.DiscountedSellingPrice ?? row.discountedSellingPrice);
+      // unitPrice = normal satış fiyatı; salePriceAmount = indirimli fiyat (farklıysa)
+      const vUnitPrice = vSellingPrice ?? parentSelling ?? vList ?? vDiscountedPrice ?? parentDiscounted ?? 0;
+      const effectiveDiscounted = vDiscountedPrice ?? parentDiscounted;
+      const vSale = (effectiveDiscounted != null && effectiveDiscounted < vUnitPrice) ? effectiveDiscounted : null;
       const vStock = flags.includeStock
         ? toNullableInt(v.Stock ?? v.stock)
         : null;
