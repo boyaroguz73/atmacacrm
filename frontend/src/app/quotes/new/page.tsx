@@ -31,8 +31,6 @@ function stripHtmlEmpty(html: string | undefined): string | undefined {
 
 type DiscountType = 'PERCENT' | 'AMOUNT';
 
-/** Satır başına KDV oranı seçenekleri */
-const LINE_VAT_OPTIONS = [0, 1, 10, 20] as const;
 
 type BillingFields = {
   company: string;
@@ -1215,8 +1213,7 @@ export default function NewQuotePage() {
                     <th className="text-left px-2 py-2 w-[14%]">Renk/Kumaş</th>
                     <th className="text-left px-2 py-2 w-[12%]">Ölçü</th>
                     <th className="text-left px-2 py-2 w-14">Miktar</th>
-                    <th className="text-left px-2 py-2 w-16">KDV %</th>
-                    <th className="text-left px-2 py-2 w-[7.5rem]">Birim fiyat</th>
+                    <th className="text-left px-2 py-2 w-28">Birim fiyat</th>
                     <th className="text-right px-3 py-2 w-28">Satır (KDV dahil)</th>
                     <th className="w-10" />
                   </tr>
@@ -1307,36 +1304,7 @@ export default function NewQuotePage() {
                         />
                       </td>
                       <td className="px-2 py-2">
-                        <select
-                          value={line.vatRate}
-                          onChange={(e) =>
-                            updateLine(line.key, { vatRate: parseInt(e.target.value, 10) || 0 })
-                          }
-                          className="w-full px-1.5 py-1.5 border border-gray-200 rounded-lg text-[11px] font-medium bg-white tabular-nums"
-                        >
-                          {Array.from(new Set([...LINE_VAT_OPTIONS, line.vatRate]))
-                            .sort((a, b) => a - b)
-                            .map((v) => (
-                              <option key={v} value={v}>
-                                %{v}
-                              </option>
-                            ))}
-                        </select>
-                      </td>
-                      <td className="px-2 py-2">
                         <div className="flex flex-col gap-1">
-                          <select
-                            value={line.priceIncludesVat ? 'incl' : 'excl'}
-                            onChange={(e) =>
-                              updateLine(line.key, {
-                                priceIncludesVat: e.target.value === 'incl',
-                              })
-                            }
-                            className="w-full px-1.5 py-1 border border-gray-200 rounded-lg text-[10px] font-medium bg-white"
-                          >
-                            <option value="incl">KDV dahil</option>
-                            <option value="excl">KDV hariç</option>
-                          </select>
                           <input
                             type="number"
                             min={0}
@@ -1347,6 +1315,9 @@ export default function NewQuotePage() {
                             }
                             className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm tabular-nums"
                           />
+                          <span className="text-[10px] text-gray-400 px-0.5">
+                            {line.priceIncludesVat ? 'KDV dahil' : 'KDV hariç'} · %{line.vatRate}
+                          </span>
                         </div>
                       </td>
                       <td className="px-3 py-2 text-right text-sm font-semibold text-gray-800 tabular-nums">

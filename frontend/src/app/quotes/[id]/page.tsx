@@ -56,7 +56,6 @@ type PaymentModeUI = 'FULL' | 'DEPOSIT_50' | 'CUSTOM';
 type DiscountType = 'PERCENT' | 'AMOUNT';
 type OrderPaymentModeUI = 'FULL' | 'DEPOSIT_50' | 'CUSTOM';
 
-const LINE_VAT_OPTIONS = [0, 1, 10, 20] as const;
 
 interface LocalLineItem {
   key: string;
@@ -773,7 +772,7 @@ export default function QuoteDetailPage() {
                       <th className="text-left px-2 py-2 w-[12%]">Renk/Kumaş</th>
                       <th className="text-left px-2 py-2 w-[10%]">Ölçü</th>
                       <th className="text-left px-2 py-2 w-16">Miktar</th>
-                      <th className="text-left px-2 py-2 w-28">Birim (KDV dahil)</th>
+                      <th className="text-left px-2 py-2 w-28">Birim fiyat</th>
                       <th className="text-left px-2 py-2 w-40">Satır indirimi</th>
                       <th className="text-right px-3 py-2 w-24">Satır Toplamı</th>
                       <th className="w-10" />
@@ -863,16 +862,21 @@ export default function QuoteDetailPage() {
                           />
                         </td>
                         <td className="px-2 py-2">
-                          <input
-                            type="number"
-                            min={0}
-                            step={0.01}
-                            value={line.unitPrice}
-                            onChange={(e) =>
-                              updateLine(line.key, { unitPrice: parseFloat(e.target.value) || 0 })
-                            }
-                          className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm tabular-nums"
-                          />
+                          <div className="flex flex-col gap-1">
+                            <input
+                              type="number"
+                              min={0}
+                              step={0.01}
+                              value={line.unitPrice}
+                              onChange={(e) =>
+                                updateLine(line.key, { unitPrice: parseFloat(e.target.value) || 0 })
+                              }
+                              className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm tabular-nums"
+                            />
+                            <span className="text-[10px] text-gray-400 px-0.5">
+                              {line.priceIncludesVat ? 'KDV dahil' : 'KDV hariç'} · %{line.vatRate}
+                            </span>
+                          </div>
                         </td>
                         <td className="px-2 py-2">
                         <div className="flex flex-col gap-1.5 min-w-0">
@@ -1413,8 +1417,7 @@ export default function QuoteDetailPage() {
                     <th className="text-left px-4 py-3">Renk/Kumaş</th>
                     <th className="text-left px-4 py-3">Ölçü</th>
                     <th className="text-right px-4 py-3">Miktar</th>
-                    <th className="text-right px-4 py-3">Birim (KDV dahil)</th>
-                    <th className="text-right px-4 py-3">KDV %</th>
+                    <th className="text-right px-4 py-3">Birim fiyat</th>
                     <th className="text-right px-4 py-3">İndirim</th>
                     <th className="text-right px-4 py-3">Toplam</th>
                   </tr>
@@ -1449,8 +1452,12 @@ export default function QuoteDetailPage() {
                         {item.measurementInfo || '—'}
                       </td>
                       <td className="px-4 py-2.5 text-right">{item.quantity}</td>
-                      <td className="px-4 py-2.5 text-right">{fmt(item.unitPrice)}</td>
-                      <td className="px-4 py-2.5 text-right">%{item.vatRate}</td>
+                      <td className="px-4 py-2.5 text-right">
+                        <div>{fmt(item.unitPrice)}</div>
+                        <div className="text-[10px] text-gray-400">
+                          {item.priceIncludesVat ? 'KDV dahil' : 'KDV hariç'} · %{item.vatRate}
+                        </div>
+                      </td>
                       <td className="px-4 py-2.5 text-right text-gray-500">
                         {item.discountValue
                           ? item.discountType === 'AMOUNT'
