@@ -1091,6 +1091,7 @@ function TsoftPanel({ integration }: { integration: Integration }) {
   const [testing, setTesting] = useState(false);
   const [syncingCustomers, setSyncingCustomers] = useState(false);
   const [syncingProducts, setSyncingProducts] = useState(false);
+  const [productSyncPeriod, setProductSyncPeriod] = useState<string>('all');
   const [syncingOrders, setSyncingOrders] = useState(false);
   const [diagnosing, setDiagnosing] = useState(false);
   const [diagnoseOut, setDiagnoseOut] = useState<string | null>(null);
@@ -1179,8 +1180,8 @@ function TsoftPanel({ integration }: { integration: Integration }) {
     try {
       const { data } = await api.post(
         '/ecommerce/tsoft/sync-products',
-        {},
-        { timeout: 180_000 },
+        { period: productSyncPeriod },
+        { timeout: 300_000 },
       );
       toast.success(
         `Ürün: ${data?.upsertedProducts ?? 0} · Varyant: ${data?.upsertedVariants ?? 0}`,
@@ -1339,19 +1340,33 @@ function TsoftPanel({ integration }: { integration: Integration }) {
             secondary={`Varyant: ${status?.variants.active ?? 0}/${status?.variants.total ?? 0}`}
             footer={`Son çekim: ${formatRelative(status?.products.lastPulledAt ?? null)}`}
             action={
-              <button
-                type="button"
-                onClick={handleSyncProducts}
-                disabled={syncingProducts}
-                className="text-[11px] font-medium text-orange-700 hover:text-orange-800 disabled:opacity-50 flex items-center gap-1"
-              >
-                {syncingProducts ? (
-                  <Loader2 className="w-3 h-3 animate-spin" />
-                ) : (
-                  <RefreshCw className="w-3 h-3" />
-                )}
-                Şimdi çek
-              </button>
+              <div className="flex items-center gap-1">
+                <select
+                  value={productSyncPeriod}
+                  onChange={(e) => setProductSyncPeriod(e.target.value)}
+                  disabled={syncingProducts}
+                  className="text-[10px] font-medium text-orange-700 bg-transparent border-none focus:ring-0 p-0 pr-3 cursor-pointer disabled:opacity-50"
+                >
+                  <option value="all">Tümü</option>
+                  <option value="7d">7 gün</option>
+                  <option value="30d">30 gün</option>
+                  <option value="90d">90 gün</option>
+                  <option value="1y">1 yıl</option>
+                </select>
+                <button
+                  type="button"
+                  onClick={handleSyncProducts}
+                  disabled={syncingProducts}
+                  className="text-[11px] font-medium text-orange-700 hover:text-orange-800 disabled:opacity-50 flex items-center gap-1"
+                >
+                  {syncingProducts ? (
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                  ) : (
+                    <RefreshCw className="w-3 h-3" />
+                  )}
+                  Çek
+                </button>
+              </div>
             }
           />
           <StatusCard

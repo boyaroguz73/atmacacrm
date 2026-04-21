@@ -590,23 +590,39 @@ export class TsoftApiService {
 
   /**
    * Pagination ile tüm ürünleri çeker. `opts.detailed=true` ise FetchDetails/FetchSubProducts/FetchImageUrls açılır.
-   * Başarısız sayfada erken çıkmak yerine sweep için tam listeyi döndürmeyi hedefler; 429'da throw eder.
+   * `opts.period` ile tarih filtresi uygulanabilir: 'all' (sınırsız), '7d', '30d', '90d', '1y'.
    * `opts.pageSize` varsayılanı 50 (T-Soft rate limit dostu).
    */
   async fetchAllProducts(
     organizationId: string,
-    opts: { maxPages?: number; pageSize?: number; detailed?: boolean; delayMs?: number } = {},
+    opts: { maxPages?: number; pageSize?: number; detailed?: boolean; delayMs?: number; period?: string } = {},
   ): Promise<Record<string, unknown>[]> {
-    const maxPages = opts.maxPages ?? 200;
+    const isAll = opts.period === 'all' || !opts.period;
+    const maxPages = isAll ? 9999 : (opts.maxPages ?? 200);
     const limit = opts.pageSize ?? 50;
     const delayMs = opts.delayMs ?? 200;
     const detailed = opts.detailed ?? true;
+
+    const extraParams: Record<string, string | number> = {};
+    if (opts.period && opts.period !== 'all') {
+      const now = new Date();
+      const daysMap: Record<string, number> = { '7d': 7, '30d': 30, '90d': 90, '1y': 365 };
+      const days = daysMap[opts.period];
+      if (days) {
+        const from = new Date(now.getTime() - days * 86400000);
+        const fromStr = from.toISOString().replace('T', ' ').slice(0, 19);
+        const toStr = now.toISOString().replace('T', ' ').slice(0, 19);
+        extraParams.f = `SavingDate|${fromStr};${toStr}|between`;
+      }
+    }
+
     const all: Record<string, unknown>[] = [];
     for (let p = 1; p <= maxPages; p++) {
       const start = (p - 1) * limit;
       const raw = await this.rest1Request(organizationId, '/rest1/product/get/', {
         start,
         limit,
+        ...extraParams,
         ...(detailed
           ? { FetchDetails: 1, FetchSubProducts: 1, FetchImageUrls: 1, FetchDiscountedPrice: 1 }
           : {}),

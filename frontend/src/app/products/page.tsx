@@ -97,6 +97,7 @@ export default function ProductsPage() {
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [downloadingImages, setDownloadingImages] = useState(false);
   const [syncingTsoft, setSyncingTsoft] = useState(false);
+  const [tsoftSyncPeriod, setTsoftSyncPeriod] = useState<string>('all');
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(searchQuery.trim()), 300);
@@ -221,7 +222,7 @@ export default function ProductsPage() {
       const { data } = await api.post<{
         upsertedProducts: number;
         upsertedVariants: number;
-      }>('/ecommerce/tsoft/sync-products', {}, { timeout: 180_000 });
+      }>('/ecommerce/tsoft/sync-products', { period: tsoftSyncPeriod }, { timeout: 300_000 });
       toast.success(
         `T-Soft senkron: ${data.upsertedProducts ?? 0} ürün · ${data.upsertedVariants ?? 0} varyant`,
       );
@@ -290,20 +291,34 @@ export default function ProductsPage() {
           </div>
           {isAdmin ? (
             <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                disabled={syncingTsoft}
-                onClick={() => void runTsoftSync()}
-                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-orange-200 bg-orange-50 text-sm font-medium text-orange-700 shadow-sm hover:bg-orange-100 disabled:opacity-50 transition-colors"
-                title="T-Soft API'den ürünleri ve varyantları senkronize et"
-              >
-                {syncingTsoft ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <RefreshCw className="w-4 h-4" />
-                )}
-                T-Soft senkron
-              </button>
+              <div className="inline-flex items-center rounded-xl border border-orange-200 bg-orange-50 shadow-sm overflow-hidden">
+                <select
+                  value={tsoftSyncPeriod}
+                  onChange={(e) => setTsoftSyncPeriod(e.target.value)}
+                  disabled={syncingTsoft}
+                  className="text-xs font-medium text-orange-700 bg-transparent border-none focus:ring-0 pl-3 pr-1 py-2.5 cursor-pointer disabled:opacity-50"
+                >
+                  <option value="all">Tüm zamanlar</option>
+                  <option value="7d">Son 7 gün</option>
+                  <option value="30d">Son 30 gün</option>
+                  <option value="90d">Son 90 gün</option>
+                  <option value="1y">Son 1 yıl</option>
+                </select>
+                <button
+                  type="button"
+                  disabled={syncingTsoft}
+                  onClick={() => void runTsoftSync()}
+                  className="inline-flex items-center gap-1.5 px-3 py-2.5 text-sm font-medium text-orange-700 hover:bg-orange-100 disabled:opacity-50 transition-colors border-l border-orange-200"
+                  title="T-Soft API'den ürünleri ve varyantları senkronize et"
+                >
+                  {syncingTsoft ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <RefreshCw className="w-4 h-4" />
+                  )}
+                  Senkronize et
+                </button>
+              </div>
               <button
                 type="button"
                 disabled={downloadingImages}

@@ -191,6 +191,7 @@ export class EcommerceController {
       stock?: boolean;
       price?: boolean;
       descriptions?: boolean;
+      period?: string;
     },
   ) {
     return this.ecommerceService.syncTsoftProducts(this.orgId(user), dto ?? {});

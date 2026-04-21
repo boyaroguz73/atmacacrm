@@ -22,6 +22,7 @@ export interface TsoftProductSyncOptions {
   stock?: boolean;
   price?: boolean;
   descriptions?: boolean;
+  period?: string;
 }
 
 export interface TsoftProductSyncResult {
@@ -288,6 +289,7 @@ export class TsoftProductSyncService {
       detailed: true,
       pageSize: 50,
       delayMs: 200,
+      period: opts.period,
     });
     this.logger.log(`[TSOFT-PRODUCT-SYNC] ${rows.length} ürün alındı`);
 
