@@ -439,7 +439,7 @@ export default function OrdersPage() {
                           src={TSOFT_LOGO_URL}
                           alt="T-Soft"
                           title="T-Soft mağaza siparişi"
-                          className="w-6 h-6 object-contain"
+                          className="w-8 h-8 object-contain"
                           loading="lazy"
                         />
                       ) : null}

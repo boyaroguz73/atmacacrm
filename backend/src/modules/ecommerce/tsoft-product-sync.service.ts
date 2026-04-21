@@ -55,6 +55,16 @@ function pickString(...candidates: unknown[]): string | null {
   return null;
 }
 
+/** Mağaza kökü ile göreli veya tam ürün sayfası URL’si (WhatsApp ürün linki için) */
+function resolveStorefrontProductUrl(raw: string | null, storeBase: string): string | null {
+  const s = String(raw || '').trim();
+  if (!s) return null;
+  if (/^https?:\/\//i.test(s)) return s;
+  const base = String(storeBase || '').replace(/\/+$/, '');
+  if (!base) return s.startsWith('/') ? s : `/${s}`;
+  return s.startsWith('/') ? `${base}${s}` : `${base}/${s}`;
+}
+
 function looksLikeImageUrl(raw: string): boolean {
   const s = raw.trim();
   if (!s) return false;
@@ -365,8 +375,19 @@ export class TsoftProductSyncService {
     }
 
     const priceSelling = toNullableNumber(row.SellingPrice ?? row.sellingPrice ?? row.SalePrice);
+    const discountedSelling = toNullableNumber(row.DiscountedSellingPrice ?? row.discountedSellingPrice);
     const priceList = toNullableNumber(row.ListPrice ?? row.listPrice);
-    const unitPrice = priceSelling ?? priceList ?? 0;
+    // Satış fiyatı: indirimli (DiscountedSellingPrice) varsa o; yoksa liste/satış
+    const unitPrice = discountedSelling ?? priceSelling ?? priceList ?? 0;
+    const productUrlRaw = pickString(
+      row.ProductUrl,
+      row.productUrl,
+      row.DetailUrl,
+      row.detailUrl,
+      row.SeoUrl,
+      row.seoUrl,
+    );
+    const productUrlResolved = resolveStorefrontProductUrl(productUrlRaw, flags.imageBaseUrl);
     const currency = (pickString(row.Currency, row.currency) || 'TRY').slice(0, 12);
     const vatRate = toNullableInt(row.Vat ?? row.vat ?? row.VatRate) ?? 20;
     const stock = flags.includeStock
@@ -417,7 +438,8 @@ export class TsoftProductSyncService {
       brand,
       category: categoryName,
       listPrice: flags.includePrice ? priceList : existing?.listPrice ?? null,
-      salePriceAmount: flags.includePrice ? priceSelling : existing?.salePriceAmount ?? null,
+      salePriceAmount: flags.includePrice ? (discountedSelling ?? priceSelling) : existing?.salePriceAmount ?? null,
+      productUrl: productUrlResolved ?? existing?.productUrl ?? null,
     };
 
     const product = await this.prisma.product.upsert({
@@ -441,8 +463,9 @@ export class TsoftProductSyncService {
         brand,
         category: categoryName,
         ...(flags.includePrice
-          ? { listPrice: priceList, salePriceAmount: priceSelling }
+          ? { listPrice: priceList, salePriceAmount: discountedSelling ?? priceSelling }
           : {}),
+        ...(productUrlResolved ? { productUrl: productUrlResolved } : {}),
         productFeedSource: 'TSOFT',
       },
     });
@@ -485,9 +508,9 @@ export class TsoftProductSyncService {
       const vName = buildVariantName(v, vExternal);
       const vSellingPrice = toNullableNumber(v.SellingPrice ?? v.sellingPrice ?? v.SalePrice);
       const vDiscountedPrice = toNullableNumber(v.DiscountedSellingPrice ?? v.discountedSellingPrice);
-      const vUnitPrice = vSellingPrice ?? toNullableNumber(v.ListPrice ?? v.listPrice) ?? 0;
       const vList = toNullableNumber(v.ListPrice ?? v.listPrice);
-      // DiscountedSellingPrice mevcutsa indirimli fiyat olarak sakla; yoksa SellingPrice ile aynı
+      // Birim fiyat: önce indirimli satış (DiscountedSellingPrice), yoksa satış/liste
+      const vUnitPrice = vDiscountedPrice ?? vSellingPrice ?? vList ?? 0;
       const vSale = vDiscountedPrice ?? vSellingPrice;
       const vStock = flags.includeStock
         ? toNullableInt(v.Stock ?? v.stock)

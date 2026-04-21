@@ -488,13 +488,16 @@ export class MessagesService implements OnModuleInit {
     const unitPrice = Number(variant?.unitPrice ?? product.unitPrice ?? 0);
     const currency = variant?.currency || product.currency;
     const priceIncludesVat = variant?.priceIncludesVat ?? product.priceIncludesVat;
-    const priceLabel = priceIncludesVat ? 'Fiyat (KDV Dahil)' : 'Fiyat (KDV Hariç)';
-    const price = `${unitPrice.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ${currency}`;
+    const priceStr = `${unitPrice.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ${currency}`;
+    // Entegrasyon (T-Soft vb.) fiyatları genelde KDV hariç; mesajda +KDV ile göster
+    const priceLine = priceIncludesVat
+      ? `Fiyat (KDV Dahil): ${priceStr}`
+      : `Fiyat: ${priceStr} +KDV`;
     const siteLink = (product.productUrl || '').trim();
     const caption = [
       effName,
-      `${priceLabel}: ${price}`,
-      siteLink ? `Ürün Linki: ${siteLink}` : '',
+      priceLine,
+      siteLink ? `Ürün linki: ${siteLink}` : '',
     ]
       .filter(Boolean)
       .join('\n');
