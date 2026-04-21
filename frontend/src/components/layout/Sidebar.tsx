@@ -307,14 +307,23 @@ export default function Sidebar({
         filtered = [...filtered, ecommerceBlock];
       }
     }
+    const isAgent = user?.role === 'AGENT';
     return filtered.map((item) => {
-      if (!item.children?.length) return item;
+      let children = item.children;
+      if (isAgent && item.menuKey === 'inbox' && children?.length) {
+        children = children.map((c) =>
+          c.key === 'inbox_main'
+            ? { ...c, href: '/inbox?filter=mine', param: 'mine', label: 'Bana Atananlar' }
+            : c,
+        );
+      }
+      if (!children?.length) return item;
       const desired = submenuOrder[item.menuKey] || [];
-      if (!desired.length) return item;
+      if (!desired.length) return { ...item, children };
       const idx = new Map(desired.map((k, i) => [k, i]));
       return {
         ...item,
-        children: [...item.children].sort((a, b) => {
+        children: [...children].sort((a, b) => {
           const ka = a.key || a.href;
           const kb = b.key || b.href;
           const ia = idx.has(ka) ? (idx.get(ka) as number) : 10_000;
@@ -323,7 +332,7 @@ export default function Sidebar({
         }),
       };
     });
-  }, [isAdmin, isSuperAdmin, isAccountant, ecommerceMenuVisible, allowedMenuKeys, orderedMenuKeys, submenuOrder]);
+  }, [isAdmin, isSuperAdmin, isAccountant, ecommerceMenuVisible, allowedMenuKeys, orderedMenuKeys, submenuOrder, user?.role]);
 
   const getInitialExpanded = () => {
     const active: string[] = [];
