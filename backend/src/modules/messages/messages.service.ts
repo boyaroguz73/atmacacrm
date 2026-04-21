@@ -482,9 +482,17 @@ export class MessagesService implements OnModuleInit {
       throw new NotFoundException('Varyant bulunamadı');
     }
 
-    const effName = variant
+    const variantProperty2 = variant?.metadata
+      ? (typeof variant.metadata === 'object' && variant.metadata !== null
+          ? String((variant.metadata as Record<string, unknown>).Property2 ?? (variant.metadata as Record<string, unknown>).property2 ?? '').trim()
+          : '')
+      : '';
+    let effName = variant
       ? (variant.name.includes(product.name) ? variant.name : `${product.name} — ${variant.name}`)
       : product.name;
+    if (variantProperty2 && !effName.includes(variantProperty2)) {
+      effName = `${effName} — ${variantProperty2}`;
+    }
     const regularPrice = Number(variant?.unitPrice ?? product.unitPrice ?? 0);
     const salePrice = Number(variant?.salePriceAmount ?? product.salePriceAmount ?? 0);
     const hasDiscount = salePrice > 0 && salePrice < regularPrice;
