@@ -16,6 +16,7 @@ import {
   FileText,
   Landmark,
   Loader2,
+  MapPin,
   Package,
   Receipt,
   ReceiptText,
@@ -51,8 +52,9 @@ interface InvoiceDetail {
   personName?: string | null;
   order?: {
     id?: string;
-    orderNumber?: string | null;
+    orderNumber?: string | number | null;
     status?: string | null;
+    source?: string | null;
     currency?: string | null;
     subtotal?: number | null;
     vatTotal?: number | null;
@@ -64,8 +66,24 @@ interface InvoiceDetail {
     items?: OrderItemRow[];
     payments?: PaymentEntry[];
     paidTotal?: number | null;
+    refundedTotal?: number | null;
     remainingTotal?: number | null;
     isFullyPaid?: boolean | null;
+    contact?: {
+      id?: string;
+      name?: string | null;
+      surname?: string | null;
+      phone?: string | null;
+      email?: string | null;
+      company?: string | null;
+      address?: string | null;
+      billingAddress?: string | null;
+      shippingAddress?: string | null;
+      taxOffice?: string | null;
+      taxNumber?: string | null;
+      identityNumber?: string | null;
+    };
+    createdBy?: { id?: string; name?: string | null } | null;
   };
   orderId?: string | null;
   orderNumber?: string | null;
@@ -94,6 +112,7 @@ interface OrderItemRow {
   colorFabricInfo?: string | null;
   measurementInfo?: string | null;
   product?: { id: string; sku: string; name: string; imageUrl?: string | null } | null;
+  productVariant?: { id: string; name: string; sku?: string | null } | null;
 }
 
 type PaymentMethod = 'CASH' | 'TRANSFER' | 'CARD' | 'CHECK' | 'OTHER';
@@ -223,11 +242,31 @@ function statusLabelTr(status: string): string {
   return map[s] || status || '—';
 }
 
+const ORDER_STATUS_LABELS: Record<string, string> = {
+  AWAITING_CHECKOUT: 'Sepette Bekliyor',
+  AWAITING_PAYMENT: 'Ödeme Bekleniyor',
+  PREPARING: 'Hazırlanıyor',
+  SHIPPED: 'Kargoya Verildi',
+  COMPLETED: 'Tamamlandı',
+  CANCELLED: 'İptal',
+};
+
+function orderStatusLabel(status: string | null | undefined): string {
+  if (!status) return '—';
+  return ORDER_STATUS_LABELS[status.toUpperCase()] || status;
+}
+
 function lineVatAmount(item: OrderItemRow): number {
   const gross = item.lineTotal;
   const divider = 1 + item.vatRate / 100;
   const net = divider > 0 ? gross / divider : gross;
   return Math.round((gross - net) * 100) / 100;
+}
+
+function rewriteMediaUrlForClient(url: string | null | undefined): string {
+  if (!url) return '';
+  if (url.startsWith('http')) return url;
+  return `${typeof window !== 'undefined' ? '' : ''}${backendPublicUrl()}${url}`;
 }
 
 function normalizeInvoice(raw: unknown): InvoiceDetail | null {
@@ -565,12 +604,11 @@ export default function InvoiceDetailPage() {
                   Bağlı Sipariş
                 </h3>
                 {invoice.order?.orderNumber || invoice.orderNumber ? (
-                  <div className="space-y-1 text-xs text-gray-700">
-                    <p>
-                      <span className="text-gray-500">Sipariş No: </span>
+                  <div className="space-y-1.5 text-xs text-gray-700">
+                    <div className="flex items-center justify-between gap-2">
                       <button
                         type="button"
-                        className="font-medium text-indigo-700 hover:underline"
+                        className="font-semibold text-indigo-700 hover:underline inline-flex items-center gap-1"
                         onClick={() => {
                           const oid = invoice.order?.id || invoice.orderId;
                           if (oid) router.push(`/orders/${oid}`);
@@ -579,27 +617,56 @@ export default function InvoiceDetailPage() {
                         {invoice.order?.orderNumber
                           ? `SIP-${String(invoice.order.orderNumber).padStart(5, '0')}`
                           : invoice.orderNumber || '—'}
-                        <ExternalLink className="inline w-3 h-3 ml-0.5 align-middle" />
+                        <ExternalLink className="w-3 h-3" />
                       </button>
-                    </p>
-                    {invoice.order?.status ? (
-                      <p>
-                        <span className="text-gray-500">Sipariş durumu: </span>
-                        <span className="font-medium">{invoice.order.status}</span>
-                      </p>
-                    ) : null}
-                    {invoice.order?.expectedDeliveryDate ? (
-                      <p>
-                        <span className="text-gray-500">Plan. teslim: </span>
-                        {formatDate(invoice.order.expectedDeliveryDate)}
-                      </p>
-                    ) : null}
-                    {invoice.order?.grandTotal != null ? (
-                      <p>
-                        <span className="text-gray-500">Sipariş tutarı: </span>
-                        <span className="font-medium">
-                          {formatMoney(invoice.order.grandTotal, invoice.order.currency ?? invoice.currency)}
+                      {invoice.order?.status ? (
+                        <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800">
+                          {orderStatusLabel(invoice.order.status)}
                         </span>
+                      ) : null}
+                    </div>
+                    <dl className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-[11px]">
+                      {invoice.order?.createdAt ? (
+                        <>
+                          <dt className="text-gray-400">Sipariş tarihi</dt>
+                          <dd>{formatDate(invoice.order.createdAt)}</dd>
+                        </>
+                      ) : null}
+                      {invoice.order?.expectedDeliveryDate ? (
+                        <>
+                          <dt className="text-gray-400">Plan. teslim</dt>
+                          <dd>{formatDate(invoice.order.expectedDeliveryDate)}</dd>
+                        </>
+                      ) : null}
+                      {invoice.order?.grandTotal != null ? (
+                        <>
+                          <dt className="text-gray-400">Sipariş tutarı</dt>
+                          <dd className="font-semibold">{formatMoney(invoice.order.grandTotal, invoice.order.currency ?? invoice.currency)}</dd>
+                        </>
+                      ) : null}
+                      {invoice.order?.paidTotal != null ? (
+                        <>
+                          <dt className="text-gray-400">Ödenen</dt>
+                          <dd className="text-emerald-700 font-medium">{formatMoney(invoice.order.paidTotal, invoice.order.currency ?? invoice.currency)}</dd>
+                        </>
+                      ) : null}
+                      {invoice.order?.remainingTotal != null && invoice.order.remainingTotal > 0 ? (
+                        <>
+                          <dt className="text-gray-400">Kalan</dt>
+                          <dd className="text-red-700 font-medium">{formatMoney(invoice.order.remainingTotal, invoice.order.currency ?? invoice.currency)}</dd>
+                        </>
+                      ) : null}
+                      {invoice.order?.createdBy?.name ? (
+                        <>
+                          <dt className="text-gray-400">Oluşturan</dt>
+                          <dd>{invoice.order.createdBy.name}</dd>
+                        </>
+                      ) : null}
+                    </dl>
+                    {invoice.order?.isFullyPaid ? (
+                      <p className="text-[10px] font-semibold text-emerald-700 flex items-center gap-1">
+                        <CheckCircle2 className="w-3 h-3" />
+                        Sipariş ödemesi tamamlandı
                       </p>
                     ) : null}
                   </div>
@@ -608,6 +675,32 @@ export default function InvoiceDetailPage() {
                 )}
               </div>
             </div>
+
+            {/* Sipariş adresleri */}
+            {(invoice.order?.shippingAddress || invoice.order?.contact?.billingAddress || invoice.order?.contact?.shippingAddress) ? (
+              <div className="rounded-xl border border-gray-100 bg-white p-4 space-y-2">
+                <h3 className="text-xs font-semibold text-gray-600 uppercase tracking-wide flex items-center gap-1.5">
+                  <MapPin className="w-3.5 h-3.5" />
+                  Adresler
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {invoice.order?.contact?.billingAddress ? (
+                    <div>
+                      <p className="text-[10px] font-semibold text-gray-400 uppercase mb-0.5">Fatura adresi</p>
+                      <p className="text-xs text-gray-700 whitespace-pre-wrap leading-relaxed">{invoice.order.contact.billingAddress}</p>
+                    </div>
+                  ) : null}
+                  {(invoice.order?.shippingAddress || invoice.order?.contact?.shippingAddress) ? (
+                    <div>
+                      <p className="text-[10px] font-semibold text-gray-400 uppercase mb-0.5">Sevk adresi</p>
+                      <p className="text-xs text-gray-700 whitespace-pre-wrap leading-relaxed">
+                        {invoice.order?.shippingAddress || invoice.order?.contact?.shippingAddress}
+                      </p>
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
 
             {/* Vade ve notlar düzenleme */}
             <div className="rounded-xl border border-gray-100 bg-gray-50/40 p-4 space-y-3">
@@ -752,62 +845,108 @@ export default function InvoiceDetailPage() {
             {/* Sipariş kalemleri */}
             {invoice.order?.items && invoice.order.items.length > 0 ? (
               <div>
-                <h3 className="text-sm font-semibold text-gray-800 mb-2">Sipariş kalemleri</h3>
+                <h3 className="text-sm font-semibold text-gray-800 mb-2 flex items-center gap-2">
+                  <Package className="w-4 h-4 text-indigo-600" />
+                  Sipariş kalemleri
+                  <span className="text-[10px] text-gray-400 font-normal">({invoice.order.items.length} kalem)</span>
+                </h3>
                 <div className="rounded-xl border border-gray-100 shadow-sm overflow-x-auto">
-                  <table className="w-full text-sm min-w-[640px]">
+                  <table className="w-full text-sm min-w-[700px]">
                     <thead>
-                      <tr className="bg-gray-50/80 text-left text-xs font-semibold text-gray-500 uppercase">
-                        <th className="px-3 py-2.5 min-w-[140px]">Ürün</th>
-                        <th className="px-3 py-2.5 min-w-[100px]">Renk/Kumaş</th>
-                        <th className="px-3 py-2.5 min-w-[100px]">Ölçü</th>
-                        <th className="px-3 py-2.5 text-right w-20">Miktar</th>
-                        <th className="px-3 py-2.5 text-right min-w-[96px]">Birim fiyat</th>
-                        <th className="px-3 py-2.5 text-right min-w-[72px]">KDV</th>
-                        <th className="px-3 py-2.5 text-right min-w-[96px]">Satır toplamı</th>
+                      <tr className="bg-gray-50/80 text-left text-[10px] font-semibold text-gray-500 uppercase">
+                        <th className="px-2 py-2 w-12">Görsel</th>
+                        <th className="px-2 py-2 min-w-[140px]">Ürün</th>
+                        <th className="px-2 py-2 min-w-[90px]">Renk/Kumaş</th>
+                        <th className="px-2 py-2 min-w-[90px]">Ölçü</th>
+                        <th className="px-2 py-2 text-right w-16">Miktar</th>
+                        <th className="px-2 py-2 text-right min-w-[80px]">Birim</th>
+                        <th className="px-2 py-2 text-center min-w-[60px]">Fiyat tipi</th>
+                        <th className="px-2 py-2 text-right min-w-[60px]">KDV</th>
+                        <th className="px-2 py-2 text-right min-w-[80px]">Toplam</th>
                       </tr>
                     </thead>
                     <tbody>
                       {invoice.order.items.map((item) => {
                         const vatAmt = lineVatAmount(item);
+                        const cur = invoice.order?.currency ?? invoice.currency;
                         return (
-                          <tr key={item.id} className="border-t border-gray-50 align-top">
-                            <td className="px-3 py-2.5">
-                              <p className="font-medium text-gray-900">{item.name}</p>
+                          <tr key={item.id} className="border-t border-gray-50 align-top hover:bg-indigo-50/20 transition-colors">
+                            <td className="px-2 py-1.5 align-middle">
+                              <div className="w-9 h-9 rounded border border-gray-100 bg-gray-50 overflow-hidden">
+                                {item.product?.imageUrl ? (
+                                  <img src={rewriteMediaUrlForClient(item.product.imageUrl)} alt="" className="w-full h-full object-cover" />
+                                ) : (
+                                  <span className="flex w-full h-full items-center justify-center text-[10px] text-gray-300">—</span>
+                                )}
+                              </div>
+                            </td>
+                            <td className="px-2 py-2">
+                              <p className="font-medium text-gray-900 text-xs">{item.name}</p>
+                              {item.productVariant ? (
+                                <p className="text-[10px] text-indigo-600">
+                                  Varyant: {item.productVariant.name}
+                                  {item.productVariant.sku ? ` · ${item.productVariant.sku}` : ''}
+                                </p>
+                              ) : null}
                               {item.product?.sku ? (
-                                <p className="text-xs text-gray-400 font-mono">{item.product.sku}</p>
+                                <p className="text-[10px] text-gray-400 font-mono">{item.product.sku}</p>
                               ) : null}
                             </td>
-                            <td className="px-3 py-2.5 text-xs text-gray-600">
+                            <td className="px-2 py-2 text-xs text-gray-600">
                               {item.colorFabricInfo || '—'}
                             </td>
-                            <td className="px-3 py-2.5 text-xs text-gray-600">
+                            <td className="px-2 py-2 text-xs text-gray-600 whitespace-pre-wrap max-w-[180px]">
                               {item.measurementInfo || '—'}
                             </td>
-                            <td className="px-3 py-2.5 text-right tabular-nums text-gray-800">
+                            <td className="px-2 py-2 text-right tabular-nums text-gray-800 text-xs">
                               {item.quantity}
                             </td>
-                            <td className="px-3 py-2.5 text-right tabular-nums text-gray-800">
-                              {formatMoney(item.unitPrice, invoice.order?.currency ?? invoice.currency)}
+                            <td className="px-2 py-2 text-right tabular-nums text-gray-800 text-xs">
+                              {formatMoney(item.unitPrice, cur)}
                             </td>
-                            <td className="px-3 py-2.5 text-right tabular-nums text-gray-600 text-xs">
-                              %{item.vatRate}
-                              <span className="block text-[10px] text-gray-400">
-                                {formatMoney(vatAmt, invoice.order?.currency ?? invoice.currency)}
+                            <td className="px-2 py-2 text-center">
+                              <span className={`inline-flex text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${
+                                item.priceIncludesVat !== false
+                                  ? 'bg-green-50 text-green-700'
+                                  : 'bg-blue-50 text-blue-700'
+                              }`}>
+                                {item.priceIncludesVat !== false ? 'KDV dahil' : 'KDV hariç'}
                               </span>
                             </td>
-                            <td className="px-3 py-2.5 text-right tabular-nums font-medium text-gray-900">
-                              {formatMoney(item.lineTotal, invoice.order?.currency ?? invoice.currency)}
+                            <td className="px-2 py-2 text-right text-xs">
+                              <span className="tabular-nums text-gray-700">%{item.vatRate}</span>
+                              <span className="block text-[10px] text-gray-400 tabular-nums">
+                                {formatMoney(vatAmt, cur)}
+                              </span>
+                            </td>
+                            <td className="px-2 py-2 text-right tabular-nums font-medium text-gray-900 text-xs">
+                              {formatMoney(item.lineTotal, cur)}
                             </td>
                           </tr>
                         );
                       })}
                     </tbody>
                     <tfoot>
-                      <tr className="border-t-2 border-gray-100 bg-gray-50/50">
-                        <td colSpan={6} className="px-3 py-2.5 text-right text-sm font-semibold text-gray-700">
+                      <tr className="border-t border-gray-200 bg-gray-50/60 text-xs">
+                        <td colSpan={4} />
+                        <td colSpan={4} className="px-2 py-2 text-right text-gray-500">Ara toplam</td>
+                        <td className="px-2 py-2 text-right tabular-nums font-medium text-gray-700">
+                          {formatMoney(invoice.order.subtotal ?? 0, invoice.order.currency ?? invoice.currency)}
+                        </td>
+                      </tr>
+                      <tr className="border-t border-gray-100 bg-gray-50/60 text-xs">
+                        <td colSpan={4} />
+                        <td colSpan={4} className="px-2 py-2 text-right text-gray-500">KDV toplam</td>
+                        <td className="px-2 py-2 text-right tabular-nums font-medium text-gray-700">
+                          {formatMoney(invoice.order.vatTotal ?? 0, invoice.order.currency ?? invoice.currency)}
+                        </td>
+                      </tr>
+                      <tr className="border-t-2 border-gray-200 bg-gray-50/80">
+                        <td colSpan={4} />
+                        <td colSpan={4} className="px-2 py-2.5 text-right text-sm font-semibold text-gray-700">
                           Genel Toplam
                         </td>
-                        <td className="px-3 py-2.5 text-right tabular-nums font-bold text-whatsapp text-sm">
+                        <td className="px-2 py-2.5 text-right tabular-nums font-bold text-whatsapp text-sm">
                           {formatMoney(
                             invoice.order.grandTotal ?? invoice.grandTotal ?? invoice.total,
                             invoice.order.currency ?? invoice.currency,

@@ -62,9 +62,73 @@ export class AccountingService {
   async findById(id: string) {
     const inv = await this.prisma.accountingInvoice.findUnique({
       where: { id },
-      include: this.includeRelations,
+      include: {
+        ...this.includeRelations,
+        order: {
+          include: {
+            items: {
+              include: {
+                product: { select: { id: true, sku: true, name: true, imageUrl: true } },
+                productVariant: { select: { id: true, name: true, sku: true } },
+              },
+              orderBy: { name: 'asc' as const },
+            },
+            contact: {
+              select: {
+                id: true, name: true, surname: true, phone: true, email: true,
+                company: true, address: true, billingAddress: true, shippingAddress: true,
+                taxOffice: true, taxNumber: true, identityNumber: true,
+              },
+            },
+            createdBy: { select: { id: true, name: true } },
+          },
+        },
+      },
     });
     if (!inv) throw new NotFoundException('Fatura bulunamadı');
+
+    if (inv.order) {
+      const entries = await this.prisma.cashBookEntry.findMany({
+        where: { orderId: inv.order.id },
+        orderBy: { occurredAt: 'desc' },
+        include: { user: { select: { id: true, name: true } } },
+      });
+      let paid = 0;
+      let refunded = 0;
+      for (const e of entries) {
+        if (e.direction === 'INCOME') paid += e.amount;
+        else refunded += e.amount;
+      }
+      const paidTotal = Math.round(paid * 100) / 100;
+      const refundedTotal = Math.round(refunded * 100) / 100;
+      const net = paidTotal - refundedTotal;
+      const remainingTotal = Math.round((inv.order.grandTotal - net) * 100) / 100;
+      const isFullyPaid = remainingTotal <= 0.009 && inv.order.grandTotal > 0;
+
+      const payments = entries.map((e) => ({
+        id: e.id,
+        amount: e.amount,
+        direction: e.direction,
+        method: e.method,
+        description: e.description,
+        reference: e.reference,
+        occurredAt: e.occurredAt,
+        user: e.user,
+      }));
+
+      return {
+        ...inv,
+        order: {
+          ...inv.order,
+          payments,
+          paidTotal,
+          refundedTotal,
+          remainingTotal,
+          isFullyPaid,
+        },
+      };
+    }
+
     return inv;
   }
 
