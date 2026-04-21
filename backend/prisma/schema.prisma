@@ -954,7 +954,7 @@ model SalesOrder {
   quoteId                    String?     @unique
   contactId                  String
   createdById                String
-  status                     OrderStatus @default(PENDING)
+  status                     OrderStatus @default(AWAITING_PAYMENT)
   currency                   String      @default("TRY")
   subtotal                   Float       @default(0)
   vatTotal                   Float       @default(0)
