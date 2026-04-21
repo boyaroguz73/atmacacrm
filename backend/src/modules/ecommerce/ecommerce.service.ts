@@ -27,6 +27,7 @@ import {
   looksLikeTsoftSuccessResponse,
 } from './tsoft-customer.util';
 import { OrdersService } from '../orders/orders.service';
+import { AutoReplyEngineService } from '../auto-reply/auto-reply-engine.service';
 
 const TSOFT_LABEL = 'Site müşterisi';
 const TSOFT_SOURCE = 'TSOFT';
@@ -59,6 +60,7 @@ export class EcommerceService {
     private prisma: PrismaService,
     private tsoftApi: TsoftApiService,
     private tsoftProductSync: TsoftProductSyncService,
+    private readonly autoReplyEngine: AutoReplyEngineService,
     @Inject(forwardRef(() => OrdersService))
     private readonly ordersService: OrdersService,
   ) {}
@@ -620,6 +622,9 @@ export class EcommerceService {
       const siteOidRaw = raw.OrderId ?? raw.orderId;
       const siteOid =
         siteOidRaw != null && String(siteOidRaw).trim() !== '' ? String(siteOidRaw).trim() : null;
+      const tsoftStatusText = String(raw.OrderStatus || raw.status || raw.orderStatus || '').trim();
+      const statusId = Number(raw.OrderStatusId || 0);
+      const crmStatus = this.mapTsoftOrderStatus(tsoftStatusText, statusId);
 
       let existing = await this.prisma.salesOrder.findUnique({ where: { externalId } });
       if (!existing && siteOid) {
@@ -637,7 +642,6 @@ export class EcommerceService {
             data: {
               externalId,
               tsoftSiteOrderId: siteOid,
-              siteOrderData: raw as Prisma.InputJsonValue,
             },
           });
           this.logger.debug(
@@ -645,7 +649,26 @@ export class EcommerceService {
           );
         }
       }
-      if (existing) { skippedExisting++; continue; }
+      if (existing) {
+        const prevStatus = existing.status;
+        await this.prisma.salesOrder.update({
+          where: { id: existing.id },
+          data: {
+            externalId,
+            tsoftSiteOrderId: siteOid,
+            status: crmStatus as any,
+          },
+        });
+        if (prevStatus !== crmStatus) {
+          await this.autoReplyEngine.processOrderStatusEvent({
+            orderId: existing.id,
+            status: crmStatus as any,
+            organizationId,
+          });
+        }
+        skippedExisting++;
+        continue;
+      }
 
       try {
         const customerPhone = String(
@@ -717,11 +740,6 @@ export class EcommerceService {
 
         const orderNotes = String(raw.OrderNote || raw.notes || raw.orderNote || raw.customerNote || '').trim() || null;
 
-        // Durum eşlemesi
-        const tsoftStatusText = String(raw.OrderStatus || raw.status || raw.orderStatus || '').trim();
-        const statusId = Number(raw.OrderStatusId || 0);
-        const crmStatus = this.mapTsoftOrderStatus(tsoftStatusText, statusId);
-
         const orderItems = this.extractOrderItems(raw);
         const subtotal = orderItems.reduce((s, i) => s + i.lineTotal, 0);
         const vatTotal = Math.max(0, grandTotal - subtotal);
@@ -747,7 +765,7 @@ export class EcommerceService {
             source: TSOFT_SOURCE,
             contactId: contact.id,
             createdById: assignedUserId,
-            status: crmStatus,
+            status: crmStatus as any,
             currency,
             subtotal: Math.round(subtotal * 100) / 100,
             vatTotal: Math.round(vatTotal * 100) / 100,
@@ -761,11 +779,13 @@ export class EcommerceService {
                 quantity: item.quantity,
                 unitPrice: item.unitPrice,
                 vatRate: item.vatRate,
+                priceIncludesVat: false,
                 lineTotal: item.lineTotal,
                 isFromStock: true,
+                measurementInfo: item.measurementInfo,
               })),
             },
-          },
+          } as any,
           select: { id: true, orderNumber: true },
         });
 
@@ -798,6 +818,11 @@ export class EcommerceService {
         }
 
         imported++;
+        await this.autoReplyEngine.processOrderStatusEvent({
+          orderId: newOrder.id,
+          status: crmStatus,
+          organizationId,
+        });
         this.logger.debug(
           `[TSOFT-SYNC-ORDERS] Aktarıldı: T-Soft #${tsoftCode} → CRM ${newOrder.id} (${crmStatus}) agent=${assignedUserId}`,
         );
@@ -850,9 +875,9 @@ export class EcommerceService {
   }
 
   private extractOrderItems(raw: Record<string, unknown>): Array<{
-    name: string; quantity: number; unitPrice: number; vatRate: number; lineTotal: number;
+    name: string; quantity: number; unitPrice: number; vatRate: number; lineTotal: number; measurementInfo?: string | null;
   }> {
-    const items: Array<{ name: string; quantity: number; unitPrice: number; vatRate: number; lineTotal: number }> = [];
+    const items: Array<{ name: string; quantity: number; unitPrice: number; vatRate: number; lineTotal: number; measurementInfo?: string | null }> = [];
 
     // REST1: OrderDetails — v3: items, orderItems, products
     const candidates = [
@@ -879,6 +904,7 @@ export class EcommerceService {
           unitPrice: grandTotal,
           vatRate: 20,
           lineTotal: grandTotal,
+          measurementInfo: null,
         });
       }
       return items;
@@ -899,12 +925,16 @@ export class EcommerceService {
         r.lineTotal || r.total || r.subTotal || r.rowTotal || (unitPrice * quantity),
       );
       const vatRate = Math.round(Number(r.Vat || r.vatRate || r.vat_rate || r.taxRate || 20));
+      const property2 = String(
+        r.Property2 || r.property2 || r.Property_2 || r.Measurement || r.measurement || '',
+      ).trim() || null;
       items.push({
         name,
         quantity,
         unitPrice: Math.round(unitPrice * 100) / 100,
         vatRate: Number.isFinite(vatRate) ? vatRate : 20,
         lineTotal: Math.round(lineTotal * 100) / 100,
+        measurementInfo: property2,
       });
     }
 

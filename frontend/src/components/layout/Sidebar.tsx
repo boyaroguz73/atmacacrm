@@ -109,6 +109,7 @@ const menuItems: MenuItem[] = [
     ],
   },
   { href: '/tasks', label: 'Görevler', icon: CalendarCheck, menuKey: 'tasks' },
+  { href: '/admin/auto-reply', label: 'Otomasyon', icon: Zap, adminOnly: true, menuKey: 'admin' },
   { href: '/calendar', label: 'Takvim', icon: CalendarDays, menuKey: 'calendar' },
   {
     href: '/admin',
@@ -121,7 +122,6 @@ const menuItems: MenuItem[] = [
       { href: '/leads?status=LOST', label: 'Kaçırılan Müşteriler', icon: TrendingDown, key: 'lost_leads' },
       { href: '/admin/history', label: 'Konuşma Geçmişi', icon: History, key: 'admin_history' },
       { href: '/admin/templates', label: 'Mesaj Şablonları', icon: FileText, key: 'admin_templates' },
-      { href: '/admin/auto-reply', label: 'Otomatik Yanıt', icon: Zap, key: 'admin_auto_reply' },
       { href: '/admin/audit-log', label: 'Aktivite Logu', icon: Activity, key: 'admin_audit_log' },
       { href: '/admin/suppliers', label: 'Tedarikçiler', icon: Warehouse, key: 'admin_suppliers' },
       { href: '/admin/cargo-companies', label: 'Kargo Firmaları', icon: Truck, key: 'admin_cargo_companies' },

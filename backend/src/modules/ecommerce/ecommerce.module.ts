@@ -7,9 +7,10 @@ import { TsoftApiService } from './tsoft-api.service';
 import { TsoftProductSyncService } from './tsoft-product-sync.service';
 import { TsoftPushService } from './tsoft-push.service';
 import { TsoftSyncScheduler } from './tsoft-sync.scheduler';
+import { AutoReplyModule } from '../auto-reply/auto-reply.module';
 
 @Module({
-  imports: [PrismaModule, forwardRef(() => OrdersModule)],
+  imports: [PrismaModule, forwardRef(() => OrdersModule), AutoReplyModule],
   controllers: [EcommerceController],
   providers: [
     EcommerceService,

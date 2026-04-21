@@ -43,6 +43,16 @@ const TRIGGERS = [
   { value: 'new_message', label: 'Her yeni mesaj' },
   { value: 'keyword', label: 'Anahtar kelime eşleşmesi' },
   { value: 'first_message', label: 'İlk mesaj (yeni kişi)' },
+  { value: 'order_status', label: 'Sipariş durumu değişti' },
+];
+
+const ORDER_STATUS_OPTIONS = [
+  { value: 'AWAITING_CHECKOUT', label: 'Sepet Terk (Henüz Tamamlanmadı)' },
+  { value: 'AWAITING_PAYMENT', label: 'Ödeme Bekleniyor' },
+  { value: 'PREPARING', label: 'Ürün Hazırlanıyor' },
+  { value: 'SHIPPED', label: 'Kargoya Verildi' },
+  { value: 'COMPLETED', label: 'Tamamlandı' },
+  { value: 'CANCELLED', label: 'İptal / İade' },
 ];
 
 const STEP_TYPES = [
@@ -120,7 +130,16 @@ export default function AutoReplyPage() {
         name: form.name,
         description: form.description || undefined,
         trigger: form.trigger,
-        conditions: form.trigger === 'keyword' ? form.conditions : undefined,
+        conditions:
+          form.trigger === 'keyword'
+            ? form.conditions
+            : form.trigger === 'order_status'
+              ? {
+                  statuses: Array.isArray(form.conditions?.statuses)
+                    ? form.conditions.statuses
+                    : [],
+                }
+              : undefined,
         steps: form.steps,
       };
 
@@ -158,9 +177,12 @@ export default function AutoReplyPage() {
       name: f.name,
       description: f.description || '',
       trigger: f.trigger,
-      conditions: (f.conditions as any[]) || [
-        { field: 'message_contains', operator: 'contains', value: '' },
-      ],
+      conditions:
+        f.trigger === 'order_status'
+          ? (f.conditions as any) || { statuses: [] }
+          : (f.conditions as any[]) || [
+              { field: 'message_contains', operator: 'contains', value: '' },
+            ],
       steps: (f.steps as FlowStep[]) || [],
     });
     setShowModal(true);
@@ -210,9 +232,9 @@ export default function AutoReplyPage() {
     <div className="p-6 max-w-6xl mx-auto">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Otomatik Yanıt Akışları</h1>
+          <h1 className="text-2xl font-bold text-gray-900">Otomasyon</h1>
           <p className="text-sm text-gray-500 mt-1">
-            Gelen mesajlara otomatik yanıt veren akışlar oluşturun. Anahtar kelime, ilk mesaj veya tüm mesajlar için tetikleyiciler belirleyin.
+            Mesaj ve sipariş durumuna göre otomatik aksiyon akışları oluşturun. Sipariş durumlarında farklı senaryolarla temsilci ataması ve kişiselleştirilmiş WhatsApp mesajları gönderin.
           </p>
         </div>
         <button
@@ -373,6 +395,47 @@ export default function AutoReplyPage() {
                 </div>
               </div>
 
+              {form.trigger === 'order_status' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Sipariş Durumları
+                  </label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {ORDER_STATUS_OPTIONS.map((st) => {
+                      const selected = Array.isArray((form.conditions as any)?.statuses)
+                        ? (form.conditions as any).statuses.includes(st.value)
+                        : false;
+                      return (
+                        <label
+                          key={st.value}
+                          className={`flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer text-sm ${
+                            selected
+                              ? 'border-whatsapp bg-green-50 text-green-700'
+                              : 'border-gray-200 text-gray-600'
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            className="rounded border-gray-300 text-whatsapp focus:ring-whatsapp"
+                            checked={selected}
+                            onChange={(e) => {
+                              const prev = Array.isArray((form.conditions as any)?.statuses)
+                                ? ([...(form.conditions as any).statuses] as string[])
+                                : [];
+                              const next = e.target.checked
+                                ? Array.from(new Set([...prev, st.value]))
+                                : prev.filter((x) => x !== st.value);
+                              setForm({ ...form, conditions: { statuses: next } as any });
+                            }}
+                          />
+                          {st.label}
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               {/* Trigger */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Tetikleyici *</label>
@@ -381,7 +444,18 @@ export default function AutoReplyPage() {
                     <button
                       key={t.value}
                       type="button"
-                      onClick={() => setForm({ ...form, trigger: t.value })}
+                      onClick={() =>
+                        setForm({
+                          ...form,
+                          trigger: t.value,
+                          conditions:
+                            t.value === 'keyword'
+                              ? [{ field: 'message_contains', operator: 'contains', value: '' }]
+                              : t.value === 'order_status'
+                                ? { statuses: [] }
+                                : [],
+                        })
+                      }
                       className={`p-3 border rounded-lg text-sm text-center transition-colors ${
                         form.trigger === t.value
                           ? 'border-whatsapp bg-green-50 text-green-700 font-medium'
@@ -504,13 +578,18 @@ export default function AutoReplyPage() {
                         </div>
 
                         {step.type === 'send_message' && (
-                          <textarea
-                            value={step.data?.message || ''}
-                            onChange={(e) => updateStepData(idx, { message: e.target.value })}
-                            rows={2}
-                            placeholder="Gönderilecek mesaj..."
-                            className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-whatsapp/20 resize-none"
-                          />
+                          <div className="space-y-2">
+                            <textarea
+                              value={step.data?.message || ''}
+                              onChange={(e) => updateStepData(idx, { message: e.target.value })}
+                              rows={4}
+                              placeholder="Gönderilecek mesaj..."
+                              className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-whatsapp/20 resize-none"
+                            />
+                            <p className="text-[11px] text-gray-500">
+                              Değişkenler: {'{Temsilci Adı}'}, {'{Ürünler}'}, {'{Sipariş Durumu}'}
+                            </p>
+                          </div>
                         )}
                         {step.type === 'wait' && (
                           <div className="flex items-center gap-2">

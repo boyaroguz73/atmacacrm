@@ -977,6 +977,8 @@ model SalesOrder {
   tsoftLastError             String?
   /// T-Soft getOrders yanıtının ham içeriği (site sipariş detayı için). Pull sırasında doldurulur.
   siteOrderData              Json?
+  /// Sipariş bazlı otomasyon gönderim kayıtları (flow/status anahtarları)
+  automationState            Json?
   /// Kargo firması (null = belirtilmedi)
   cargoCompanyId             String?
   /// Kargo takip numarası

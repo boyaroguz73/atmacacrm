@@ -4,6 +4,7 @@ import { WahaService } from '../waha/waha.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { MessageDirection, MessageStatus, LeadStatus } from '@prisma/client';
 import { LeadsService } from '../leads/leads.service';
+import { ConversationsService } from '../conversations/conversations.service';
 
 @Injectable()
 export class AutoReplyEngineService {
@@ -14,7 +15,193 @@ export class AutoReplyEngineService {
     private wahaService: WahaService,
     private prisma: PrismaService,
     private leadsService: LeadsService,
+    private conversationsService: ConversationsService,
   ) {}
+
+  async processOrderStatusEvent(params: {
+    orderId: string;
+    status: string;
+    organizationId: string;
+  }) {
+    try {
+      const order = await this.prisma.salesOrder.findUnique({
+        where: { id: params.orderId },
+        include: {
+          contact: true,
+          items: true,
+        },
+      });
+      if (!order || order.source !== 'TSOFT') return;
+
+      const flows = await this.autoReplyService.findActiveFlows(params.organizationId);
+      const matched = flows.filter((f) => this.matchesOrderStatusTrigger(f, params.status));
+      if (!matched.length) return;
+
+      for (const flow of matched) {
+        const sentKey = `${flow.id}:${params.status}`;
+        if (this.hasOrderAutomationSent(order.automationState, sentKey)) continue;
+
+        const session = await this.pickWorkingSession(params.organizationId);
+        if (!session) continue;
+
+        const phoneDigits = String(order.contact.phone || '').replace(/\D/g, '');
+        if (!phoneDigits) continue;
+        const chatId = `${phoneDigits}@c.us`;
+
+        const conversation = await this.prisma.conversation.upsert({
+          where: { contactId_sessionId: { contactId: order.contactId, sessionId: session.id } },
+          update: {},
+          create: { contactId: order.contactId, sessionId: session.id },
+          include: {
+            assignments: {
+              where: { unassignedAt: null },
+              include: { user: { select: { id: true, name: true } } },
+            },
+          },
+        });
+
+        if (!conversation.assignments.length) {
+          await this.conversationsService.autoAssignRoundRobin(conversation.id, params.organizationId);
+        }
+        const currentAssignment = await this.prisma.assignment.findFirst({
+          where: { conversationId: conversation.id, unassignedAt: null },
+          include: { user: { select: { id: true, name: true } } },
+          orderBy: { assignedAt: 'desc' },
+        });
+        const agentName = currentAssignment?.user?.name?.trim() || 'Temsilci';
+
+        const firstMessageStep = ((flow.steps as FlowStep[]) || []).find((s) => s.type === 'send_message');
+        const template = String(firstMessageStep?.data?.message || '').trim();
+        if (!template) continue;
+
+        const text = this.renderOrderTemplate(template, {
+          agentName,
+          status: params.status,
+          items: order.items.map((i) => ({
+            name: i.name,
+            property2: i.measurementInfo || '',
+            unitPrice: Number(i.unitPrice) || 0,
+            currency: order.currency || 'TRY',
+            priceIncludesVat: i.priceIncludesVat !== false,
+          })),
+        });
+
+        const waResponse = await this.wahaService.sendText(session.name, chatId, text);
+        const waMessageId =
+          typeof waResponse?.id === 'string'
+            ? waResponse.id
+            : waResponse?.id?._serialized || waResponse?.id?.id || null;
+
+        await this.prisma.message.create({
+          data: {
+            conversationId: conversation.id,
+            sessionId: session.id,
+            waMessageId,
+            direction: MessageDirection.OUTGOING,
+            body: text,
+            status: MessageStatus.SENT,
+            metadata: {
+              autoReply: true,
+              automationType: 'order_status',
+              flowId: flow.id,
+              orderId: order.id,
+              status: params.status,
+            },
+          },
+        });
+        await this.prisma.conversation.update({
+          where: { id: conversation.id },
+          data: { lastMessageText: text, lastMessageAt: new Date() },
+        });
+
+        const prevState =
+          order.automationState && typeof order.automationState === 'object'
+            ? (order.automationState as Record<string, unknown>)
+            : {};
+        const sent =
+          prevState.sent && typeof prevState.sent === 'object'
+            ? (prevState.sent as Record<string, unknown>)
+            : {};
+        await this.prisma.salesOrder.update({
+          where: { id: order.id },
+          data: {
+            automationState: {
+              ...prevState,
+              sent: {
+                ...sent,
+                [sentKey]: new Date().toISOString(),
+              },
+            },
+          },
+        });
+      }
+    } catch (err: any) {
+      this.logger.error(`Sipariş otomasyonu hatası: ${err?.message || err}`);
+    }
+  }
+
+  private hasOrderAutomationSent(state: unknown, sentKey: string): boolean {
+    if (!state || typeof state !== 'object') return false;
+    const sent = (state as Record<string, unknown>).sent;
+    if (!sent || typeof sent !== 'object') return false;
+    return !!(sent as Record<string, unknown>)[sentKey];
+  }
+
+  private matchesOrderStatusTrigger(
+    flow: { trigger: string; conditions: unknown },
+    status: string,
+  ): boolean {
+    if (flow.trigger !== 'order_status') return false;
+    const cond = flow.conditions && typeof flow.conditions === 'object'
+      ? (flow.conditions as Record<string, unknown>)
+      : {};
+    const statuses = Array.isArray(cond.statuses) ? cond.statuses.map((s) => String(s)) : [];
+    if (!statuses.length) return false;
+    return statuses.includes(status);
+  }
+
+  private async pickWorkingSession(organizationId: string): Promise<{ id: string; name: string } | null> {
+    let session = await this.prisma.whatsappSession.findFirst({
+      where: { organizationId, status: 'WORKING' },
+      orderBy: { createdAt: 'asc' },
+      select: { id: true, name: true },
+    });
+    if (!session) {
+      session = await this.prisma.whatsappSession.findFirst({
+        where: { organizationId: null, status: 'WORKING' },
+        orderBy: { createdAt: 'asc' },
+        select: { id: true, name: true },
+      });
+    }
+    return session;
+  }
+
+  private renderOrderTemplate(
+    template: string,
+    data: {
+      agentName: string;
+      status: string;
+      items: Array<{
+        name: string;
+        property2: string;
+        unitPrice: number;
+        currency: string;
+        priceIncludesVat: boolean;
+      }>;
+    },
+  ): string {
+    const lines = data.items.map((it) => {
+      const curr = (it.currency || 'TRY').toUpperCase() === 'TRY' ? 'TL' : (it.currency || 'TRY').toUpperCase();
+      const price = `${it.unitPrice.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ${curr}`;
+      const vat = it.priceIncludesVat ? '(KDV Dahil)' : '+KDV';
+      const suffix = it.property2 ? `, ${it.property2}` : '';
+      return `${it.name}${suffix}, ${price} ${vat}`;
+    });
+    return template
+      .replace(/\{Temsilci Adı\}/g, data.agentName)
+      .replace(/\{Sipariş Durumu\}/g, data.status)
+      .replace(/\{Ürünler\}/g, lines.join('\n'));
+  }
 
   async processIncomingMessage(params: {
     sessionName: string;
