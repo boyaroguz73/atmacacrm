@@ -126,9 +126,18 @@ function extractImageUrls(row: Record<string, unknown>): string[] {
   return Array.from(urls);
 }
 
-function buildVariantName(v: Record<string, unknown>, fallbackCode?: string | null): string {
+/**
+ * Alt ürün satırından varyant "ek" etiketi.
+ * Öncelik Property2 (T-Soft’ta kod TA4120 yerine gösterilecek alan); kod son çare.
+ */
+function variantSuffixFromSubProduct(
+  v: Record<string, unknown>,
+  fallbackCode?: string | null,
+): string {
+  const p2 = pickString(v.Property2, v.property2, v.Property_2);
+  if (p2) return p2;
+
   const direct = pickString(
-    v.ProductName,
     v.VariantName,
     v.Name,
     v.OptionValue,
@@ -160,6 +169,21 @@ function buildVariantName(v: Record<string, unknown>, fallbackCode?: string | nu
   if (code.trim()) return code.trim();
 
   return 'Varyant';
+}
+
+/** CRM’de görünen varyant adı: ana ürün adı — Property2 (veya suffix) */
+function buildVariantDisplayName(
+  v: Record<string, unknown>,
+  mainProductName: string,
+  fallbackCode?: string | null,
+): string {
+  const main = mainProductName.trim();
+  const suffix = variantSuffixFromSubProduct(v, fallbackCode);
+  if (main && suffix) {
+    if (suffix === main) return main;
+    return `${main} — ${suffix}`;
+  }
+  return main || suffix || 'Varyant';
 }
 
 @Injectable()
@@ -472,7 +496,7 @@ export class TsoftProductSyncService {
 
     let variantCount = 0;
     if (flags.includeVariants) {
-      variantCount = await this.upsertVariants(product.id, row, flags);
+      variantCount = await this.upsertVariants(product.id, row, flags, productName);
     }
 
     return { skipped: false, tsoftId, variantCount };
@@ -489,6 +513,7 @@ export class TsoftProductSyncService {
       includePrice: boolean;
       imageBaseUrl: string;
     },
+    mainProductName: string,
   ): Promise<number> {
     const subs = row.SubProducts ?? row.subProducts;
     if (!Array.isArray(subs) || subs.length === 0) return 0;
@@ -505,7 +530,7 @@ export class TsoftProductSyncService {
       if (!vExternal) continue;
 
       const vSku = pickString(v.ProductCode, v.VariantCode, v.Barcode);
-      const vName = buildVariantName(v, vExternal);
+      const vName = buildVariantDisplayName(v, mainProductName, vExternal);
       const vSellingPrice = toNullableNumber(v.SellingPrice ?? v.sellingPrice ?? v.SalePrice);
       const vDiscountedPrice = toNullableNumber(v.DiscountedSellingPrice ?? v.discountedSellingPrice);
       const vList = toNullableNumber(v.ListPrice ?? v.listPrice);
