@@ -98,7 +98,7 @@ export default function AutoReplyPage() {
     name: '',
     description: '',
     trigger: 'keyword',
-    conditions: [{ field: 'message_contains', operator: 'contains', value: '' }] as any[],
+    conditions: [{ field: 'message_contains', operator: 'contains', value: '' }] as any,
     steps: [newStep('send_message')] as FlowStep[],
   });
 
