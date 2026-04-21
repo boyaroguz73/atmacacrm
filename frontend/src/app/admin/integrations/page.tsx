@@ -1049,6 +1049,7 @@ type TsoftSyncFlags = {
   customers: boolean;
   images: boolean;
   push: boolean;
+  cartAbandonTasks: boolean;
 };
 
 function readSyncFlags(config: any): TsoftSyncFlags {
@@ -1061,6 +1062,7 @@ function readSyncFlags(config: any): TsoftSyncFlags {
     customers: bool(s.customers, true),
     images: bool(s.images, true),
     push: bool(s.push, true),
+    cartAbandonTasks: bool(s.cartAbandonTasks, true),
   };
 }
 
@@ -1479,6 +1481,12 @@ function TsoftPanel({ integration }: { integration: Integration }) {
             description="CRM → T-Soft yazma işlerini işle"
             checked={flags.push}
             onToggle={() => toggleFlag('push')}
+          />
+          <FlagToggle
+            label="Sepet terk görevleri"
+            description="AWAITING_CHECKOUT siparişlerde otomatik görev oluştur"
+            checked={flags.cartAbandonTasks}
+            onToggle={() => toggleFlag('cartAbandonTasks')}
           />
         </div>
       </div>

@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import api from '@/lib/api';
+import Link from 'next/link';
 import {
   ChevronLeft,
   ChevronRight,
@@ -380,9 +381,12 @@ export default function CalendarPage() {
                             </p>
                           )}
                           {task.contact && (
-                            <p className="text-[10px] text-gray-400 mt-1">
+                            <Link
+                              href={`/inbox?contactId=${task.contact.id}`}
+                              className="text-[10px] text-blue-500 mt-1 inline-block hover:text-blue-700 underline"
+                            >
                               {task.contact.name || task.contact.phone}
-                            </p>
+                            </Link>
                           )}
                           {task.user && (
                             <p className="text-[10px] text-blue-500 mt-0.5">

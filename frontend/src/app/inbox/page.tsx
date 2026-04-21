@@ -12,6 +12,7 @@ export default function InboxPage() {
   const router = useRouter();
   const pathname = usePathname();
   const filter = searchParams.get('filter') || undefined;
+  const contactId = searchParams.get('contactId') || undefined;
   const [mobileShowChat, setMobileShowChat] = useState(false);
 
   // Temsilci (AGENT) varsayılan filtresi: sadece kendine atananlar
@@ -57,6 +58,13 @@ export default function InboxPage() {
       setActiveConversation(conversations[0]);
     }
   }, [conversations, activeConversation, isLoadingConversations, setActiveConversation]);
+
+  useEffect(() => {
+    if (!contactId) return;
+    if (!conversations.length) return;
+    const found = conversations.find((c) => c.contactId === contactId);
+    if (found) setActiveConversation(found);
+  }, [contactId, conversations, setActiveConversation]);
 
   /** lg (1024px) altında: sohbet seçilince tam ekran chat. Üstünde: sol liste asla kaybolmaz (md=768 çok dar kalıyordu). */
   useEffect(() => {

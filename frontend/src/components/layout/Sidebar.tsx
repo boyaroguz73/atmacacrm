@@ -106,6 +106,7 @@ const menuItems: MenuItem[] = [
     menuKey: 'accounting',
     children: [
       { href: '/accounting/invoices', label: 'Faturalar', icon: Receipt, key: 'accounting_invoices' },
+      { href: '/accounting/invoices?tab=pending', label: 'Bekleyenler', icon: Clock, key: 'accounting_pending' },
     ],
   },
   { href: '/tasks', label: 'Görevler', icon: CalendarCheck, menuKey: 'tasks' },

@@ -562,6 +562,17 @@ export class EcommerceService {
     const defaultStart = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
     const dateStart = opts.dateStart ? new Date(opts.dateStart) : defaultStart;
     const dateEnd = opts.dateEnd ? new Date(opts.dateEnd) : now;
+    const integration = await this.prisma.orgIntegration.findUnique({
+      where: {
+        organizationId_integrationKey: { organizationId, integrationKey: 'tsoft' },
+      },
+      select: { config: true },
+    });
+    const syncCfg =
+      integration?.config && typeof integration.config === 'object'
+        ? ((integration.config as Record<string, unknown>).sync as Record<string, unknown> | undefined)
+        : undefined;
+    const createCartAbandonTasks = syncCfg?.cartAbandonTasks !== false;
     this.logger.log(
       `[TSOFT-SYNC-ORDERS] Başlatılıyor orgId=${organizationId} aralık=${dateStart.toISOString()}..${dateEnd.toISOString()}`,
     );
@@ -791,6 +802,13 @@ export class EcommerceService {
 
         // Otomatik görev oluştur
         try {
+          if (crmStatus === 'AWAITING_CHECKOUT' && !createCartAbandonTasks) {
+            imported++;
+            this.logger.debug(
+              `[TSOFT-SYNC-ORDERS] Sepet terk görevleri kapalı, task atlandı: ${newOrder.id}`,
+            );
+            continue;
+          }
           const dueAt = new Date(validDate.getTime() + 24 * 60 * 60 * 1000);
           const orderLabel = newOrder.orderNumber
             ? `SIP-${String(newOrder.orderNumber).padStart(5, '0')}`
