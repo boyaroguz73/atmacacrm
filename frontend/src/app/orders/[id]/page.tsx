@@ -1310,21 +1310,34 @@ export default function OrderDetailPage() {
                 Sil
               </button>
             ) : null}
-            <input
-              type="date"
-              value={invoiceDueDraft}
-              onChange={(e) => setInvoiceDueDraft(e.target.value)}
-              className="px-2.5 py-1.5 rounded-lg border border-gray-200 text-xs"
-            />
-            <button
-              type="button"
-              disabled={invoiceSaving || order.status === 'CANCELLED'}
-              onClick={() => void createInvoiceFromOrder()}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-whatsapp text-white text-xs font-medium disabled:opacity-50"
-            >
-              {invoiceSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />}
-              Muhasebeye Gönder
-            </button>
+            {order.invoice ? (
+              <button
+                type="button"
+                onClick={() => router.push(`/accounting/invoices/${order.invoice!.id}`)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-emerald-200 bg-emerald-50 text-xs font-medium text-emerald-700"
+              >
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                Fatura kesildi — görüntüle
+              </button>
+            ) : (
+              <>
+                <input
+                  type="date"
+                  value={invoiceDueDraft}
+                  onChange={(e) => setInvoiceDueDraft(e.target.value)}
+                  className="px-2.5 py-1.5 rounded-lg border border-gray-200 text-xs"
+                />
+                <button
+                  type="button"
+                  disabled={invoiceSaving || order.status === 'CANCELLED'}
+                  onClick={() => void createInvoiceFromOrder()}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-whatsapp text-white text-xs font-medium disabled:opacity-50"
+                >
+                  {invoiceSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />}
+                  Muhasebeye Gönder
+                </button>
+              </>
+            )}
           </div>
         </div>
       )}
