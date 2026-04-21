@@ -7,6 +7,7 @@ import { cn, formatPhone, rewriteMediaUrlForClient } from '@/lib/utils';
 import { SOURCES } from '@/lib/constants';
 import { QuoteEmbeddedChat } from '@/components/quotes/QuoteEmbeddedChat';
 import { VariantPickerOption } from '@/components/quotes/VariantPickerOption';
+import { HtmlEditor } from '@/components/HtmlEditor';
 import toast from 'react-hot-toast';
 import {
   ArrowLeft,

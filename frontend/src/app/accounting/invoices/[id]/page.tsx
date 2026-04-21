@@ -659,7 +659,7 @@ export default function InvoiceDetailPage() {
                   className="inline-flex items-center gap-1.5 text-sm font-medium text-whatsapp hover:underline"
                 >
                   <ExternalLink className="w-4 h-4" />
-                  PDF'yi görüntüle
+                  PDF&apos;yi görüntüle
                 </a>
               ) : (
                 <p className="text-xs text-amber-700">Henüz PDF yüklenmemiş.</p>

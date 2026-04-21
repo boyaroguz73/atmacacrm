@@ -105,7 +105,7 @@ function cargoFor(o: SalesOrder): string {
 function packagingFor(o: SalesOrder): string {
   const p = siteField(o, 'PackageStatus', 'PackageStatusLabel', 'PackagingStatus');
   if (p) return p;
-  if (o.status === 'SHIPPED' || o.status === 'DELIVERED') return 'Paketlendi';
+  if (o.status === 'SHIPPED' || o.status === 'COMPLETED') return 'Paketlendi';
   return '—';
 }
 
