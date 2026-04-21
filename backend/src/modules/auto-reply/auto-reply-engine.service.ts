@@ -3,6 +3,7 @@ import { AutoReplyService, FlowStep } from './auto-reply.service';
 import { WahaService } from '../waha/waha.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { MessageDirection, MessageStatus, LeadStatus } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { LeadsService } from '../leads/leads.service';
 import { ConversationsService } from '../conversations/conversations.service';
 
@@ -70,7 +71,7 @@ export class AutoReplyEngineService {
         });
         const agentName = currentAssignment?.user?.name?.trim() || 'Temsilci';
 
-        const firstMessageStep = ((flow.steps as FlowStep[]) || []).find((s) => s.type === 'send_message');
+        const firstMessageStep = this.parseFlowSteps(flow.steps).find((s) => s.type === 'send_message');
         const template = String(firstMessageStep?.data?.message || '').trim();
         if (!template) continue;
 
@@ -125,13 +126,13 @@ export class AutoReplyEngineService {
         await this.prisma.salesOrder.update({
           where: { id: order.id },
           data: {
-            automationState: {
+            automationState: ({
               ...prevState,
               sent: {
                 ...sent,
                 [sentKey]: new Date().toISOString(),
               },
-            },
+            } as unknown) as Prisma.InputJsonValue,
           },
         });
       }
@@ -145,6 +146,10 @@ export class AutoReplyEngineService {
     const sent = (state as Record<string, unknown>).sent;
     if (!sent || typeof sent !== 'object') return false;
     return !!(sent as Record<string, unknown>)[sentKey];
+  }
+
+  private parseFlowSteps(steps: unknown): FlowStep[] {
+    return (steps as unknown as FlowStep[]) || [];
   }
 
   private matchesOrderStatusTrigger(
@@ -244,7 +249,7 @@ export class AutoReplyEngineService {
       contactId: string;
     },
   ) {
-    const steps = (flow.steps as FlowStep[]) || [];
+    const steps = this.parseFlowSteps(flow.steps);
     if (steps.length === 0) return;
 
     let currentStep: FlowStep | undefined = steps[0];
