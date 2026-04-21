@@ -122,4 +122,6 @@ volumes:
   postgres_data:
   redis_data:
   waha_data:
+    external: true
+    name: atmaca-crm_waha_data
   backend_uploads:
