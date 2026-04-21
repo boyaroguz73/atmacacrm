@@ -60,13 +60,11 @@ interface DashboardData {
 }
 
 const ORDER_STATUS_LABELS: Record<string, string> = {
-  DRAFT: 'Taslak',
-  PENDING: 'Beklemede',
-  CONFIRMED: 'Onaylı',
-  IN_PRODUCTION: 'Üretimde',
-  READY: 'Hazır',
+  AWAITING_CHECKOUT: 'Sepet Terk',
+  AWAITING_PAYMENT: 'Ödeme Bekleniyor',
+  PREPARING: 'Hazırlanıyor',
   SHIPPED: 'Kargoda',
-  DELIVERED: 'Teslim',
+  COMPLETED: 'Tamamlandı',
   CANCELLED: 'İptal',
 };
 
@@ -379,11 +377,11 @@ export default function DashboardPage() {
                 const pct = totalCount > 0 ? (row.count / totalCount) * 100 : 0;
                 const label = ORDER_STATUS_LABELS[row.status] || row.status;
                 const barColor =
-                  row.status === 'DELIVERED'
+                  row.status === 'COMPLETED'
                     ? 'bg-emerald-500'
                     : row.status === 'CANCELLED'
                       ? 'bg-gray-400'
-                      : row.status === 'IN_PRODUCTION' || row.status === 'READY'
+                      : row.status === 'PREPARING'
                         ? 'bg-indigo-500'
                         : row.status === 'SHIPPED'
                           ? 'bg-sky-500'

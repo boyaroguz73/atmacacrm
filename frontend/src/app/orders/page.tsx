@@ -23,7 +23,7 @@ import {
 } from 'lucide-react';
 import PanelEditedBadge from '@/components/ui/PanelEditedBadge';
 
-type OrderStatus = 'PENDING' | 'PROCESSING' | 'SHIPPED' | 'DELIVERED' | 'CANCELLED';
+type OrderStatus = 'AWAITING_CHECKOUT' | 'AWAITING_PAYMENT' | 'PREPARING' | 'SHIPPED' | 'COMPLETED' | 'CANCELLED';
 
 interface OrderItemRow {
   id: string;
@@ -117,18 +117,20 @@ const LIMIT = 20;
 
 const STATUS_FILTERS: { value: '' | OrderStatus; label: string }[] = [
   { value: '', label: 'Tümü' },
-  { value: 'PENDING', label: 'Beklemede' },
-  { value: 'PROCESSING', label: 'İşleniyor' },
+  { value: 'AWAITING_CHECKOUT', label: 'Sepet Terk' },
+  { value: 'AWAITING_PAYMENT', label: 'Ödeme Bekleniyor' },
+  { value: 'PREPARING', label: 'Hazırlanıyor' },
   { value: 'SHIPPED', label: 'Kargoda' },
-  { value: 'DELIVERED', label: 'Teslim Edildi' },
+  { value: 'COMPLETED', label: 'Tamamlandı' },
   { value: 'CANCELLED', label: 'İptal' },
 ];
 
 const STATUS_LABELS: Record<OrderStatus, string> = {
-  PENDING: 'Beklemede',
-  PROCESSING: 'İşleniyor',
+  AWAITING_CHECKOUT: 'Sepet Terk',
+  AWAITING_PAYMENT: 'Ödeme Bekleniyor',
+  PREPARING: 'Hazırlanıyor',
   SHIPPED: 'Kargoda',
-  DELIVERED: 'Teslim Edildi',
+  COMPLETED: 'Tamamlandı',
   CANCELLED: 'İptal',
 };
 
@@ -147,13 +149,15 @@ function formatMoney(amount: number, currency: string) {
 
 function statusBadgeClass(status: OrderStatus) {
   switch (status) {
-    case 'PENDING':
+    case 'AWAITING_CHECKOUT':
+      return 'bg-orange-100 text-orange-800 border border-orange-200/80';
+    case 'AWAITING_PAYMENT':
       return 'bg-amber-100 text-amber-800 border border-amber-200/80';
-    case 'PROCESSING':
+    case 'PREPARING':
       return 'bg-blue-100 text-blue-800 border border-blue-200/80';
     case 'SHIPPED':
       return 'bg-purple-100 text-purple-800 border border-purple-200/80';
-    case 'DELIVERED':
+    case 'COMPLETED':
       return 'bg-emerald-100 text-emerald-800 border border-emerald-200/80';
     case 'CANCELLED':
       return 'bg-red-100 text-red-800 border border-red-200/80';
@@ -182,15 +186,25 @@ export default function OrdersPage() {
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<'' | OrderStatus>('');
-  // Varsayılan filtre: son 30 gün. Kullanıcı tarih değiştirirse hem CRM listesi hem T-Soft sync buna göre çalışır.
+  // Varsayılan filtre: son 7 gün. localStorage'da kayıtlı değer varsa onu kullan.
   const defaultDateRange = useMemo(() => {
     const end = new Date();
-    const start = new Date(end.getTime() - 30 * 24 * 60 * 60 * 1000);
+    const start = new Date(end.getTime() - 7 * 24 * 60 * 60 * 1000);
     const fmt = (d: Date) => d.toISOString().slice(0, 10);
     return { from: fmt(start), to: fmt(end) };
   }, []);
-  const [dateFrom, setDateFrom] = useState(defaultDateRange.from);
-  const [dateTo, setDateTo] = useState(defaultDateRange.to);
+  const [dateFrom, setDateFrom] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('orders_dateFrom') ?? defaultDateRange.from;
+    }
+    return defaultDateRange.from;
+  });
+  const [dateTo, setDateTo] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('orders_dateTo') ?? defaultDateRange.to;
+    }
+    return defaultDateRange.to;
+  });
   const [searchQuery, setSearchQuery] = useState('');
   const [siteOrdersOnly, setSiteOrdersOnly] = useState(false);
 
@@ -348,6 +362,10 @@ export default function OrdersPage() {
               setDateFrom(from);
               setDateTo(to);
               setPage(1);
+              if (typeof window !== 'undefined') {
+                localStorage.setItem('orders_dateFrom', from);
+                localStorage.setItem('orders_dateTo', to);
+              }
             }}
           />
           <div className="relative min-w-[240px] flex-1 xl:flex-none xl:min-w-[320px]">
@@ -475,7 +493,7 @@ export default function OrdersPage() {
                     </td>
                     {canDeleteOrder ? (
                       <td className="px-5 py-3 text-right">
-                        {order.status === 'PENDING' && !order.invoice ? (
+                        {(order.status === 'AWAITING_PAYMENT' || order.status === 'AWAITING_CHECKOUT') && !order.invoice ? (
                           <button
                             type="button"
                             onClick={(e) => void removeOrder(order, e)}

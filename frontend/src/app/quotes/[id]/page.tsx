@@ -26,14 +26,21 @@ import {
 import toast from 'react-hot-toast';
 import { useAuthStore } from '@/store/auth';
 import { QuoteEmbeddedChat } from '@/components/quotes/QuoteEmbeddedChat';
-import { MeasurementLineCell } from '@/components/quotes/MeasurementLineCell';
 import { VariantPickerOption } from '@/components/quotes/VariantPickerOption';
+import { HtmlEditor } from '@/components/HtmlEditor';
 
 function toDateInputValue(iso: string | null | undefined): string {
   if (!iso) return '';
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return '';
   return d.toISOString().slice(0, 10);
+}
+
+/** HTML editörden gelen değeri kontrol eder; boşsa null döner */
+function stripHtmlEmpty(html: string | undefined | null): string | null {
+  if (!html) return null;
+  const plain = html.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim();
+  return plain ? html : null;
 }
 
 const CURRENCY: Record<string, string> = { TRY: '₺', USD: '$', EUR: '€' };
@@ -75,6 +82,7 @@ interface ProductHit {
   name: string;
   description?: string | null;
   unitPrice: number;
+  salePriceAmount?: number | null;
   vatRate: number;
   priceIncludesVat?: boolean;
   currency?: string;
@@ -101,13 +109,6 @@ function currencySymbol(c: string): string {
   return '₺';
 }
 
-function measurementHintFromVariantMetadata(metadata: unknown): string {
-  if (!metadata || typeof metadata !== 'object') return '';
-  const m = metadata as Record<string, unknown>;
-  const t2 = typeof m.type2 === 'string' ? m.type2.trim() : '';
-  const title = typeof m.title === 'string' ? m.title.trim() : '';
-  return t2 || title || '';
-}
 
 function round2(n: number) {
   return Math.round(n * 100) / 100;
@@ -235,6 +236,8 @@ export default function QuoteDetailPage() {
       id: string | null;
       name: string;
       unitPrice: number;
+      salePriceAmount?: number | null;
+      property2?: string | null;
       vatRate: number;
       priceIncludesVat?: boolean;
       metadata?: unknown;
@@ -357,25 +360,46 @@ export default function QuoteDetailPage() {
       id?: string | null;
       name: string;
       unitPrice: number;
-      metadata?: unknown;
+      salePriceAmount?: number | null;
+      property2?: string | null;
       vatRate?: number;
       priceIncludesVat?: boolean;
       imageUrl?: string | null;
     },
   ) => {
-    const vat =
-      variant?.vatRate != null && Number.isFinite(Number(variant.vatRate))
-        ? Math.round(Number(variant.vatRate))
-        : p.vatRate != null && Number.isFinite(Number(p.vatRate))
-          ? Math.round(Number(p.vatRate))
-          : 20;
-    const pic =
-      variant?.priceIncludesVat !== undefined
-        ? variant.priceIncludesVat
-        : p.priceIncludesVat !== undefined
-          ? p.priceIncludesVat
-          : true;
-    const measureHint = variant ? measurementHintFromVariantMetadata(variant.metadata) : '';
+    // İndirimli fiyat varsa onu kullan: KDV hariç, %10 KDV
+    const variantSale = variant?.salePriceAmount != null && variant.salePriceAmount > 0
+      ? variant.salePriceAmount
+      : null;
+    const productSale = p.salePriceAmount != null && p.salePriceAmount > 0
+      ? p.salePriceAmount
+      : null;
+    const salePrice = variantSale ?? productSale;
+
+    let effectiveUnitPrice: number;
+    let effectiveVat: number;
+    let effectivePic: boolean;
+
+    if (salePrice != null) {
+      effectiveUnitPrice = salePrice;
+      effectiveVat = 10;
+      effectivePic = false;
+    } else {
+      effectiveUnitPrice = variant ? variant.unitPrice : p.unitPrice;
+      effectiveVat =
+        variant?.vatRate != null && Number.isFinite(Number(variant.vatRate))
+          ? Math.round(Number(variant.vatRate))
+          : p.vatRate != null && Number.isFinite(Number(p.vatRate))
+            ? Math.round(Number(p.vatRate))
+            : 20;
+      effectivePic =
+        variant?.priceIncludesVat !== undefined
+          ? variant.priceIncludesVat
+          : p.priceIncludesVat !== undefined
+            ? p.priceIncludesVat
+            : true;
+    }
+
     setLines((prev) => [
       ...prev,
       {
@@ -386,17 +410,17 @@ export default function QuoteDetailPage() {
         name: variant ? variant.name : String(p.name ?? ''),
         description: p.description || undefined,
         colorFabricInfo: '',
-        measurementInfo: measureHint,
+        measurementInfo: variant?.property2 ?? '',
         quantity: 1,
-        unitPrice: variant ? variant.unitPrice : p.unitPrice,
-        vatRate: vat,
-        priceIncludesVat: pic,
+        unitPrice: effectiveUnitPrice,
+        vatRate: effectiveVat,
+        priceIncludesVat: effectivePic,
         applyDiscount: false,
         discountType: 'PERCENT',
         discountValue: 0,
       },
     ]);
-    toast.success('Ürün satıra eklendi');
+    toast.success(salePrice != null ? 'Ürün indirimli fiyatla eklendi' : 'Ürün satıra eklendi');
   };
 
   const onPickProductFromSearch = async (p: ProductHit) => {
@@ -466,9 +490,9 @@ export default function QuoteDetailPage() {
         discountValue,
         validUntil: validUntil ? new Date(validUntil).toISOString() : null,
         deliveryDate: deliveryDate ? new Date(deliveryDate).toISOString() : null,
-        notes: notes.trim() || null,
-        termsOverride: termsOverride.trim() || null,
-        footerNoteOverride: footerNoteOverride.trim() || null,
+        notes: stripHtmlEmpty(notes),
+        termsOverride: stripHtmlEmpty(termsOverride),
+        footerNoteOverride: stripHtmlEmpty(footerNoteOverride),
         documentKind,
         colorFabricInfo: null,
         measurementInfo: null,
@@ -554,44 +578,19 @@ export default function QuoteDetailPage() {
   };
 
   const submitConvert = async () => {
-    for (const src of convertItemSources) {
-      const item = (quote?.items || []).find((x: any) => String(x.id) === src.quoteItemId);
-      const itemName = item?.name || 'Kalem';
-      if (src.source === 'SUPPLIER' && !src.supplierId) {
-        toast.error(`${itemName} için tedarikçi seçimi zorunlu`);
-        return;
-      }
-    }
-    if (
-      convertPaymentMode === 'CUSTOM' &&
-      !(Number(convertCustomPaymentValue) > 0)
-    ) {
-      toast.error('Özel ödeme tutarı 0’dan büyük olmalıdır');
-      return;
-    }
-    if (
-      convertPaymentMode === 'CUSTOM' &&
-      Number(convertCustomPaymentValue) > Number(quote?.grandTotal || 0)
-    ) {
-      toast.error('Özel ödeme tutarı teklif toplamını aşamaz');
-      return;
-    }
     setActionLoading(convertManual ? 'convert-manual' : 'convert');
     try {
       await api.post(`/quotes/${id}/convert-to-order`, {
         manual: convertManual,
-        payment: {
-          mode: convertPaymentMode,
-          customValue:
-            convertPaymentMode === 'CUSTOM' ? Number(convertCustomPaymentValue) || undefined : undefined,
-        },
-        itemSources: convertItemSources.map((src) => ({
-          quoteItemId: src.quoteItemId,
-          source: src.source,
-          supplierId: src.source === 'SUPPLIER' ? src.supplierId || undefined : undefined,
-          supplierOrderNo:
-            src.source === 'STOCK' ? undefined : src.supplierOrderNo.trim() || undefined,
-        })),
+        itemSources: convertItemSources
+          .filter((src) => src.source || src.supplierId)
+          .map((src) => ({
+            quoteItemId: src.quoteItemId,
+            source: src.source || undefined,
+            supplierId: src.source === 'SUPPLIER' ? src.supplierId || undefined : undefined,
+            supplierOrderNo:
+              src.source === 'STOCK' ? undefined : src.supplierOrderNo.trim() || undefined,
+          })),
       });
       toast.success(convertManual ? 'Teklif manuel olarak siparişe çevrildi' : 'Sipariş oluşturuldu');
       setShowConvertModal(false);
@@ -619,6 +618,23 @@ export default function QuoteDetailPage() {
       });
       toast.success('Teklif kabul edildi');
       setShowAcceptModal(false);
+      void fetchQuote();
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, 'Kabul başarısız'));
+    } finally {
+      setActionLoading('');
+    }
+  };
+
+  const handleDirectAccept = async () => {
+    setActionLoading('accept');
+    try {
+      await api.patch(`/quotes/${id}/status`, {
+        status: 'ACCEPTED',
+        paymentMode: 'FULL',
+        documentKind,
+      });
+      toast.success('Teklif kabul edildi');
       void fetchQuote();
     } catch (err) {
       toast.error(getApiErrorMessage(err, 'Kabul başarısız'));
@@ -658,7 +674,13 @@ export default function QuoteDetailPage() {
                     key={v.id ?? '__product_base__'}
                     name={v.name}
                     imageUrl={v.imageUrl}
+                    property2={v.property2}
                     priceDisplay={`${sym}${v.unitPrice.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}`}
+                    discountedPriceDisplay={
+                      v.salePriceAmount != null && v.salePriceAmount !== v.unitPrice
+                        ? `${sym}${v.salePriceAmount.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}`
+                        : null
+                    }
                     onSelect={() => {
                       finalizeProductLine(variantPick.product, v);
                       setVariantPick(null);
@@ -832,10 +854,11 @@ export default function QuoteDetailPage() {
                           />
                         </td>
                         <td className="px-2 py-2">
-                          <MeasurementLineCell
-                            productId={line.productId}
+                          <input
                             value={line.measurementInfo ?? ''}
-                            onChange={(next) => updateLine(line.key, { measurementInfo: next })}
+                            onChange={(e) => updateLine(line.key, { measurementInfo: e.target.value })}
+                            placeholder="Örn. 180×200"
+                            className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-whatsapp"
                           />
                         </td>
                         <td className="px-2 py-2">
@@ -1000,36 +1023,33 @@ export default function QuoteDetailPage() {
             <section className="bg-white rounded-xl border border-gray-100 shadow-sm p-5 space-y-4">
               <div>
                 <label className="block text-xs font-semibold text-gray-500 mb-1">Notlar</label>
-                <textarea
+                <HtmlEditor
                   value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  rows={3}
+                  onChange={setNotes}
                   placeholder="Teklif ile ilgili notlar…"
-                  className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-whatsapp resize-y min-h-[80px]"
+                  minHeight="80px"
                 />
               </div>
               <div>
                 <label className="block text-xs font-semibold text-gray-500 mb-1">
                   Ödeme Koşulları (bu teklife özel)
                 </label>
-                <textarea
+                <HtmlEditor
                   value={termsOverride}
-                  onChange={(e) => setTermsOverride(e.target.value)}
-                  rows={4}
+                  onChange={setTermsOverride}
                   placeholder="Bu teklifte PDF'e basılacak ödeme koşulları…"
-                  className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-whatsapp resize-y min-h-[96px]"
+                  minHeight="96px"
                 />
               </div>
               <div>
                 <label className="block text-xs font-semibold text-gray-500 mb-1">
                   Alt Not (bu teklife özel)
                 </label>
-                <textarea
+                <HtmlEditor
                   value={footerNoteOverride}
-                  onChange={(e) => setFooterNoteOverride(e.target.value)}
-                  rows={3}
+                  onChange={setFooterNoteOverride}
                   placeholder="Bu teklifte PDF'e basılacak alt not…"
-                  className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-whatsapp resize-y min-h-[80px]"
+                  minHeight="80px"
                 />
               </div>
             </section>
@@ -1269,7 +1289,7 @@ export default function QuoteDetailPage() {
               <div>
                 <h2 className="text-lg font-bold text-gray-900">Siparişe dönüştürme kaynak seçimi</h2>
                 <p className="text-xs text-gray-500 mt-1">
-                  Her kalem için stok, tedarikçi veya eski müşteri kaynağını belirleyin.
+                  Kaynak seçimi opsiyoneldir; sipariş detayından sonradan güncelleyebilirsiniz.
                 </p>
               </div>
               <button
@@ -1282,49 +1302,6 @@ export default function QuoteDetailPage() {
               </button>
             </div>
             <div className="space-y-3">
-              <div className="border border-gray-100 rounded-xl p-3 space-y-2">
-                <p className="text-sm font-semibold text-gray-900">Ödeme seçimi</p>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-sm">
-                  <label className="inline-flex items-center gap-2">
-                    <input
-                      type="radio"
-                      name="convert-payment"
-                      checked={convertPaymentMode === 'FULL'}
-                      onChange={() => setConvertPaymentMode('FULL')}
-                    />
-                    Tam ödeme
-                  </label>
-                  <label className="inline-flex items-center gap-2">
-                    <input
-                      type="radio"
-                      name="convert-payment"
-                      checked={convertPaymentMode === 'DEPOSIT_50'}
-                      onChange={() => setConvertPaymentMode('DEPOSIT_50')}
-                    />
-                    %50 ön ödeme
-                  </label>
-                  <label className="inline-flex items-center gap-2">
-                    <input
-                      type="radio"
-                      name="convert-payment"
-                      checked={convertPaymentMode === 'CUSTOM'}
-                      onChange={() => setConvertPaymentMode('CUSTOM')}
-                    />
-                    Özel miktar
-                  </label>
-                </div>
-                {convertPaymentMode === 'CUSTOM' ? (
-                  <input
-                    type="number"
-                    min={0}
-                    step={0.01}
-                    value={convertCustomPaymentValue}
-                    onChange={(e) => setConvertCustomPaymentValue(e.target.value)}
-                    placeholder="Örn: 15000"
-                    className="px-3 py-2 border border-gray-200 rounded-lg text-sm w-full md:w-48"
-                  />
-                ) : null}
-              </div>
               {(quote.items || []).map((item: any) => {
                 const src = convertItemSources.find((x) => x.quoteItemId === String(item.id));
                 if (!src) return null;
@@ -1646,10 +1623,7 @@ export default function QuoteDetailPage() {
               <>
                 <button
                   type="button"
-                  onClick={() => {
-                    setAcceptPaymentMode('FULL');
-                    setShowAcceptModal(true);
-                  }}
+                  onClick={() => void handleDirectAccept()}
                   disabled={!!actionLoading}
                   className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-green-50 text-green-700 rounded-xl text-sm font-medium hover:bg-green-100 disabled:opacity-50"
                 >

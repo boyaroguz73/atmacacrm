@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter, usePathname } from 'next/navigation';
 import { useChatStore } from '@/store/chat';
 import { connectSocket, getSocket } from '@/lib/socket';
 import ConversationList from '@/components/chat/ConversationList';
@@ -9,8 +9,29 @@ import ChatWindow from '@/components/chat/ChatWindow';
 
 export default function InboxPage() {
   const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
   const filter = searchParams.get('filter') || undefined;
   const [mobileShowChat, setMobileShowChat] = useState(false);
+
+  // Temsilci (AGENT) varsayılan filtresi: sadece kendine atananlar
+  useEffect(() => {
+    if (filter !== undefined) return;
+    if (pathname !== '/inbox') return;
+    try {
+      const stored = localStorage.getItem('user');
+      if (stored) {
+        const u = JSON.parse(stored);
+        if (u?.role === 'AGENT') {
+          router.replace('/inbox?filter=mine');
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+  // Yalnızca ilk render'da çalışsın
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const {
     activeConversation,

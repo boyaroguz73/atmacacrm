@@ -7,7 +7,6 @@ import { formatPhone, rewriteMediaUrlForClient } from '@/lib/utils';
 import toast from 'react-hot-toast';
 import { ArrowLeft, Loader2, Package, Search, Trash2 } from 'lucide-react';
 import { ColorFabricLineCell } from '@/components/quotes/ColorFabricLineCell';
-import { MeasurementLineCell } from '@/components/quotes/MeasurementLineCell';
 import { VariantPickerOption } from '@/components/quotes/VariantPickerOption';
 
 interface LocalLineItem {
@@ -34,6 +33,7 @@ interface ProductHit {
   sku: string;
   name: string;
   unitPrice: number;
+  salePriceAmount?: number | null;
   vatRate: number;
   imageUrl?: string | null;
   priceIncludesVat?: boolean;
@@ -46,13 +46,6 @@ interface SupplierHit {
 
 type OrderPaymentModeUI = 'FULL' | 'DEPOSIT_50' | 'CUSTOM';
 
-function measurementHintFromVariantMetadata(metadata: unknown): string {
-  if (!metadata || typeof metadata !== 'object') return '';
-  const m = metadata as Record<string, unknown>;
-  const t2 = typeof m.type2 === 'string' ? m.type2.trim() : '';
-  const title = typeof m.title === 'string' ? m.title.trim() : '';
-  return t2 || title || '';
-}
 
 function calcTotals(items: LocalLineItem[]) {
   let subtotal = 0;
@@ -142,6 +135,8 @@ export default function NewOrderPage() {
       id: string | null;
       name: string;
       unitPrice: number;
+      salePriceAmount?: number | null;
+      property2?: string | null;
       vatRate: number;
       metadata?: unknown;
       imageUrl?: string | null;
@@ -219,25 +214,46 @@ export default function NewOrderPage() {
       id?: string | null;
       name: string;
       unitPrice: number;
+      salePriceAmount?: number | null;
+      property2?: string | null;
       vatRate?: number;
-      metadata?: unknown;
       imageUrl?: string | null;
       priceIncludesVat?: boolean;
     },
   ) => {
-    const vat =
-      variant?.vatRate != null && Number.isFinite(Number(variant.vatRate))
-        ? Math.round(Number(variant.vatRate))
-        : p.vatRate != null && Number.isFinite(Number(p.vatRate))
-          ? Math.round(Number(p.vatRate))
-          : 20;
-    const incl =
-      variant?.priceIncludesVat !== undefined
-        ? variant.priceIncludesVat
-        : p.priceIncludesVat !== undefined
-          ? p.priceIncludesVat
-          : true;
-    const measureHint = variant ? measurementHintFromVariantMetadata(variant.metadata) : '';
+    // İndirimli fiyat varsa onu kullan: KDV hariç, %10 KDV
+    const variantSale = variant?.salePriceAmount != null && variant.salePriceAmount > 0
+      ? variant.salePriceAmount
+      : null;
+    const productSale = p.salePriceAmount != null && p.salePriceAmount > 0
+      ? p.salePriceAmount
+      : null;
+    const salePrice = variantSale ?? productSale;
+
+    let effectiveUnitPrice: number;
+    let effectiveVat: number;
+    let effectiveIncl: boolean;
+
+    if (salePrice != null) {
+      effectiveUnitPrice = salePrice;
+      effectiveVat = 10;
+      effectiveIncl = false;
+    } else {
+      effectiveUnitPrice = variant ? variant.unitPrice : p.unitPrice;
+      effectiveVat =
+        variant?.vatRate != null && Number.isFinite(Number(variant.vatRate))
+          ? Math.round(Number(variant.vatRate))
+          : p.vatRate != null && Number.isFinite(Number(p.vatRate))
+            ? Math.round(Number(p.vatRate))
+            : 20;
+      effectiveIncl =
+        variant?.priceIncludesVat !== undefined
+          ? variant.priceIncludesVat
+          : p.priceIncludesVat !== undefined
+            ? p.priceIncludesVat
+            : true;
+    }
+
     setLines((prev) => [
       ...prev,
       {
@@ -247,18 +263,18 @@ export default function NewOrderPage() {
         lineImageUrl: (variant?.imageUrl && String(variant.imageUrl).trim()) || p.imageUrl || undefined,
         name: variant ? variant.name : p.name,
         colorFabricInfo: '',
-        measurementInfo: measureHint,
+        measurementInfo: variant?.property2 ?? '',
         quantity: 1,
-        unitPrice: variant ? variant.unitPrice : p.unitPrice,
-        vatRate: vat,
-        priceIncludesVat: incl,
+        unitPrice: effectiveUnitPrice,
+        vatRate: effectiveVat,
+        priceIncludesVat: effectiveIncl,
         isFromStock: true,
         sourceType: 'STOCK',
         supplierId: '',
         supplierOrderNo: '',
       },
     ]);
-    toast.success('Ürün satıra eklendi');
+    toast.success(salePrice != null ? 'Ürün indirimli fiyatla eklendi' : 'Ürün satıra eklendi');
     setProductQuery('');
     setProductResults([]);
     setProductDropdownOpen(false);
@@ -375,7 +391,13 @@ export default function NewOrderPage() {
                   key={v.id ?? '__product_base__'}
                   name={v.name}
                   imageUrl={v.imageUrl}
+                  property2={v.property2}
                   priceDisplay={fmt(v.unitPrice)}
+                  discountedPriceDisplay={
+                    v.salePriceAmount != null && v.salePriceAmount !== v.unitPrice
+                      ? fmt(v.salePriceAmount)
+                      : null
+                  }
                   onSelect={() => {
                     finalizeOrderLine(variantPick.product, v);
                     setVariantPick(null);
@@ -473,8 +495,16 @@ export default function NewOrderPage() {
                   </div>
                   <div>
                     <div className="text-sm text-gray-900">{p.name}</div>
-                    <div className="text-xs text-gray-400">
-                      {p.sku || 'SKU yok'} · {fmt(p.unitPrice)}
+                    <div className="text-xs text-gray-400 flex items-center gap-1.5 flex-wrap">
+                      <span>{p.sku || 'SKU yok'}</span>
+                      {p.salePriceAmount != null && p.salePriceAmount > 0 ? (
+                        <>
+                          <span className="text-green-600 font-semibold">{fmt(p.salePriceAmount)}</span>
+                          <span className="line-through">{fmt(p.unitPrice)}</span>
+                        </>
+                      ) : (
+                        <span>{fmt(p.unitPrice)}</span>
+                      )}
                     </div>
                   </div>
                 </button>
@@ -526,10 +556,11 @@ export default function NewOrderPage() {
                     />
                   </td>
                   <td className="px-3 py-2 align-top">
-                    <MeasurementLineCell
-                      productId={line.productId}
+                    <input
                       value={line.measurementInfo ?? ''}
-                      onChange={(next) => updateLine(line.key, { measurementInfo: next })}
+                      onChange={(e) => updateLine(line.key, { measurementInfo: e.target.value })}
+                      placeholder="Örn. 180×200"
+                      className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-whatsapp"
                     />
                   </td>
                   <td className="px-3 py-2">

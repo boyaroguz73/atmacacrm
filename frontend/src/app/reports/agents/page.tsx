@@ -16,6 +16,9 @@ import {
   Inbox,
   ListChecks,
   Medal,
+  ShoppingBag,
+  Banknote,
+  Filter,
 } from 'lucide-react';
 
 type ResponseMetrics = {
@@ -25,6 +28,13 @@ type ResponseMetrics = {
   total: number;
   sla30Percent: number | null;
   slaBreaches: number;
+};
+
+type OrderStats = {
+  orderCount: number;
+  orderRevenue: number;
+  collectionAmount: number;
+  collectionCount: number;
 };
 
 type AgentRow = {
@@ -37,7 +47,25 @@ type AgentRow = {
   avgResponseTimeMinutes: number | null;
   responseMetrics: ResponseMetrics;
   taskStats: { pending: number; overdue: number; completed: number };
+  orderStats?: OrderStats;
 };
+
+type SourceFilter = '' | 'MANUAL' | 'TSOFT';
+
+const SOURCE_OPTIONS: { value: SourceFilter; label: string }[] = [
+  { value: '', label: 'Tümü' },
+  { value: 'MANUAL', label: 'CRM' },
+  { value: 'TSOFT', label: 'Site' },
+];
+
+function fmtTry(n: number | undefined | null) {
+  if (n == null || Number.isNaN(n)) return '—';
+  return new Intl.NumberFormat('tr-TR', {
+    style: 'currency',
+    currency: 'TRY',
+    maximumFractionDigits: 0,
+  }).format(n);
+}
 
 function fmtMin(n: number | null | undefined) {
   if (n == null) return '—';
@@ -60,6 +88,7 @@ function slaTone(pct: number | null): { cls: string; label: string } {
 export default function ReportAgentsPage() {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+  const [source, setSource] = useState<SourceFilter>('');
   const [rows, setRows] = useState<AgentRow[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -69,6 +98,7 @@ export default function ReportAgentsPage() {
       const p: Record<string, string> = {};
       if (dateFrom) p.from = `${dateFrom}T00:00:00`;
       if (dateTo) p.to = `${dateTo}T23:59:59`;
+      if (source) p.source = source;
       const { data } = await api.get<AgentRow[]>('/reports/agents', { params: p });
       setRows(Array.isArray(data) ? data : []);
     } catch (e) {
@@ -76,7 +106,7 @@ export default function ReportAgentsPage() {
     } finally {
       setLoading(false);
     }
-  }, [dateFrom, dateTo]);
+  }, [dateFrom, dateTo, source]);
 
   useEffect(() => {
     fetchData();
@@ -148,8 +178,24 @@ export default function ReportAgentsPage() {
             Yanıt süresi medyanı, SLA uyumu, yük dağılımı ve aktivite metrikleri
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
           {loading && <Loader2 className="w-4 h-4 text-gray-400 animate-spin" />}
+          <div className="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white p-0.5 text-xs">
+            <Filter className="w-3.5 h-3.5 text-gray-400 ml-1" />
+            {SOURCE_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                onClick={() => setSource(opt.value)}
+                className={`px-2.5 py-1 rounded-md font-medium transition-colors ${
+                  source === opt.value
+                    ? 'bg-whatsapp text-white shadow-sm'
+                    : 'text-gray-600 hover:bg-gray-50'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
           <DateRangePicker
             from={dateFrom}
             to={dateTo}
@@ -324,7 +370,7 @@ export default function ReportAgentsPage() {
                     </div>
 
                     {/* Alt: yük/aktivite */}
-                    <div className="grid grid-cols-3 gap-2 text-[11px] border-t border-gray-200/70 pt-2 -mb-1">
+                    <div className="grid grid-cols-3 gap-2 text-[11px] border-t border-gray-200/70 pt-2">
                       <div>
                         <div className="text-gray-400">Gönderilen</div>
                         <div className="font-semibold text-gray-800 tabular-nums">
@@ -348,6 +394,30 @@ export default function ReportAgentsPage() {
                         </div>
                       </div>
                     </div>
+
+                    {/* Sipariş / Tahsilat */}
+                    {r.orderStats && (
+                      <div className="grid grid-cols-2 gap-2 text-[11px] border-t border-gray-200/70 pt-2">
+                        <div className="flex items-center gap-1">
+                          <ShoppingBag className="w-3 h-3 text-indigo-500" />
+                          <div>
+                            <div className="text-gray-400">Sipariş</div>
+                            <div className="font-semibold text-gray-800 tabular-nums">
+                              {r.orderStats.orderCount} · {fmtTry(r.orderStats.orderRevenue)}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <Banknote className="w-3 h-3 text-emerald-500" />
+                          <div>
+                            <div className="text-gray-400">Tahsilat</div>
+                            <div className="font-semibold text-emerald-700 tabular-nums">
+                              {fmtTry(r.orderStats.collectionAmount)}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -360,19 +430,19 @@ export default function ReportAgentsPage() {
               <ListChecks className="w-4 h-4 text-gray-500" />
               <h2 className="text-sm font-semibold text-gray-800">Detay tablosu</h2>
             </div>
-            <table className="w-full text-sm min-w-[1100px] mt-3">
+            <table className="w-full text-sm min-w-[1200px] mt-3">
               <thead>
                 <tr className="bg-gray-50 border-y text-left text-xs font-semibold text-gray-500 uppercase">
                   <th className="px-4 py-3">Temsilci</th>
                   <th className="px-4 py-3 text-right">Gönderilen</th>
-                  <th className="px-4 py-3 text-right">Dönem</th>
                   <th className="px-4 py-3 text-right">Benzersiz</th>
                   <th className="px-4 py-3 text-right">Atama</th>
                   <th className="px-4 py-3 text-right">Cevapsız</th>
                   <th className="px-4 py-3 text-right">Medyan</th>
-                  <th className="px-4 py-3 text-right">P90</th>
                   <th className="px-4 py-3 text-right">SLA %</th>
-                  <th className="px-4 py-3 text-right">Görev B/E/T</th>
+                  <th className="px-4 py-3 text-right">Sipariş</th>
+                  <th className="px-4 py-3 text-right">Sipariş Cirosu</th>
+                  <th className="px-4 py-3 text-right">Tahsilat</th>
                 </tr>
               </thead>
               <tbody className="divide-y">
@@ -386,9 +456,6 @@ export default function ReportAgentsPage() {
                     </td>
                     <td className="px-4 py-2.5 text-right tabular-nums">{r.totalMessagesSent}</td>
                     <td className="px-4 py-2.5 text-right tabular-nums">
-                      {r.totalMessagesInPeriod}
-                    </td>
-                    <td className="px-4 py-2.5 text-right tabular-nums">
                       {r.uniqueContactsMessaged}
                     </td>
                     <td className="px-4 py-2.5 text-right tabular-nums">
@@ -401,16 +468,18 @@ export default function ReportAgentsPage() {
                       {fmtMin(r.responseMetrics?.p50 ?? null)}
                     </td>
                     <td className="px-4 py-2.5 text-right tabular-nums">
-                      {fmtMin(r.responseMetrics?.p90 ?? null)}
-                    </td>
-                    <td className="px-4 py-2.5 text-right tabular-nums">
                       {r.responseMetrics?.sla30Percent == null
                         ? '—'
                         : `%${r.responseMetrics.sla30Percent}`}
                     </td>
-                    <td className="px-4 py-2.5 text-right text-xs tabular-nums text-gray-600">
-                      {r.taskStats?.pending ?? 0}/{r.taskStats?.overdue ?? 0}/
-                      {r.taskStats?.completed ?? 0}
+                    <td className="px-4 py-2.5 text-right tabular-nums font-medium text-indigo-700">
+                      {r.orderStats?.orderCount ?? 0}
+                    </td>
+                    <td className="px-4 py-2.5 text-right tabular-nums font-medium text-indigo-700">
+                      {fmtTry(r.orderStats?.orderRevenue)}
+                    </td>
+                    <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-emerald-700">
+                      {fmtTry(r.orderStats?.collectionAmount)}
                     </td>
                   </tr>
                 ))}
@@ -418,7 +487,8 @@ export default function ReportAgentsPage() {
             </table>
             <p className="text-[11px] text-gray-400 px-5 py-3 border-t">
               * Yanıt süresi: bir gelen mesaja cevap atma süresi (24 saat üstü aykırı değerler hariç).
-              SLA eşiği 30 dakika. Medyan ve P90, `percentile_cont` ile hesaplanır.
+              SLA eşiği 30 dakika. Sipariş cirosu: temsilcinin oluşturduğu siparişler (iptal hariç).
+              Tahsilat: temsilcinin eklediği INCOME kasa kayıtları.
             </p>
           </div>
         </>

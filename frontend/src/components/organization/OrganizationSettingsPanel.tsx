@@ -96,6 +96,7 @@ export default function OrganizationSettingsPanel({
   const [menuCfgLoading, setMenuCfgLoading] = useState(false);
   const [menuSaving, setMenuSaving] = useState(false);
   const [menuSuborder, setMenuSuborder] = useState<Record<string, string[]>>({});
+  const [menuSubHidden, setMenuSubHidden] = useState<Record<string, string[]>>({});
 
   useEffect(() => {
     fetchOrg();
@@ -160,6 +161,12 @@ export default function OrganizationSettingsPanel({
       .get<{ suborder?: Record<string, string[]> }>('/organizations/my/menu-suborder')
       .then(({ data }) => {
         if (!cancelled) setMenuSuborder(data?.suborder || {});
+      })
+      .catch(() => {});
+    api
+      .get<{ subHidden?: Record<string, string[]> }>('/organizations/my/menu-sub-hidden')
+      .then(({ data }) => {
+        if (!cancelled) setMenuSubHidden(data?.subHidden || {});
       })
       .catch(() => {});
     return () => {
@@ -315,6 +322,21 @@ export default function OrganizationSettingsPanel({
     setMenuSelections((prev) => ({ ...prev, [menuTab]: moveInList(prev[menuTab], key, dir) }));
   };
 
+  const toggleSubItemVisibility = (parentKey: string, childKey: string) => {
+    setMenuSubHidden((prev) => {
+      const hiddenForParent = prev[parentKey] || [];
+      const isHidden = hiddenForParent.includes(childKey);
+      const updated = isHidden
+        ? hiddenForParent.filter((k) => k !== childKey)
+        : [...hiddenForParent, childKey];
+      if (!updated.length) {
+        const { [parentKey]: _removed, ...rest } = prev;
+        return rest;
+      }
+      return { ...prev, [parentKey]: updated };
+    });
+  };
+
   const moveSubMenu = (parentKey: string, childKey: string, dir: -1 | 1) => {
     setMenuSuborder((prev) => {
       const current = prev[parentKey] || (MENU_CHILD_KEYS[parentKey] || []).map((x) => x.key);
@@ -331,6 +353,7 @@ export default function OrganizationSettingsPanel({
         ADMIN: menuSelections.ADMIN,
       });
       await api.patch('/organizations/my/menu-suborder', menuSuborder);
+      await api.patch('/organizations/my/menu-sub-hidden', menuSubHidden);
       window.dispatchEvent(new Event('crm-menu-visibility-changed'));
       toast.success('Menü görünürlüğü ve sırası kaydedildi');
     } catch (err: any) {
@@ -804,15 +827,35 @@ export default function OrganizationSettingsPanel({
                             <div className="space-y-1">
                               {ordered.map((childKey, idx) => {
                                 const childLabel = children.find((c) => c.key === childKey)?.label || childKey;
+                                const isChildHidden = (menuSubHidden[parentKey] || []).includes(childKey);
                                 return (
-                                  <div key={`${parentKey}-${childKey}`} className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-gray-50 hover:bg-gray-100 transition">
-                                    <span className="text-xs text-gray-700">{childLabel}</span>
+                                  <div
+                                    key={`${parentKey}-${childKey}`}
+                                    className={`flex items-center justify-between px-2.5 py-1.5 rounded-lg transition ${
+                                      isChildHidden ? 'bg-gray-50 opacity-60' : 'bg-gray-50 hover:bg-gray-100'
+                                    }`}
+                                  >
+                                    <span className={`text-xs ${isChildHidden ? 'text-gray-400 line-through' : 'text-gray-700'}`}>
+                                      {childLabel}
+                                    </span>
                                     <div className="flex items-center gap-0.5">
+                                      <button
+                                        type="button"
+                                        onClick={() => toggleSubItemVisibility(parentKey, childKey)}
+                                        className="p-0.5 rounded hover:bg-white transition"
+                                        title={isChildHidden ? 'Göster' : 'Gizle'}
+                                      >
+                                        {isChildHidden
+                                          ? <EyeOff className="w-3 h-3 text-gray-400" />
+                                          : <Eye className="w-3 h-3 text-gray-500" />
+                                        }
+                                      </button>
                                       <button
                                         type="button"
                                         onClick={() => moveSubMenu(parentKey, childKey, -1)}
                                         disabled={idx === 0}
                                         className="p-0.5 rounded hover:bg-white disabled:opacity-20 transition"
+                                        title="Yukarı taşı"
                                       >
                                         <ArrowUp className="w-3 h-3 text-gray-500" />
                                       </button>
@@ -821,6 +864,7 @@ export default function OrganizationSettingsPanel({
                                         onClick={() => moveSubMenu(parentKey, childKey, 1)}
                                         disabled={idx === ordered.length - 1}
                                         className="p-0.5 rounded hover:bg-white disabled:opacity-20 transition"
+                                        title="Aşağı taşı"
                                       >
                                         <ArrowDown className="w-3 h-3 text-gray-500" />
                                       </button>

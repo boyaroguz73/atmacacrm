@@ -139,4 +139,21 @@ export class OrdersController {
   removePayment(@Param('id') id: string, @Param('entryId') entryId: string) {
     return this.ordersService.removePayment(id, entryId);
   }
+
+  // ─── Kargo takip ───
+
+  @Patch(':id/shipping-info')
+  @Roles('AGENT', 'ADMIN', 'SUPERADMIN', 'ACCOUNTANT')
+  updateShippingInfo(
+    @Param('id') id: string,
+    @Body() body: { cargoCompanyId?: string | null; cargoTrackingNo?: string | null },
+  ) {
+    return this.ordersService.updateShippingInfo(id, body);
+  }
+
+  @Post(':id/send-shipping-notification')
+  @Roles('AGENT', 'ADMIN', 'SUPERADMIN', 'ACCOUNTANT')
+  sendShippingNotification(@Param('id') id: string) {
+    return this.ordersService.sendShippingNotification(id);
+  }
 }

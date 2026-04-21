@@ -779,14 +779,18 @@ export default function ContactDetailPage() {
                   <div className="flex items-center gap-3">
                     <span className="text-sm font-semibold text-gray-800">#{o.orderNumber}</span>
                     <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                      o.status === 'DELIVERED' ? 'bg-green-50 text-green-700'
+                      o.status === 'COMPLETED' ? 'bg-green-50 text-green-700'
                         : o.status === 'CANCELLED' ? 'bg-red-50 text-red-600'
-                        : o.status === 'PROCESSING' ? 'bg-yellow-50 text-yellow-700'
+                        : o.status === 'PREPARING' ? 'bg-yellow-50 text-yellow-700'
                         : o.status === 'SHIPPED' ? 'bg-blue-50 text-blue-600'
+                        : o.status === 'AWAITING_CHECKOUT' ? 'bg-orange-50 text-orange-600'
                         : 'bg-gray-50 text-gray-600'
                     }`}>
-                      {o.status === 'PENDING' ? 'Bekliyor' : o.status === 'PROCESSING' ? 'İşleniyor'
-                        : o.status === 'SHIPPED' ? 'Kargoda' : o.status === 'DELIVERED' ? 'Teslim'
+                      {o.status === 'AWAITING_PAYMENT' ? 'Ödeme Bekl.'
+                        : o.status === 'AWAITING_CHECKOUT' ? 'Sepet Terk'
+                        : o.status === 'PREPARING' ? 'Hazırlanıyor'
+                        : o.status === 'SHIPPED' ? 'Kargoda'
+                        : o.status === 'COMPLETED' ? 'Tamamlandı'
                         : o.status === 'CANCELLED' ? 'İptal' : o.status}
                     </span>
                   </div>

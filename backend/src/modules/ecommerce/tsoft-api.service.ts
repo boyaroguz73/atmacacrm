@@ -882,11 +882,16 @@ export class TsoftApiService {
     organizationId: string,
     page = 1,
     limit = 50,
-    opts: { dateStart?: Date | string | null; dateEnd?: Date | string | null } = {},
+    opts: {
+      dateStart?: Date | string | null;
+      dateEnd?: Date | string | null;
+      /** T-Soft REST1 OrderStatusId filtresi (örn. 1 = Henüz Tamamlanmadı) */
+      orderStatusId?: number | null;
+    } = {},
   ) {
     if (this.isRest1(organizationId)) {
       const start = (page - 1) * limit;
-      const dateFilter: Record<string, string> = {};
+      const dateFilter: Record<string, string | number> = {};
       const toIso = (v: Date | string | null | undefined): string | null => {
         if (!v) return null;
         const d = v instanceof Date ? v : new Date(v);
@@ -898,6 +903,7 @@ export class TsoftApiService {
       const deIso = toIso(opts.dateEnd);
       if (dsIso) dateFilter.OrderDateTimeStart = dsIso;
       if (deIso) dateFilter.OrderDateTimeEnd = deIso;
+      if (opts.orderStatusId != null) dateFilter.OrderStatusId = opts.orderStatusId;
 
       // Alternatif filtre: OrderDateTime 500 dönüyorsa UpdateDateTime ile aynı aralığı dene.
       const altDateFilter: Record<string, string> = {};

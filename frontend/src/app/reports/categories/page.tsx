@@ -5,7 +5,14 @@ import api, { getApiErrorMessage } from '@/lib/api';
 import DateRangePicker from '@/components/ui/DateRangePicker';
 import ReportsNav from '../ReportsNav';
 import toast from 'react-hot-toast';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Filter } from 'lucide-react';
+
+type SourceFilter = '' | 'MANUAL' | 'TSOFT';
+const SOURCE_OPTIONS: { value: SourceFilter; label: string }[] = [
+  { value: '', label: 'Tümü' },
+  { value: 'MANUAL', label: 'CRM' },
+  { value: 'TSOFT', label: 'Site' },
+];
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 function fmtTry(n: number) {
@@ -15,6 +22,7 @@ function fmtTry(n: number) {
 export default function ReportCategoriesPage() {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+  const [source, setSource] = useState<SourceFilter>('');
   const [rows, setRows] = useState<{ category: string; quantity: number; revenue: number }[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -24,6 +32,7 @@ export default function ReportCategoriesPage() {
       const p: Record<string, string> = { limit: '24' };
       if (dateFrom) p.from = `${dateFrom}T00:00:00`;
       if (dateTo) p.to = `${dateTo}T23:59:59`;
+      if (source) p.source = source;
       const { data } = await api.get('/reports/sales/top-categories', { params: p });
       setRows(Array.isArray(data) ? data : []);
     } catch (e) {
@@ -31,7 +40,7 @@ export default function ReportCategoriesPage() {
     } finally {
       setLoading(false);
     }
-  }, [dateFrom, dateTo]);
+  }, [dateFrom, dateTo, source]);
 
   useEffect(() => {
     fetchData();
@@ -49,14 +58,32 @@ export default function ReportCategoriesPage() {
           <h1 className="text-xl font-bold text-gray-900">Kategori satışı</h1>
           <p className="text-sm text-gray-500 mt-1">Sipariş kalemlerinden ürün kategorisi bazlı ciro</p>
         </div>
-        <DateRangePicker
-          from={dateFrom}
-          to={dateTo}
-          onChange={(f, t) => {
-            setDateFrom(f);
-            setDateTo(t);
-          }}
-        />
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white p-0.5 text-xs">
+            <Filter className="w-3.5 h-3.5 text-gray-400 ml-1" />
+            {SOURCE_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                onClick={() => setSource(opt.value)}
+                className={`px-2.5 py-1 rounded-md font-medium transition-colors ${
+                  source === opt.value
+                    ? 'bg-whatsapp text-white shadow-sm'
+                    : 'text-gray-600 hover:bg-gray-50'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+          <DateRangePicker
+            from={dateFrom}
+            to={dateTo}
+            onChange={(f, t) => {
+              setDateFrom(f);
+              setDateTo(t);
+            }}
+          />
+        </div>
       </div>
       <ReportsNav />
 

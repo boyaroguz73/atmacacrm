@@ -8,6 +8,8 @@ import { TsoftApiService } from '../ecommerce/tsoft-api.service';
 import { TsoftPushService } from '../ecommerce/tsoft-push.service';
 import { extractTsoftNumericOrderIdFromApiResult } from '../ecommerce/tsoft-order.util';
 import { Prisma } from '@prisma/client';
+import { WahaService } from '../waha/waha.service';
+import { normalizeWhatsappChatId } from '../../common/whatsapp-chat-id';
 
 @Injectable()
 export class OrdersService {
@@ -33,6 +35,7 @@ export class OrdersService {
     private auditLog: AuditLogService,
     private tsoftApi: TsoftApiService,
     private tsoftPush: TsoftPushService,
+    private waha: WahaService,
   ) {}
 
   private readonly includeRelations = {
@@ -88,6 +91,7 @@ export class OrdersService {
       },
     },
     invoice: { select: { id: true } },
+    cargoCompany: { select: { id: true, name: true, isAmbar: true } },
   };
 
   async findAll(params: { 
@@ -664,7 +668,7 @@ export class OrdersService {
       include: { invoice: { select: { id: true } } },
     });
     if (!o) throw new NotFoundException('Sipariş bulunamadı');
-    if (o.status !== 'PENDING') {
+    if (o.status !== 'AWAITING_PAYMENT' && o.status !== 'AWAITING_CHECKOUT') {
       throw new BadRequestException('Sadece beklemedeki siparişler silinebilir');
     }
     if (o.invoice) {
@@ -787,7 +791,7 @@ export class OrdersService {
     if (item.order.invoice) {
       throw new BadRequestException('Faturalı siparişin kalemleri değiştirilemez');
     }
-    if (item.order.status === 'DELIVERED' || item.order.status === 'CANCELLED') {
+    if (item.order.status === 'COMPLETED' || item.order.status === 'CANCELLED') {
       throw new BadRequestException('Teslim edilmiş veya iptal sipariş düzenlenemez');
     }
 
@@ -923,5 +927,77 @@ export class OrdersService {
       orderBy: { id: 'asc' },
     });
     return items;
+  }
+
+  /** Kargo takip bilgilerini kaydet */
+  async updateShippingInfo(
+    orderId: string,
+    data: { cargoCompanyId?: string | null; cargoTrackingNo?: string | null },
+  ) {
+    const order = await this.prisma.salesOrder.findUnique({ where: { id: orderId } });
+    if (!order) throw new NotFoundException('Sipariş bulunamadı');
+
+    const updated = await this.prisma.salesOrder.update({
+      where: { id: orderId },
+      data: {
+        cargoCompanyId: data.cargoCompanyId ?? order.cargoCompanyId,
+        cargoTrackingNo:
+          data.cargoTrackingNo !== undefined
+            ? data.cargoTrackingNo?.trim() || null
+            : order.cargoTrackingNo,
+      },
+      include: this.includeRelations,
+    });
+
+    const summary = await this.getPaymentSummary(orderId, updated.grandTotal);
+    return { ...updated, ...summary };
+  }
+
+  /** Kargo bildirimini WhatsApp ile müşteriye gönder */
+  async sendShippingNotification(orderId: string) {
+    const order = await this.prisma.salesOrder.findUnique({
+      where: { id: orderId },
+      include: {
+        contact: { select: { phone: true, name: true, surname: true } },
+        cargoCompany: { select: { name: true, isAmbar: true } },
+      },
+    });
+    if (!order) throw new NotFoundException('Sipariş bulunamadı');
+    if (order.status !== 'SHIPPED') {
+      throw new BadRequestException('Bildirim yalnızca "Kargoda" durumundaki siparişler için gönderilebilir');
+    }
+
+    const contactPhone = order.contact.phone.replace(/\D/g, '');
+    const chatId = normalizeWhatsappChatId(`${contactPhone}@c.us`);
+
+    // Organizasyona bağlı ilk aktif oturumu bul
+    const session = await this.prisma.whatsappSession.findFirst({
+      where: { status: 'WORKING' },
+      orderBy: { createdAt: 'asc' },
+    });
+    if (!session) {
+      throw new BadRequestException('Aktif WhatsApp oturumu bulunamadı');
+    }
+
+    let messageText: string;
+    const isAmbar = order.cargoCompany?.isAmbar ?? false;
+
+    if (isAmbar) {
+      messageText = 'Siparişiniz ambar ile sizlere iletilmek üzere kargoya verilmiştir.';
+    } else {
+      const trackingNo = order.cargoTrackingNo?.trim() || '—';
+      const companyName = order.cargoCompany?.name || '—';
+      messageText =
+        `Değerli müşterimiz, siparişiniz kargoya verilmiştir.\nTakip kodunuz: ${trackingNo}\nFirmanız: ${companyName}`;
+    }
+
+    await this.waha.sendText(session.name, chatId, messageText);
+
+    await this.prisma.salesOrder.update({
+      where: { id: orderId },
+      data: { cargoNotificationSentAt: new Date() },
+    });
+
+    return { ok: true, message: messageText };
   }
 }

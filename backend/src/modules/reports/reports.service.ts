@@ -8,7 +8,7 @@ export class ReportsService {
 
   constructor(private prisma: PrismaService) {}
 
-  async getAgentDetailedReport(dateFrom?: Date, dateTo?: Date, organizationId?: string) {
+  async getAgentDetailedReport(dateFrom?: Date, dateTo?: Date, organizationId?: string, source?: string) {
     const from = dateFrom || new Date(new Date().setHours(0, 0, 0, 0));
     const to = dateTo || new Date();
 
@@ -32,6 +32,7 @@ export class ReportsService {
           unansweredConversations,
           responseMetrics,
           taskStats,
+          orderStats,
         ] = await Promise.all([
           this.prisma.message.count({
             where: {
@@ -47,6 +48,7 @@ export class ReportsService {
           this.getUnansweredCount(agent.id),
           this.calculateResponseMetrics(agent.id, from, to),
           this.getAgentTaskStats(agent.id),
+          this.getAgentOrderStats(agent.id, from, to, source),
         ]);
 
         return {
@@ -61,12 +63,11 @@ export class ReportsService {
           uniqueContactsMessaged,
           activeConversations,
           unansweredConversations,
-          /** Geriye dönük uyumluluk: ortalama dakika */
           avgResponseTimeMinutes:
             responseMetrics.avg != null ? Math.round(responseMetrics.avg) : null,
-          /** Yeni detaylı metrikler (medyan, p90, SLA) */
           responseMetrics,
           taskStats,
+          orderStats,
         };
       }),
     );
@@ -221,6 +222,41 @@ export class ReportsService {
     }
   }
 
+  private async getAgentOrderStats(agentId: string, from: Date, to: Date, source?: string) {
+    try {
+      const orderWhere: any = {
+        createdById: agentId,
+        createdAt: { gte: from, lte: to },
+        status: { not: 'CANCELLED' },
+        ...(source ? { source } : {}),
+      };
+      const [orderAgg, collectionAgg] = await Promise.all([
+        this.prisma.salesOrder.aggregate({
+          where: orderWhere,
+          _count: { id: true },
+          _sum: { grandTotal: true },
+        }),
+        this.prisma.cashBookEntry.aggregate({
+          where: {
+            userId: agentId,
+            direction: 'INCOME',
+            occurredAt: { gte: from, lte: to },
+          },
+          _sum: { amount: true },
+          _count: { id: true },
+        }),
+      ]);
+      return {
+        orderCount: orderAgg._count.id,
+        orderRevenue: Math.round((orderAgg._sum.grandTotal ?? 0) * 100) / 100,
+        collectionAmount: Math.round((collectionAgg._sum.amount ?? 0) * 100) / 100,
+        collectionCount: collectionAgg._count.id,
+      };
+    } catch {
+      return { orderCount: 0, orderRevenue: 0, collectionAmount: 0, collectionCount: 0 };
+    }
+  }
+
   private async getAgentTaskStats(agentId: string) {
     const [pending, overdue, completed] = await Promise.all([
       this.prisma.task.count({
@@ -331,6 +367,108 @@ export class ReportsService {
     }
   }
 
+  /** Tahsilat (CashBookEntry INCOME) — günlük zaman serisi */
+  async getCollectionTimeseries(
+    dateFrom?: Date,
+    dateTo?: Date,
+    organizationId?: string,
+    source?: string,
+  ) {
+    const from = dateFrom || new Date(new Date().setHours(0, 0, 0, 0));
+    const to = dateTo || new Date();
+    try {
+      if (source || organizationId) {
+        const sourceClause = source
+          ? Prisma.sql`AND so.source = ${source}`
+          : Prisma.empty;
+        const orgClause = organizationId
+          ? Prisma.sql`AND c."organizationId" = ${organizationId}::uuid`
+          : Prisma.empty;
+        const rows = await this.prisma.$queryRaw<{ day: Date | string; amount: number }[]>`
+          SELECT date_trunc('day', cb."occurredAt")::date AS day,
+            COALESCE(SUM(cb.amount), 0)::float AS amount
+          FROM cash_book_entries cb
+          INNER JOIN sales_orders so ON cb."orderId" = so.id
+          INNER JOIN contacts c ON so."contactId" = c.id
+          WHERE cb."occurredAt" >= ${from} AND cb."occurredAt" <= ${to}
+            AND cb.direction = 'INCOME'::"CashDirection"
+          ${sourceClause}
+          ${orgClause}
+          GROUP BY 1
+          ORDER BY 1 ASC
+        `;
+        return rows.map((r) => ({
+          day: new Date(r.day).toISOString().slice(0, 10),
+          amount: Math.round((r.amount || 0) * 100) / 100,
+        }));
+      }
+      const rows = await this.prisma.$queryRaw<{ day: Date | string; amount: number }[]>`
+        SELECT date_trunc('day', cb."occurredAt")::date AS day,
+          COALESCE(SUM(cb.amount), 0)::float AS amount
+        FROM cash_book_entries cb
+        WHERE cb."occurredAt" >= ${from} AND cb."occurredAt" <= ${to}
+          AND cb.direction = 'INCOME'::"CashDirection"
+        GROUP BY 1
+        ORDER BY 1 ASC
+      `;
+      return rows.map((r) => ({
+        day: new Date(r.day).toISOString().slice(0, 10),
+        amount: Math.round((r.amount || 0) * 100) / 100,
+      }));
+    } catch (error) {
+      this.logger.warn(`Collection timeseries error: ${(error as Error).message}`);
+      return [];
+    }
+  }
+
+  /** Tahsilat toplamı (CashBookEntry INCOME) — aggregate */
+  async getCollectionRevenue(
+    dateFrom?: Date,
+    dateTo?: Date,
+    organizationId?: string,
+    source?: string,
+  ) {
+    const from = dateFrom || new Date(new Date().setHours(0, 0, 0, 0));
+    const to = dateTo || new Date();
+    try {
+      if (source || organizationId) {
+        const sourceClause = source
+          ? Prisma.sql`AND so.source = ${source}`
+          : Prisma.empty;
+        const orgClause = organizationId
+          ? Prisma.sql`AND c."organizationId" = ${organizationId}::uuid`
+          : Prisma.empty;
+        const rows = await this.prisma.$queryRaw<{ total: number; cnt: bigint }[]>`
+          SELECT COALESCE(SUM(cb.amount), 0)::float AS total, COUNT(cb.id)::bigint AS cnt
+          FROM cash_book_entries cb
+          INNER JOIN sales_orders so ON cb."orderId" = so.id
+          INNER JOIN contacts c ON so."contactId" = c.id
+          WHERE cb."occurredAt" >= ${from} AND cb."occurredAt" <= ${to}
+            AND cb.direction = 'INCOME'::"CashDirection"
+          ${sourceClause}
+          ${orgClause}
+        `;
+        return {
+          total: Math.round((rows[0]?.total || 0) * 100) / 100,
+          count: Number(rows[0]?.cnt || 0),
+        };
+      }
+      const rows = await this.prisma.$queryRaw<{ total: number; cnt: bigint }[]>`
+        SELECT COALESCE(SUM(cb.amount), 0)::float AS total, COUNT(cb.id)::bigint AS cnt
+        FROM cash_book_entries cb
+        WHERE cb."occurredAt" >= ${from} AND cb."occurredAt" <= ${to}
+          AND cb.direction = 'INCOME'::"CashDirection"
+      `;
+      return {
+        total: Math.round((rows[0]?.total || 0) * 100) / 100,
+        count: Number(rows[0]?.cnt || 0),
+      };
+    } catch (error) {
+      this.logger.warn(`Collection revenue error: ${(error as Error).message}`);
+      return { total: 0, count: 0 };
+    }
+  }
+
   /** Kasa hareketleri — günlük (elle girilen) */
   async getCashTimeseries(dateFrom?: Date, dateTo?: Date) {
     const from = dateFrom || new Date(new Date().setHours(0, 0, 0, 0));
@@ -372,6 +510,7 @@ export class ReportsService {
     dateTo?: Date,
     organizationId?: string,
     granularity: 'day' | 'week' | 'month' = 'day',
+    source?: string,
   ) {
     const from = dateFrom || new Date(new Date().setHours(0, 0, 0, 0));
     const to = dateTo || new Date();
@@ -379,6 +518,9 @@ export class ReportsService {
     try {
       const orgClause = organizationId
         ? Prisma.sql`AND c."organizationId" = ${organizationId}::uuid`
+        : Prisma.empty;
+      const sourceClause = source
+        ? Prisma.sql`AND o.source = ${source}`
         : Prisma.empty;
       const rows = await this.prisma.$queryRaw<
         { bucket: Date | string; count: bigint; revenue: number }[]
@@ -391,6 +533,7 @@ export class ReportsService {
         WHERE o."createdAt" >= ${from} AND o."createdAt" <= ${to}
           AND o.status <> 'CANCELLED'::"OrderStatus"
         ${orgClause}
+        ${sourceClause}
         GROUP BY 1
         ORDER BY 1 ASC
       `;
@@ -419,12 +562,16 @@ export class ReportsService {
     dateTo?: Date,
     organizationId?: string,
     limit = 10,
+    source?: string,
   ) {
     const from = dateFrom || new Date(new Date().setHours(0, 0, 0, 0));
     const to = dateTo || new Date();
     try {
       const orgClause = organizationId
         ? Prisma.sql`AND c."organizationId" = ${organizationId}::uuid`
+        : Prisma.empty;
+      const sourceClause = source
+        ? Prisma.sql`AND o.source = ${source}`
         : Prisma.empty;
       const rows = await this.prisma.$queryRaw<
         {
@@ -445,6 +592,7 @@ export class ReportsService {
         WHERE o."createdAt" >= ${from} AND o."createdAt" <= ${to}
           AND o.status <> 'CANCELLED'::"OrderStatus"
         ${orgClause}
+        ${sourceClause}
         GROUP BY c.id, c.name, c.phone
         ORDER BY revenue DESC NULLS LAST
         LIMIT ${limit}
@@ -516,12 +664,15 @@ export class ReportsService {
   }
 
   /** Sipariş satırlarından kategori geliri (ürün.category) */
-  async getTopProductCategories(dateFrom?: Date, dateTo?: Date, organizationId?: string, limit = 12) {
+  async getTopProductCategories(dateFrom?: Date, dateTo?: Date, organizationId?: string, limit = 12, source?: string) {
     const from = dateFrom || new Date(new Date().setHours(0, 0, 0, 0));
     const to = dateTo || new Date();
     try {
       const orgClause = organizationId
         ? Prisma.sql`AND c."organizationId" = ${organizationId}::uuid`
+        : Prisma.empty;
+      const sourceClause = source
+        ? Prisma.sql`AND o.source = ${source}`
         : Prisma.empty;
       const rows = await this.prisma.$queryRaw<{ cat: string | null; qty: number; revenue: number }[]>`
         SELECT COALESCE(NULLIF(TRIM(p.category), ''), '(Kategorisiz)') AS cat,
@@ -534,6 +685,7 @@ export class ReportsService {
         WHERE o."createdAt" >= ${from} AND o."createdAt" <= ${to}
           AND o.status <> 'CANCELLED'::"OrderStatus"
         ${orgClause}
+        ${sourceClause}
         GROUP BY 1
         ORDER BY revenue DESC NULLS LAST
         LIMIT ${limit}
@@ -555,6 +707,7 @@ export class ReportsService {
     organizationId?: string,
     page = 1,
     limit = 30,
+    source?: string,
   ) {
     const from = dateFrom || new Date(new Date().setHours(0, 0, 0, 0));
     const to = dateTo || new Date();
@@ -562,6 +715,7 @@ export class ReportsService {
     const orderWhere: Prisma.SalesOrderWhereInput = {
       createdAt: { gte: from, lte: to },
       status: { not: 'CANCELLED' },
+      ...(source ? { source } : {}),
     };
     if (organizationId) orderWhere.contact = { organizationId };
     const where: Prisma.OrderItemWhereInput = { order: orderWhere };
@@ -669,18 +823,28 @@ export class ReportsService {
   }
 
   /** Tek ekranda özet (rapor ana sayfası) */
-  async getExecutiveDashboard(dateFrom?: Date, dateTo?: Date, organizationId?: string) {
+  async getExecutiveDashboard(
+    dateFrom?: Date,
+    dateTo?: Date,
+    organizationId?: string,
+    source?: string,
+  ) {
     const from = dateFrom || new Date(new Date().setHours(0, 0, 0, 0));
     const to = dateTo || new Date();
+    const orderWhere: any = {
+      createdAt: { gte: from, lte: to },
+      status: { not: 'CANCELLED' },
+      ...(organizationId ? { contact: { organizationId } } : {}),
+      ...(source ? { source } : {}),
+    };
     const [
       summary,
       agents,
-      msgSeries,
-      cashSeries,
+      collectionSeries,
       funnel,
       topCategories,
-      invoiceAgg,
       ordersAgg,
+      collectionRevenue,
     ] = await Promise.all([
       this.getSummary(from, to, organizationId).catch((e) => {
         this.logger.warn(`Dashboard summary fallback: ${(e as Error).message}`);
@@ -699,8 +863,7 @@ export class ReportsService {
         this.logger.warn(`Dashboard agents fallback: ${(e as Error).message}`);
         return [];
       }),
-      this.getMessageTimeseries(from, to, organizationId),
-      this.getCashTimeseries(from, to),
+      this.getCollectionTimeseries(from, to, organizationId, source).catch(() => []),
       this.getLeadFunnel(from, to, organizationId).catch((e) => {
         this.logger.warn(`Dashboard funnel fallback: ${(e as Error).message}`);
         return {
@@ -714,49 +877,27 @@ export class ReportsService {
           interestedPlus: 0,
         };
       }),
-      this.getTopProductCategories(from, to, organizationId, 8),
-      this.prisma.accountingInvoice.aggregate({
-        where: {
-          createdAt: { gte: from, lte: to },
-          ...(organizationId ? { contact: { organizationId } } : {}),
-        },
-        _count: { id: true },
-        _sum: { grandTotal: true },
-      }).catch((e) => {
-        this.logger.warn(`Dashboard invoice aggregate fallback: ${(e as Error).message}`);
-        return { _count: { id: 0 }, _sum: { grandTotal: 0 } };
-      }),
-      this.prisma.salesOrder.aggregate({
-        where: {
-          createdAt: { gte: from, lte: to },
-          status: { not: 'CANCELLED' },
-          ...(organizationId ? { contact: { organizationId } } : {}),
-        },
-        _count: { id: true },
-        _sum: { grandTotal: true },
-      }).catch((e) => {
-        this.logger.warn(`Dashboard order aggregate fallback: ${(e as Error).message}`);
-        return { _count: { id: 0 }, _sum: { grandTotal: 0 } };
-      }),
+      this.getTopProductCategories(from, to, organizationId, 8, source),
+      this.prisma.salesOrder.aggregate({ where: orderWhere, _count: { id: true }, _sum: { grandTotal: true } }).catch(() => ({
+        _count: { id: 0 },
+        _sum: { grandTotal: 0 },
+      })),
+      this.getCollectionRevenue(from, to, organizationId, source).catch(() => ({ total: 0, count: 0 })),
     ]);
 
     return {
       summary,
       agents,
       charts: {
-        messages: msgSeries,
-        cash: cashSeries,
+        collections: collectionSeries,
         topCategories,
       },
       funnel,
-      invoices: {
-        count: invoiceAgg._count.id,
-        sumGrandTotal: invoiceAgg._sum.grandTotal ?? 0,
-      },
       orders: {
         count: ordersAgg._count.id,
         sumGrandTotal: ordersAgg._sum.grandTotal ?? 0,
       },
+      collectionRevenue,
     };
   }
 }

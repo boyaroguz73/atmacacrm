@@ -7,6 +7,7 @@ import { getContactDisplayTitle, getContactSecondaryPhoneLine } from '@/lib/util
 import {
   X,
   User,
+  Users,
   Mail,
   Building2,
   MapPin,
@@ -44,6 +45,9 @@ interface ContactPanelProps {
   onClose: () => void;
   internalChatEnabled: boolean;
   userRole?: string;
+  isGroup?: boolean;
+  groupName?: string;
+  groupParticipantCount?: number;
 }
 
 function getMetaText(metadata: unknown, key: string): string {
@@ -59,8 +63,12 @@ export default function ContactPanel({
   onClose,
   internalChatEnabled,
   userRole = 'AGENT',
+  isGroup = false,
+  groupName,
+  groupParticipantCount,
 }: ContactPanelProps) {
   const isAdmin = userRole === 'ADMIN' || userRole === 'SUPERADMIN';
+  const canAssign = isAdmin || isGroup;
   const [contact, setContact] = useState<Contact>(initialContact);
   const [editing, setEditing] = useState(false);
   const [editData, setEditData] = useState({
@@ -303,8 +311,14 @@ export default function ContactPanel({
       {/* Header */}
       <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between bg-white">
         <div className="flex items-center gap-2">
-          <User className="w-4 h-4 text-gray-500" />
-          <span className="text-sm font-semibold text-gray-900">Kişi Bilgileri</span>
+          {isGroup ? (
+            <Users className="w-4 h-4 text-green-600" />
+          ) : (
+            <User className="w-4 h-4 text-gray-500" />
+          )}
+          <span className="text-sm font-semibold text-gray-900">
+            {isGroup ? 'Grup Bilgileri' : 'Kişi Bilgileri'}
+          </span>
         </div>
         <button onClick={onClose} className="p-1 text-gray-400 hover:text-gray-600">
           <X className="w-4 h-4" />
@@ -312,8 +326,25 @@ export default function ContactPanel({
       </div>
 
       <div className="flex-1 overflow-y-auto">
-        {/* Contact Info */}
-        <div className="border-b border-gray-100">
+        {/* Grup özet kartı */}
+        {isGroup && (
+          <div className="px-4 py-4 border-b border-gray-100 bg-white">
+            <div className="flex items-center gap-3">
+              <div className="w-11 h-11 rounded-full bg-gradient-to-br from-green-400 to-green-600 flex items-center justify-center flex-shrink-0">
+                <Users className="w-5 h-5 text-white" />
+              </div>
+              <div className="min-w-0">
+                <p className="font-semibold text-gray-900 truncate">{groupName || 'WhatsApp Grubu'}</p>
+                {typeof groupParticipantCount === 'number' && (
+                  <p className="text-xs text-gray-400">{groupParticipantCount} üye</p>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Contact Info — gruplar için gizle */}
+        {!isGroup && <div className="border-b border-gray-100">
           <button
             onClick={() => toggleSection('info')}
             className="w-full flex items-center justify-between px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wider hover:bg-white/60 transition"
@@ -536,10 +567,10 @@ export default function ContactPanel({
               </div>
             </div>
           )}
-        </div>
+        </div>}
 
-        {/* Lead / Pipeline */}
-        <div className="border-b border-gray-100">
+        {/* Lead / Pipeline — gruplar için gizle */}
+        {!isGroup && <div className="border-b border-gray-100">
           <button
             onClick={() => toggleSection('lead')}
             className="w-full flex items-center justify-between px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wider hover:bg-white/60 transition"
@@ -591,7 +622,7 @@ export default function ContactPanel({
               </Link>
             </div>
           )}
-        </div>
+        </div>}
 
         {/* Actions */}
         <div className="border-b border-gray-100">
@@ -599,7 +630,7 @@ export default function ContactPanel({
             onClick={() => toggleSection('actions')}
             className="w-full flex items-center justify-between px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wider hover:bg-white/60 transition"
           >
-            Görüşme İşlemleri
+            {isGroup ? 'Temsilci Atama' : 'Görüşme İşlemleri'}
             {openSections.actions ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
           </button>
 
@@ -630,7 +661,7 @@ export default function ContactPanel({
                 </div>
               )}
 
-              {isAdmin && (
+              {canAssign && (
                 <div>
                   <label className="text-xs font-medium text-gray-500 mb-1.5 block">Temsilci Ata</label>
                   <select
@@ -644,7 +675,7 @@ export default function ContactPanel({
                 </div>
               )}
 
-              {!isAdmin && !assignments?.[0] && (
+              {!canAssign && !assignments?.[0] && (
                 <p className="text-xs text-gray-400 text-center py-2">Otomatik atama bekleniyor</p>
               )}
             </div>

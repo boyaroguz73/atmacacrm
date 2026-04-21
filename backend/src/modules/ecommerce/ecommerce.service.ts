@@ -482,14 +482,80 @@ export class EcommerceService {
   }
 
   /**
+   * T-Soft OrderStatus (metin/id) → CRM OrderStatus dönüşümü.
+   * T-Soft panel URL'sinden gözlemlenen orderStatusId değerleri:
+   *   1 = Henüz Tamamlanmadı (sepet terk)
+   *   2 = Yeni Sipariş / Ödeme Bekleniyor
+   *   3 = Ürün Hazırlanıyor
+   *   4 = Kargoya Verildi
+   *   5 = Tamamlandı
+   *   6 = İptal
+   *   7 = İade (→ CANCELLED)
+   */
+  private mapTsoftOrderStatus(
+    tsoftStatusText: string,
+    statusId: number,
+  ): 'AWAITING_CHECKOUT' | 'AWAITING_PAYMENT' | 'PREPARING' | 'SHIPPED' | 'COMPLETED' | 'CANCELLED' {
+    const s = tsoftStatusText.toLowerCase();
+    if (s.includes('iptal') || s.includes('cancel') || s.includes('iade') || statusId === 6 || statusId === 7) {
+      return 'CANCELLED';
+    }
+    if (s.includes('tamamland') || s.includes('teslim') || s.includes('complet') || s.includes('deliver') || statusId === 5) {
+      return 'COMPLETED';
+    }
+    if (s.includes('kargo') || s.includes('ship') || statusId === 4) {
+      return 'SHIPPED';
+    }
+    if (s.includes('hazırla') || s.includes('process') || s.includes('onay') || s.includes('preparing') || statusId === 3) {
+      return 'PREPARING';
+    }
+    if (s.includes('henüz') || s.includes('tamamlanmadı') || s.includes('incomplete') || statusId === 1) {
+      return 'AWAITING_CHECKOUT';
+    }
+    // Yeni Sipariş / Ödeme Bekleniyor (statusId 2 veya tanınmayan)
+    return 'AWAITING_PAYMENT';
+  }
+
+  /** Round-robin: org'daki AGENT rolündeki kullanıcılar arasında sırayla atar. */
+  private async pickNextAgentRoundRobin(organizationId: string): Promise<string | null> {
+    const agents = await this.prisma.user.findMany({
+      where: { organizationId, role: 'AGENT', isActive: true },
+      orderBy: { id: 'asc' },
+      select: { id: true },
+    });
+    if (!agents.length) return null;
+
+    // En az T-Soft siparişi atanmış agent'ı seç.
+    const counts = await this.prisma.salesOrder.groupBy({
+      by: ['createdById'],
+      where: {
+        source: TSOFT_SOURCE,
+        contact: { organizationId },
+        createdById: { in: agents.map((a) => a.id) },
+      },
+      _count: { _all: true },
+    });
+    const countMap = new Map(counts.map((c) => [c.createdById, c._count._all]));
+    let minAgent = agents[0];
+    let minCount = countMap.get(agents[0].id) ?? 0;
+    for (const a of agents.slice(1)) {
+      const c = countMap.get(a.id) ?? 0;
+      if (c < minCount) { minCount = c; minAgent = a; }
+    }
+    return minAgent.id;
+  }
+
+  /**
    * T-Soft siparişlerini çeker ve CRM SalesOrder tablosuna yazar.
+   * - Normal siparişler (son 30 gün)
+   * - Sepet terk siparişler (orderStatusId=1, 'Henüz Tamamlanmadı')
+   * - Her yeni sipariş için atanan AGENT'e görev oluşturur.
    */
   async syncTsoftOrders(
     organizationId: string,
     userId: string,
     opts: { dateStart?: Date | string | null; dateEnd?: Date | string | null } = {},
   ) {
-    // Varsayılan: son 30 gün. Kullanıcı tarih gönderdiyse onu kullan.
     const now = new Date();
     const defaultStart = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
     const dateStart = opts.dateStart ? new Date(opts.dateStart) : defaultStart;
@@ -498,35 +564,50 @@ export class EcommerceService {
       `[TSOFT-SYNC-ORDERS] Başlatılıyor orgId=${organizationId} aralık=${dateStart.toISOString()}..${dateEnd.toISOString()}`,
     );
 
-    let allOrders: Record<string, unknown>[] = [];
-    for (let page = 1; page <= 50 && allOrders.length < TSOFT_SYNC_ORDERS_MAX; page++) {
-      const { rows } = await this.tsoftApi.listOrders(organizationId, page, 100, {
-        dateStart,
-        dateEnd,
-      });
-      this.logger.debug(`[TSOFT-SYNC-ORDERS] Sayfa ${page}: ${rows.length} sipariş`);
-      if (!rows.length) break;
-      const remaining = TSOFT_SYNC_ORDERS_MAX - allOrders.length;
-      const chunk = rows.slice(0, Math.max(0, remaining));
-      for (const r of chunk) {
-        if (r && typeof r === 'object') allOrders.push(r as Record<string, unknown>);
+    // Normal siparişler (tüm durumlar) + sepet terk (orderStatusId=1) ayrı çekilir.
+    const fetchPages = async (orderStatusId?: number): Promise<Record<string, unknown>[]> => {
+      const result: Record<string, unknown>[] = [];
+      for (let page = 1; page <= 50 && result.length < TSOFT_SYNC_ORDERS_MAX; page++) {
+        const { rows } = await this.tsoftApi.listOrders(organizationId, page, 100, {
+          dateStart,
+          dateEnd,
+          orderStatusId: orderStatusId ?? null,
+        });
+        this.logger.debug(`[TSOFT-SYNC-ORDERS] sayfa=${page} statusId=${orderStatusId ?? 'all'}: ${rows.length} sipariş`);
+        if (!rows.length) break;
+        for (const r of rows) {
+          if (r && typeof r === 'object') result.push(r as Record<string, unknown>);
+        }
+        if (rows.length < 100) break;
       }
-      if (rows.length < 100) break;
+      return result;
+    };
+
+    const [regularOrders, abandonedOrders] = await Promise.all([
+      fetchPages(),
+      fetchPages(1), // orderStatusId=1 = "Henüz Tamamlanmadı"
+    ]);
+
+    // Birleştir, tsoftId üzerinden tekilleştir
+    const seenTsoftIds = new Set<string>();
+    const allOrders: Record<string, unknown>[] = [];
+    for (const r of [...regularOrders, ...abandonedOrders]) {
+      const id = String(r.OrderId ?? r.OrderCode ?? r.id ?? r.orderId ?? '').trim();
+      if (id && !seenTsoftIds.has(id)) {
+        seenTsoftIds.add(id);
+        allOrders.push(r);
+      }
     }
 
     this.logger.log(
-      `[TSOFT-SYNC-ORDERS] T-Soft'tan toplam ${allOrders.length} sipariş çekildi (üst sınır ${TSOFT_SYNC_ORDERS_MAX})`,
+      `[TSOFT-SYNC-ORDERS] Toplam: ${allOrders.length} sipariş (normal=${regularOrders.length}, terk=${abandonedOrders.length})`,
     );
-    if (allOrders.length > 0) {
-      this.logger.debug(`[TSOFT-SYNC-ORDERS] İlk sipariş örneği: ${JSON.stringify(allOrders[0]).slice(0, 1000)}`);
-    }
 
     let imported = 0;
     let skippedExisting = 0;
     let errors = 0;
 
     for (const raw of allOrders) {
-      // REST1: OrderId, OrderCode — v3: id, orderId
       const tsoftId = String(raw.OrderId ?? raw.OrderCode ?? raw.id ?? raw.orderId ?? '').trim();
       const tsoftCode = String(raw.OrderCode ?? raw.orderCode ?? tsoftId).trim();
       if (!tsoftId) {
@@ -540,8 +621,6 @@ export class EcommerceService {
       const siteOid =
         siteOidRaw != null && String(siteOidRaw).trim() !== '' ? String(siteOidRaw).trim() : null;
 
-      // Çakışma koruması: CRM'den push edilmiş sipariş zaten T-Soft'ta var olabilir.
-      // Önce externalId ile ara; yoksa tsoftSiteOrderId veya eski (prefix'siz) externalId ile ara.
       let existing = await this.prisma.salesOrder.findUnique({ where: { externalId } });
       if (!existing && siteOid) {
         existing = await this.prisma.salesOrder.findFirst({
@@ -566,13 +645,9 @@ export class EcommerceService {
           );
         }
       }
-      if (existing) {
-        skippedExisting++;
-        continue;
-      }
+      if (existing) { skippedExisting++; continue; }
 
       try {
-        // REST1: InvoiceMobile, DeliveryMobile, CustomerName — v3: customerPhone, mobilePhone
         const customerPhone = String(
           raw.InvoiceMobile || raw.DeliveryMobile || raw.InvoiceTel || raw.DeliveryTel ||
           raw.customerPhone || raw.customer_phone || raw.mobilePhone || raw.phone || '',
@@ -580,7 +655,6 @@ export class EcommerceService {
         const customerEmail = String(
           raw.CustomerUsername || raw.customerEmail || raw.customer_email || raw.email || '',
         ).trim();
-        // REST1: CustomerName = "Ad Soyad"
         const fullName = String(raw.CustomerName || raw.customerName || raw.name || '').trim();
         const nameParts = fullName.split(/\s+/);
         const customerName = nameParts[0] || '';
@@ -596,13 +670,11 @@ export class EcommerceService {
         let contact = normalizedPhone
           ? await this.prisma.contact.findUnique({ where: { phone: normalizedPhone } })
           : null;
-
         if (!contact && customerEmail) {
           contact = await this.prisma.contact.findFirst({
             where: { email: customerEmail, organizationId },
           });
         }
-
         if (!contact && normalizedPhone) {
           contact = await this.prisma.contact.create({
             data: {
@@ -632,13 +704,11 @@ export class EcommerceService {
           continue;
         }
 
-        // REST1: OrderTotalPrice — v3: grandTotal, total
         const grandTotal = Number(
           raw.OrderTotalPrice ?? raw.grandTotal ?? raw.total ?? raw.orderTotal ?? raw.totalPrice ?? 0,
         );
         const currency = String(raw.Currency || raw.currency || raw.currencyCode || 'TRY').trim().toUpperCase() || 'TRY';
 
-        // REST1: DeliveryAddress — v3: shippingAddress
         const shippingAddress = [
           raw.DeliveryAddress || raw.DeliveryName,
           raw.DeliveryCity,
@@ -647,22 +717,15 @@ export class EcommerceService {
 
         const orderNotes = String(raw.OrderNote || raw.notes || raw.orderNote || raw.customerNote || '').trim() || null;
 
-        // REST1: OrderStatus (string), OrderStatusId — v3: status
-        const tsoftStatus = String(raw.OrderStatus || raw.status || raw.orderStatus || '').trim().toLowerCase();
+        // Durum eşlemesi
+        const tsoftStatusText = String(raw.OrderStatus || raw.status || raw.orderStatus || '').trim();
         const statusId = Number(raw.OrderStatusId || 0);
-
-        let crmStatus: 'PENDING' | 'PROCESSING' | 'SHIPPED' | 'DELIVERED' | 'CANCELLED' = 'PENDING';
-        if (tsoftStatus.includes('iptal') || tsoftStatus.includes('cancel') || statusId === 6) crmStatus = 'CANCELLED';
-        else if (tsoftStatus.includes('teslim') || tsoftStatus.includes('deliver') || tsoftStatus.includes('complet') || statusId === 5) crmStatus = 'DELIVERED';
-        else if (tsoftStatus.includes('kargo') || tsoftStatus.includes('ship') || statusId === 4) crmStatus = 'SHIPPED';
-        else if (tsoftStatus.includes('hazırla') || tsoftStatus.includes('process') || tsoftStatus.includes('onay') || statusId === 2 || statusId === 3) crmStatus = 'PROCESSING';
+        const crmStatus = this.mapTsoftOrderStatus(tsoftStatusText, statusId);
 
         const orderItems = this.extractOrderItems(raw);
-
         const subtotal = orderItems.reduce((s, i) => s + i.lineTotal, 0);
         const vatTotal = Math.max(0, grandTotal - subtotal);
 
-        // REST1: OrderDate veya OrderDateTimeStamp
         const tsDate = raw.OrderDateTimeStamp || raw.OrderDate;
         let parsedDate: Date;
         if (typeof tsDate === 'number' || (typeof tsDate === 'string' && /^\d{10,}$/.test(tsDate))) {
@@ -673,16 +736,17 @@ export class EcommerceService {
         }
         const validDate = Number.isFinite(parsedDate.getTime()) ? parsedDate : new Date();
 
-        const tsoftSiteOrderId = siteOid;
+        // Round-robin: atanacak AGENT seç (bulunamazsa senkronu başlatan kullanıcı)
+        const assignedUserId = (await this.pickNextAgentRoundRobin(organizationId)) ?? userId;
 
-        await this.prisma.salesOrder.create({
+        const newOrder = await this.prisma.salesOrder.create({
           data: {
             externalId,
-            tsoftSiteOrderId,
+            tsoftSiteOrderId: siteOid,
             siteOrderData: raw as Prisma.InputJsonValue,
             source: TSOFT_SOURCE,
             contactId: contact.id,
-            createdById: userId,
+            createdById: assignedUserId,
             status: crmStatus,
             currency,
             subtotal: Math.round(subtotal * 100) / 100,
@@ -702,10 +766,41 @@ export class EcommerceService {
               })),
             },
           },
+          select: { id: true, orderNumber: true },
         });
 
+        // Otomatik görev oluştur
+        try {
+          const dueAt = new Date(validDate.getTime() + 24 * 60 * 60 * 1000);
+          const orderLabel = newOrder.orderNumber
+            ? `SIP-${String(newOrder.orderNumber).padStart(5, '0')}`
+            : tsoftCode;
+          const taskTitle =
+            crmStatus === 'AWAITING_CHECKOUT'
+              ? `Sepet hatırlatması: ${orderLabel}`
+              : `T-Soft siparişi işleme al: ${orderLabel}`;
+          const taskDesc =
+            crmStatus === 'AWAITING_CHECKOUT'
+              ? `T-Soft'ta sepeti terk eden site müşterisi. Sipariş toplam: ${grandTotal} ${currency}.`
+              : `T-Soft'tan gelen site siparişi. Durum: ${tsoftStatusText || crmStatus}. Toplam: ${grandTotal} ${currency}.`;
+          await this.prisma.task.create({
+            data: {
+              userId: assignedUserId,
+              contactId: contact.id,
+              title: taskTitle,
+              description: taskDesc,
+              dueAt,
+              trigger: `tsoft_order_sync:${newOrder.id}`,
+            },
+          });
+        } catch (taskErr: any) {
+          this.logger.warn(`[TSOFT-SYNC-ORDERS] Görev oluşturulamadı (sipariş=${newOrder.id}): ${taskErr?.message}`);
+        }
+
         imported++;
-        this.logger.debug(`[TSOFT-SYNC-ORDERS] Sipariş aktarıldı: T-Soft #${tsoftCode} → CRM (${crmStatus}), ${orderItems.length} kalem, ${grandTotal} ${currency}`);
+        this.logger.debug(
+          `[TSOFT-SYNC-ORDERS] Aktarıldı: T-Soft #${tsoftCode} → CRM ${newOrder.id} (${crmStatus}) agent=${assignedUserId}`,
+        );
       } catch (e: any) {
         if (e?.code === 'P2002') {
           skippedExisting++;

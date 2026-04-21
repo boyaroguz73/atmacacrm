@@ -6,7 +6,14 @@ import api, { getApiErrorMessage } from '@/lib/api';
 import DateRangePicker from '@/components/ui/DateRangePicker';
 import ReportsNav from '../ReportsNav';
 import toast from 'react-hot-toast';
-import { Loader2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Loader2, ChevronLeft, ChevronRight, Filter } from 'lucide-react';
+
+type SourceFilter = '' | 'MANUAL' | 'TSOFT';
+const SOURCE_OPTIONS: { value: SourceFilter; label: string }[] = [
+  { value: '', label: 'Tümü' },
+  { value: 'MANUAL', label: 'CRM' },
+  { value: 'TSOFT', label: 'Site' },
+];
 import { rewriteMediaUrlForClient } from '@/lib/utils';
 
 function fmtTry(n: number) {
@@ -16,6 +23,7 @@ function fmtTry(n: number) {
 export default function ReportSoldProductsPage() {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+  const [source, setSource] = useState<SourceFilter>('');
   const [page, setPage] = useState(1);
   const [data, setData] = useState<{ items: any[]; total: number; totalPages: number } | null>(null);
   const [loading, setLoading] = useState(true);
@@ -27,6 +35,7 @@ export default function ReportSoldProductsPage() {
       const p: Record<string, string | number> = { page, limit };
       if (dateFrom) p.from = `${dateFrom}T00:00:00`;
       if (dateTo) p.to = `${dateTo}T23:59:59`;
+      if (source) p.source = source;
       const { data: d } = await api.get('/reports/sales/products', { params: p });
       setData({
         items: d.items ?? [],
@@ -39,11 +48,11 @@ export default function ReportSoldProductsPage() {
     } finally {
       setLoading(false);
     }
-  }, [dateFrom, dateTo, page]);
+  }, [dateFrom, dateTo, source, page]);
 
   useEffect(() => {
     setPage(1);
-  }, [dateFrom, dateTo]);
+  }, [dateFrom, dateTo, source]);
 
   useEffect(() => {
     fetchData();
@@ -56,14 +65,32 @@ export default function ReportSoldProductsPage() {
           <h1 className="text-xl font-bold text-gray-900">Satılan ürünler</h1>
           <p className="text-sm text-gray-500 mt-1">Sipariş satırları — miktar ve satır tutarı</p>
         </div>
-        <DateRangePicker
-          from={dateFrom}
-          to={dateTo}
-          onChange={(f, t) => {
-            setDateFrom(f);
-            setDateTo(t);
-          }}
-        />
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white p-0.5 text-xs">
+            <Filter className="w-3.5 h-3.5 text-gray-400 ml-1" />
+            {SOURCE_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                onClick={() => setSource(opt.value)}
+                className={`px-2.5 py-1 rounded-md font-medium transition-colors ${
+                  source === opt.value
+                    ? 'bg-whatsapp text-white shadow-sm'
+                    : 'text-gray-600 hover:bg-gray-50'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+          <DateRangePicker
+            from={dateFrom}
+            to={dateTo}
+            onChange={(f, t) => {
+              setDateFrom(f);
+              setDateTo(t);
+            }}
+          />
+        </div>
       </div>
       <ReportsNav />
 

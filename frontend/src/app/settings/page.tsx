@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { rewriteMediaUrlForClient } from '@/lib/utils';
+import { HtmlEditor } from '@/components/HtmlEditor';
 
 interface UserItem {
   id: string;
@@ -563,21 +564,22 @@ export default function SettingsPage() {
               <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Koşullar & Notlar</p>
               <div className="space-y-4">
                 {[
-                  { key: 'pdf_terms', label: 'Ödeme Koşulları', rows: 3 },
-                  { key: 'pdf_footer_note', label: 'Alt Not (PDF footer)', rows: 2 },
+                  { key: 'pdf_terms', label: 'Ödeme Koşulları', minHeight: '110px' },
+                  { key: 'pdf_footer_note', label: 'Alt Not (PDF footer)', minHeight: '80px' },
                 ].map((field) => (
                   <div key={field.key}>
                     <label className="block text-xs font-medium text-gray-600 mb-1">{field.label}</label>
-                    <textarea
-                      defaultValue={settings.find((s) => s.key === field.key)?.value || ''}
-                      onBlur={async (e) => {
+                    <HtmlEditor
+                      value={settings.find((s) => s.key === field.key)?.value || ''}
+                      onChange={() => {}}
+                      onBlurSave={async (html) => {
                         try {
-                          await api.patch('/system-settings', { key: field.key, value: e.target.value });
+                          await api.patch('/system-settings', { key: field.key, value: html });
                           toast.success(`${field.label} güncellendi`);
                         } catch { toast.error('Güncellenemedi'); }
                       }}
-                      rows={field.rows}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-whatsapp resize-y"
+                      placeholder={`${field.label} girin…`}
+                      minHeight={field.minHeight}
                     />
                   </div>
                 ))}

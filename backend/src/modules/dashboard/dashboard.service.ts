@@ -119,7 +119,7 @@ export class DashboardService {
         where: {
           ...allOrdersFilter,
           expectedDeliveryDate: { lt: now },
-          status: { notIn: ['DELIVERED', 'CANCELLED'] },
+          status: { notIn: ['COMPLETED', 'CANCELLED'] },
         },
       }),
       this.cashAggregate(organizationId, 'INCOME', dateRange),

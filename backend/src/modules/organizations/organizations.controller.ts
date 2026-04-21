@@ -122,6 +122,20 @@ export class OrganizationsController {
     return this.orgService.patchMenuSuborder(orgId, body);
   }
 
+  @Get('my/menu-sub-hidden')
+  @Roles('AGENT')
+  async getMyMenuSubHidden(@Req() req: any) {
+    const orgId = await this.resolveMyOrgId(req);
+    return this.orgService.getMenuSubHidden(orgId);
+  }
+
+  @Patch('my/menu-sub-hidden')
+  @Roles('ADMIN')
+  async patchMyMenuSubHidden(@Req() req: any, @Body() body: Record<string, string[] | undefined>) {
+    const orgId = await this.resolveMyOrgId(req);
+    return this.orgService.patchMenuSubHidden(orgId, body);
+  }
+
   @Get('my/default-location')
   @Roles('AGENT', 'ADMIN', 'SUPERADMIN')
   async getMyDefaultLocation(@Req() req: any) {

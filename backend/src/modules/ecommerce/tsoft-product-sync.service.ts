@@ -483,10 +483,12 @@ export class TsoftProductSyncService {
 
       const vSku = pickString(v.ProductCode, v.VariantCode, v.Barcode);
       const vName = buildVariantName(v, vExternal);
-      const vUnitPrice =
-        toNullableNumber(v.SellingPrice ?? v.sellingPrice ?? v.SalePrice ?? v.ListPrice) ?? 0;
+      const vSellingPrice = toNullableNumber(v.SellingPrice ?? v.sellingPrice ?? v.SalePrice);
+      const vDiscountedPrice = toNullableNumber(v.DiscountedSellingPrice ?? v.discountedSellingPrice);
+      const vUnitPrice = vSellingPrice ?? toNullableNumber(v.ListPrice ?? v.listPrice) ?? 0;
       const vList = toNullableNumber(v.ListPrice ?? v.listPrice);
-      const vSale = toNullableNumber(v.SellingPrice ?? v.sellingPrice ?? v.SalePrice);
+      // DiscountedSellingPrice mevcutsa indirimli fiyat olarak sakla; yoksa SellingPrice ile aynı
+      const vSale = vDiscountedPrice ?? vSellingPrice;
       const vStock = flags.includeStock
         ? toNullableInt(v.Stock ?? v.stock)
         : null;

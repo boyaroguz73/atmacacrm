@@ -161,6 +161,7 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
       sku: string;
       imageUrl?: string | null;
       unitPrice: number;
+      salePriceAmount?: number | null;
       currency: string;
       category?: string | null;
     }[]
@@ -179,6 +180,8 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
       name: string;
       imageUrl?: string | null;
       unitPrice: number;
+      salePriceAmount?: number | null;
+      property2?: string | null;
       currency: string;
       stock: number | null;
     }[]
@@ -1685,9 +1688,27 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
                           </div>
                           <div className="min-w-0 flex-1">
                             <p className="text-sm font-medium text-gray-900 truncate">{v.name}</p>
-                            <p className="text-[11px] text-gray-500">
-                              {v.unitPrice.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} {v.currency}
-                              {v.stock != null ? ` • Stok: ${v.stock}` : ''}
+                            {v.property2 && (
+                              <span className="inline-block mt-0.5 px-1.5 py-0.5 rounded bg-gray-100 text-[10px] text-gray-600 font-medium">
+                                {v.property2}
+                              </span>
+                            )}
+                            <p className="text-[11px] text-gray-500 flex items-center gap-1 flex-wrap">
+                              {v.salePriceAmount != null && v.salePriceAmount !== v.unitPrice ? (
+                                <>
+                                  <span className="text-green-600 font-semibold">
+                                    {v.salePriceAmount.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} {v.currency}
+                                  </span>
+                                  <span className="line-through text-gray-400">
+                                    {v.unitPrice.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
+                                  </span>
+                                </>
+                              ) : (
+                                <span>
+                                  {v.unitPrice.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} {v.currency}
+                                </span>
+                              )}
+                              {v.stock != null ? <span>• Stok: {v.stock}</span> : null}
                             </p>
                           </div>
                         </button>
@@ -1756,6 +1777,8 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
                                     name: String(v.name ?? ''),
                                     imageUrl: v.imageUrl ?? null,
                                     unitPrice: Number(v.unitPrice ?? 0),
+                                    salePriceAmount: v.salePriceAmount != null ? Number(v.salePriceAmount) : null,
+                                    property2: v.property2 ? String(v.property2) : null,
                                     currency: String(v.currency ?? 'TRY'),
                                     stock: v.stock == null ? null : Number(v.stock),
                                   })),
@@ -1804,6 +1827,20 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
                             <p className="text-sm font-medium text-gray-900 truncate">{p.name}</p>
                             {p.category ? (
                               <p className="text-[11px] text-gray-400 truncate">{p.category}</p>
+                            ) : null}
+                            {p.salePriceAmount != null && p.salePriceAmount > 0 ? (
+                              <p className="text-[11px] flex items-center gap-1">
+                                <span className="text-green-600 font-semibold">
+                                  {p.salePriceAmount.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} {p.currency}
+                                </span>
+                                <span className="text-gray-400 line-through">
+                                  {p.unitPrice.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
+                                </span>
+                              </p>
+                            ) : p.unitPrice > 0 ? (
+                              <p className="text-[11px] text-gray-500">
+                                {p.unitPrice.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} {p.currency}
+                              </p>
                             ) : null}
                           </div>
                         </button>
@@ -2007,6 +2044,9 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
           onClose={() => setShowPanel(false)}
           internalChatEnabled={internalChatEnabled}
           userRole={userRole}
+          isGroup={!!activeConversation.isGroup}
+          groupName={activeConversation.groupName ?? undefined}
+          groupParticipantCount={activeConversation.groupParticipantCount ?? undefined}
         />
       )}
 

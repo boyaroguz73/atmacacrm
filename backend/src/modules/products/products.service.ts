@@ -398,10 +398,19 @@ export class ProductsService {
         productBaseName;
       const resolvedName = fallbackName;
 
+      // Property2 → ürün ölçüsü (T-Soft subProduct alanı)
+      const property2 = pickMetaString(v.metadata, ['Property2', 'property2']) || null;
+
+      // DiscountedSellingPrice varsa salePriceAmount; frontend'e her ikisini de gönder
+      const effectiveSalePrice =
+        v.salePriceAmount != null ? Number(v.salePriceAmount) : null;
+
       return {
         ...v,
         name: resolvedName,
         imageUrl: directImage || extraImage || metaImage || normalizeImageUrl(fallbackImage),
+        property2,
+        salePriceAmount: effectiveSalePrice,
       };
     });
 

@@ -32,6 +32,7 @@ import { OrdersModule } from './modules/orders/orders.module';
 import { AccountingModule } from './modules/accounting/accounting.module';
 import { PdfModule } from './modules/pdf/pdf.module';
 import { SuppliersModule } from './modules/suppliers/suppliers.module';
+import { CargoCompaniesModule } from './modules/cargo-companies/cargo-companies.module';
 import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerGuard } from '@nestjs/throttler';
 
@@ -70,6 +71,7 @@ import { ThrottlerGuard } from '@nestjs/throttler';
     OrdersModule,
     AccountingModule,
     SuppliersModule,
+    CargoCompaniesModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

@@ -23,10 +23,11 @@ enum QuoteStatus {
 }
 
 enum OrderStatus {
-  PENDING
-  PROCESSING
+  AWAITING_CHECKOUT
+  AWAITING_PAYMENT
+  PREPARING
   SHIPPED
-  DELIVERED
+  COMPLETED
   CANCELLED
 }
 
@@ -976,6 +977,12 @@ model SalesOrder {
   tsoftLastError             String?
   /// T-Soft getOrders yanıtının ham içeriği (site sipariş detayı için). Pull sırasında doldurulur.
   siteOrderData              Json?
+  /// Kargo firması (null = belirtilmedi)
+  cargoCompanyId             String?
+  /// Kargo takip numarası
+  cargoTrackingNo            String?
+  /// Kargo bildirimi müşteriye gönderildi mi
+  cargoNotificationSentAt    DateTime?
 
   createdAt                  DateTime    @default(now())
   updatedAt                  DateTime    @updatedAt
@@ -983,6 +990,7 @@ model SalesOrder {
   quote           Quote?             @relation(fields: [quoteId], references: [id], onDelete: SetNull)
   contact         Contact            @relation(fields: [contactId], references: [id], onDelete: Cascade)
   createdBy       User               @relation("OrderCreator", fields: [createdById], references: [id])
+  cargoCompany    CargoCompany?      @relation(fields: [cargoCompanyId], references: [id], onDelete: SetNull)
   items           OrderItem[]
   invoice         AccountingInvoice?
   cashBookEntries CashBookEntry[]
@@ -992,6 +1000,24 @@ model SalesOrder {
   @@index([status])
   @@index([createdAt(sort: Desc)])
   @@map("sales_orders")
+}
+
+// ─── Cargo Companies ───
+
+model CargoCompany {
+  id        String   @id @default(uuid())
+  name      String
+  /// true → ambar teslimatı: kargo takip kodu gönderilmez, farklı mesaj şablonu kullanılır
+  isAmbar   Boolean  @default(false)
+  phone     String?
+  notes     String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  orders SalesOrder[]
+
+  @@map("cargo_companies")
 }
 
 // ─── Suppliers ───

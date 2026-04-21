@@ -143,6 +143,35 @@ export class PdfService {
     return this.fontPath ? (text || '') : tr(text || '');
   }
 
+  /**
+   * HTML içeriğini PDFKit'in işleyebileceği düz metne çevirir.
+   * <b>, <strong> → kalın belirteç korunmaz (PDFKit inline bold desteklemiyor)
+   * <li> → "• " öneki eklenir
+   * <br>, <p>, </div>, </li> → satır sonu
+   * HTML entity'leri decode edilir
+   */
+  private htmlToPlainText(html: string): string {
+    if (!html) return '';
+    if (!html.includes('<')) return html;
+    return html
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<\/p>/gi, '\n')
+      .replace(/<\/div>/gi, '\n')
+      .replace(/<li[^>]*>/gi, '• ')
+      .replace(/<\/li>/gi, '\n')
+      .replace(/<\/ul>/gi, '\n')
+      .replace(/<\/ol>/gi, '\n')
+      .replace(/<[^>]+>/g, '')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+  }
+
   private async getSettings(): Promise<PdfSettings> {
     const rows = await this.prisma.systemSetting.findMany({ where: { key: { startsWith: 'pdf_' } } });
     const m = new Map(rows.map((r) => [r.key, r.value]));
@@ -319,7 +348,7 @@ export class PdfService {
           } catch { /* skip */ }
         }
 
-        let cy = logoBottom + 8;
+        let cy = logoBottom + (logoBuffer ? 3 : 0);
         const metaW = titleBoxX - ML - 16;
         if (metaW > 40) {
           const infoLines: string[] = [];
@@ -395,7 +424,7 @@ export class PdfService {
           { label: this.t('Urun / Hizmet'), w: COL_NAME },
           { label: this.t('Miktar'), w: COL_QTY },
           { label: `${this.t('B.Fiyat')} (${cs})`, w: COL_UNIT },
-          { label: `${this.t('Toplam')} (${cs})`, w: COL_TOT },
+          { label: `${this.t('Toplam KDV Haric')} (${cs})`, w: COL_TOT },
         ];
 
         // Header row
@@ -490,7 +519,7 @@ export class PdfService {
             doc.text(item.unitPrice.toFixed(2), rx, rowY + 10, { width: cols[3].w - 6, align: 'right', lineBreak: false });
             rx += cols[3].w;
             B(); doc.fillColor(primary);
-            doc.text(item.lineTotal.toFixed(2), rx, rowY + 10, { width: cols[4].w - 6, align: 'right', lineBreak: false });
+            doc.text((item.unitPrice * item.quantity).toFixed(2), rx, rowY + 10, { width: cols[4].w - 6, align: 'right', lineBreak: false });
             rowY += itemH + 6;
           } else {
             if (idx % 2 === 1) {
@@ -521,7 +550,7 @@ export class PdfService {
             rx += cols[1].w;
             txt(String(item.quantity), rx + 3, rowY + 6, { size: 8, width: cols[2].w - 6, align: 'right' }); rx += cols[2].w;
             txt(item.unitPrice.toFixed(2), rx + 3, rowY + 6, { size: 8, width: cols[3].w - 6, align: 'right' }); rx += cols[3].w;
-            txt(item.lineTotal.toFixed(2), rx + 3, rowY + 6, { size: 8, width: cols[4].w - 6, align: 'right' });
+            txt((item.unitPrice * item.quantity).toFixed(2), rx + 3, rowY + 6, { size: 8, width: cols[4].w - 6, align: 'right' });
             rowY += rowHDefault;
           }
         });
@@ -557,8 +586,8 @@ export class PdfService {
 
         // ── NOTES / TERMS / BANK ─────────────────────────────────────────
         rowY += 6;
-        const termsText = data.termsOverride?.trim() || settings.terms;
-        const footerNoteText = data.footerNoteOverride?.trim() || settings.footerNote;
+        const termsText = this.htmlToPlainText(data.termsOverride?.trim() || settings.terms);
+        const footerNoteText = this.htmlToPlainText(data.footerNoteOverride?.trim() || settings.footerNote);
         const ensureSpace = (neededHeight: number) => {
           if (rowY + neededHeight <= PAGE_H - 95) return;
           doc.addPage({ margin: 0 });
@@ -566,10 +595,11 @@ export class PdfService {
           rowY = 28;
         };
         if (data.notes) {
+          const notesPlain = this.htmlToPlainText(data.notes);
           R(); doc.fontSize(8).fillColor('#444');
-          const h = doc.heightOfString(this.t(data.notes), { width: PW }) + 8;
+          const h = doc.heightOfString(this.t(notesPlain), { width: PW }) + 8;
           ensureSpace(h);
-          doc.text(this.t(data.notes), ML, rowY, { width: PW, lineBreak: true });
+          doc.text(this.t(notesPlain), ML, rowY, { width: PW, lineBreak: true });
           rowY += h + 6;
         }
         if (termsText) {

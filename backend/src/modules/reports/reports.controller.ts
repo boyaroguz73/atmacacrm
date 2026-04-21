@@ -19,11 +19,43 @@ export class ReportsController {
     @Req() req: any,
     @Query('from') from?: string,
     @Query('to') to?: string,
+    @Query('source') source?: string,
   ) {
     return this.reportsService.getExecutiveDashboard(
       from ? new Date(from) : undefined,
       to ? new Date(to) : undefined,
       requireOrgId(req.user),
+      source,
+    );
+  }
+
+  @Get('collections/timeseries')
+  getCollectionTimeseries(
+    @Req() req: any,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('source') source?: string,
+  ) {
+    return this.reportsService.getCollectionTimeseries(
+      from ? new Date(from) : undefined,
+      to ? new Date(to) : undefined,
+      requireOrgId(req.user),
+      source,
+    );
+  }
+
+  @Get('collections/revenue')
+  getCollectionRevenue(
+    @Req() req: any,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('source') source?: string,
+  ) {
+    return this.reportsService.getCollectionRevenue(
+      from ? new Date(from) : undefined,
+      to ? new Date(to) : undefined,
+      requireOrgId(req.user),
+      source,
     );
   }
 
@@ -57,6 +89,7 @@ export class ReportsController {
     @Query('from') from?: string,
     @Query('to') to?: string,
     @Query('granularity') granularity?: string,
+    @Query('source') source?: string,
   ) {
     const g = granularity === 'month' || granularity === 'week' ? granularity : 'day';
     return this.reportsService.getSalesTimeseries(
@@ -64,6 +97,7 @@ export class ReportsController {
       to ? new Date(to) : undefined,
       requireOrgId(req.user),
       g,
+      source,
     );
   }
 
@@ -73,12 +107,14 @@ export class ReportsController {
     @Query('from') from?: string,
     @Query('to') to?: string,
     @Query('limit') limit?: string,
+    @Query('source') source?: string,
   ) {
     return this.reportsService.getTopCustomers(
       from ? new Date(from) : undefined,
       to ? new Date(to) : undefined,
       requireOrgId(req.user),
       limit ? parseInt(limit, 10) : 10,
+      source,
     );
   }
 
@@ -101,12 +137,14 @@ export class ReportsController {
     @Query('from') from?: string,
     @Query('to') to?: string,
     @Query('limit') limit?: string,
+    @Query('source') source?: string,
   ) {
     return this.reportsService.getTopProductCategories(
       from ? new Date(from) : undefined,
       to ? new Date(to) : undefined,
       requireOrgId(req.user),
       limit ? parseInt(limit, 10) : 12,
+      source,
     );
   }
 
@@ -117,6 +155,7 @@ export class ReportsController {
     @Query('to') to?: string,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
+    @Query('source') source?: string,
   ) {
     return this.reportsService.getSoldProducts(
       from ? new Date(from) : undefined,
@@ -124,6 +163,7 @@ export class ReportsController {
       requireOrgId(req.user),
       page ? parseInt(page, 10) : 1,
       limit ? parseInt(limit, 10) : 30,
+      source,
     );
   }
 
@@ -166,11 +206,13 @@ export class ReportsController {
     @Req() req: any,
     @Query('from') from?: string,
     @Query('to') to?: string,
+    @Query('source') source?: string,
   ) {
     return this.reportsService.getAgentDetailedReport(
       from ? new Date(from) : undefined,
       to ? new Date(to) : undefined,
       requireOrgId(req.user),
+      source,
     );
   }
 

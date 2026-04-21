@@ -687,13 +687,47 @@ function VariantEditor({
           />
         </div>
         <div>
-          <label className="text-[10px] font-medium text-gray-500">Birim fiyat ({currency})</label>
+          <label className="text-[10px] font-medium text-gray-500">Normal fiyat ({currency})</label>
           <input
             type="number"
             step="0.01"
             value={draft.unitPrice}
             onChange={(e) => setDraft((d) => ({ ...d, unitPrice: parseFloat(e.target.value) || 0 }))}
             disabled={!isAdmin}
+            className="w-full mt-0.5 px-2 py-1.5 rounded-lg border border-gray-200 text-sm disabled:bg-gray-100"
+          />
+        </div>
+        <div>
+          <label className="text-[10px] font-medium text-gray-500">Liste fiyatı ({currency})</label>
+          <input
+            type="number"
+            step="0.01"
+            value={draft.listPrice ?? ''}
+            onChange={(e) =>
+              setDraft((d) => ({
+                ...d,
+                listPrice: e.target.value === '' ? null : parseFloat(e.target.value) || 0,
+              }))
+            }
+            disabled={!isAdmin}
+            placeholder="Boş bırakılabilir"
+            className="w-full mt-0.5 px-2 py-1.5 rounded-lg border border-gray-200 text-sm disabled:bg-gray-100"
+          />
+        </div>
+        <div>
+          <label className="text-[10px] font-medium text-gray-500">İndirimli fiyat ({currency})</label>
+          <input
+            type="number"
+            step="0.01"
+            value={draft.salePriceAmount ?? ''}
+            onChange={(e) =>
+              setDraft((d) => ({
+                ...d,
+                salePriceAmount: e.target.value === '' ? null : parseFloat(e.target.value) || 0,
+              }))
+            }
+            disabled={!isAdmin}
+            placeholder="Boş bırakılabilir"
             className="w-full mt-0.5 px-2 py-1.5 rounded-lg border border-gray-200 text-sm disabled:bg-gray-100"
           />
         </div>

@@ -172,10 +172,12 @@ export class AccountingController {
   pendingBilling(
     @Query('page') page?: string,
     @Query('limit') limit?: string,
+    @Query('orderStatus') orderStatus?: string,
   ) {
     return this.accountingService.pendingBilling(
       page ? parseInt(page, 10) : 1,
       limit ? parseInt(limit, 10) : 50,
+      orderStatus,
     );
   }
 

@@ -3,11 +3,8 @@
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
 import {
-  ArrowLeftRight,
   FileText,
   LayoutDashboard,
-  Truck,
-  Wallet,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -36,18 +33,6 @@ const GROUPS: { title: string; items: Item[] }[] = [
       },
     ],
   },
-  {
-    title: 'Nakit',
-    items: [{ href: '/accounting/cash', label: 'Kasa defteri' }],
-  },
-  {
-    title: 'Cari',
-    items: [{ href: '/accounting/ledger', label: 'Gelen / giden' }],
-  },
-  {
-    title: 'Lojistik',
-    items: [{ href: '/accounting/delivery-notes', label: 'İrsaliyeler' }],
-  },
 ];
 
 function itemActive(
@@ -75,10 +60,6 @@ function itemActive(
 
 function itemIcon(item: Item) {
   if (item.match === 'accounting-home') return LayoutDashboard;
-  if (item.invoiceTab) return FileText;
-  if (item.href.includes('cash')) return Wallet;
-  if (item.href.includes('ledger')) return ArrowLeftRight;
-  if (item.href.includes('delivery')) return Truck;
   return FileText;
 }
 

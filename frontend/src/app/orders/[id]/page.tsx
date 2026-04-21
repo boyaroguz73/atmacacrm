@@ -21,8 +21,10 @@ import {
   Plus,
   Receipt,
   ReceiptText,
+  Send,
   Store,
   Trash2,
+  Truck,
   User,
   Wallet,
   X,
@@ -30,7 +32,7 @@ import {
 import PanelEditedBadge from '@/components/ui/PanelEditedBadge';
 import SiteOrderDetailsPanel from '@/components/orders/SiteOrderDetailsPanel';
 
-type OrderStatus = 'PENDING' | 'PROCESSING' | 'SHIPPED' | 'DELIVERED' | 'CANCELLED';
+type OrderStatus = 'AWAITING_CHECKOUT' | 'AWAITING_PAYMENT' | 'PREPARING' | 'SHIPPED' | 'COMPLETED' | 'CANCELLED';
 
 interface OrderItemRow {
   id: string;
@@ -70,6 +72,13 @@ interface PaymentEntry {
   user: { id: string; name: string | null } | null;
 }
 
+interface CargoCompanyOption {
+  id: string;
+  name: string;
+  isAmbar: boolean;
+  isActive: boolean;
+}
+
 interface SalesOrder {
   id: string;
   orderNumber: number;
@@ -90,6 +99,10 @@ interface SalesOrder {
   tsoftPushedAt?: string | null;
   tsoftLastError?: string | null;
   siteOrderData?: Record<string, unknown> | null;
+  cargoCompanyId?: string | null;
+  cargoTrackingNo?: string | null;
+  cargoNotificationSentAt?: string | null;
+  cargoCompany?: { id: string; name: string; isAmbar: boolean } | null;
   invoice?: { id: string } | null;
   createdBy?: { id: string; name: string | null } | null;
   contact: {
@@ -153,10 +166,11 @@ function formatDateTime(iso: string) {
 }
 
 const STATUS_LABELS: Record<OrderStatus, string> = {
-  PENDING: 'Beklemede',
-  PROCESSING: 'İşleniyor',
+  AWAITING_CHECKOUT: 'Sepet Terk',
+  AWAITING_PAYMENT: 'Ödeme Bekleniyor',
+  PREPARING: 'Hazırlanıyor',
   SHIPPED: 'Kargoda',
-  DELIVERED: 'Teslim Edildi',
+  COMPLETED: 'Tamamlandı',
   CANCELLED: 'İptal',
 };
 
@@ -246,6 +260,11 @@ export default function OrderDetailPage() {
   const [shippingDraft, setShippingDraft] = useState('');
   const [invoiceDueDraft, setInvoiceDueDraft] = useState('');
   const [suppliers, setSuppliers] = useState<{ id: string; name: string }[]>([]);
+  const [cargoCompanies, setCargoCompanies] = useState<CargoCompanyOption[]>([]);
+  const [cargoCompanyDraft, setCargoCompanyDraft] = useState('');
+  const [cargoTrackingDraft, setCargoTrackingDraft] = useState('');
+  const [cargoSaving, setCargoSaving] = useState(false);
+  const [cargoNotifSending, setCargoNotifSending] = useState(false);
   const [itemSavingId, setItemSavingId] = useState<string | null>(null);
   const [lineDrafts, setLineDrafts] = useState<Record<string, LineEditDraft>>({});
 
@@ -282,6 +301,10 @@ export default function OrderDetailPage() {
       .get('/suppliers', { params: { isActive: true, limit: 200 } })
       .then(({ data }) => setSuppliers(data.suppliers || []))
       .catch(() => setSuppliers([]));
+    api
+      .get('/cargo-companies', { params: { isActive: true, limit: 200 } })
+      .then(({ data }) => setCargoCompanies(data.cargoCompanies || []))
+      .catch(() => setCargoCompanies([]));
   }, []);
 
   useEffect(() => {
@@ -295,7 +318,9 @@ export default function OrderDetailPage() {
     setNotesDraft(order.notes ?? '');
     setShippingDraft(order.shippingAddress ?? '');
     setInvoiceDueDraft('');
-  }, [order?.id, order?.expectedDeliveryDate, order?.notes, order?.shippingAddress, loading]);
+    setCargoCompanyDraft(order.cargoCompanyId ?? '');
+    setCargoTrackingDraft(order.cargoTrackingNo ?? '');
+  }, [order?.id, order?.expectedDeliveryDate, order?.notes, order?.shippingAddress, order?.cargoCompanyId, order?.cargoTrackingNo, loading]);
 
   useEffect(() => {
     if (!order?.items?.length) {
@@ -507,10 +532,43 @@ export default function OrderDetailPage() {
     });
   };
 
+  const saveCargoInfo = async () => {
+    if (!order) return;
+    setCargoSaving(true);
+    try {
+      const { data } = await api.patch<SalesOrder>(`/orders/${order.id}/shipping-info`, {
+        cargoCompanyId: cargoCompanyDraft || null,
+        cargoTrackingNo: cargoTrackingDraft.trim() || null,
+      });
+      setOrder(data);
+      toast.success('Kargo bilgileri kaydedildi');
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, 'Kayıt başarısız'));
+    } finally {
+      setCargoSaving(false);
+    }
+  };
+
+  const sendCargoNotification = async () => {
+    if (!order) return;
+    setCargoNotifSending(true);
+    try {
+      await api.post(`/orders/${order.id}/send-shipping-notification`);
+      await fetchOrder();
+      toast.success('Kargo bildirimi müşteriye gönderildi');
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, 'Bildirim gönderilemedi'));
+    } finally {
+      setCargoNotifSending(false);
+    }
+  };
+
+  const selectedCargoCompany = cargoCompanies.find((c) => c.id === cargoCompanyDraft);
+
   const canEditOrderLines = Boolean(
     order &&
       !order.invoice &&
-      order.status !== 'DELIVERED' &&
+      order.status !== 'COMPLETED' &&
       order.status !== 'CANCELLED',
   );
 
@@ -555,21 +613,290 @@ export default function OrderDetailPage() {
           </div>
 
           <div className="px-5 py-4 space-y-5">
-            <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
-              <div className="xl:col-span-2 space-y-5 min-w-0">
-            <div className="rounded-xl border border-indigo-100 bg-white overflow-hidden shadow-sm">
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 px-4 py-2.5 bg-gradient-to-r from-indigo-50 to-indigo-50/40 border-b border-indigo-100">
-                <h3 className="text-xs font-bold text-indigo-900 uppercase tracking-wide flex items-center gap-2">
-                  <Package className="w-4 h-4 text-indigo-700" />
-                  Sipariş Ürünleri
-                </h3>
+            <div className="flex flex-col sm:flex-row sm:items-end gap-4">
+              <div className="flex-1 space-y-1">
+                <label htmlFor="order-status" className="text-xs font-semibold text-gray-500 uppercase">
+                  Sipariş durumu
+                </label>
+                <select
+                  id="order-status"
+                  value={order.status}
+                  disabled={statusSaving}
+                  onChange={(e) => void patchStatus(e.target.value as OrderStatus)}
+                  className="w-full sm:max-w-xs px-3 py-2.5 rounded-xl border border-gray-200 text-sm bg-white"
+                >
+                  {(Object.keys(STATUS_LABELS) as OrderStatus[]).map((s) => (
+                    <option key={s} value={s}>{STATUS_LABELS[s]}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="text-sm">
+                <span className="text-gray-400 text-xs block">Genel toplam</span>
+                <span className="font-semibold text-whatsapp tabular-nums">
+                  {formatMoney(order.grandTotal, order.currency)}
+                </span>
+              </div>
+            </div>
+
+            {order.quote ? (
+              <p className="text-xs text-gray-500">
+                Teklif: <span className="font-mono font-medium text-gray-700">{formatQuoteNo(order.quote.quoteNumber)}</span>
+              </p>
+            ) : null}
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+              <div className="rounded-xl border border-gray-100 bg-gradient-to-br from-slate-50 to-white p-4 space-y-2">
+                <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Finansal özet</h3>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-500">Ara toplam</span>
+                  <span className="tabular-nums font-medium text-gray-800">
+                    {formatMoney(order.subtotal ?? 0, order.currency)}
+                  </span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-500">KDV</span>
+                  <span className="tabular-nums font-medium text-gray-800">
+                    {formatMoney(order.vatTotal ?? 0, order.currency)}
+                  </span>
+                </div>
+                <div className="flex justify-between text-sm pt-2 border-t border-gray-100">
+                  <span className="text-gray-700 font-medium">Genel toplam</span>
+                  <span className="tabular-nums font-bold text-whatsapp">
+                    {formatMoney(order.grandTotal, order.currency)}
+                  </span>
+                </div>
+                <p className="text-[10px] text-gray-400">Oluşturulma: {formatDateTime(order.createdAt)}</p>
+              </div>
+
+              <div className="rounded-xl border border-gray-100 bg-white p-4 space-y-2">
+                <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Müşteri</h3>
+                {order.contact.company ? (
+                  <p className="text-sm font-medium text-gray-900">{order.contact.company}</p>
+                ) : null}
+                {order.contact.email ? (
+                  <p className="text-xs text-gray-600">{order.contact.email}</p>
+                ) : null}
+                {order.contact.billingAddress ? (
+                  <div>
+                    <p className="text-[10px] font-semibold text-gray-400 uppercase">Fatura</p>
+                    <p className="text-xs text-gray-700 whitespace-pre-wrap">{order.contact.billingAddress}</p>
+                  </div>
+                ) : null}
+                {order.contact.taxOffice || order.contact.taxNumber ? (
+                  <p className="text-xs text-gray-600">
+                    VD: {order.contact.taxOffice || '—'} · VN: {order.contact.taxNumber || '—'}
+                  </p>
+                ) : null}
+              </div>
+
+              <div className="rounded-xl border border-indigo-100 bg-indigo-50/40 p-4 space-y-2">
+                <h3 className="text-xs font-semibold text-indigo-800 uppercase tracking-wide">E-ticaret / T-Soft</h3>
+                <div className="text-xs space-y-1 text-gray-700">
+                  <p>
+                    <span className="text-gray-500">Kaynak:</span>{' '}
+                    <span className="font-medium">{order.source || 'MANUAL'}</span>
+                  </p>
+                  {order.externalId ? (
+                    <p className="font-mono break-all">
+                      <span className="text-gray-500">Harici ID:</span> {order.externalId}
+                    </p>
+                  ) : null}
+                  {order.tsoftSiteOrderId ? (
+                    <p className="font-mono">
+                      <span className="text-gray-500">Site OrderId:</span> {order.tsoftSiteOrderId}
+                    </p>
+                  ) : null}
+                  <p>
+                    <span className="text-gray-500">Panele it:</span>{' '}
+                    {order.pushToTsoft ? 'Evet' : 'Hayır'}
+                  </p>
+                  {order.tsoftPushedAt ? (
+                    <p className="text-emerald-700">İtildi: {formatDateTime(order.tsoftPushedAt)}</p>
+                  ) : null}
+                  {order.tsoftLastError ? (
+                    <p className="text-red-700 text-[11px] whitespace-pre-wrap break-words">{order.tsoftLastError}</p>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-gray-100 bg-gray-50/40 p-4 space-y-3">
+              <div className="flex items-center gap-2 text-sm font-semibold text-gray-800">
+                <Calendar className="w-4 h-4 text-whatsapp" />
+                Tarih ve adres
+              </div>
+              <input
+                type="date"
+                value={expectedDeliveryDraft}
+                onChange={(e) => setExpectedDeliveryDraft(e.target.value)}
+                className="w-full max-w-xs px-3 py-2 rounded-xl border border-gray-200 text-sm"
+              />
+              <textarea
+                value={shippingDraft}
+                onChange={(e) => setShippingDraft(e.target.value)}
+                rows={2}
+                placeholder="Sevk adresi"
+                className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm"
+              />
+              <textarea
+                value={notesDraft}
+                onChange={(e) => setNotesDraft(e.target.value)}
+                rows={2}
+                placeholder="Notlar"
+                className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm"
+              />
+              <button
+                type="button"
+                disabled={metaSaving || statusSaving}
+                onClick={() => void saveOrderMeta()}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-gray-900 text-white text-sm"
+              >
+                {metaSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                Bilgileri kaydet
+              </button>
+            </div>
+
+            {/* Kargo Takip Bolumu - sadece SHIPPED durumunda */}
+            {order.status === 'SHIPPED' ? (
+              <div className="rounded-xl border border-blue-100 bg-blue-50/40 p-4 space-y-3">
+                <div className="flex items-center gap-2 text-sm font-semibold text-blue-800">
+                  <Truck className="w-4 h-4" />
+                  Kargo Bilgileri
+                </div>
+
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-xs font-semibold text-gray-600 block mb-1">
+                      Kargo firması
+                    </label>
+                    <select
+                      value={cargoCompanyDraft}
+                      onChange={(e) => setCargoCompanyDraft(e.target.value)}
+                      className="w-full sm:max-w-xs px-3 py-2 rounded-xl border border-gray-200 text-sm bg-white"
+                    >
+                      <option value="">Firma seçin</option>
+                      {cargoCompanies.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name}{c.isAmbar ? ' (Ambar)' : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {selectedCargoCompany && !selectedCargoCompany.isAmbar ? (
+                    <div>
+                      <label className="text-xs font-semibold text-gray-600 block mb-1">
+                        Kargo takip numarası
+                      </label>
+                      <input
+                        type="text"
+                        value={cargoTrackingDraft}
+                        onChange={(e) => setCargoTrackingDraft(e.target.value)}
+                        placeholder="Takip numarasını girin"
+                        className="w-full sm:max-w-xs px-3 py-2 rounded-xl border border-gray-200 text-sm"
+                      />
+                    </div>
+                  ) : null}
+
+                  {selectedCargoCompany?.isAmbar ? (
+                    <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
+                      Ambar teslimatı seçildi. Müşteriye takip kodu gönderilmeyecek; ambar bildirim mesajı gönderilecektir.
+                    </div>
+                  ) : null}
+
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    <button
+                      type="button"
+                      disabled={cargoSaving || !cargoCompanyDraft}
+                      onClick={() => void saveCargoInfo()}
+                      className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-gray-900 text-white text-sm disabled:opacity-50"
+                    >
+                      {cargoSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                      Kaydet
+                    </button>
+                    <button
+                      type="button"
+                      disabled={cargoNotifSending || !order.cargoCompanyId}
+                      onClick={() => void sendCargoNotification()}
+                      className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-whatsapp text-white text-sm disabled:opacity-50 hover:bg-green-600"
+                    >
+                      {cargoNotifSending ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Send className="w-4 h-4" />
+                      )}
+                      Müşteriye Gönder
+                    </button>
+                  </div>
+
+                  {order.cargoNotificationSentAt ? (
+                    <p className="text-xs text-green-700 flex items-center gap-1">
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      Son bildirim: {formatDateTime(order.cargoNotificationSentAt)}
+                    </p>
+                  ) : null}
+
+                  {order.cargoCompany ? (
+                    <div className="text-xs text-gray-600 space-y-0.5">
+                      <p>
+                        <span className="text-gray-400">Kayıtlı firma:</span>{' '}
+                        <span className="font-medium">{order.cargoCompany.name}</span>
+                        {order.cargoCompany.isAmbar ? (
+                          <span className="ml-1 text-amber-600">(Ambar)</span>
+                        ) : null}
+                      </p>
+                      {order.cargoTrackingNo && !order.cargoCompany.isAmbar ? (
+                        <p>
+                          <span className="text-gray-400">Takip no:</span>{' '}
+                          <span className="font-mono font-medium">{order.cargoTrackingNo}</span>
+                        </p>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
+
+            <div className="rounded-xl border border-gray-100 bg-white p-4 space-y-2">
+              <h3 className="text-sm font-semibold text-gray-800">Sipariş onay PDF’i</h3>
+              <div className="flex flex-wrap items-center gap-2">
+                {order.confirmationPdfUrl ? (
+                  <a
+                    href={`${backendPublicUrl()}${order.confirmationPdfUrl}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 text-sm font-medium text-whatsapp hover:underline"
+                  >
+                    <ExternalLink className="w-4 h-4" />
+                    PDF’yi aç
+                  </a>
+                ) : (
+                  <span className="text-xs text-amber-700">Henüz PDF yok.</span>
+                )}
+                {canRegenerateOrderPdf ? (
+                  <button
+                    type="button"
+                    disabled={pdfRegenLoading}
+                    onClick={() => void regenerateOrderPdf()}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 text-xs font-medium text-gray-700"
+                  >
+                    {pdfRegenLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />}
+                    PDF yenile
+                  </button>
+                ) : null}
+              </div>
+            </div>
+
+            <div>
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-2">
+                <h3 className="text-sm font-semibold text-gray-800">Kalemler</h3>
                 {canEditOrderLines ? (
                   <p className="text-[11px] text-indigo-800/70">
                     Düzenleyip <strong>Kaydet</strong> ile güncelleyin.
                   </p>
                 ) : order.invoice ? (
                   <p className="text-[11px] text-amber-700">Faturalı siparişte kalem içeriği değiştirilemez.</p>
-                ) : order.status === 'DELIVERED' || order.status === 'CANCELLED' ? (
+                ) : order.status === 'COMPLETED' || order.status === 'CANCELLED' ? (
                   <p className="text-[11px] text-gray-500">Bu durumda kalem düzenlenemez.</p>
                 ) : null}
               </div>
@@ -1212,7 +1539,7 @@ export default function OrderDetailPage() {
           </div>
 
           <div className="px-5 py-4 border-t border-gray-100 bg-gray-50/40 flex flex-col sm:flex-row gap-2 sm:justify-end">
-            {canDeleteOrder && order.status === 'PENDING' && !order.invoice ? (
+            {canDeleteOrder && (order.status === 'AWAITING_PAYMENT' || order.status === 'AWAITING_CHECKOUT') && !order.invoice ? (
               <button
                 type="button"
                 onClick={() => void removeOrder()}
@@ -1235,7 +1562,7 @@ export default function OrderDetailPage() {
               className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-whatsapp text-white text-sm font-medium disabled:opacity-50"
             >
               {invoiceSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
-              Fatura Oluştur
+              Muhasebeye Gönder
             </button>
           </div>
         </div>

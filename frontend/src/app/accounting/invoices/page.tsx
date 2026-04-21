@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import {
   useCallback,
@@ -459,18 +459,8 @@ function AccountingInvoicesContent() {
     setNotesEdit('');
   };
 
-  const openInvoiceDetail = async (inv: InvoiceRow) => {
-    setDetail(inv);
-    setDetailBusy(true);
-    try {
-      const { data } = await api.get(`/accounting/invoices/${inv.id}`);
-      const n = normalizeInvoiceRow(data);
-      if (n) setDetail(n);
-    } catch (err) {
-      toast.error(getApiErrorMessage(err, 'Fatura detayı alınamadı'));
-    } finally {
-      setDetailBusy(false);
-    }
+  const openInvoiceDetail = (inv: InvoiceRow) => {
+    router.push(`/accounting/invoices/${inv.id}`);
   };
 
   const refreshDetailInList = (updated: InvoiceRow) => {

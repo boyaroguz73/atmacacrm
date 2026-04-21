@@ -14,6 +14,8 @@ import {
   Wallet,
   Target,
   Users,
+  Filter,
+  Banknote,
 } from 'lucide-react';
 import {
   ComposedChart,
@@ -37,6 +39,13 @@ type Customer = {
 };
 
 type Granularity = 'day' | 'week' | 'month';
+type SourceFilter = '' | 'MANUAL' | 'TSOFT';
+
+const SOURCE_OPTIONS: { value: SourceFilter; label: string }[] = [
+  { value: '', label: 'Tümü' },
+  { value: 'MANUAL', label: 'CRM' },
+  { value: 'TSOFT', label: 'Site' },
+];
 
 const GRAN_LABELS: Record<Granularity, string> = {
   day: 'Gün',
@@ -69,31 +78,40 @@ export default function ReportSalesPage() {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [granularity, setGranularity] = useState<Granularity>('day');
+  const [source, setSource] = useState<SourceFilter>('');
   const [series, setSeries] = useState<SalesPoint[]>([]);
   const [topCustomers, setTopCustomers] = useState<Customer[]>([]);
+  const [collectionTotal, setCollectionTotal] = useState<number>(0);
+  const [collectionCount, setCollectionCount] = useState<number>(0);
   const [loading, setLoading] = useState(true);
 
   const buildParams = useCallback(() => {
     const p: Record<string, string> = {};
     if (dateFrom) p.from = `${dateFrom}T00:00:00`;
     if (dateTo) p.to = `${dateTo}T23:59:59`;
+    if (source) p.source = source;
     return p;
-  }, [dateFrom, dateTo]);
+  }, [dateFrom, dateTo, source]);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
       const params = buildParams();
-      const [ts, cust] = await Promise.all([
+      const [ts, cust, colRev] = await Promise.all([
         api.get<SalesPoint[]>('/reports/sales/timeseries', {
           params: { ...params, granularity },
         }),
         api.get<Customer[]>('/reports/sales/top-customers', {
           params: { ...params, limit: 10 },
         }),
+        api.get<{ total: number; count: number }>('/reports/collections/revenue', {
+          params,
+        }),
       ]);
       setSeries(Array.isArray(ts.data) ? ts.data : []);
       setTopCustomers(Array.isArray(cust.data) ? cust.data : []);
+      setCollectionTotal(colRev.data?.total ?? 0);
+      setCollectionCount(colRev.data?.count ?? 0);
     } catch (e) {
       toast.error(getApiErrorMessage(e, 'Satış verisi yüklenemedi'));
       setSeries([]);
@@ -156,6 +174,25 @@ export default function ReportSalesPage() {
         </div>
         <div className="flex items-center gap-3 flex-wrap">
           {loading && <Loader2 className="w-4 h-4 text-gray-400 animate-spin" />}
+
+          {/* Kaynak filtresi */}
+          <div className="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white p-0.5 text-xs">
+            <Filter className="w-3.5 h-3.5 text-gray-400 ml-1" />
+            {SOURCE_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                onClick={() => setSource(opt.value)}
+                className={`px-2.5 py-1 rounded-md font-medium transition-colors ${
+                  source === opt.value
+                    ? 'bg-whatsapp text-white shadow-sm'
+                    : 'text-gray-600 hover:bg-gray-50'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+
           <div className="inline-flex rounded-lg border border-gray-200 bg-white p-0.5 text-xs">
             {(['day', 'week', 'month'] as Granularity[]).map((g) => (
               <button
@@ -185,11 +222,18 @@ export default function ReportSalesPage() {
       <ReportsNav />
 
       {/* KPI kartları */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        <Kpi
+          icon={Banknote}
+          color="text-emerald-600"
+          label="Tahsilat Cirosu"
+          value={fmtTry(collectionTotal)}
+          sub={`${collectionCount} tahsilat`}
+        />
         <Kpi
           icon={Wallet}
-          color="text-emerald-600"
-          label="Toplam ciro"
+          color="text-indigo-600"
+          label="Sipariş tutarı"
           value={fmtTry(totals.totalRevenue)}
         />
         <Kpi

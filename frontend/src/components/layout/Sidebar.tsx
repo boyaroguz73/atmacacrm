@@ -124,6 +124,7 @@ const menuItems: MenuItem[] = [
       { href: '/admin/auto-reply', label: 'Otomatik Yanıt', icon: Zap, key: 'admin_auto_reply' },
       { href: '/admin/audit-log', label: 'Aktivite Logu', icon: Activity, key: 'admin_audit_log' },
       { href: '/admin/suppliers', label: 'Tedarikçiler', icon: Warehouse, key: 'admin_suppliers' },
+      { href: '/admin/cargo-companies', label: 'Kargo Firmaları', icon: Truck, key: 'admin_cargo_companies' },
     ],
   },
   { href: '/reports', label: 'Raporlar', icon: BarChart3, adminOnly: true, menuKey: 'reports' },
@@ -202,6 +203,7 @@ export default function Sidebar({
   const [allowedMenuKeys, setAllowedMenuKeys] = useState<Set<string> | null>(null);
   const [orderedMenuKeys, setOrderedMenuKeys] = useState<string[] | null>(null);
   const [submenuOrder, setSubmenuOrder] = useState<Record<string, string[]>>({});
+  const [submenuHidden, setSubmenuHidden] = useState<Record<string, string[]>>({});
   const [menuVisibilityEpoch, setMenuVisibilityEpoch] = useState(0);
 
   const refreshMenuVisibility = useCallback(() => {
@@ -222,6 +224,10 @@ export default function Sidebar({
       .get<{ suborder?: Record<string, string[]> }>('/organizations/my/menu-suborder')
       .then(({ data }) => setSubmenuOrder(data?.suborder || {}))
       .catch(() => setSubmenuOrder({}));
+    api
+      .get<{ subHidden?: Record<string, string[]> }>('/organizations/my/menu-sub-hidden')
+      .then(({ data }) => setSubmenuHidden(data?.subHidden || {}))
+      .catch(() => setSubmenuHidden({}));
   }, [isSuperAdmin]);
 
   useEffect(() => {
@@ -502,7 +508,8 @@ export default function Sidebar({
                         .filter(
                           (c) =>
                             (!c.adminOnly || isAdmin) &&
-                            (!c.agentOnly || user?.role === 'AGENT'),
+                            (!c.agentOnly || user?.role === 'AGENT') &&
+                            !(c.key && (submenuHidden[item.menuKey] || []).includes(c.key)),
                         )
                         .map((child) => {
                           const active = isSubItemActive(child);

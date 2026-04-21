@@ -68,9 +68,14 @@ export class AccountingService {
     return inv;
   }
 
-  async pendingBilling(page = 1, limit = 50) {
+  async pendingBilling(page = 1, limit = 50, orderStatus?: string) {
+    const allowedStatuses = ['PREPARING', 'SHIPPED', 'COMPLETED'];
+    const statusFilter = orderStatus && allowedStatuses.includes(orderStatus.toUpperCase())
+      ? [orderStatus.toUpperCase() as any]
+      : (allowedStatuses as any[]);
+
     const where = {
-      status: { in: ['DELIVERED' as any, 'PROCESSING' as any] },
+      status: { in: statusFilter },
       invoice: null,
     };
     const [orders, total] = await Promise.all([
@@ -565,7 +570,7 @@ export class AccountingService {
       }),
       this.prisma.salesOrder.count({
         where: {
-          status: { in: ['DELIVERED' as any, 'PROCESSING' as any] },
+          status: { in: ['COMPLETED' as any, 'PREPARING' as any, 'SHIPPED' as any] },
           invoice: null,
         },
       }),
@@ -617,7 +622,7 @@ export class AccountingService {
       }),
       this.prisma.salesOrder.aggregate({
         where: {
-          status: { in: ['DELIVERED' as any, 'PROCESSING' as any] },
+          status: { in: ['COMPLETED' as any, 'PREPARING' as any, 'SHIPPED' as any] },
           invoice: null,
         },
         _sum: { grandTotal: true },

@@ -6,11 +6,15 @@ import { rewriteMediaUrlForClient } from '@/lib/utils';
 export function VariantPickerOption({
   name,
   priceDisplay,
+  discountedPriceDisplay,
+  property2,
   imageUrl,
   onSelect,
 }: {
   name: string;
   priceDisplay: string;
+  discountedPriceDisplay?: string | null;
+  property2?: string | null;
   imageUrl?: string | null;
   onSelect: () => void;
 }) {
@@ -30,7 +34,21 @@ export function VariantPickerOption({
       </div>
       <div className="flex-1 min-w-0">
         <div className="font-medium text-gray-900 line-clamp-2">{name}</div>
-        <div className="text-xs text-gray-500 tabular-nums mt-0.5">{priceDisplay}</div>
+        {property2 && (
+          <div className="inline-block mt-0.5 mb-0.5 px-1.5 py-0.5 rounded bg-gray-100 text-[10px] text-gray-600 font-medium">
+            {property2}
+          </div>
+        )}
+        <div className="flex items-center gap-1.5 mt-0.5 tabular-nums">
+          {discountedPriceDisplay ? (
+            <>
+              <span className="text-xs font-semibold text-green-600">{discountedPriceDisplay}</span>
+              <span className="text-[10px] text-gray-400 line-through">{priceDisplay}</span>
+            </>
+          ) : (
+            <span className="text-xs text-gray-500">{priceDisplay}</span>
+          )}
+        </div>
       </div>
     </button>
   );

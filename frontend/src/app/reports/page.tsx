@@ -8,8 +8,6 @@ import toast from 'react-hot-toast';
 import {
   AreaChart,
   Area,
-  LineChart,
-  Line,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -21,6 +19,8 @@ import {
   PieChart,
   Pie,
   Cell,
+  ComposedChart,
+  Line,
 } from 'recharts';
 import ReportsNav from './ReportsNav';
 import {
@@ -28,14 +28,13 @@ import {
   Loader2,
   TrendingUp,
   TrendingDown,
-  MessageSquare,
-  UserPlus,
   ShoppingBag,
-  FileText,
   Target,
-  Wallet,
   Users,
   BarChart3,
+  Banknote,
+  Receipt,
+  Filter,
 } from 'lucide-react';
 
 const FUNNEL_COLORS: Record<string, string> = {
@@ -56,9 +55,18 @@ const FUNNEL_LABELS: Record<string, string> = {
   LOST: 'Kayıp',
 };
 
+type SourceFilter = '' | 'MANUAL' | 'TSOFT';
+
+const SOURCE_OPTIONS: { value: SourceFilter; label: string }[] = [
+  { value: '', label: 'Tümü' },
+  { value: 'MANUAL', label: 'CRM' },
+  { value: 'TSOFT', label: 'Site' },
+];
+
 export default function ReportsOverviewPage() {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+  const [source, setSource] = useState<SourceFilter>('');
   const [loading, setLoading] = useState(true);
   const [dash, setDash] = useState<any>(null);
 
@@ -66,8 +74,9 @@ export default function ReportsOverviewPage() {
     const p: Record<string, string> = {};
     if (dateFrom) p.from = `${dateFrom}T00:00:00`;
     if (dateTo) p.to = `${dateTo}T23:59:59`;
+    if (source) p.source = source;
     return p;
-  }, [dateFrom, dateTo]);
+  }, [dateFrom, dateTo, source]);
 
   const fetchDash = useCallback(async () => {
     setLoading(true);
@@ -86,8 +95,7 @@ export default function ReportsOverviewPage() {
     fetchDash();
   }, [fetchDash]);
 
-  const msgData = dash?.charts?.messages || [];
-  const cashData = dash?.charts?.cash || [];
+  const collectionData = dash?.charts?.collections || [];
   const catData = useMemo(
     () =>
       (dash?.charts?.topCategories || []).map((c: any) => ({
@@ -97,11 +105,10 @@ export default function ReportsOverviewPage() {
     [dash],
   );
 
-  const cashNet = useMemo(() => {
-    const inc = cashData.reduce((a: number, r: any) => a + (r.income || 0), 0);
-    const exp = cashData.reduce((a: number, r: any) => a + (r.expense || 0), 0);
-    return { income: inc, expense: exp, net: inc - exp };
-  }, [cashData]);
+  const collectionTotal = useMemo(
+    () => collectionData.reduce((a: number, r: any) => a + (r.amount || 0), 0),
+    [collectionData],
+  );
 
   const funnelPie = useMemo(() => {
     const byStatus = dash?.funnel?.byStatus || {};
@@ -114,20 +121,45 @@ export default function ReportsOverviewPage() {
       }));
   }, [dash]);
 
-  const avgOrderValue = dash?.orders?.count > 0
-    ? Math.round((dash.orders.sumGrandTotal / dash.orders.count) * 100) / 100
-    : 0;
+  const avgOrderValue =
+    (dash?.orders?.count ?? 0) > 0
+      ? Math.round((dash.orders.sumGrandTotal / dash.orders.count) * 100) / 100
+      : 0;
+
+  const collectionRevenue = dash?.collectionRevenue;
 
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <h1 className="text-2xl font-bold text-gray-900">Raporlar</h1>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
           {loading && <Loader2 className="w-4 h-4 text-gray-400 animate-spin" />}
+
+          {/* Kaynak filtresi */}
+          <div className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white p-0.5 text-xs shadow-sm">
+            <Filter className="w-3.5 h-3.5 text-gray-400 ml-1.5" />
+            {SOURCE_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                onClick={() => setSource(opt.value)}
+                className={`px-3 py-1.5 rounded-md font-medium transition-colors ${
+                  source === opt.value
+                    ? 'bg-whatsapp text-white shadow-sm'
+                    : 'text-gray-600 hover:bg-gray-50'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+
           <DateRangePicker
             from={dateFrom}
             to={dateTo}
-            onChange={(f, t) => { setDateFrom(f); setDateTo(t); }}
+            onChange={(f, t) => {
+              setDateFrom(f);
+              setDateTo(t);
+            }}
           />
         </div>
       </div>
@@ -145,22 +177,15 @@ export default function ReportsOverviewPage() {
           {/* KPI Cards */}
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
             <MetricCard
-              label="Mesajlar"
-              value={dash.summary?.totalMessages ?? 0}
-              sub={`${dash.summary?.incomingMessages ?? 0} gelen / ${dash.summary?.outgoingMessages ?? 0} giden`}
-              icon={MessageSquare}
-              color="text-blue-600"
-              href="/reports/messages"
+              label="Tahsilat Cirosu"
+              value={fmtTry(collectionRevenue?.total ?? collectionTotal)}
+              sub={`${collectionRevenue?.count ?? 0} tahsilat kaydı`}
+              icon={Banknote}
+              color="text-emerald-600"
+              href="/reports/sales"
             />
             <MetricCard
-              label="Yeni Kişi"
-              value={dash.summary?.newContacts ?? 0}
-              icon={UserPlus}
-              color="text-purple-600"
-              href="/reports/contacts"
-            />
-            <MetricCard
-              label="Sipariş Cirosu"
+              label="Sipariş Toplamı"
               value={fmtTry(dash.orders?.sumGrandTotal)}
               sub={`${dash.orders?.count ?? 0} sipariş · Ort: ${fmtTry(avgOrderValue)}`}
               icon={ShoppingBag}
@@ -168,20 +193,12 @@ export default function ReportsOverviewPage() {
               href="/reports/sales"
             />
             <MetricCard
-              label="Fatura Toplamı"
-              value={fmtTry(dash.invoices?.sumGrandTotal)}
-              sub={`${dash.invoices?.count ?? 0} fatura`}
-              icon={FileText}
-              color="text-amber-600"
-              href="/reports/invoices"
-            />
-            <MetricCard
-              label="Kasa Net"
-              value={fmtTry(cashNet.net)}
-              sub={`Giriş: ${fmtTry(cashNet.income)} · Çıkış: ${fmtTry(cashNet.expense)}`}
-              icon={cashNet.net >= 0 ? TrendingUp : TrendingDown}
-              color={cashNet.net >= 0 ? 'text-emerald-600' : 'text-red-600'}
-              href="/reports/cash"
+              label="Yeni Kişi"
+              value={dash.summary?.newContacts ?? 0}
+              sub={`${dash.summary?.totalConversations ?? 0} konuşma`}
+              icon={Users}
+              color="text-purple-600"
+              href="/reports/agents"
             />
             <MetricCard
               label="Huni Kazanıldı"
@@ -193,7 +210,11 @@ export default function ReportsOverviewPage() {
             />
             <MetricCard
               label="Dönüşüm Oranı"
-              value={dash.funnel?.conversionOfferToWonPercent != null ? `%${dash.funnel.conversionOfferToWonPercent}` : '—'}
+              value={
+                dash.funnel?.conversionOfferToWonPercent != null
+                  ? `%${dash.funnel.conversionOfferToWonPercent}`
+                  : '—'
+              }
               sub="Teklif → kazanım"
               icon={BarChart3}
               color="text-cyan-600"
@@ -207,51 +228,96 @@ export default function ReportsOverviewPage() {
               color="text-whatsapp"
               href="/reports/agents"
             />
+            <MetricCard
+              label="Cevaplanmamış"
+              value={dash.summary?.unansweredTotal ?? 0}
+              sub="Açık konuşma"
+              icon={Receipt}
+              color="text-amber-600"
+            />
+            <MetricCard
+              label="Lead Dönüşüm"
+              value={dash.summary?.leadConversions ?? 0}
+              sub="Kazanılan dönemde"
+              icon={TrendingUp}
+              color="text-blue-600"
+              href="/reports/funnel"
+            />
           </div>
 
-          {/* Charts Row 1: Messages + Funnel */}
+          {/* Charts Row 1: Tahsilat Trendi + Funnel */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="lg:col-span-2 bg-white rounded-xl border border-gray-100 p-5 shadow-sm">
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-sm font-semibold text-gray-800">Günlük Mesaj Trafiği</h2>
-                <Link href="/reports/messages" className="text-xs text-whatsapp font-medium inline-flex items-center gap-0.5 hover:underline">
+                <div>
+                  <h2 className="text-sm font-semibold text-gray-800">Tahsilat Cirosu Trendi</h2>
+                  <p className="text-xs text-gray-400 mt-0.5">Günlük onaylı tahsilat tutarları</p>
+                </div>
+                <Link
+                  href="/reports/sales"
+                  className="text-xs text-whatsapp font-medium inline-flex items-center gap-0.5 hover:underline"
+                >
                   Detay <ArrowRight className="w-3 h-3" />
                 </Link>
               </div>
               <div className="h-64">
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={msgData}>
-                    <defs>
-                      <linearGradient id="colorIn" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#2563eb" stopOpacity={0.15} />
-                        <stop offset="95%" stopColor="#2563eb" stopOpacity={0} />
-                      </linearGradient>
-                      <linearGradient id="colorOut" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#16a34a" stopOpacity={0.15} />
-                        <stop offset="95%" stopColor="#16a34a" stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                    <XAxis dataKey="day" tick={{ fontSize: 10 }} tickFormatter={(d) => d?.slice(5)} />
-                    <YAxis tick={{ fontSize: 10 }} />
-                    <Tooltip />
-                    <Legend />
-                    <Area type="monotone" dataKey="incoming" name="Gelen" stroke="#2563eb" strokeWidth={2} fill="url(#colorIn)" />
-                    <Area type="monotone" dataKey="outgoing" name="Giden" stroke="#16a34a" strokeWidth={2} fill="url(#colorOut)" />
-                  </AreaChart>
-                </ResponsiveContainer>
+                {collectionData.length === 0 ? (
+                  <div className="flex items-center justify-center h-full text-gray-400 text-sm">
+                    Seçili dönemde tahsilat verisi yok
+                  </div>
+                ) : (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <ComposedChart data={collectionData}>
+                      <defs>
+                        <linearGradient id="colGrad" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#10b981" stopOpacity={0.15} />
+                          <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                      <XAxis
+                        dataKey="day"
+                        tick={{ fontSize: 10 }}
+                        tickFormatter={(d) => d?.slice(5)}
+                      />
+                      <YAxis
+                        tick={{ fontSize: 10 }}
+                        tickFormatter={(v) => fmtTryShort(Number(v) || 0)}
+                      />
+                      <Tooltip
+                        formatter={(v) =>
+                          fmtTry(typeof v === 'number' ? v : Number(v) || 0)
+                        }
+                        labelFormatter={(l) => `Tarih: ${l}`}
+                      />
+                      <Area
+                        type="monotone"
+                        dataKey="amount"
+                        name="Tahsilat"
+                        stroke="#10b981"
+                        strokeWidth={2}
+                        fill="url(#colGrad)"
+                      />
+                    </ComposedChart>
+                  </ResponsiveContainer>
+                )}
               </div>
             </div>
 
             <div className="bg-white rounded-xl border border-gray-100 p-5 shadow-sm">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-sm font-semibold text-gray-800">Müşteri Hunisi</h2>
-                <Link href="/reports/funnel" className="text-xs text-whatsapp font-medium inline-flex items-center gap-0.5 hover:underline">
+                <Link
+                  href="/reports/funnel"
+                  className="text-xs text-whatsapp font-medium inline-flex items-center gap-0.5 hover:underline"
+                >
                   Detay <ArrowRight className="w-3 h-3" />
                 </Link>
               </div>
               {funnelPie.length === 0 ? (
-                <div className="flex items-center justify-center h-52 text-gray-400 text-sm">Veri yok</div>
+                <div className="flex items-center justify-center h-52 text-gray-400 text-sm">
+                  Veri yok
+                </div>
               ) : (
                 <>
                   <div className="h-48">
@@ -277,8 +343,14 @@ export default function ReportsOverviewPage() {
                   </div>
                   <div className="flex flex-wrap gap-x-3 gap-y-1 mt-2 justify-center">
                     {funnelPie.map((e) => (
-                      <span key={e.name} className="inline-flex items-center gap-1 text-[10px] text-gray-600">
-                        <span className="w-2 h-2 rounded-full shrink-0" style={{ background: e.color }} />
+                      <span
+                        key={e.name}
+                        className="inline-flex items-center gap-1 text-[10px] text-gray-600"
+                      >
+                        <span
+                          className="w-2 h-2 rounded-full shrink-0"
+                          style={{ background: e.color }}
+                        />
                         {e.name} ({e.value})
                       </span>
                     ))}
@@ -288,52 +360,112 @@ export default function ReportsOverviewPage() {
             </div>
           </div>
 
-          {/* Charts Row 2: Category Revenue + Cash */}
+          {/* Sipariş trendi + Kategori Cirosu */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Sipariş trendi */}
             <div className="bg-white rounded-xl border border-gray-100 p-5 shadow-sm">
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-sm font-semibold text-gray-800">Kategori Cirosu</h2>
-                <Link href="/reports/categories" className="text-xs text-whatsapp font-medium inline-flex items-center gap-0.5 hover:underline">
+                <div>
+                  <h2 className="text-sm font-semibold text-gray-800">Sipariş Trendi</h2>
+                  <p className="text-xs text-gray-400 mt-0.5">Günlük sipariş tutarı (onaylı)</p>
+                </div>
+                <Link
+                  href="/reports/sales"
+                  className="text-xs text-whatsapp font-medium inline-flex items-center gap-0.5 hover:underline"
+                >
                   Detay <ArrowRight className="w-3 h-3" />
                 </Link>
               </div>
-              <div className="h-64">
-                {catData.length === 0 ? (
-                  <div className="flex items-center justify-center h-full text-gray-400 text-sm">Veri yok</div>
+              <div className="h-56">
+                {collectionData.length === 0 ? (
+                  <div className="flex items-center justify-center h-full text-gray-400 text-sm">
+                    Veri yok
+                  </div>
                 ) : (
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={catData} layout="vertical" margin={{ left: 10 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
-                      <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={(v) => fmtTryShort(v)} />
-                      <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} width={100} />
-                      <Tooltip formatter={(v) => fmtTry(typeof v === 'number' ? v : Number(v) || 0)} />
-                      <Bar dataKey="revenue" name="Ciro" fill="#6366f1" radius={[0, 4, 4, 0]} barSize={18} />
-                    </BarChart>
+                    <AreaChart data={collectionData}>
+                      <defs>
+                        <linearGradient id="ordGrad" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#6366f1" stopOpacity={0.15} />
+                          <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                      <XAxis
+                        dataKey="day"
+                        tick={{ fontSize: 10 }}
+                        tickFormatter={(d) => d?.slice(5)}
+                      />
+                      <YAxis
+                        tick={{ fontSize: 10 }}
+                        tickFormatter={(v) => fmtTryShort(Number(v) || 0)}
+                      />
+                      <Tooltip
+                        formatter={(v) =>
+                          fmtTry(typeof v === 'number' ? v : Number(v) || 0)
+                        }
+                      />
+                      <Area
+                        type="monotone"
+                        dataKey="amount"
+                        name="Tahsilat"
+                        stroke="#6366f1"
+                        strokeWidth={2}
+                        fill="url(#ordGrad)"
+                      />
+                    </AreaChart>
                   </ResponsiveContainer>
                 )}
               </div>
             </div>
 
+            {/* Kategori Cirosu */}
             <div className="bg-white rounded-xl border border-gray-100 p-5 shadow-sm">
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-sm font-semibold text-gray-800">Kasa Akışı</h2>
-                <Link href="/reports/cash" className="text-xs text-whatsapp font-medium inline-flex items-center gap-0.5 hover:underline">
+                <h2 className="text-sm font-semibold text-gray-800">Kategori Cirosu</h2>
+                <Link
+                  href="/reports/categories"
+                  className="text-xs text-whatsapp font-medium inline-flex items-center gap-0.5 hover:underline"
+                >
                   Detay <ArrowRight className="w-3 h-3" />
                 </Link>
               </div>
-              <div className="h-64">
-                {cashData.length === 0 ? (
-                  <div className="flex items-center justify-center h-full text-gray-400 text-sm">Veri yok</div>
+              <div className="h-56">
+                {catData.length === 0 ? (
+                  <div className="flex items-center justify-center h-full text-gray-400 text-sm">
+                    Veri yok
+                  </div>
                 ) : (
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={cashData}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                      <XAxis dataKey="day" tick={{ fontSize: 10 }} tickFormatter={(d) => d?.slice(5)} />
-                      <YAxis tick={{ fontSize: 10 }} tickFormatter={(v) => fmtTryShort(v)} />
-                      <Tooltip formatter={(v) => fmtTry(typeof v === 'number' ? v : Number(v) || 0)} />
-                      <Legend />
-                      <Bar dataKey="income" name="Giriş" stackId="a" fill="#22c55e" radius={[2, 2, 0, 0]} />
-                      <Bar dataKey="expense" name="Çıkış" stackId="a" fill="#ef4444" radius={[2, 2, 0, 0]} />
+                    <BarChart data={catData} layout="vertical" margin={{ left: 10 }}>
+                      <CartesianGrid
+                        strokeDasharray="3 3"
+                        stroke="#f1f5f9"
+                        horizontal={false}
+                      />
+                      <XAxis
+                        type="number"
+                        tick={{ fontSize: 10 }}
+                        tickFormatter={(v) => fmtTryShort(v)}
+                      />
+                      <YAxis
+                        type="category"
+                        dataKey="name"
+                        tick={{ fontSize: 10 }}
+                        width={100}
+                      />
+                      <Tooltip
+                        formatter={(v) =>
+                          fmtTry(typeof v === 'number' ? v : Number(v) || 0)
+                        }
+                      />
+                      <Bar
+                        dataKey="revenue"
+                        name="Ciro"
+                        fill="#6366f1"
+                        radius={[0, 4, 4, 0]}
+                        barSize={18}
+                      />
                     </BarChart>
                   </ResponsiveContainer>
                 )}
@@ -346,7 +478,10 @@ export default function ReportsOverviewPage() {
             <div className="bg-white rounded-xl border border-gray-100 p-5 shadow-sm">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-sm font-semibold text-gray-800">Temsilci Performansı</h2>
-                <Link href="/reports/agents" className="text-xs text-whatsapp font-medium inline-flex items-center gap-0.5 hover:underline">
+                <Link
+                  href="/reports/agents"
+                  className="text-xs text-whatsapp font-medium inline-flex items-center gap-0.5 hover:underline"
+                >
                   Detay <ArrowRight className="w-3 h-3" />
                 </Link>
               </div>
@@ -355,9 +490,10 @@ export default function ReportsOverviewPage() {
                   <thead>
                     <tr className="border-b border-gray-100 text-left text-xs font-semibold text-gray-500 uppercase">
                       <th className="pb-2 pr-4">Temsilci</th>
-                      <th className="pb-2 pr-4 text-right">Mesaj</th>
-                      <th className="pb-2 pr-4 text-right">Konuşulan Kişi</th>
+                      <th className="pb-2 pr-4 text-right">Gönderilen Mesaj</th>
+                      <th className="pb-2 pr-4 text-right">Kişi</th>
                       <th className="pb-2 pr-4 text-right">Aktif Atama</th>
+                      <th className="pb-2 pr-4 text-right">SLA %</th>
                       <th className="pb-2 text-right">Cevaplanmamış</th>
                     </tr>
                   </thead>
@@ -367,16 +503,49 @@ export default function ReportsOverviewPage() {
                         <td className="py-2 pr-4">
                           <div className="flex items-center gap-2">
                             <div className="w-7 h-7 bg-whatsapp/10 rounded-full flex items-center justify-center font-bold text-whatsapp text-xs shrink-0">
-                              {a.agent.name?.charAt(0) || '?'}
+                              {(a.agent.name || a.agent.email)?.charAt(0)?.toUpperCase() || '?'}
                             </div>
-                            <span className="font-medium text-gray-900">{a.agent.name}</span>
+                            <span className="font-medium text-gray-900">
+                              {a.agent.name || a.agent.email}
+                            </span>
                           </div>
                         </td>
-                        <td className="py-2 pr-4 text-right tabular-nums text-gray-700">{a.totalMessagesSent}</td>
-                        <td className="py-2 pr-4 text-right tabular-nums text-gray-700">{a.uniqueContactsMessaged}</td>
-                        <td className="py-2 pr-4 text-right tabular-nums text-gray-700">{a.activeConversations}</td>
+                        <td className="py-2 pr-4 text-right tabular-nums text-gray-700">
+                          {a.totalMessagesSent}
+                        </td>
+                        <td className="py-2 pr-4 text-right tabular-nums text-gray-700">
+                          {a.uniqueContactsMessaged}
+                        </td>
+                        <td className="py-2 pr-4 text-right tabular-nums text-gray-700">
+                          {a.activeConversations}
+                        </td>
+                        <td className="py-2 pr-4 text-right">
+                          {a.responseMetrics?.sla30Percent != null ? (
+                            <span
+                              className={`tabular-nums text-xs font-semibold px-1.5 py-0.5 rounded-full ${
+                                a.responseMetrics.sla30Percent >= 90
+                                  ? 'bg-emerald-50 text-emerald-700'
+                                  : a.responseMetrics.sla30Percent >= 75
+                                    ? 'bg-sky-50 text-sky-700'
+                                    : a.responseMetrics.sla30Percent >= 50
+                                      ? 'bg-amber-50 text-amber-700'
+                                      : 'bg-red-50 text-red-700'
+                              }`}
+                            >
+                              %{a.responseMetrics.sla30Percent}
+                            </span>
+                          ) : (
+                            <span className="text-gray-400 text-xs">—</span>
+                          )}
+                        </td>
                         <td className="py-2 text-right">
-                          <span className={`tabular-nums ${a.unansweredConversations > 0 ? 'text-red-600 font-semibold' : 'text-gray-500'}`}>
+                          <span
+                            className={`tabular-nums ${
+                              a.unansweredConversations > 0
+                                ? 'text-red-600 font-semibold'
+                                : 'text-gray-500'
+                            }`}
+                          >
                             {a.unansweredConversations}
                           </span>
                         </td>
@@ -395,7 +564,11 @@ export default function ReportsOverviewPage() {
 
 function fmtTry(n: number | undefined) {
   if (n == null || Number.isNaN(n)) return '—';
-  return new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY', maximumFractionDigits: 0 }).format(n);
+  return new Intl.NumberFormat('tr-TR', {
+    style: 'currency',
+    currency: 'TRY',
+    maximumFractionDigits: 0,
+  }).format(n);
 }
 
 function fmtTryShort(n: number) {
