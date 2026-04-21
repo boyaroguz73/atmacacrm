@@ -1347,9 +1347,8 @@ export default function OrderDetailPage() {
               </button>
               </div>
             </div>
-              </div>
 
-              <aside className="space-y-4">
+            <aside className="space-y-4">
                 <div className="rounded-xl border border-blue-100 bg-white overflow-hidden shadow-sm">
                   <div className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-blue-50 to-blue-50/40 border-b border-blue-100">
                     <Package className="w-4 h-4 text-blue-700" />
@@ -1531,7 +1530,6 @@ export default function OrderDetailPage() {
                   </div>
                 </div>
               </aside>
-            </div>
 
             {order.siteOrderData ? (
               <SiteOrderDetailsPanel data={order.siteOrderData} />
