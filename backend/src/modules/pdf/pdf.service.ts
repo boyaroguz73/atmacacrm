@@ -561,12 +561,14 @@ export class PdfService {
 
         // ── SUMMARY ──────────────────────────────────────────────────────
         const sumX = ML + PW - 220;
-        const lblW = 110;
-        const valW = 110;
+        const lblW = 125;
+        const valW = 95;
 
+        /** Etiket çok satıra düşebilir; satır yüksekliği içerik kadar (üst üste binmeyi önler) */
         const sumRow = (label: string, value: string, y: number, bold = false, color = '#333333') => {
-          txt(label, sumX, y, { size: 9, bold, color, width: lblW });
-          txt(value, sumX + lblW, y, { size: 9, bold, color, width: valW, align: 'right' });
+          const hL = txt(label, sumX, y, { size: 9, bold, color, width: lblW, lineBreak: true });
+          const hR = txt(value, sumX + lblW, y, { size: 9, bold, color, width: valW, align: 'right', lineBreak: false });
+          return Math.max(hL, hR, 11) + 6;
         };
 
         const vatAmt = Number.isFinite(data.vatTotal) ? data.vatTotal : 0;
@@ -575,14 +577,25 @@ export class PdfService {
 
         // İskonto varsa "İskontolu Fiyat" satırını göster; yoksa hiç gösterme.
         if (hasGeneralDiscount) {
-          sumRow(this.t('Toplam Iskontolu Fiyat (KDV haric):'), fmtMoney(subEx), rowY); rowY += 14;
+          rowY += sumRow(this.t('Toplam Iskontolu Fiyat (KDV haric):'), fmtMoney(subEx), rowY);
         }
-        sumRow(this.t('KDV Tutari:'), fmtMoney(vatAmt), rowY); rowY += 14;
+        rowY += sumRow(this.t('KDV Tutari:'), fmtMoney(vatAmt), rowY);
 
-        // Grand total box
-        doc.rect(sumX - 4, rowY - 2, lblW + valW + 8, 22).fill(primary);
-        sumRow(this.t('GENEL TOPLAM (KDV dahil):'), fmtMoney(data.grandTotal), rowY + 5, true, '#ffffff');
-        rowY += 32;
+        // Genel toplam kutusu: sabit 22px yerine etiket+tutar yüksekliğine göre
+        const labelGT = this.t('GENEL TOPLAM (KDV dahil):');
+        const valGT = fmtMoney(data.grandTotal);
+        B();
+        doc.fontSize(9);
+        doc.fillColor('#ffffff');
+        const hGTLabel = doc.heightOfString(labelGT, { width: lblW });
+        const hGTVal = doc.heightOfString(valGT, { width: valW, align: 'right' });
+        const innerH = Math.max(hGTLabel, hGTVal, 12);
+        const boxPad = 8;
+        const boxH = boxPad + innerH + boxPad;
+        doc.rect(sumX - 4, rowY, lblW + valW + 8, boxH).fill(primary);
+        txt(labelGT, sumX, rowY + boxPad, { size: 9, bold: true, color: '#ffffff', width: lblW, lineBreak: true });
+        txt(valGT, sumX + lblW, rowY + boxPad, { size: 9, bold: true, color: '#ffffff', width: valW, align: 'right', lineBreak: false });
+        rowY += boxH + 10;
 
         // ── NOTES / TERMS / BANK ─────────────────────────────────────────
         rowY += 6;
