@@ -578,6 +578,7 @@ export class TsoftApiService {
     const raw = await this.rest1Request(organizationId, '/rest1/product/get/', {
       ProductCode: mainProductCode,
       FetchSubProducts: 1,
+      FetchDiscountedPrice: 1,
     });
     const { rows } = this.unwrapRest1List(raw);
     if (rows.length === 0) return [];
@@ -607,7 +608,7 @@ export class TsoftApiService {
         start,
         limit,
         ...(detailed
-          ? { FetchDetails: 1, FetchSubProducts: 1, FetchImageUrls: 1 }
+          ? { FetchDetails: 1, FetchSubProducts: 1, FetchImageUrls: 1, FetchDiscountedPrice: 1 }
           : {}),
       });
       const { rows } = this.unwrapRest1List(raw);
@@ -628,6 +629,7 @@ export class TsoftApiService {
       FetchDetails: 1,
       FetchSubProducts: 1,
       FetchImageUrls: 1,
+      FetchDiscountedPrice: 1,
       limit: 1,
     };
     if (keys.productCode) params.ProductCode = keys.productCode;
@@ -1082,6 +1084,7 @@ export class TsoftApiService {
       FetchDetails: 1,
       FetchSubProducts: 1,
       FetchImageUrls: 0,
+      FetchDiscountedPrice: 1,
     });
     return this.unwrapRest1List(raw);
   }
