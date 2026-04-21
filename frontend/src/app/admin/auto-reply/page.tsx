@@ -22,7 +22,7 @@ import {
 
 interface FlowStep {
   id: string;
-  type: 'send_message' | 'wait' | 'add_tag' | 'set_lead_status' | 'assign_agent';
+  type: 'send_message' | 'wait' | 'condition' | 'add_tag' | 'set_lead_status' | 'assign_agent';
   data: Record<string, any>;
   nextStepId?: string | null;
 }
@@ -32,6 +32,7 @@ interface Flow {
   name: string;
   description: string | null;
   isActive: boolean;
+  activeFrom?: string | null;
   trigger: string;
   conditions: any;
   steps: FlowStep[];
@@ -39,11 +40,24 @@ interface Flow {
   creator: { id: string; name: string };
 }
 
+function toLocalInputValue(v?: string | null): string {
+  if (!v) return '';
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return '';
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mi = String(d.getMinutes()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}T${hh}:${mi}`;
+}
+
 const TRIGGERS = [
   { value: 'new_message', label: 'Her yeni mesaj' },
   { value: 'keyword', label: 'Anahtar kelime eşleşmesi' },
   { value: 'first_message', label: 'İlk mesaj (yeni kişi)' },
   { value: 'order_status', label: 'Sipariş durumu değişti' },
+  { value: 'quote_status', label: 'Teklif durumu değişti' },
 ];
 
 const ORDER_STATUS_OPTIONS = [
@@ -55,9 +69,18 @@ const ORDER_STATUS_OPTIONS = [
   { value: 'CANCELLED', label: 'İptal / İade' },
 ];
 
+const QUOTE_STATUS_OPTIONS = [
+  { value: 'DRAFT', label: 'Taslak' },
+  { value: 'SENT', label: 'Gönderildi' },
+  { value: 'ACCEPTED', label: 'Kabul Edildi' },
+  { value: 'REJECTED', label: 'Reddedildi' },
+  { value: 'EXPIRED', label: 'Süresi Doldu' },
+];
+
 const STEP_TYPES = [
   { value: 'send_message', label: 'Mesaj Gönder', icon: MessageSquare, color: 'bg-green-50 text-green-700' },
   { value: 'wait', label: 'Bekle', icon: Clock, color: 'bg-yellow-50 text-yellow-700' },
+  { value: 'condition', label: 'Koşul Kontrolü', icon: Target, color: 'bg-amber-50 text-amber-700' },
   { value: 'add_tag', label: 'Etiket Ekle', icon: Tag, color: 'bg-blue-50 text-blue-700' },
   { value: 'set_lead_status', label: 'Müşteri Durumu Ayarla', icon: Target, color: 'bg-purple-50 text-purple-700' },
   { value: 'assign_agent', label: 'Temsilci Ata', icon: UserPlus, color: 'bg-orange-50 text-orange-700' },
@@ -79,6 +102,7 @@ function newStep(type: FlowStep['type']): FlowStep {
   const defaults: Record<string, Record<string, any>> = {
     send_message: { message: '' },
     wait: { seconds: 3 },
+    condition: { field: 'conversation_last_message_older_than', days: 2, hours: 0, minutes: 0, seconds: 0 },
     add_tag: { tag: '' },
     set_lead_status: { status: 'CONTACTED' },
     assign_agent: { agentId: '' },
@@ -97,6 +121,7 @@ export default function AutoReplyPage() {
   const [form, setForm] = useState({
     name: '',
     description: '',
+    activeFrom: '',
     trigger: 'keyword',
     conditions: [{ field: 'message_contains', operator: 'contains', value: '' }] as any,
     steps: [newStep('send_message')] as FlowStep[],
@@ -129,11 +154,12 @@ export default function AutoReplyPage() {
       const payload = {
         name: form.name,
         description: form.description || undefined,
+        activeFrom: form.activeFrom ? new Date(form.activeFrom).toISOString() : null,
         trigger: form.trigger,
         conditions:
           form.trigger === 'keyword'
             ? form.conditions
-            : form.trigger === 'order_status'
+            : form.trigger === 'order_status' || form.trigger === 'quote_status'
               ? {
                   statuses: Array.isArray(form.conditions?.statuses)
                     ? form.conditions.statuses
@@ -176,9 +202,10 @@ export default function AutoReplyPage() {
     setForm({
       name: f.name,
       description: f.description || '',
+      activeFrom: toLocalInputValue(f.activeFrom),
       trigger: f.trigger,
       conditions:
-        f.trigger === 'order_status'
+        f.trigger === 'order_status' || f.trigger === 'quote_status'
           ? (f.conditions as any) || { statuses: [] }
           : (f.conditions as any[]) || [
               { field: 'message_contains', operator: 'contains', value: '' },
@@ -193,6 +220,7 @@ export default function AutoReplyPage() {
     setForm({
       name: '',
       description: '',
+      activeFrom: '',
       trigger: 'keyword',
       conditions: [{ field: 'message_contains', operator: 'contains', value: '' }],
       steps: [newStep('send_message')],
@@ -285,6 +313,11 @@ export default function AutoReplyPage() {
                         {' · '}
                         {f.creator.name}
                       </p>
+                      {f.activeFrom && (
+                        <p className="text-[11px] text-amber-600 mt-0.5">
+                          Başlangıç: {new Date(f.activeFrom).toLocaleString('tr-TR')}
+                        </p>
+                      )}
                     </div>
                   </div>
                   <div className="flex items-center gap-1">
@@ -337,6 +370,12 @@ export default function AutoReplyPage() {
                             <span className="text-sm text-gray-600 truncate flex-1">
                               {step.type === 'send_message' && `"${step.data?.message?.slice(0, 60) || '...'}"`}
                               {step.type === 'wait' && `${step.data?.seconds || 0} saniye`}
+                              {step.type === 'condition' &&
+                                `Koşul: ${
+                                  step.data?.field === 'conversation_last_message_older_than'
+                                    ? `Son mesajdan beri ${step.data?.days || 0}g ${step.data?.hours || 0}s ${step.data?.minutes || 0}d`
+                                    : 'Özel'
+                                }`}
                               {step.type === 'add_tag' && `Etiket: ${step.data?.tag || '-'}`}
                               {step.type === 'set_lead_status' &&
                                 `Durum: ${LEAD_STATUSES.find((l) => l.value === step.data?.status)?.label || step.data?.status}`}
@@ -393,15 +432,29 @@ export default function AutoReplyPage() {
                     className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-whatsapp/20"
                   />
                 </div>
+                <div className="col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Bu tarihten itibaren çalışsın (opsiyonel)
+                  </label>
+                  <input
+                    type="datetime-local"
+                    value={form.activeFrom}
+                    onChange={(e) => setForm({ ...form, activeFrom: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-whatsapp/20"
+                  />
+                  <p className="text-[11px] text-gray-500 mt-1">
+                    Doluysa akış bu tarih-saatten önce hiç tetiklenmez.
+                  </p>
+                </div>
               </div>
 
-              {form.trigger === 'order_status' && (
+              {(form.trigger === 'order_status' || form.trigger === 'quote_status') && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Sipariş Durumları
+                    {form.trigger === 'order_status' ? 'Sipariş Durumları' : 'Teklif Durumları'}
                   </label>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    {ORDER_STATUS_OPTIONS.map((st) => {
+                    {(form.trigger === 'order_status' ? ORDER_STATUS_OPTIONS : QUOTE_STATUS_OPTIONS).map((st) => {
                       const selected = Array.isArray((form.conditions as any)?.statuses)
                         ? (form.conditions as any).statuses.includes(st.value)
                         : false;
@@ -451,7 +504,7 @@ export default function AutoReplyPage() {
                           conditions:
                             t.value === 'keyword'
                               ? [{ field: 'message_contains', operator: 'contains', value: '' }]
-                              : t.value === 'order_status'
+                              : t.value === 'order_status' || t.value === 'quote_status'
                                 ? { statuses: [] }
                                 : [],
                         })
@@ -587,12 +640,12 @@ export default function AutoReplyPage() {
                               className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-whatsapp/20 resize-none"
                             />
                             <p className="text-[11px] text-gray-500">
-                              Değişkenler: {'{Temsilci Adı}'}, {'{Ürünler}'}, {'{Sipariş Durumu}'}
+                              Değişkenler: {'{Temsilci Adı}'}, {'{Ürünler}'}, {'{Sipariş Durumu}'}, {'{Teklif Durumu}'}
                             </p>
                           </div>
                         )}
                         {step.type === 'wait' && (
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
                             <input
                               type="number"
                               value={step.data?.seconds || 0}
@@ -604,6 +657,53 @@ export default function AutoReplyPage() {
                               className="w-24 px-3 py-2 border rounded-lg text-sm"
                             />
                             <span className="text-sm text-gray-500">saniye (maks. 30)</span>
+                          </div>
+                        )}
+                        {step.type === 'condition' && (
+                          <div className="space-y-2">
+                            <select
+                              value={step.data?.field || 'conversation_last_message_older_than'}
+                              onChange={(e) => updateStepData(idx, { field: e.target.value })}
+                              className="w-full px-3 py-2 border rounded-lg text-sm"
+                            >
+                              <option value="conversation_last_message_older_than">
+                                Son mesajdan beri süre geçtiyse
+                              </option>
+                            </select>
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                              <input
+                                type="number"
+                                min={0}
+                                value={step.data?.days || 0}
+                                onChange={(e) => updateStepData(idx, { days: parseInt(e.target.value || '0', 10) || 0 })}
+                                className="w-full px-3 py-2 border rounded-lg text-sm"
+                                placeholder="Gün"
+                              />
+                              <input
+                                type="number"
+                                min={0}
+                                value={step.data?.hours || 0}
+                                onChange={(e) => updateStepData(idx, { hours: parseInt(e.target.value || '0', 10) || 0 })}
+                                className="w-full px-3 py-2 border rounded-lg text-sm"
+                                placeholder="Saat"
+                              />
+                              <input
+                                type="number"
+                                min={0}
+                                value={step.data?.minutes || 0}
+                                onChange={(e) => updateStepData(idx, { minutes: parseInt(e.target.value || '0', 10) || 0 })}
+                                className="w-full px-3 py-2 border rounded-lg text-sm"
+                                placeholder="Dakika"
+                              />
+                              <input
+                                type="number"
+                                min={0}
+                                value={step.data?.seconds || 0}
+                                onChange={(e) => updateStepData(idx, { seconds: parseInt(e.target.value || '0', 10) || 0 })}
+                                className="w-full px-3 py-2 border rounded-lg text-sm"
+                                placeholder="Saniye"
+                              />
+                            </div>
                           </div>
                         )}
                         {step.type === 'add_tag' && (

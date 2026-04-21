@@ -33,13 +33,15 @@ services:
 
   # Özel imaj: sunucuda önce `docker login` (Docker Hub kullanıcı + PAT), sonra `docker compose pull waha`
   waha:
+    mem_limit: 4g
+    mem_reservation: 3g
     image: devlikeapro/waha-plus:latest
     container_name: crm-waha
     restart: unless-stopped
     ports:
       - "3001:3000"
     environment:
-      WHATSAPP_DEFAULT_ENGINE: WEBJS
+      WHATSAPP_DEFAULT_ENGINE: GOWS
       WAHA_DASHBOARD_ENABLED: "true"
       WHATSAPP_RESTART_ALL_SESSIONS: "true"
       WAHA_LOG_LEVEL: info

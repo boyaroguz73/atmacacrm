@@ -27,118 +27,366 @@ export class AutoReplyEngineService {
     try {
       const order = await this.prisma.salesOrder.findUnique({
         where: { id: params.orderId },
-        include: {
-          contact: true,
-          items: true,
-        },
+        include: { contact: true },
       });
       if (!order || order.source !== 'TSOFT') return;
-
-      const flows = await this.autoReplyService.findActiveFlows(params.organizationId);
-      const matched = flows.filter((f) => this.matchesOrderStatusTrigger(f, params.status));
-      if (!matched.length) return;
-
-      for (const flow of matched) {
-        const sentKey = `${flow.id}:${params.status}`;
-        if (this.hasOrderAutomationSent(order.automationState, sentKey)) continue;
-
-        const session = await this.pickWorkingSession(params.organizationId);
-        if (!session) continue;
-
-        const phoneDigits = String(order.contact.phone || '').replace(/\D/g, '');
-        if (!phoneDigits) continue;
-        const chatId = `${phoneDigits}@c.us`;
-
-        const conversation = await this.prisma.conversation.upsert({
-          where: { contactId_sessionId: { contactId: order.contactId, sessionId: session.id } },
-          update: {},
-          create: { contactId: order.contactId, sessionId: session.id },
-          include: {
-            assignments: {
-              where: { unassignedAt: null },
-              include: { user: { select: { id: true, name: true } } },
-            },
-          },
-        });
-
-        if (!conversation.assignments.length) {
-          await this.conversationsService.autoAssignRoundRobin(conversation.id, params.organizationId);
-        }
-        const currentAssignment = await this.prisma.assignment.findFirst({
-          where: { conversationId: conversation.id, unassignedAt: null },
-          include: { user: { select: { id: true, name: true } } },
-          orderBy: { assignedAt: 'desc' },
-        });
-        const agentName = currentAssignment?.user?.name?.trim() || 'Temsilci';
-
-        const firstMessageStep = this.parseFlowSteps(flow.steps).find((s) => s.type === 'send_message');
-        const template = String(firstMessageStep?.data?.message || '').trim();
-        if (!template) continue;
-
-        const text = this.renderOrderTemplate(template, {
-          agentName,
-          status: params.status,
-          items: order.items.map((i) => ({
-            name: i.name,
-            property2: i.measurementInfo || '',
-            unitPrice: Number(i.unitPrice) || 0,
-            currency: order.currency || 'TRY',
-            priceIncludesVat: i.priceIncludesVat !== false,
-          })),
-        });
-
-        const waResponse = await this.wahaService.sendText(session.name, chatId, text);
-        const waMessageId =
-          typeof waResponse?.id === 'string'
-            ? waResponse.id
-            : waResponse?.id?._serialized || waResponse?.id?.id || null;
-
-        await this.prisma.message.create({
-          data: {
-            conversationId: conversation.id,
-            sessionId: session.id,
-            waMessageId,
-            direction: MessageDirection.OUTGOING,
-            body: text,
-            status: MessageStatus.SENT,
-            metadata: {
-              autoReply: true,
-              automationType: 'order_status',
-              flowId: flow.id,
-              orderId: order.id,
-              status: params.status,
-            },
-          },
-        });
-        await this.prisma.conversation.update({
-          where: { id: conversation.id },
-          data: { lastMessageText: text, lastMessageAt: new Date() },
-        });
-
-        const prevState =
-          order.automationState && typeof order.automationState === 'object'
-            ? (order.automationState as Record<string, unknown>)
-            : {};
-        const sent =
-          prevState.sent && typeof prevState.sent === 'object'
-            ? (prevState.sent as Record<string, unknown>)
-            : {};
-        await this.prisma.salesOrder.update({
-          where: { id: order.id },
-          data: {
-            automationState: ({
-              ...prevState,
-              sent: {
-                ...sent,
-                [sentKey]: new Date().toISOString(),
-              },
-            } as unknown) as Prisma.InputJsonValue,
-          },
-        });
-      }
+      await this.enqueueStatusRuns({
+        trigger: 'order_status',
+        status: params.status,
+        organizationId: params.organizationId,
+        entityType: 'ORDER',
+        entityId: order.id,
+        contactId: order.contactId,
+      });
     } catch (err: any) {
       this.logger.error(`Sipariş otomasyonu hatası: ${err?.message || err}`);
     }
+  }
+
+  async processQuoteStatusEvent(params: {
+    quoteId: string;
+    status: string;
+    organizationId: string;
+  }) {
+    try {
+      const quote = await this.prisma.quote.findUnique({
+        where: { id: params.quoteId },
+        include: { contact: true },
+      });
+      if (!quote) return;
+      await this.enqueueStatusRuns({
+        trigger: 'quote_status',
+        status: params.status,
+        organizationId: params.organizationId,
+        entityType: 'QUOTE',
+        entityId: quote.id,
+        contactId: quote.contactId,
+      });
+    } catch (err: any) {
+      this.logger.error(`Teklif otomasyonu hatası: ${err?.message || err}`);
+    }
+  }
+
+  async runPendingRuns(limit = 25): Promise<number> {
+    const now = new Date();
+    const runs = await this.prisma.automationRun.findMany({
+      where: { status: 'PENDING', nextRunAt: { lte: now } },
+      orderBy: { nextRunAt: 'asc' },
+      take: limit,
+      include: { flow: true },
+    });
+    let processed = 0;
+    for (const run of runs) {
+      const lock = await this.prisma.automationRun.updateMany({
+        where: { id: run.id, status: 'PENDING' },
+        data: { status: 'RUNNING' },
+      });
+      if (!lock.count) continue;
+      processed++;
+      try {
+        await this.executeRun(run.id);
+      } catch (e: any) {
+        const msg = e?.message || String(e);
+        await this.prisma.automationRun.update({
+          where: { id: run.id },
+          data: {
+            status: 'FAILED',
+            attemptCount: { increment: 1 },
+            lastError: msg,
+          },
+        });
+        this.logger.warn(`Automation run failed: ${run.id} ${msg}`);
+      }
+    }
+    return processed;
+  }
+
+  private async executeRun(runId: string): Promise<void> {
+    const run = await this.prisma.automationRun.findUnique({
+      where: { id: runId },
+      include: { flow: true },
+    });
+    if (!run || run.status !== 'RUNNING') return;
+    const steps = this.parseFlowSteps(run.flow.steps);
+    if (!steps.length || run.currentStep >= steps.length) {
+      await this.prisma.automationRun.update({ where: { id: run.id }, data: { status: 'COMPLETED' } });
+      return;
+    }
+
+    const contextObj =
+      run.context && typeof run.context === 'object' && !Array.isArray(run.context)
+        ? (run.context as Record<string, unknown>)
+        : {};
+    const statusText = String(contextObj.status || '');
+    const runtime = await this.resolveRuntimeContext(run.organizationId, run.contactId, run.conversationId || undefined);
+    if (!runtime) {
+      await this.prisma.automationRun.update({
+        where: { id: run.id },
+        data: { status: 'FAILED', lastError: 'Konuşma bağlamı oluşturulamadı' },
+      });
+      return;
+    }
+
+    let idx = run.currentStep;
+    while (idx < steps.length) {
+      const step = steps[idx];
+      if (step.type === 'wait') {
+        const waitSec = this.readWaitSeconds(step.data);
+        const nextRunAt = new Date(Date.now() + waitSec * 1000);
+        await this.prisma.automationRun.update({
+          where: { id: run.id },
+          data: { status: 'PENDING', currentStep: idx + 1, nextRunAt },
+        });
+        return;
+      }
+
+      if (step.type === 'condition') {
+        const ok = await this.evaluateCondition(step.data, runtime.conversationId);
+        if (!ok) {
+          await this.prisma.automationRun.update({
+            where: { id: run.id },
+            data: { status: 'COMPLETED', currentStep: idx + 1 },
+          });
+          return;
+        }
+        idx++;
+        continue;
+      }
+
+      if (step.type === 'send_message') {
+        const template = String(step.data?.message || '').trim();
+        if (!template) {
+          idx++;
+          continue;
+        }
+        const text = await this.renderTemplateForRun(run.entityType, run.entityId, template, statusText, runtime.agentName);
+        if (text) {
+          await this.sendRunMessage(runtime.conversationId, runtime.sessionId, runtime.sessionName, runtime.chatId, text, run);
+        }
+        idx++;
+        continue;
+      }
+
+      await this.executeStep(step, {
+        sessionName: runtime.sessionName,
+        chatId: runtime.chatId,
+        conversationId: runtime.conversationId,
+        contactId: run.contactId || '',
+      });
+      idx++;
+    }
+
+    await this.prisma.automationRun.update({
+      where: { id: run.id },
+      data: { status: 'COMPLETED', currentStep: idx },
+    });
+  }
+
+  private readWaitSeconds(data: Record<string, unknown> | undefined): number {
+    const d = Number(data?.days || 0);
+    const h = Number(data?.hours || 0);
+    const m = Number(data?.minutes || 0);
+    const s = Number(data?.seconds || 0);
+    const total = d * 86400 + h * 3600 + m * 60 + s;
+    const safe = Number.isFinite(total) && total > 0 ? total : 1;
+    return Math.min(safe, 60 * 60 * 24 * 30);
+  }
+
+  private async evaluateCondition(
+    data: Record<string, unknown> | undefined,
+    conversationId: string,
+  ): Promise<boolean> {
+    const field = String(data?.field || '');
+    if (field !== 'conversation_last_message_older_than') return true;
+    const threshold = this.readWaitSeconds(data);
+    const conversation = await this.prisma.conversation.findUnique({
+      where: { id: conversationId },
+      select: { lastMessageAt: true },
+    });
+    if (!conversation?.lastMessageAt) return true;
+    const diffSec = Math.floor((Date.now() - new Date(conversation.lastMessageAt).getTime()) / 1000);
+    return diffSec >= threshold;
+  }
+
+  private async enqueueStatusRuns(params: {
+    trigger: 'order_status' | 'quote_status';
+    status: string;
+    organizationId: string;
+    entityType: 'ORDER' | 'QUOTE';
+    entityId: string;
+    contactId: string;
+  }) {
+    const flows = await this.autoReplyService.findActiveFlows(params.organizationId);
+    const matched = flows.filter((f) =>
+      params.trigger === 'order_status'
+        ? this.matchesOrderStatusTrigger(f, params.status)
+        : this.matchesQuoteStatusTrigger(f, params.status),
+    );
+    if (!matched.length) return;
+
+    for (const flow of matched) {
+      const dedupeKey = `${flow.id}:${params.entityType}:${params.entityId}:${params.status}`;
+      await this.prisma.automationRun.upsert({
+        where: { dedupeKey },
+        create: {
+          flowId: flow.id,
+          organizationId: params.organizationId,
+          trigger: params.trigger,
+          entityType: params.entityType,
+          entityId: params.entityId,
+          contactId: params.contactId,
+          dedupeKey,
+          status: 'PENDING',
+          nextRunAt: new Date(),
+          context: ({ status: params.status } as unknown) as Prisma.InputJsonValue,
+        },
+        update: {},
+      });
+    }
+  }
+
+  private async resolveRuntimeContext(
+    organizationId: string,
+    contactId: string | null,
+    conversationId?: string,
+  ): Promise<{
+    conversationId: string;
+    sessionId: string;
+    sessionName: string;
+    chatId: string;
+    agentName: string;
+  } | null> {
+    if (!contactId) return null;
+    const contact = await this.prisma.contact.findUnique({
+      where: { id: contactId },
+      select: { id: true, phone: true },
+    });
+    if (!contact) return null;
+
+    const session = await this.pickWorkingSession(organizationId);
+    if (!session) return null;
+    const phoneDigits = String(contact.phone || '').replace(/\D/g, '');
+    if (!phoneDigits) return null;
+    const chatId = `${phoneDigits}@c.us`;
+
+    const convo = conversationId
+      ? await this.prisma.conversation.findUnique({
+          where: { id: conversationId },
+          include: { assignments: { where: { unassignedAt: null } } },
+        })
+      : null;
+
+    const conversation = convo
+      ? convo
+      : await this.prisma.conversation.upsert({
+          where: { contactId_sessionId: { contactId: contact.id, sessionId: session.id } },
+          update: {},
+          create: { contactId: contact.id, sessionId: session.id },
+          include: { assignments: { where: { unassignedAt: null } } },
+        });
+
+    if (!conversation.assignments.length) {
+      await this.conversationsService.autoAssignRoundRobin(conversation.id, organizationId);
+    }
+    const currentAssignment = await this.prisma.assignment.findFirst({
+      where: { conversationId: conversation.id, unassignedAt: null },
+      include: { user: { select: { name: true } } },
+      orderBy: { assignedAt: 'desc' },
+    });
+    const agentName = currentAssignment?.user?.name?.trim() || 'Temsilci';
+    return {
+      conversationId: conversation.id,
+      sessionId: session.id,
+      sessionName: session.name,
+      chatId,
+      agentName,
+    };
+  }
+
+  private async renderTemplateForRun(
+    entityType: string,
+    entityId: string,
+    template: string,
+    status: string,
+    agentName: string,
+  ): Promise<string> {
+    if (entityType === 'ORDER') {
+      const order = await this.prisma.salesOrder.findUnique({
+        where: { id: entityId },
+        include: { items: true },
+      });
+      if (!order) return '';
+      return this.renderOrderTemplate(template, {
+        agentName,
+        status,
+        items: order.items.map((i) => ({
+          name: i.name,
+          property2: i.measurementInfo || '',
+          unitPrice: Number(i.unitPrice) || 0,
+          currency: order.currency || 'TRY',
+          priceIncludesVat: i.priceIncludesVat !== false,
+        })),
+      });
+    }
+
+    const quote = await this.prisma.quote.findUnique({
+      where: { id: entityId },
+      include: { items: true },
+    });
+    if (!quote) return '';
+    return this.renderQuoteTemplate(template, {
+      agentName,
+      status,
+      items: quote.items.map((i) => ({
+        name: i.name,
+        property2: i.measurementInfo || '',
+        unitPrice: Number(i.unitPrice) || 0,
+        currency: quote.currency || 'TRY',
+        priceIncludesVat: i.priceIncludesVat !== false,
+      })),
+    });
+  }
+
+  private async sendRunMessage(
+    conversationId: string,
+    sessionId: string,
+    sessionName: string,
+    chatId: string,
+    text: string,
+    run: { id: string; trigger: string; entityType: string; entityId: string; context: unknown; flowId: string },
+  ) {
+    const waResponse = await this.wahaService.sendText(sessionName, chatId, text);
+    const waMessageId =
+      typeof waResponse?.id === 'string'
+        ? waResponse.id
+        : waResponse?.id?._serialized || waResponse?.id?.id || null;
+    const ctx =
+      run.context && typeof run.context === 'object' && !Array.isArray(run.context)
+        ? (run.context as Record<string, unknown>)
+        : {};
+    await this.prisma.message.create({
+      data: {
+        conversationId,
+        sessionId,
+        waMessageId,
+        direction: MessageDirection.OUTGOING,
+        body: text,
+        status: MessageStatus.SENT,
+        metadata: {
+          autoReply: true,
+          automationRunId: run.id,
+          automationType: run.trigger,
+          flowId: run.flowId,
+          entityType: run.entityType,
+          entityId: run.entityId,
+          status: String(ctx.status || ''),
+        },
+      },
+    });
+    await this.prisma.conversation.update({
+      where: { id: conversationId },
+      data: { lastMessageText: text, lastMessageAt: new Date() },
+    });
   }
 
   private hasOrderAutomationSent(state: unknown, sentKey: string): boolean {
@@ -160,6 +408,20 @@ export class AutoReplyEngineService {
     const cond = flow.conditions && typeof flow.conditions === 'object'
       ? (flow.conditions as Record<string, unknown>)
       : {};
+    const statuses = Array.isArray(cond.statuses) ? cond.statuses.map((s) => String(s)) : [];
+    if (!statuses.length) return false;
+    return statuses.includes(status);
+  }
+
+  private matchesQuoteStatusTrigger(
+    flow: { trigger: string; conditions: unknown },
+    status: string,
+  ): boolean {
+    if (flow.trigger !== 'quote_status') return false;
+    const cond =
+      flow.conditions && typeof flow.conditions === 'object'
+        ? (flow.conditions as Record<string, unknown>)
+        : {};
     const statuses = Array.isArray(cond.statuses) ? cond.statuses.map((s) => String(s)) : [];
     if (!statuses.length) return false;
     return statuses.includes(status);
@@ -205,6 +467,33 @@ export class AutoReplyEngineService {
     return template
       .replace(/\{Temsilci Adı\}/g, data.agentName)
       .replace(/\{Sipariş Durumu\}/g, data.status)
+      .replace(/\{Ürünler\}/g, lines.join('\n'));
+  }
+
+  private renderQuoteTemplate(
+    template: string,
+    data: {
+      agentName: string;
+      status: string;
+      items: Array<{
+        name: string;
+        property2: string;
+        unitPrice: number;
+        currency: string;
+        priceIncludesVat: boolean;
+      }>;
+    },
+  ): string {
+    const lines = data.items.map((it) => {
+      const curr = (it.currency || 'TRY').toUpperCase() === 'TRY' ? 'TL' : (it.currency || 'TRY').toUpperCase();
+      const price = `${it.unitPrice.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ${curr}`;
+      const vat = it.priceIncludesVat ? '(KDV Dahil)' : '+KDV';
+      const suffix = it.property2 ? `, ${it.property2}` : '';
+      return `${it.name}${suffix}, ${price} ${vat}`;
+    });
+    return template
+      .replace(/\{Temsilci Adı\}/g, data.agentName)
+      .replace(/\{Teklif Durumu\}/g, data.status)
       .replace(/\{Ürünler\}/g, lines.join('\n'));
   }
 

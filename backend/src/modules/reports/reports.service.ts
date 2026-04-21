@@ -175,7 +175,7 @@ export class ReportsService {
             FROM messages m
             WHERE m."conversationId" = i."conversationId"
               AND m.direction = 'OUTGOING'::"MessageDirection"
-              AND m."sentById" = ${agentId}::uuid
+              AND m."sentById" = ${agentId}
               AND m."timestamp" > i."timestamp"
             ORDER BY m."timestamp" ASC
             LIMIT 1
@@ -186,7 +186,7 @@ export class ReportsService {
             AND EXISTS (
               SELECT 1 FROM assignments a
               WHERE a."conversationId" = i."conversationId"
-                AND a."userId" = ${agentId}::uuid
+                AND a."userId" = ${agentId}
             )
             AND EXTRACT(EPOCH FROM (r."timestamp" - i."timestamp")) / 60.0 < 1440
         )
@@ -342,7 +342,7 @@ export class ReportsService {
     const to = dateTo || new Date();
     try {
       const orgClause = organizationId
-        ? Prisma.sql`AND ws."organizationId" = ${organizationId}::uuid`
+        ? Prisma.sql`AND ws."organizationId" = ${organizationId}`
         : Prisma.empty;
       const rows = await this.prisma.$queryRaw<{ day: Date | string; incoming: bigint; outgoing: bigint }[]>`
         SELECT date_trunc('day', m."timestamp")::date AS day,
@@ -382,7 +382,7 @@ export class ReportsService {
           ? Prisma.sql`AND so.source = ${source}`
           : Prisma.empty;
         const orgClause = organizationId
-          ? Prisma.sql`AND c."organizationId" = ${organizationId}::uuid`
+          ? Prisma.sql`AND c."organizationId" = ${organizationId}`
           : Prisma.empty;
         const rows = await this.prisma.$queryRaw<{ day: Date | string; amount: number }[]>`
           SELECT date_trunc('day', cb."occurredAt")::date AS day,
@@ -436,7 +436,7 @@ export class ReportsService {
           ? Prisma.sql`AND so.source = ${source}`
           : Prisma.empty;
         const orgClause = organizationId
-          ? Prisma.sql`AND c."organizationId" = ${organizationId}::uuid`
+          ? Prisma.sql`AND c."organizationId" = ${organizationId}`
           : Prisma.empty;
         const rows = await this.prisma.$queryRaw<{ total: number; cnt: bigint }[]>`
           SELECT COALESCE(SUM(cb.amount), 0)::float AS total, COUNT(cb.id)::bigint AS cnt
@@ -517,7 +517,7 @@ export class ReportsService {
     const trunc = granularity === 'month' ? 'month' : granularity === 'week' ? 'week' : 'day';
     try {
       const orgClause = organizationId
-        ? Prisma.sql`AND c."organizationId" = ${organizationId}::uuid`
+        ? Prisma.sql`AND c."organizationId" = ${organizationId}`
         : Prisma.empty;
       const sourceClause = source
         ? Prisma.sql`AND o.source = ${source}`
@@ -568,7 +568,7 @@ export class ReportsService {
     const to = dateTo || new Date();
     try {
       const orgClause = organizationId
-        ? Prisma.sql`AND c."organizationId" = ${organizationId}::uuid`
+        ? Prisma.sql`AND c."organizationId" = ${organizationId}`
         : Prisma.empty;
       const sourceClause = source
         ? Prisma.sql`AND o.source = ${source}`
@@ -669,7 +669,7 @@ export class ReportsService {
     const to = dateTo || new Date();
     try {
       const orgClause = organizationId
-        ? Prisma.sql`AND c."organizationId" = ${organizationId}::uuid`
+        ? Prisma.sql`AND c."organizationId" = ${organizationId}`
         : Prisma.empty;
       const sourceClause = source
         ? Prisma.sql`AND o.source = ${source}`
@@ -775,7 +775,7 @@ export class ReportsService {
     const to = dateTo || new Date();
     try {
       const orgClause = organizationId
-        ? Prisma.sql`AND c."organizationId" = ${organizationId}::uuid`
+        ? Prisma.sql`AND c."organizationId" = ${organizationId}`
         : Prisma.empty;
       const countRows = await this.prisma.$queryRaw<{ n: bigint }[]>`
         SELECT COUNT(DISTINCT conv."contactId")::bigint AS n

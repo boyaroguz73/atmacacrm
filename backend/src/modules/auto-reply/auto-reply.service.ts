@@ -48,7 +48,11 @@ export class AutoReplyService {
     if (!organizationId) return [];
 
     return this.prisma.autoReplyFlow.findMany({
-      where: { isActive: true, organizationId },
+      where: {
+        isActive: true,
+        organizationId,
+        OR: [{ activeFrom: null }, { activeFrom: { lte: new Date() } }],
+      },
       orderBy: { createdAt: 'asc' },
     });
   }
@@ -60,6 +64,7 @@ export class AutoReplyService {
       trigger: string;
       conditions?: any;
       steps: FlowStep[];
+      activeFrom?: string | Date;
     },
     userId: string,
     organizationId?: string,
@@ -68,6 +73,7 @@ export class AutoReplyService {
       data: {
         ...data,
         steps: data.steps as any,
+        activeFrom: data.activeFrom ? new Date(data.activeFrom) : null,
         createdBy: userId,
         ...(organizationId ? { organizationId } : {}),
       },
@@ -95,12 +101,16 @@ export class AutoReplyService {
       conditions?: any;
       steps?: FlowStep[];
       isActive?: boolean;
+      activeFrom?: string | Date | null;
     },
     userId: string,
   ) {
     await this.findById(id);
     const updateData: any = { ...data };
     if (data.steps) updateData.steps = data.steps as any;
+    if (Object.prototype.hasOwnProperty.call(data, 'activeFrom')) {
+      updateData.activeFrom = data.activeFrom ? new Date(data.activeFrom) : null;
+    }
 
     const flow = await this.prisma.autoReplyFlow.update({
       where: { id },

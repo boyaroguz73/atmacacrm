@@ -48,6 +48,7 @@ export class AutoReplyController {
       trigger: string;
       conditions?: any;
       steps: FlowStep[];
+      activeFrom?: string;
     },
     @CurrentUser() user: { id: string; role: string; organizationId?: string },
   ) {
@@ -65,6 +66,7 @@ export class AutoReplyController {
       conditions?: any;
       steps?: FlowStep[];
       isActive?: boolean;
+      activeFrom?: string | null;
     },
     @CurrentUser() user: { id: string; role: string; organizationId?: string },
   ) {

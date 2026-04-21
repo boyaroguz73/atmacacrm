@@ -76,6 +76,13 @@ interface SalesOrder {
 
 const TSOFT_LOGO_URL = 'https://panel.tsoftstatic.com/images/logo/logo.svg';
 
+function providerLabel(provider?: string | null): string {
+  const p = String(provider || '').toLowerCase();
+  if (p === 'tsoft') return 'T-Soft';
+  if (!p) return 'Mağaza';
+  return p.charAt(0).toUpperCase() + p.slice(1);
+}
+
 function siteField(o: SalesOrder, ...keys: string[]): string {
   const d = o.siteOrderData;
   if (!d || typeof d !== 'object') return '';
@@ -176,6 +183,8 @@ export default function OrdersPage() {
   const router = useRouter();
   const { user, loadFromStorage } = useAuthStore();
   const showTsoftTools = user?.role === 'ADMIN';
+  const [ecomProvider, setEcomProvider] = useState<string | null>(null);
+  const [ecomVisible, setEcomVisible] = useState(false);
   const [syncingTsoft, setSyncingTsoft] = useState(false);
   const canRegenerateOrderPdf =
     user?.role === 'ADMIN' || user?.role === 'SUPERADMIN' || user?.role === 'ACCOUNTANT';
@@ -243,6 +252,25 @@ export default function OrdersPage() {
     fetchOrders();
   }, [fetchOrders]);
 
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .get('/ecommerce/status')
+      .then(({ data }) => {
+        if (cancelled) return;
+        setEcomVisible(!!data?.menuVisible);
+        setEcomProvider(typeof data?.provider === 'string' ? data.provider : null);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setEcomVisible(false);
+        setEcomProvider(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const syncFromTsoft = async () => {
     if (syncingTsoft) return;
     setSyncingTsoft(true);
@@ -289,7 +317,7 @@ export default function OrdersPage() {
           <p className="text-sm text-gray-500 mt-1">Satış siparişlerini görüntüleyin, durum güncelleyin ve fatura oluşturun.</p>
         </div>
         <div className="flex items-center gap-2">
-          {showTsoftTools ? (
+          {showTsoftTools && ecomVisible && ecomProvider === 'tsoft' ? (
             <button
               type="button"
               onClick={() => void syncFromTsoft()}
@@ -297,7 +325,7 @@ export default function OrdersPage() {
               className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-amber-200 bg-amber-50 text-sm font-medium text-amber-900 shadow-sm hover:bg-amber-100 transition-colors disabled:opacity-50"
             >
               <Store className={`w-4 h-4 ${syncingTsoft ? 'animate-pulse' : ''}`} />
-              {syncingTsoft ? 'Çekiliyor…' : 'T-Soft’tan çek'}
+              {syncingTsoft ? 'Çekiliyor…' : `${providerLabel(ecomProvider)}’tan çek`}
             </button>
           ) : null}
           <Link
@@ -338,21 +366,23 @@ export default function OrdersPage() {
               {f.label}
             </button>
           ))}
-          <button
-            type="button"
-            onClick={() => {
-              setSiteOrdersOnly((v) => !v);
-              setPage(1);
-            }}
-            className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-sm font-medium border shadow-sm transition-colors ${
-              siteOrdersOnly
-                ? 'bg-amber-100 text-amber-900 border-amber-300'
-                : 'bg-white text-gray-600 border-gray-200 hover:border-amber-300/50 hover:text-gray-900'
-            }`}
-          >
-            <Store className="w-4 h-4 shrink-0 opacity-80" />
-            Site siparişleri
-          </button>
+          {ecomVisible ? (
+            <button
+              type="button"
+              onClick={() => {
+                setSiteOrdersOnly((v) => !v);
+                setPage(1);
+              }}
+              className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-sm font-medium border shadow-sm transition-colors ${
+                siteOrdersOnly
+                  ? 'bg-amber-100 text-amber-900 border-amber-300'
+                  : 'bg-white text-gray-600 border-gray-200 hover:border-amber-300/50 hover:text-gray-900'
+              }`}
+            >
+              <Store className="w-4 h-4 shrink-0 opacity-80" />
+              {providerLabel(ecomProvider)} siparişleri
+            </button>
+          ) : null}
         </div>
         <div className="flex flex-wrap items-center gap-3 xl:ml-auto xl:justify-end xl:flex-nowrap w-full xl:w-auto">
           <DateRangePicker
@@ -434,11 +464,11 @@ export default function OrdersPage() {
                     className="border-b border-gray-50 hover:bg-green-50/30 transition-colors cursor-pointer"
                   >
                     <td className="px-3 py-3">
-                      {isTsoftOrder(order) ? (
+                      {ecomVisible && isTsoftOrder(order) ? (
                         <img
                           src={TSOFT_LOGO_URL}
-                          alt="T-Soft"
-                          title="T-Soft mağaza siparişi"
+                          alt={providerLabel(ecomProvider)}
+                          title={`${providerLabel(ecomProvider)} mağaza siparişi`}
                           className="w-8 h-8 object-contain"
                           loading="lazy"
                         />
@@ -482,12 +512,12 @@ export default function OrdersPage() {
                       <span className={`inline-flex text-[10px] font-semibold px-2.5 py-1 rounded-full whitespace-nowrap ${statusBadgeClass(order.status)}`}>
                         {STATUS_LABELS[order.status]}
                       </span>
-                      {order.pushToTsoft && order.tsoftLastError && !order.tsoftSiteOrderId ? (
+                      {ecomVisible && order.pushToTsoft && order.tsoftLastError && !order.tsoftSiteOrderId ? (
                         <div
                           className="mt-1 inline-flex text-[10px] font-semibold px-2 py-0.5 rounded-full bg-red-50 text-red-700"
                           title={order.tsoftLastError}
                         >
-                          T-Soft ✕
+                          {providerLabel(ecomProvider)} ✕
                         </div>
                       ) : null}
                     </td>

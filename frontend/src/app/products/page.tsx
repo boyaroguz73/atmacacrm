@@ -78,9 +78,18 @@ const emptyForm = (): FormState => ({
   stock: '',
 });
 
+function providerLabel(provider?: string | null): string {
+  const p = String(provider || '').toLowerCase();
+  if (p === 'tsoft') return 'T-Soft';
+  if (!p) return 'Mağaza';
+  return p.charAt(0).toUpperCase() + p.slice(1);
+}
+
 export default function ProductsPage() {
   const { user } = useAuthStore();
   const isAdmin = user?.role === 'ADMIN' || user?.role === 'SUPERADMIN';
+  const [ecomProvider, setEcomProvider] = useState<string | null>(null);
+  const [ecomVisible, setEcomVisible] = useState(false);
 
   const [products, setProducts] = useState<Product[]>([]);
   const [total, setTotal] = useState(0);
@@ -113,6 +122,25 @@ export default function ProductsPage() {
       .get<Array<{ category: string; count: number }>>('/products/categories-summary')
       .then(({ data }) => setCategories(Array.isArray(data) ? data : []))
       .catch(() => setCategories([]));
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .get('/ecommerce/status')
+      .then(({ data }) => {
+        if (cancelled) return;
+        setEcomVisible(!!data?.menuVisible);
+        setEcomProvider(typeof data?.provider === 'string' ? data.provider : null);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setEcomVisible(false);
+        setEcomProvider(null);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
@@ -185,11 +213,15 @@ export default function ProductsPage() {
       vatRate: vat,
       stock: stockVal,
     };
-    if (pushToTsoft) payload.pushToTsoft = true;
+    if (pushToTsoft && ecomVisible && ecomProvider === 'tsoft') payload.pushToTsoft = true;
     setSaving(true);
     try {
       await api.post('/products', payload);
-      toast.success(pushToTsoft ? 'Ürün oluşturuldu · T-Soft kuyruğa alındı' : 'Ürün oluşturuldu');
+      toast.success(
+        pushToTsoft && ecomVisible && ecomProvider === 'tsoft'
+          ? 'Ürün oluşturuldu · mağaza kuyruğa alındı'
+          : 'Ürün oluşturuldu',
+      );
       closeForm();
       fetchProducts();
     } catch (err: unknown) {
@@ -217,6 +249,7 @@ export default function ProductsPage() {
   };
 
   const runTsoftSync = async () => {
+    if (!(ecomVisible && ecomProvider === 'tsoft')) return;
     setSyncingTsoft(true);
     try {
       const { data } = await api.post<{
@@ -224,11 +257,11 @@ export default function ProductsPage() {
         upsertedVariants: number;
       }>('/ecommerce/tsoft/sync-products', { period: tsoftSyncPeriod }, { timeout: 300_000 });
       toast.success(
-        `T-Soft senkron: ${data.upsertedProducts ?? 0} ürün · ${data.upsertedVariants ?? 0} varyant`,
+        `${providerLabel(ecomProvider)} senkron: ${data.upsertedProducts ?? 0} ürün · ${data.upsertedVariants ?? 0} varyant`,
       );
       fetchProducts();
     } catch (err: unknown) {
-      toast.error(getApiErrorMessage(err, 'T-Soft senkron başarısız'));
+      toast.error(getApiErrorMessage(err, 'Senkron başarısız'));
     } finally {
       setSyncingTsoft(false);
     }
@@ -285,12 +318,12 @@ export default function ProductsPage() {
               Ürünler
             </h1>
             <p className="text-sm text-gray-500 mt-1">
-              SKU, fiyat ve stok. T-Soft kaynaklı ürünler ve elle eklenenler tek listede görünür; T-Soft tarafıyla senkron
-              admin entegrasyonlar panelinden yapılır.
+              SKU, fiyat ve stok. Entegrasyon kaynaklı ürünler ve elle eklenenler tek listede görünür.
             </p>
           </div>
           {isAdmin ? (
             <div className="flex flex-wrap items-center gap-2">
+              {ecomVisible && ecomProvider === 'tsoft' ? (
               <div className="inline-flex items-center rounded-xl border border-orange-200 bg-orange-50 shadow-sm overflow-hidden">
                 <select
                   value={tsoftSyncPeriod}
@@ -309,7 +342,7 @@ export default function ProductsPage() {
                   disabled={syncingTsoft}
                   onClick={() => void runTsoftSync()}
                   className="inline-flex items-center gap-1.5 px-3 py-2.5 text-sm font-medium text-orange-700 hover:bg-orange-100 disabled:opacity-50 transition-colors border-l border-orange-200"
-                  title="T-Soft API'den ürünleri ve varyantları senkronize et"
+                  title={`${providerLabel(ecomProvider)} API'den ürünleri ve varyantları senkronize et`}
                 >
                   {syncingTsoft ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
@@ -319,6 +352,7 @@ export default function ProductsPage() {
                   Senkronize et
                 </button>
               </div>
+              ) : null}
               <button
                 type="button"
                 disabled={downloadingImages}
@@ -439,7 +473,7 @@ export default function ProductsPage() {
                                   : undefined
                               }
                             >
-                              {p.productFeedSource === 'TSOFT' ? 'T-Soft' : 'El'}
+                              {p.productFeedSource === 'TSOFT' ? 'Entegrasyon' : 'El'}
                             </span>
                             {p.pendingPushOp ? (
                               <span
@@ -614,15 +648,19 @@ export default function ProductsPage() {
                   type="checkbox"
                   checked={pushToTsoft}
                   onChange={(e) => setPushToTsoft(e.target.checked)}
+                  disabled={!(ecomVisible && ecomProvider === 'tsoft')}
                   className="mt-0.5 rounded border-gray-300 text-orange-500 focus:ring-orange-400"
                 />
                 <span>
-                  <span className="font-medium text-gray-900">{"T-Soft'a da oluştur"}</span>
+                  <span className="font-medium text-gray-900">{"Mağazaya da oluştur"}</span>
                   <span className="block text-[11px] text-gray-500 mt-0.5">
-                    {
-                      "Ürün kuyruğa alınır, T-Soft'ta oluşturulduktan sonra T-Soft ID geri döner."
-                    }
+                    {"Ürün kuyruğa alınır, mağazada oluşturulduktan sonra entegrasyon ID'si geri döner."}
                   </span>
+                  {!(ecomVisible && ecomProvider === 'tsoft') ? (
+                    <span className="block text-[11px] text-gray-400 mt-1">
+                      T-Soft entegrasyonu kapalı olduğu için bu seçenek devre dışı.
+                    </span>
+                  ) : null}
                 </span>
               </label>
 
@@ -698,7 +736,7 @@ export default function ProductsPage() {
                 >
                   {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
                   Oluştur
-                  {pushToTsoft ? ' · T-Soft' : ''}
+                  {pushToTsoft ? ' · Entegrasyon' : ''}
                 </button>
               </div>
             </form>

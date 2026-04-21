@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useSearchParams, useRouter, usePathname } from 'next/navigation';
 import { useChatStore } from '@/store/chat';
 import { connectSocket, getSocket } from '@/lib/socket';
+import api from '@/lib/api';
 import ConversationList from '@/components/chat/ConversationList';
 import ChatWindow from '@/components/chat/ChatWindow';
 
@@ -24,7 +25,8 @@ export default function InboxPage() {
       if (stored) {
         const u = JSON.parse(stored);
         if (u?.role === 'AGENT') {
-          router.replace('/inbox?filter=mine');
+          const q = contactId ? `&contactId=${encodeURIComponent(contactId)}` : '';
+          router.replace(`/inbox?filter=mine${q}`);
         }
       }
     } catch {
@@ -32,7 +34,7 @@ export default function InboxPage() {
     }
   // Yalnızca ilk render'da çalışsın
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [contactId]);
 
   const {
     activeConversation,
@@ -61,9 +63,19 @@ export default function InboxPage() {
 
   useEffect(() => {
     if (!contactId) return;
-    if (!conversations.length) return;
     const found = conversations.find((c) => c.contactId === contactId);
-    if (found) setActiveConversation(found);
+    if (found) {
+      setActiveConversation(found);
+      return;
+    }
+    api
+      .get(`/conversations/for-contact/${contactId}`)
+      .then(({ data }) => {
+        if (data?.id) setActiveConversation(data);
+      })
+      .catch(() => {
+        /* ignore */
+      });
   }, [contactId, conversations, setActiveConversation]);
 
   /** lg (1024px) altında: sohbet seçilince tam ekran chat. Üstünde: sol liste asla kaybolmaz (md=768 çok dar kalıyordu). */

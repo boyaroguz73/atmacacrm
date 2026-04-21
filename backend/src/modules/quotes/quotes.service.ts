@@ -9,6 +9,7 @@ import { readFileSync, existsSync } from 'fs';
 import { normalizeWhatsappChatId } from '../../common/whatsapp-chat-id';
 import { splitSearchTokens } from '../../common/search-tokens';
 import { AuditLogService } from '../audit-log/audit-log.service';
+import { AutoReplyEngineService } from '../auto-reply/auto-reply-engine.service';
 
 interface CreateQuoteItem {
   productId?: string;
@@ -39,6 +40,7 @@ export class QuotesService {
     private wahaService: WahaService,
     private mailService: MailService,
     private auditLog: AuditLogService,
+    private autoReplyEngine: AutoReplyEngineService,
   ) {}
 
   private roundMoney(n: number): number {
@@ -120,6 +122,7 @@ export class QuotesService {
     contact: {
       select: {
         id: true,
+        organizationId: true,
         name: true,
         surname: true,
         phone: true,
@@ -356,11 +359,22 @@ export class QuotesService {
     } else if (prevStatus === QuoteStatus.ACCEPTED) {
       data.acceptedAt = null;
     }
-    return this.prisma.quote.update({
+    const updated = await this.prisma.quote.update({
       where: { id },
       data: { ...data, panelEditedAt: new Date() },
       include: this.includeRelations,
     });
+    if (prevStatus !== dto.status) {
+      const orgId = (updated as any)?.contact?.organizationId as string | undefined;
+      if (orgId) {
+        await this.autoReplyEngine.processQuoteStatusEvent({
+          quoteId: updated.id,
+          status: dto.status,
+          organizationId: orgId,
+        });
+      }
+    }
+    return updated;
   }
 
   /** Geçerlilik, teslim ve notlar — kalemleri değiştirmez; PDF varsa yeniden üretilmelidir. */

@@ -640,11 +640,23 @@ export class WahaService implements OnModuleInit {
     contactId: string,
   ): Promise<string | null> {
     const chatId = contactId.includes('@') ? contactId : `${contactId}@c.us`;
+    const contact = await this.findContactForAvatarFetch(contactId);
+    const contactMeta =
+      contact?.metadata && typeof contact.metadata === 'object' && !Array.isArray(contact.metadata)
+        ? (contact.metadata as Record<string, unknown>)
+        : null;
+    if (contactMeta?.avatarFetchDisabled === true) {
+      this.logger.debug(
+        `Profil fotoğrafı denemesi atlandı (disabled): ${contact?.phone || contactId}`,
+      );
+      return null;
+    }
 
     const endpoints = [
       { url: `/api/contacts/profile-picture`, params: { contactId: chatId, session: sessionName } },
       { url: `/api/${encodeURIComponent(sessionName)}/contacts/profile-picture`, params: { contactId: chatId } },
     ];
+    let hadServerError = false;
 
     for (const ep of endpoints) {
       try {
@@ -669,12 +681,69 @@ export class WahaService implements OnModuleInit {
           );
           continue;
         }
+        if (status >= 500) hadServerError = true;
         this.logger.debug(
           `Profil fotoğrafı alınamadı: ${ep.url} ${contactId} - ${error.message}`,
         );
       }
     }
+
+    if (hadServerError && contact?.id) {
+      await this.disableAvatarFetchForContact(
+        contact.id,
+        `WAHA profile-picture 5xx (${sessionName})`,
+      );
+    }
     return null;
+  }
+
+  private async findContactForAvatarFetch(contactId: string): Promise<{
+    id: string;
+    phone: string;
+    metadata: unknown;
+  } | null> {
+    const candidates = this.avatarPhoneCandidates(contactId);
+    if (!candidates.length) return null;
+    return this.prisma.contact.findFirst({
+      where: { phone: { in: candidates } },
+      select: { id: true, phone: true, metadata: true },
+    });
+  }
+
+  private avatarPhoneCandidates(raw: string): string[] {
+    const base = String(raw || '').split('@')[0];
+    const digits = base.replace(/\D/g, '');
+    if (!digits) return [];
+    const out = new Set<string>([digits]);
+    if (digits.length === 10 && digits.startsWith('5')) out.add(`90${digits}`);
+    if (digits.length === 11 && digits.startsWith('0') && digits[1] === '5') out.add(`90${digits.slice(1)}`);
+    if (digits.length === 12 && digits.startsWith('90')) out.add(`0${digits.slice(2)}`);
+    return [...out];
+  }
+
+  private async disableAvatarFetchForContact(contactId: string, reason: string): Promise<void> {
+    try {
+      const current = await this.prisma.contact.findUnique({
+        where: { id: contactId },
+        select: { metadata: true },
+      });
+      const meta =
+        current?.metadata && typeof current.metadata === 'object' && !Array.isArray(current.metadata)
+          ? (current.metadata as Record<string, unknown>)
+          : {};
+      const nextMeta: Record<string, unknown> = {
+        ...meta,
+        avatarFetchDisabled: true,
+        avatarFetchDisabledAt: new Date().toISOString(),
+        avatarFetchDisableReason: reason,
+      };
+      await this.prisma.contact.update({
+        where: { id: contactId },
+        data: { metadata: nextMeta as Prisma.InputJsonValue },
+      });
+    } catch (err: any) {
+      this.logger.debug(`Avatar disable metadata yazılamadı (${contactId}): ${err?.message || err}`);
+    }
   }
 
   /**

@@ -506,7 +506,22 @@ export class MessagesService implements OnModuleInit {
     const priceLine = hasDiscount
       ? `~${fmtPrice(regularPrice)}~ → *${fmtPrice(displayPrice)}${vatSuffix}*`
       : `Fiyat${vatLabel}: ${fmtPrice(displayPrice)}${vatSuffix}`;
-    const siteLink = (product.productUrl || '').trim();
+    // Subproduct/varyant paylaşımında da ana ürün linkini kullanırız.
+    // Ürün linki boşsa, varyant metadata'sındaki "main/parent" alanlarından fallback deneriz.
+    const variantMeta =
+      variant?.metadata && typeof variant.metadata === 'object' && !Array.isArray(variant.metadata)
+        ? (variant.metadata as Record<string, unknown>)
+        : null;
+    const fallbackMainLink = variantMeta
+      ? String(
+          variantMeta.MainProductUrl ??
+            variantMeta.mainProductUrl ??
+            variantMeta.ParentProductUrl ??
+            variantMeta.parentProductUrl ??
+            '',
+        ).trim()
+      : '';
+    const siteLink = ((product.productUrl || '').trim() || fallbackMainLink).trim();
     const caption = [
       effName,
       priceLine,

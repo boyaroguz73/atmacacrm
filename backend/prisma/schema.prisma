@@ -543,6 +543,8 @@ model AutoReplyFlow {
   name           String
   description    String?
   isActive       Boolean  @default(false)
+  /// Akışın ilk kez devreye gireceği tarih-saat (opsiyonel)
+  activeFrom     DateTime?
   trigger        String
   conditions     Json?
   steps          Json
@@ -553,9 +555,44 @@ model AutoReplyFlow {
 
   creator      User          @relation("FlowCreator", fields: [createdBy], references: [id], onDelete: Cascade)
   organization Organization? @relation(fields: [organizationId], references: [id])
+  runs         AutomationRun[]
 
   @@index([organizationId])
   @@map("auto_reply_flows")
+}
+
+enum AutomationRunStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+model AutomationRun {
+  id             String              @id @default(uuid())
+  flowId         String
+  flow           AutoReplyFlow       @relation(fields: [flowId], references: [id], onDelete: Cascade)
+  organizationId String
+  trigger        String
+  entityType     String
+  entityId       String
+  contactId      String?
+  conversationId String?
+  dedupeKey      String              @unique
+  currentStep    Int                 @default(0)
+  status         AutomationRunStatus @default(PENDING)
+  nextRunAt      DateTime            @default(now())
+  context        Json?
+  attemptCount   Int                 @default(0)
+  lastError      String?
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+
+  @@index([organizationId, status, nextRunAt])
+  @@index([flowId, status])
+  @@index([entityType, entityId])
+  @@map("automation_runs")
 }
 
 model SupportTicket {

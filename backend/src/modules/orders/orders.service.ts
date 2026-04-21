@@ -861,16 +861,6 @@ export class OrdersService {
       : nextQty * nextPrice * (1 + r);
     patch.lineTotal = Math.round(lineGross * 100) / 100;
 
-    const nextIsFromStock =
-      patch.isFromStock !== undefined ? !!patch.isFromStock : !!item.isFromStock;
-    const nextSupplierOrderNo =
-      patch.supplierOrderNo !== undefined
-        ? (patch.supplierOrderNo as string | null)
-        : item.supplierOrderNo;
-    if (!nextIsFromStock && !nextSupplierOrderNo) {
-      throw new BadRequestException('Stok dışı kalem için sipariş no/referans zorunludur');
-    }
-
     await this.prisma.orderItem.update({
       where: { id: itemId },
       data: patch as any,

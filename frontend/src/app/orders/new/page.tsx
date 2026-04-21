@@ -44,8 +44,6 @@ interface SupplierHit {
   name: string;
 }
 
-type OrderPaymentModeUI = 'FULL' | 'DEPOSIT_50' | 'CUSTOM';
-
 
 function calcTotals(items: LocalLineItem[]) {
   let subtotal = 0;
@@ -125,8 +123,6 @@ export default function NewOrderPage() {
   const [expectedDeliveryDate, setExpectedDeliveryDate] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [suppliers, setSuppliers] = useState<SupplierHit[]>([]);
-  const [paymentMode, setPaymentMode] = useState<OrderPaymentModeUI>('FULL');
-  const [customPaymentValue, setCustomPaymentValue] = useState('');
   const [pushToTsoft, setPushToTsoft] = useState(false);
 
   const [variantPick, setVariantPick] = useState<{
@@ -324,17 +320,6 @@ export default function NewOrderPage() {
       toast.error('En az bir geçerli kalem girin');
       return;
     }
-    if (paymentMode === 'CUSTOM') {
-      const custom = Number(customPaymentValue);
-      if (!(custom > 0)) {
-        toast.error('Özel ödeme tutarı 0’dan büyük olmalı');
-        return;
-      }
-      if (custom > totals.grandTotal) {
-        toast.error('Özel ödeme tutarı sipariş toplamını aşamaz');
-        return;
-      }
-    }
     setSubmitting(true);
     try {
       const { data } = await api.post('/orders', {
@@ -344,10 +329,6 @@ export default function NewOrderPage() {
         notes: notes.trim() || null,
         expectedDeliveryDate: expectedDeliveryDate ? new Date(expectedDeliveryDate).toISOString() : null,
         pushToTsoft,
-        payment: {
-          mode: paymentMode,
-          customValue: paymentMode === 'CUSTOM' ? Number(customPaymentValue) || undefined : undefined,
-        },
         items: validLines.map((l) => ({
           productId: l.productId || undefined,
           productVariantId: l.productVariantId || undefined,
@@ -664,49 +645,6 @@ export default function NewOrderPage() {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="md:col-span-2 rounded-xl border border-gray-100 bg-gray-50/50 p-3 space-y-2">
-            <p className="text-xs font-semibold text-gray-600 uppercase">Ödeme seçimi</p>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-sm">
-              <label className="inline-flex items-center gap-2">
-                <input
-                  type="radio"
-                  name="order-payment"
-                  checked={paymentMode === 'FULL'}
-                  onChange={() => setPaymentMode('FULL')}
-                />
-                Tam ödeme
-              </label>
-              <label className="inline-flex items-center gap-2">
-                <input
-                  type="radio"
-                  name="order-payment"
-                  checked={paymentMode === 'DEPOSIT_50'}
-                  onChange={() => setPaymentMode('DEPOSIT_50')}
-                />
-                %50 ön ödeme
-              </label>
-              <label className="inline-flex items-center gap-2">
-                <input
-                  type="radio"
-                  name="order-payment"
-                  checked={paymentMode === 'CUSTOM'}
-                  onChange={() => setPaymentMode('CUSTOM')}
-                />
-                Özel miktar
-              </label>
-            </div>
-            {paymentMode === 'CUSTOM' ? (
-              <input
-                type="number"
-                min={0}
-                step={0.01}
-                value={customPaymentValue}
-                onChange={(e) => setCustomPaymentValue(e.target.value)}
-                placeholder="Örn: 15000"
-                className="w-full md:w-56 px-3 py-2 rounded-lg border border-gray-200 text-sm bg-white"
-              />
-            ) : null}
-          </div>
           <textarea
             value={shippingAddress}
             onChange={(e) => setShippingAddress(e.target.value)}

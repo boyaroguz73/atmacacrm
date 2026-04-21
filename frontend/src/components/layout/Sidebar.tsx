@@ -185,6 +185,13 @@ function childHrefMatchesWithAliases(
   return false;
 }
 
+function providerLabel(provider?: string | null): string {
+  const p = String(provider || '').toLowerCase();
+  if (p === 'tsoft') return 'T-Soft';
+  if (!p) return 'Mağaza';
+  return p.charAt(0).toUpperCase() + p.slice(1);
+}
+
 export default function Sidebar({
   mobileOpen = false,
   onClose,
@@ -200,6 +207,7 @@ export default function Sidebar({
   const isAdmin = user?.role === 'ADMIN' || user?.role === 'SUPERADMIN';
   const isSuperAdmin = user?.role === 'SUPERADMIN';
   const [ecommerceMenuVisible, setEcommerceMenuVisible] = useState(false);
+  const [ecommerceProvider, setEcommerceProvider] = useState<string | null>(null);
   /** Sunucudan gelen izinli menü anahtarları; null = filtre yok (yüklenemedi veya süper admin) */
   const [allowedMenuKeys, setAllowedMenuKeys] = useState<Set<string> | null>(null);
   const [orderedMenuKeys, setOrderedMenuKeys] = useState<string[] | null>(null);
@@ -250,10 +258,16 @@ export default function Sidebar({
     api
       .get('/ecommerce/status')
       .then(({ data }) => {
-        if (!cancelled) setEcommerceMenuVisible(!!data?.menuVisible);
+        if (!cancelled) {
+          setEcommerceMenuVisible(!!data?.menuVisible);
+          setEcommerceProvider(typeof data?.provider === 'string' ? data.provider : null);
+        }
       })
       .catch(() => {
-        if (!cancelled) setEcommerceMenuVisible(false);
+        if (!cancelled) {
+          setEcommerceMenuVisible(false);
+          setEcommerceProvider(null);
+        }
       });
     return () => {
       cancelled = true;
@@ -290,17 +304,25 @@ export default function Sidebar({
       (!allowedMenuKeys || allowedMenuKeys.has('ecommerce'));
     if (showEcommerce) {
       const idx = filtered.findIndex((i) => i.href === '/admin/integrations');
+      const ecommerceChildren: SubItem[] = [
+        { href: '/ecommerce/products', label: 'Ürünler', icon: Package, key: 'ecom_products' },
+        { href: '/ecommerce/customers', label: 'Üyeler', icon: Users, key: 'ecom_customers' },
+      ];
+      if (ecommerceProvider === 'tsoft') {
+        ecommerceChildren.push({
+          href: '/orders?tsoft=1',
+          label: `Mağaza (${providerLabel(ecommerceProvider)})`,
+          icon: ShoppingBag,
+          key: 'ecom_orders',
+        });
+      }
       const ecommerceBlock: MenuItem = {
         href: '/ecommerce',
         label: 'E-Ticaret',
         icon: ShoppingCart,
         adminOnly: true,
         menuKey: 'ecommerce',
-        children: [
-          { href: '/ecommerce/products', label: 'Ürünler', icon: Package, key: 'ecom_products' },
-          { href: '/ecommerce/customers', label: 'Üyeler', icon: Users, key: 'ecom_customers' },
-          { href: '/orders?tsoft=1', label: 'Mağaza (T-Soft)', icon: ShoppingBag, key: 'ecom_orders' },
-        ],
+        children: ecommerceChildren,
       };
       if (idx >= 0) {
         filtered = [...filtered.slice(0, idx), ecommerceBlock, ...filtered.slice(idx)];
@@ -333,7 +355,7 @@ export default function Sidebar({
         }),
       };
     });
-  }, [isAdmin, isSuperAdmin, isAccountant, ecommerceMenuVisible, allowedMenuKeys, orderedMenuKeys, submenuOrder, user?.role]);
+  }, [isAdmin, isSuperAdmin, isAccountant, ecommerceMenuVisible, ecommerceProvider, allowedMenuKeys, orderedMenuKeys, submenuOrder, user?.role]);
 
   const getInitialExpanded = () => {
     const active: string[] = [];

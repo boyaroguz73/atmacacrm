@@ -302,6 +302,8 @@ export default function NewQuotePage() {
   const [notes, setNotes] = useState('');
   const [termsOverride, setTermsOverride] = useState('');
   const [footerNoteOverride, setFooterNoteOverride] = useState('');
+  const [termsTouched, setTermsTouched] = useState(false);
+  const [footerTouched, setFooterTouched] = useState(false);
   const [grandTotalOverride, setGrandTotalOverride] = useState<string>('');
   const [submitting, setSubmitting] = useState(false);
 
@@ -599,12 +601,12 @@ export default function NewQuotePage() {
   useEffect(() => {
     const loadPdfDefaults = async () => {
       try {
-        const { data } = await api.get('/system-settings');
+        const { data } = await api.get('/system-settings', { params: { _ts: Date.now() } });
         const all = Array.isArray(data) ? data : [];
         const terms = all.find((s: any) => s?.key === 'pdf_terms')?.value || '';
         const footer = all.find((s: any) => s?.key === 'pdf_footer_note')?.value || '';
-        setTermsOverride(String(terms));
-        setFooterNoteOverride(String(footer));
+        if (!termsTouched) setTermsOverride(String(terms));
+        if (!footerTouched) setFooterNoteOverride(String(footer));
       } catch {
         // Sessiz geç: varsayılanlar olmadan da teklif oluşturulabilir.
       }
@@ -614,7 +616,7 @@ export default function NewQuotePage() {
       clearTimeout(contactDebounceRef.current);
       clearTimeout(productDebounceRef.current);
     };
-  }, []);
+  }, [termsTouched, footerTouched]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -644,8 +646,10 @@ export default function NewQuotePage() {
         validUntil: validUntil ? new Date(validUntil).toISOString() : undefined,
         deliveryDate: deliveryDate ? new Date(deliveryDate).toISOString() : undefined,
         notes: stripHtmlEmpty(notes),
-        termsOverride: stripHtmlEmpty(termsOverride),
-        footerNoteOverride: stripHtmlEmpty(footerNoteOverride),
+        // Kullanıcı bu alanlara dokunmadıysa override göndermeyip
+        // PDF tarafında en güncel ayarların kullanılmasını sağlarız.
+        termsOverride: termsTouched ? stripHtmlEmpty(termsOverride) : undefined,
+        footerNoteOverride: footerTouched ? stripHtmlEmpty(footerNoteOverride) : undefined,
         grandTotalOverride: grandTotalOverride && parseFloat(grandTotalOverride) > 0 
           ? parseFloat(grandTotalOverride) 
           : undefined,
@@ -1409,7 +1413,10 @@ export default function NewQuotePage() {
               </label>
               <HtmlEditor
                 value={termsOverride}
-                onChange={setTermsOverride}
+                onChange={(val) => {
+                  setTermsTouched(true);
+                  setTermsOverride(val);
+                }}
                 placeholder="Bu teklifte PDF'e basılacak ödeme koşulları…"
                 minHeight="96px"
               />
@@ -1420,7 +1427,10 @@ export default function NewQuotePage() {
               </label>
               <HtmlEditor
                 value={footerNoteOverride}
-                onChange={setFooterNoteOverride}
+                onChange={(val) => {
+                  setFooterTouched(true);
+                  setFooterNoteOverride(val);
+                }}
                 placeholder="Bu teklifte PDF'e basılacak alt not…"
                 minHeight="80px"
               />
