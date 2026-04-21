@@ -499,7 +499,8 @@ export class MessagesService implements OnModuleInit {
     const displayPrice = hasDiscount ? salePrice : regularPrice;
     const currency = variant?.currency || product.currency;
     const priceIncludesVat = variant?.priceIncludesVat ?? product.priceIncludesVat;
-    const fmtPrice = (n: number) => `${n.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ${currency}`;
+    const currLabel = currency === 'TRY' ? 'TL' : currency;
+    const fmtPrice = (n: number) => `${n.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ${currLabel}`;
     const vatSuffix = priceIncludesVat ? '' : ' +KDV';
     const vatLabel = priceIncludesVat ? ' (KDV Dahil)' : '';
     const priceLine = hasDiscount

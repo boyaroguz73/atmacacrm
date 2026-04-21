@@ -13,6 +13,7 @@ import {
   phoneToWhatsappChatId,
   backendPublicUrl,
   rewriteMediaUrlForClient,
+  displayCurrency,
 } from '@/lib/utils';
 import {
   Send,
@@ -1697,7 +1698,7 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
                               {v.salePriceAmount != null && v.salePriceAmount !== v.unitPrice ? (
                                 <>
                                   <span className="text-green-600 font-semibold">
-                                    {v.salePriceAmount.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} {v.currency}
+                                    {v.salePriceAmount.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} {displayCurrency(v.currency)}
                                   </span>
                                   <span className="line-through text-gray-400">
                                     {v.unitPrice.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
@@ -1705,7 +1706,7 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
                                 </>
                               ) : (
                                 <span>
-                                  {v.unitPrice.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} {v.currency}
+                                  {v.unitPrice.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} {displayCurrency(v.currency)}
                                 </span>
                               )}
                               {v.stock != null ? <span>• Stok: {v.stock}</span> : null}
@@ -1831,7 +1832,7 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
                             {p.salePriceAmount != null && p.salePriceAmount > 0 ? (
                               <p className="text-[11px] flex items-center gap-1">
                                 <span className="text-green-600 font-semibold">
-                                  {p.salePriceAmount.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} {p.currency}
+                                  {p.salePriceAmount.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} {displayCurrency(p.currency)}
                                 </span>
                                 <span className="text-gray-400 line-through">
                                   {p.unitPrice.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
@@ -1839,7 +1840,7 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
                               </p>
                             ) : p.unitPrice > 0 ? (
                               <p className="text-[11px] text-gray-500">
-                                {p.unitPrice.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} {p.currency}
+                                {p.unitPrice.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} {displayCurrency(p.currency)}
                               </p>
                             ) : null}
                           </div>

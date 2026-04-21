@@ -655,7 +655,7 @@ export default function ProductsPage() {
                     onChange={(e) => setForm((f) => ({ ...f, currency: e.target.value }))}
                     className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:border-whatsapp focus:ring-1 focus:ring-whatsapp/20 bg-white"
                   >
-                    <option value="TRY">TRY</option>
+                    <option value="TRY">TL</option>
                     <option value="USD">USD</option>
                     <option value="EUR">EUR</option>
                   </select>

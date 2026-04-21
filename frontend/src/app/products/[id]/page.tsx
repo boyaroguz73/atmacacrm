@@ -6,7 +6,7 @@ import { useParams, useRouter } from 'next/navigation';
 import api, { getApiErrorMessage } from '@/lib/api';
 import toast from 'react-hot-toast';
 import { useAuthStore } from '@/store/auth';
-import { rewriteMediaUrlForClient } from '@/lib/utils';
+import { rewriteMediaUrlForClient, displayCurrency } from '@/lib/utils';
 import {
   ArrowLeft,
   Loader2,
@@ -471,7 +471,7 @@ export default function ProductDetailPage() {
                 disabled={!isAdmin}
                 className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm bg-white disabled:bg-gray-50"
               >
-                <option value="TRY">TRY</option>
+                <option value="TRY">TL</option>
                 <option value="USD">USD</option>
                 <option value="EUR">EUR</option>
               </select>
@@ -687,7 +687,7 @@ function VariantEditor({
           />
         </div>
         <div>
-          <label className="text-[10px] font-medium text-gray-500">Normal fiyat ({currency})</label>
+          <label className="text-[10px] font-medium text-gray-500">Normal fiyat ({displayCurrency(currency)})</label>
           <input
             type="number"
             step="0.01"
@@ -698,7 +698,7 @@ function VariantEditor({
           />
         </div>
         <div>
-          <label className="text-[10px] font-medium text-gray-500">Liste fiyatı ({currency})</label>
+          <label className="text-[10px] font-medium text-gray-500">Liste fiyatı ({displayCurrency(currency)})</label>
           <input
             type="number"
             step="0.01"
@@ -715,7 +715,7 @@ function VariantEditor({
           />
         </div>
         <div>
-          <label className="text-[10px] font-medium text-gray-500">İndirimli fiyat ({currency})</label>
+          <label className="text-[10px] font-medium text-gray-500">İndirimli fiyat ({displayCurrency(currency)})</label>
           <input
             type="number"
             step="0.01"

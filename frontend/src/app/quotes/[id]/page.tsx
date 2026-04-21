@@ -976,7 +976,7 @@ export default function QuoteDetailPage() {
                   onChange={(e) => setCurrency(e.target.value)}
                   className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:border-whatsapp"
                 >
-                  <option value="TRY">TRY (₺)</option>
+                  <option value="TRY">TL (₺)</option>
                   <option value="USD">USD ($)</option>
                   <option value="EUR">EUR (€)</option>
                 </select>

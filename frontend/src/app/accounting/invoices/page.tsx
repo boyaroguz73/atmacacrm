@@ -187,7 +187,8 @@ function moneyAmount(inv: InvoiceRow | PendingBillingRow): number {
 
 function formatMoney(amount: number, currency: string | null | undefined): string {
   const cur = safeStr(currency) || 'TRY';
-  return `${amount.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${cur}`;
+  const label = cur === 'TRY' ? 'TL' : cur;
+  return `${amount.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${label}`;
 }
 
 function formatDate(iso: string | null | undefined): string {

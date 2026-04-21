@@ -258,7 +258,7 @@ export default function LedgerPage() {
             onChange={(e) => setCurrency(e.target.value)}
             className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm"
           >
-            <option value="TRY">TRY</option>
+            <option value="TRY">TL</option>
             <option value="USD">USD</option>
             <option value="EUR">EUR</option>
           </select>

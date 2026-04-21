@@ -179,3 +179,17 @@ export function getContactSecondaryPhoneLine(contact: {
   if (normLabel(title) === normLabel(phone)) return null;
   return phone;
 }
+
+/** API'deki ISO 4217 kodunu kullanıcı dostu etikete çevirir: TRY → TL */
+export function displayCurrency(code: string | null | undefined): string {
+  const c = (code || 'TRY').toUpperCase();
+  if (c === 'TRY') return 'TL';
+  return c;
+}
+
+/** Para tutarını "1.234,56 TL" formatında döndürür */
+export function formatMoney(amount: number, currency?: string): string {
+  const c = (currency || 'TRY').toUpperCase();
+  const formatted = amount.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return `${formatted} ${displayCurrency(c)}`;
+}

@@ -188,7 +188,7 @@ function formatMoney(amount: number | string | null | undefined, currency: strin
   try {
     return new Intl.NumberFormat('tr-TR', { style: 'currency', currency: code }).format(safe);
   } catch {
-    return `${safe.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} TRY`;
+    return `${safe.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} TL`;
   }
 }
 

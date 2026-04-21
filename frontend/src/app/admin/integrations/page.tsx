@@ -201,7 +201,7 @@ export default function IntegrationsPage() {
   };
 
   const handlePurchase = async (integration: Integration) => {
-    if (!confirm(`${integration.name} eklentisini ${integration.addonPrice} TRY/ay karşılığında satın almak istiyor musunuz?`)) return;
+    if (!confirm(`${integration.name} eklentisini ${integration.addonPrice} TL/ay karşılığında satın almak istiyor musunuz?`)) return;
     setPurchasing(integration.key);
     try {
       await api.post(
@@ -443,7 +443,7 @@ function DetailPanel({
               ) : (
                 <Lock className="w-3.5 h-3.5" />
               )}
-              Satın Al {integration.addonPrice > 0 ? `— ${integration.addonPrice} TRY/ay` : ''}
+              Satın Al {integration.addonPrice > 0 ? `— ${integration.addonPrice} TL/ay` : ''}
             </button>
           ) : null}
         </div>
