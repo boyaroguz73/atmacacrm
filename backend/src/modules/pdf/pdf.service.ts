@@ -573,11 +573,13 @@ export class PdfService {
 
         const vatAmt = Number.isFinite(data.vatTotal) ? data.vatTotal : 0;
         const subEx = Math.round((Number(data.subtotal) || 0) * 100) / 100;
-        const hasGeneralDiscount = (Number(data.discountTotal) || 0) > 0.005;
+        const discAmt = Math.round((Number(data.discountTotal) || 0) * 100) / 100;
+        const hasGeneralDiscount = discAmt > 0.005;
+        const subBeforeDiscount = Math.round((subEx + discAmt) * 100) / 100;
 
-        // İskonto varsa "İskontolu Fiyat" satırını göster; yoksa hiç gösterme.
+        rowY += sumRow(this.t('Ara Tutar (KDV haric):'), fmtMoney(hasGeneralDiscount ? subBeforeDiscount : subEx), rowY);
         if (hasGeneralDiscount) {
-          rowY += sumRow(this.t('Toplam Iskontolu Fiyat (KDV haric):'), fmtMoney(subEx), rowY);
+          rowY += sumRow(this.t('Iskontolu Ara Tutar (KDV haric):'), fmtMoney(subEx), rowY);
         }
         rowY += sumRow(this.t('KDV Tutari:'), fmtMoney(vatAmt), rowY);
 
