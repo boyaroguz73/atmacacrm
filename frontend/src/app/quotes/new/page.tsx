@@ -120,6 +120,7 @@ interface ProductHit {
   priceIncludesVat?: boolean;
   currency?: string;
   imageUrl?: string | null;
+  metadata?: unknown;
 }
 
 function currencySymbol(c: string): string {
@@ -131,6 +132,14 @@ function currencySymbol(c: string): string {
 
 function round2(n: number) {
   return Math.round(n * 100) / 100;
+}
+
+function pickVatRate(...candidates: unknown[]): number | null {
+  for (const value of candidates) {
+    const n = Number(value);
+    if (Number.isFinite(n) && n >= 0 && n <= 100) return Math.round(n);
+  }
+  return null;
 }
 
 /** Backend `QuotesService` ile aynı: satır indirimi sonrası KDV hariç tutar (genel iskonto öncesi). */
@@ -497,6 +506,7 @@ export default function NewQuotePage() {
       salePriceAmount?: number | null;
       property2?: string | null;
       vatRate?: number;
+      metadata?: unknown;
       priceIncludesVat?: boolean;
       imageUrl?: string | null;
     },
@@ -510,12 +520,29 @@ export default function NewQuotePage() {
     const salePrice = variantSale ?? productSale;
 
     const effectiveUnitPrice = salePrice ?? (variant ? variant.unitPrice : p.unitPrice);
+    const variantMeta =
+      variant?.metadata && typeof variant.metadata === 'object' && !Array.isArray(variant.metadata)
+        ? (variant.metadata as Record<string, unknown>)
+        : null;
+    const productMeta =
+      p.metadata && typeof p.metadata === 'object' && !Array.isArray(p.metadata)
+        ? (p.metadata as Record<string, unknown>)
+        : null;
     const effectiveVat =
-      variant?.vatRate != null && Number.isFinite(Number(variant.vatRate))
-        ? Math.round(Number(variant.vatRate))
-        : p.vatRate != null && Number.isFinite(Number(p.vatRate))
-          ? Math.round(Number(p.vatRate))
-          : 20;
+      pickVatRate(
+        variant?.vatRate,
+        p.vatRate,
+        variantMeta?.Vat,
+        variantMeta?.vat,
+        variantMeta?.vatRate,
+        variantMeta?.KDV,
+        variantMeta?.Kdv,
+        productMeta?.Vat,
+        productMeta?.vat,
+        productMeta?.vatRate,
+        productMeta?.KDV,
+        productMeta?.Kdv,
+      ) ?? 20;
     const effectivePic =
       variant?.priceIncludesVat !== undefined
         ? variant.priceIncludesVat

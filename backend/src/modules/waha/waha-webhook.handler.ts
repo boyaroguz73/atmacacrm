@@ -52,6 +52,17 @@ function parseVcardPayload(raw: string): { contactName: string | null; contactPh
   return { contactName, contactPhone };
 }
 
+function looksLikeBase64Blob(value: unknown): boolean {
+  if (typeof value !== 'string') return false;
+  const s = value.trim();
+  if (!s) return false;
+  // Common JPEG/PNG base64 prefixes used in WA thumbnails.
+  if (s.startsWith('/9j/')) return true;
+  if (s.startsWith('iVBOR')) return true;
+  // Fallback: long base64-like payload without spaces/newlines.
+  return s.length > 300 && /^[A-Za-z0-9+/=]+$/.test(s);
+}
+
 @Injectable()
 export class WahaWebhookHandler {
   private readonly logger = new Logger(WahaWebhookHandler.name);
@@ -406,7 +417,14 @@ export class WahaWebhookHandler {
       const direction = isFromMe ? MessageDirection.OUTGOING : MessageDirection.INCOMING;
       
       const isVcard = msg.type === 'vcard' || msg.type === 'multi_vcard' || /^BEGIN:VCARD/i.test(String(msg.body || ''));
-      const isLocation = msg.type === 'location' || msg.type === 'live_location';
+      const isLocation =
+        msg.type === 'location' ||
+        msg.type === 'live_location' ||
+        msg._data?.type === 'location' ||
+        msg._data?.type === 'live_location' ||
+        msg.location != null ||
+        (Number.isFinite(Number(msg.lat ?? msg.latitude ?? msg._data?.lat ?? msg._data?.latitude)) &&
+          Number.isFinite(Number(msg.lng ?? msg.longitude ?? msg._data?.lng ?? msg._data?.longitude)));
       const vcardInfo = isVcard ? parseVcardPayload(msg.body || msg._data?.body || '') : null;
       const latRaw = msg.lat ?? msg.latitude ?? msg._data?.lat ?? msg._data?.latitude ?? msg.location?.latitude;
       const lngRaw = msg.lng ?? msg.longitude ?? msg._data?.lng ?? msg._data?.longitude ?? msg.location?.longitude;
@@ -418,10 +436,14 @@ export class WahaWebhookHandler {
         (typeof msg._data?.loc === 'string' && msg._data.loc.trim()) ||
         (typeof msg.location?.name === 'string' && msg.location.name.trim()) ||
         null;
-      const locationAddress =
+      const rawBodyAddress =
         (typeof msg.body === 'string' && msg.body.trim()) ||
         (typeof msg._data?.body === 'string' && msg._data.body.trim()) ||
+        null;
+      const safeBodyAddress = looksLikeBase64Blob(rawBodyAddress) ? null : rawBodyAddress;
+      const locationAddress =
         (typeof msg.location?.address === 'string' && msg.location.address.trim()) ||
+        safeBodyAddress ||
         null;
       const mapsUrl = hasCoords ? `https://maps.google.com/?q=${lat},${lng}` : null;
       const mergedMeta = {
@@ -447,7 +469,7 @@ export class WahaWebhookHandler {
       const bodyPreview = isVcard
         ? `👤 ${vcardInfo?.contactName || 'Kişi kartı'}${vcardInfo?.contactPhone ? ` (${vcardInfo.contactPhone})` : ''}`
         : isLocation
-          ? `📍 ${locationTitle || locationAddress || (hasCoords ? `${lat}, ${lng}` : 'Konum')}`
+          ? `📍 ${locationTitle || locationAddress || (hasCoords ? `${lat}, ${lng}` : 'Konum')}${mapsUrl ? `\n${mapsUrl}` : ''}`
         : (msg.body || (mediaType ? `📎 ${mediaType}` : ''));
 
       const messageData: any = {
