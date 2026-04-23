@@ -6,6 +6,7 @@ import { MessageDirection, MessageStatus, LeadStatus } from '@prisma/client';
 import { Prisma } from '@prisma/client';
 import { LeadsService } from '../leads/leads.service';
 import { ConversationsService } from '../conversations/conversations.service';
+import { normalizeWhatsappChatId } from '../../common/whatsapp-chat-id';
 
 @Injectable()
 export class AutoReplyEngineService {
@@ -267,7 +268,7 @@ export class AutoReplyEngineService {
     if (!session) return null;
     const phoneDigits = String(contact.phone || '').replace(/\D/g, '');
     if (!phoneDigits) return null;
-    const chatId = `${phoneDigits}@c.us`;
+    const chatId = normalizeWhatsappChatId(`${phoneDigits}@c.us`);
 
     const convo = conversationId
       ? await this.prisma.conversation.findUnique({
@@ -355,7 +356,8 @@ export class AutoReplyEngineService {
     text: string,
     run: { id: string; trigger: string; entityType: string; entityId: string; context: unknown; flowId: string },
   ) {
-    const waResponse = await this.wahaService.sendText(sessionName, chatId, text);
+    const normalizedChatId = normalizeWhatsappChatId(chatId);
+    const waResponse = await this.wahaService.sendText(sessionName, normalizedChatId, text);
     const waMessageId =
       typeof waResponse?.id === 'string'
         ? waResponse.id
@@ -593,9 +595,10 @@ export class AutoReplyEngineService {
     if (!text) return;
 
     try {
+      const normalizedChatId = normalizeWhatsappChatId(params.chatId);
       const waResponse = await this.wahaService.sendText(
         params.sessionName,
-        params.chatId,
+        normalizedChatId,
         text,
       );
 
@@ -625,9 +628,11 @@ export class AutoReplyEngineService {
         data: { lastMessageText: text, lastMessageAt: new Date() },
       });
 
-      this.logger.debug(`Otomatik mesaj gönderildi: ${params.chatId}`);
+      this.logger.debug(`Otomatik mesaj gönderildi: ${normalizedChatId}`);
     } catch (err: any) {
-      this.logger.error(`Otomatik mesaj gönderilemedi: ${err.message}`);
+      this.logger.error(
+        `Otomatik mesaj gönderilemedi (session=${params.sessionName}, chatId=${params.chatId}): ${err.message}`,
+      );
     }
   }
 

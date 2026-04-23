@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import api, { getApiErrorMessage } from '@/lib/api';
-import { phoneToWhatsappChatId } from '@/lib/utils';
+import { phoneToWhatsappChatId, rewriteMediaUrlForClient } from '@/lib/utils';
 import { Loader2, MessageCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -16,6 +16,9 @@ type Msg = {
   id: string;
   direction: string;
   body: string | null;
+  mediaType?: 'IMAGE' | 'VIDEO' | 'AUDIO' | 'DOCUMENT' | null;
+  mediaUrl?: string | null;
+  mediaMimeType?: string | null;
   timestamp: string;
 };
 
@@ -121,7 +124,28 @@ export function QuoteEmbeddedChat({
                 : 'mr-auto bg-gray-100 text-gray-800'
             }`}
           >
-            <p className="whitespace-pre-wrap break-words">{m.body || ''}</p>
+            {m.mediaUrl && m.mediaType === 'IMAGE' ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={rewriteMediaUrlForClient(m.mediaUrl)}
+                alt=""
+                className="max-h-44 w-auto rounded-md object-contain mb-1"
+              />
+            ) : null}
+            {m.mediaUrl && m.mediaType === 'VIDEO' ? (
+              <video
+                controls
+                playsInline
+                preload="metadata"
+                className="max-h-44 w-auto rounded-md bg-black mb-1"
+              >
+                <source
+                  src={rewriteMediaUrlForClient(m.mediaUrl)}
+                  type={m.mediaMimeType || 'video/mp4'}
+                />
+              </video>
+            ) : null}
+            {m.body ? <p className="whitespace-pre-wrap break-words">{m.body}</p> : null}
             <p className="text-[9px] text-gray-400 mt-0.5">
               {new Date(m.timestamp).toLocaleTimeString('tr-TR', {
                 hour: '2-digit',

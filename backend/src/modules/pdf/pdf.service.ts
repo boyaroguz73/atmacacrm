@@ -27,6 +27,12 @@ interface PdfSettings {
   currencySymbolPosition: 'before' | 'after';
 }
 
+interface StyledRun {
+  text: string;
+  bold?: boolean;
+  italic?: boolean;
+}
+
 interface LineItem {
   name: string;
   description?: string;
@@ -172,6 +178,84 @@ export class PdfService {
       .trim();
   }
 
+  /** Basit HTML (b/strong, i/em, br, p, li) -> satir bazli stilli metin */
+  private htmlToStyledLines(html: string): StyledRun[][] {
+    if (!html) return [];
+    const raw = String(html);
+    if (!raw.includes('<')) {
+      return raw
+        .split('\n')
+        .map((line) => [{ text: line }]);
+    }
+
+    const decodeEntities = (s: string) =>
+      s
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&nbsp;/g, ' ')
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'");
+
+    const parts = raw.split(/(<[^>]+>)/g).filter((p) => p.length > 0);
+    const lines: StyledRun[][] = [[]];
+    let bold = false;
+    let italic = false;
+
+    const currentLine = () => lines[lines.length - 1];
+    const pushLine = () => lines.push([]);
+    const pushText = (txt: string) => {
+      if (!txt) return;
+      const decoded = decodeEntities(txt).replace(/\r/g, '');
+      const chunks = decoded.split('\n');
+      chunks.forEach((chunk, i) => {
+        if (chunk.length > 0) {
+          currentLine().push({ text: chunk, bold, italic });
+        }
+        if (i < chunks.length - 1) pushLine();
+      });
+    };
+
+    for (const token of parts) {
+      if (!token.startsWith('<')) {
+        pushText(token);
+        continue;
+      }
+      const tag = token.toLowerCase().replace(/\s+/g, ' ').trim();
+      if (tag.startsWith('<br')) {
+        pushLine();
+        continue;
+      }
+      if (tag === '<p>' || tag === '<div>') continue;
+      if (tag === '</p>' || tag === '</div>' || tag === '</ul>' || tag === '</ol>' || tag === '</li>') {
+        pushLine();
+        continue;
+      }
+      if (tag.startsWith('<li')) {
+        if (currentLine().length > 0) pushLine();
+        currentLine().push({ text: '• ', bold, italic });
+        continue;
+      }
+      if (tag === '<b>' || tag === '<strong>') {
+        bold = true;
+        continue;
+      }
+      if (tag === '</b>' || tag === '</strong>') {
+        bold = false;
+        continue;
+      }
+      if (tag === '<i>' || tag === '<em>') {
+        italic = true;
+        continue;
+      }
+      if (tag === '</i>' || tag === '</em>') {
+        italic = false;
+      }
+    }
+
+    return lines;
+  }
+
   private async getSettings(): Promise<PdfSettings> {
     const rows = await this.prisma.systemSetting.findMany({ where: { key: { startsWith: 'pdf_' } } });
     const m = new Map(rows.map((r) => [r.key, r.value]));
@@ -312,6 +396,51 @@ export class PdfService {
             lineBreak: opts.lineBreak ?? false,
           });
           return h;
+        };
+
+        const richTxt = (
+          html: string,
+          x: number,
+          y: number,
+          opts: {
+            width: number;
+            size?: number;
+            color?: string;
+          },
+        ) => {
+          const lines = this.htmlToStyledLines(html);
+          let cursorY = y;
+          const width = opts.width;
+          const size = opts.size ?? 8;
+          const color = opts.color || '#333333';
+
+          for (const line of lines) {
+            if (!line.length) {
+              cursorY += Math.max(6, size * 0.8);
+              continue;
+            }
+            doc.fillColor(color);
+            doc.fontSize(size);
+            doc.y = cursorY;
+
+            line.forEach((run, idx) => {
+              const content = this.t(run.text || '');
+              if (run.bold) B(); else R();
+              doc.text(
+                content,
+                idx === 0 ? x : undefined,
+                idx === 0 ? cursorY : undefined,
+                {
+                  width,
+                  continued: idx < line.length - 1,
+                  lineBreak: idx === line.length - 1,
+                  oblique: !!run.italic,
+                },
+              );
+            });
+            cursorY = doc.y;
+          }
+          return cursorY - y;
         };
 
         const ML = 40; // margin left
@@ -610,12 +739,17 @@ export class PdfService {
           rowY = 28;
         };
         if (data.notes) {
-          const notesPlain = this.htmlToPlainText(data.notes);
+          const notesRaw = data.notes;
+          const notesPlain = this.htmlToPlainText(notesRaw);
           R(); doc.fontSize(8).fillColor('#444');
           const h = doc.heightOfString(this.t(notesPlain), { width: PW }) + 8;
           ensureSpace(h);
-          doc.text(this.t(notesPlain), ML, rowY, { width: PW, lineBreak: true });
-          rowY += h + 6;
+          if (String(notesRaw).includes('<')) {
+            rowY += richTxt(String(notesRaw), ML, rowY, { width: PW, size: 8, color: '#444' }) + 6;
+          } else {
+            doc.text(this.t(notesPlain), ML, rowY, { width: PW, lineBreak: true });
+            rowY += h + 6;
+          }
         }
         if (termsText) {
           rowY += 4;
@@ -636,8 +770,17 @@ export class PdfService {
             const block = p.replace(/\n/g, ' \n');
             const hBlock = doc.heightOfString(block, { width: termsBlockWidth }) + 3;
             ensureSpace(hBlock + 10);
-            doc.text(block, ML, rowY, { width: termsBlockWidth, lineBreak: true });
-            rowY += hBlock + 3;
+            if (String(data.termsOverride?.trim() || settings.terms).includes('<')) {
+              rowY += richTxt(String(data.termsOverride?.trim() || settings.terms), ML, rowY, {
+                width: termsBlockWidth,
+                size: 7.5,
+                color: '#333333',
+              }) + 3;
+              break;
+            } else {
+              doc.text(block, ML, rowY, { width: termsBlockWidth, lineBreak: true });
+              rowY += hBlock + 3;
+            }
           }
           rowY += 6;
         }
@@ -645,8 +788,16 @@ export class PdfService {
           R(); doc.fontSize(8).fillColor('#444');
           const h = doc.heightOfString(this.t(footerNoteText), { width: PW }) + 8;
           ensureSpace(h);
-          doc.text(this.t(footerNoteText), ML, rowY, { width: PW, lineBreak: true });
-          rowY += h + 8;
+          if (String(data.footerNoteOverride?.trim() || settings.footerNote).includes('<')) {
+            rowY += richTxt(String(data.footerNoteOverride?.trim() || settings.footerNote), ML, rowY, {
+              width: PW,
+              size: 8,
+              color: '#444',
+            }) + 8;
+          } else {
+            doc.text(this.t(footerNoteText), ML, rowY, { width: PW, lineBreak: true });
+            rowY += h + 8;
+          }
         }
         if (settings.bankInfo || settings.bank2Info || bankQrBuffer) {
           const qrSize = bankQrBuffer ? 82 : 0;

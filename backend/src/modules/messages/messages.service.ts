@@ -108,6 +108,41 @@ export class MessagesService implements OnModuleInit {
       );
   }
 
+  private ensureAbsoluteHttpUrl(raw: string, storeBase?: string | null): string {
+    const value = String(raw || '').trim();
+    if (!value) return '';
+    if (/^https?:\/\//i.test(value)) return value;
+    if (value.startsWith('//')) return `https:${value}`;
+    if (/^[a-z0-9.-]+\.[a-z]{2,}(\/.*)?$/i.test(value)) return `https://${value}`;
+    if (value.startsWith('/')) {
+      const base = String(storeBase || '').trim().replace(/\/+$/, '');
+      return base ? `${base}${value}` : value;
+    }
+    const base = String(storeBase || '').trim().replace(/\/+$/, '');
+    return base ? `${base}/${value.replace(/^\/+/, '')}` : value;
+  }
+
+  private async resolveStoreBaseUrl(organizationId?: string | null): Promise<string> {
+    if (!organizationId) return '';
+    const integ = await this.prisma.orgIntegration.findUnique({
+      where: {
+        organizationId_integrationKey: {
+          organizationId,
+          integrationKey: 'tsoft',
+        },
+      },
+      select: { config: true },
+    });
+    const cfg =
+      integ?.config && typeof integ.config === 'object' && !Array.isArray(integ.config)
+        ? (integ.config as Record<string, unknown>)
+        : null;
+    const baseUrl = typeof cfg?.baseUrl === 'string' ? cfg.baseUrl.trim() : '';
+    if (!baseUrl) return '';
+    const normalizedBase = baseUrl.replace(/\/+$/, '');
+    return /^https?:\/\//i.test(normalizedBase) ? normalizedBase : `https://${normalizedBase}`;
+  }
+
   async getByConversation(
     conversationId: string,
     params: { cursor?: string; limit?: number },
@@ -521,7 +556,12 @@ export class MessagesService implements OnModuleInit {
             '',
         ).trim()
       : '';
-    const siteLink = ((product.productUrl || '').trim() || fallbackMainLink).trim();
+    const storeBase = await this.resolveStoreBaseUrl(conv.contact.organizationId);
+    const siteLinkRaw =
+      ((product.productUrl || '').trim() ||
+        fallbackMainLink ||
+        String(variantMeta?.ProductUrl ?? variantMeta?.productUrl ?? '').trim());
+    const siteLink = this.ensureAbsoluteHttpUrl(siteLinkRaw, storeBase);
     const caption = [
       effName,
       priceLine,
