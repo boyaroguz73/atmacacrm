@@ -530,18 +530,20 @@ export default function NewQuotePage() {
         : null;
     const effectiveVat =
       pickVatRate(
-        variant?.vatRate,
+        // Ürün listesinde görünen KDV oranını öncele.
         p.vatRate,
-        variantMeta?.Vat,
-        variantMeta?.vat,
-        variantMeta?.vatRate,
-        variantMeta?.KDV,
-        variantMeta?.Kdv,
         productMeta?.Vat,
         productMeta?.vat,
         productMeta?.vatRate,
         productMeta?.KDV,
         productMeta?.Kdv,
+        // Varyantta açık oran varsa ikinci öncelik.
+        variantMeta?.Vat,
+        variantMeta?.vat,
+        variantMeta?.vatRate,
+        variantMeta?.KDV,
+        variantMeta?.Kdv,
+        variant?.vatRate,
       ) ?? 20;
     const effectivePic =
       variant?.priceIncludesVat !== undefined
