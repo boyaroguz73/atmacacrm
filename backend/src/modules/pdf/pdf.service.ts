@@ -493,12 +493,15 @@ export class PdfService {
             const logoHeight = settings.logoHeight || 44;
             const maxLogoWidth = Math.max(80, titleBoxX - ML - 20);
             const logoWidth = Math.min(maxLogoWidth, Math.round((logoHeight * 150) / 44));
+            const img = (doc as unknown as { openImage(b: Buffer): { width: number; height: number } }).openImage(logoBuffer);
+            const ratio = Math.min(logoWidth / img.width, logoHeight / img.height);
+            const renderedH = img.height * ratio;
             doc.image(logoBuffer, logoX, logoY, { fit: [logoWidth, logoHeight] });
-            logoBottom = logoY + logoHeight;
+            logoBottom = logoY + renderedH;
           } catch { /* skip */ }
         }
 
-        let cy = logoBottom + (logoBuffer ? 3 : 0);
+        let cy = logoBottom + (logoBuffer ? 1 : 0);
         const metaW = titleBoxX - ML - 16;
         if (metaW > 40) {
           const infoLines: string[] = [];
