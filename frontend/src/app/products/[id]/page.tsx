@@ -7,6 +7,7 @@ import api, { getApiErrorMessage } from '@/lib/api';
 import toast from 'react-hot-toast';
 import { useAuthStore } from '@/store/auth';
 import { rewriteMediaUrlForClient, displayCurrency } from '@/lib/utils';
+import { HtmlEditor } from '@/components/HtmlEditor';
 import {
   ArrowLeft,
   Loader2,
@@ -365,13 +366,21 @@ export default function ProductDetailPage() {
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-500 mb-1">Açıklama</label>
-            <textarea
-              value={form.description}
-              onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
-              disabled={!isAdmin}
-              rows={4}
-              className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm disabled:bg-gray-50"
-            />
+            {isAdmin ? (
+              <HtmlEditor
+                value={form.description}
+                onChange={(html) => setForm((f) => ({ ...f, description: html }))}
+                placeholder="Ürün açıklamasını HTML olarak yazın…"
+                minHeight="140px"
+              />
+            ) : (
+              <div
+                className="w-full min-h-[140px] px-3 py-2 rounded-xl border border-gray-200 text-sm bg-gray-50 prose prose-sm max-w-none"
+                dangerouslySetInnerHTML={{
+                  __html: form.description || '<p class="text-gray-400">Açıklama yok</p>',
+                }}
+              />
+            )}
           </div>
           <div className="grid sm:grid-cols-2 gap-4">
             <div>
@@ -532,75 +541,6 @@ export default function ProductDetailPage() {
               placeholder='["https://..."]'
               className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm font-mono disabled:bg-gray-50"
             />
-          </div>
-        </div>
-
-        <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5 space-y-4">
-          <h2 className="text-sm font-semibold text-gray-800">Google / feed alanları</h2>
-          <div className="grid sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">google_product_category</label>
-              <input
-                value={form.googleProductCategory}
-                onChange={(e) => setForm((f) => ({ ...f, googleProductCategory: e.target.value }))}
-                disabled={!isAdmin}
-                className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm disabled:bg-gray-50"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">google_product_type</label>
-              <input
-                value={form.googleProductType}
-                onChange={(e) => setForm((f) => ({ ...f, googleProductType: e.target.value }))}
-                disabled={!isAdmin}
-                className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm disabled:bg-gray-50"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">custom_label_0</label>
-              <input
-                value={form.googleCustomLabel0}
-                onChange={(e) => setForm((f) => ({ ...f, googleCustomLabel0: e.target.value }))}
-                disabled={!isAdmin}
-                className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm disabled:bg-gray-50"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">condition</label>
-              <input
-                value={form.googleCondition}
-                onChange={(e) => setForm((f) => ({ ...f, googleCondition: e.target.value }))}
-                disabled={!isAdmin}
-                className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm disabled:bg-gray-50"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">availability</label>
-              <input
-                value={form.googleAvailability}
-                onChange={(e) => setForm((f) => ({ ...f, googleAvailability: e.target.value }))}
-                disabled={!isAdmin}
-                className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm disabled:bg-gray-50"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">identifier_exists</label>
-              <input
-                value={form.googleIdentifierExists}
-                onChange={(e) => setForm((f) => ({ ...f, googleIdentifierExists: e.target.value }))}
-                disabled={!isAdmin}
-                className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm disabled:bg-gray-50"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">GTIN</label>
-              <input
-                value={form.gtin}
-                onChange={(e) => setForm((f) => ({ ...f, gtin: e.target.value }))}
-                disabled={!isAdmin}
-                className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm disabled:bg-gray-50"
-              />
-            </div>
           </div>
         </div>
 

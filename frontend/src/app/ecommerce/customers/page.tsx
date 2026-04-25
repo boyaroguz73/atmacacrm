@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import api, { getApiErrorMessage } from '@/lib/api';
 import toast from 'react-hot-toast';
-import { Loader2, RefreshCw, Users, ChevronLeft, ChevronRight, Download } from 'lucide-react';
+import { Loader2, Users, ChevronLeft, ChevronRight } from 'lucide-react';
 
 type SiteCustomer = {
   id: string;
@@ -22,7 +22,6 @@ export default function EcommerceCustomersPage() {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [loading, setLoading] = useState(true);
-  const [syncing, setSyncing] = useState(false);
 
   const load = useCallback(async (p: number) => {
     setLoading(true);
@@ -47,50 +46,15 @@ export default function EcommerceCustomersPage() {
     void load(page);
   }, [page, load]);
 
-  const syncCustomers = async () => {
-    setSyncing(true);
-    try {
-      const { data } = await api.post('/ecommerce/tsoft/sync-customers', {}, { timeout: 120_000 });
-      toast.success(
-        `Senkron tamamlandı: ${data?.matched ?? 0} eşleşti, ${data?.created ?? 0} yeni kişi oluştu`,
-      );
-      await load(page);
-    } catch (err) {
-      toast.error(getApiErrorMessage(err, 'Senkron başarısız'));
-    } finally {
-      setSyncing(false);
-    }
-  };
-
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div>
         <div>
           <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
             <Users className="w-7 h-7 text-orange-500" />
             Site Üyeleri
           </h1>
           <p className="text-sm text-gray-500 mt-1">T-Soft mağaza üyeleri listesi</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={syncCustomers}
-            disabled={syncing}
-            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-orange-50 text-orange-800 border border-orange-200 hover:bg-orange-100 text-sm font-medium disabled:opacity-50"
-          >
-            {syncing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
-            Üyeleri CRM’e senkronla
-          </button>
-          <button
-            type="button"
-            onClick={() => void load(page)}
-            disabled={loading}
-            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-gray-200 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-          >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-            Yenile
-          </button>
         </div>
       </div>
 

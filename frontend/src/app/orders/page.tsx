@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import api, { getApiErrorMessage } from '@/lib/api';
 import { formatPhone } from '@/lib/utils';
@@ -180,6 +180,7 @@ function contactDisplayName(o: SalesOrder['contact']) {
 
 export default function OrdersPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { user, loadFromStorage } = useAuthStore();
   const showTsoftTools = user?.role === 'ADMIN';
   const [ecomProvider, setEcomProvider] = useState<string | null>(null);
@@ -249,6 +250,12 @@ export default function OrdersPage() {
   useEffect(() => {
     fetchOrders();
   }, [fetchOrders]);
+
+  useEffect(() => {
+    const tsoftFromQuery = searchParams.get('tsoft') === '1';
+    setSiteOrdersOnly(tsoftFromQuery);
+    setPage(1);
+  }, [searchParams]);
 
   useEffect(() => {
     let cancelled = false;

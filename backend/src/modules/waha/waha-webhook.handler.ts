@@ -77,6 +77,7 @@ function inferMediaTypeFromHints(msg: any, mediaMimeType?: string): string | und
   // WA payload bazı kurulumlarda thumbnail/mediaType yüzünden IMAGE sinyali verebiliyor.
   // Mesaj tipi document ise öncelik her zaman DOCUMENT olmalı.
   if (typeHints.some((t) => t.includes('document'))) return 'DOCUMENT';
+  if (/\.(pdf|docx?|xlsx?|pptx?|txt|csv|zip|rar|7z)\b/.test(fileLike)) return 'DOCUMENT';
 
   if (mime.startsWith('image/') || typeHints.some((t) => t.includes('image') || t.includes('sticker'))) return 'IMAGE';
   if (mime.startsWith('video/') || typeHints.some((t) => t.includes('video'))) return 'VIDEO';
@@ -85,6 +86,30 @@ function inferMediaTypeFromHints(msg: any, mediaMimeType?: string): string | und
   if (/\.(jpe?g|png|gif|webp|bmp|heic|heif)\b/.test(fileLike)) return 'IMAGE';
   if (/\.(mp4|mov|m4v|webm|3gp)\b/.test(fileLike)) return 'VIDEO';
   if (/\.(ogg|opus|mp3|m4a|aac|wav)\b/.test(fileLike)) return 'AUDIO';
+  return undefined;
+}
+
+function inferDocumentMimeFromFilename(filename?: string): string | undefined {
+  const f = String(filename || '').toLowerCase().trim();
+  if (!f) return undefined;
+  if (f.endsWith('.pdf')) return 'application/pdf';
+  if (f.endsWith('.doc')) return 'application/msword';
+  if (f.endsWith('.docx')) {
+    return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+  }
+  if (f.endsWith('.xls')) return 'application/vnd.ms-excel';
+  if (f.endsWith('.xlsx')) {
+    return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+  }
+  if (f.endsWith('.ppt')) return 'application/vnd.ms-powerpoint';
+  if (f.endsWith('.pptx')) {
+    return 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+  }
+  if (f.endsWith('.txt')) return 'text/plain';
+  if (f.endsWith('.csv')) return 'text/csv';
+  if (f.endsWith('.zip')) return 'application/zip';
+  if (f.endsWith('.rar')) return 'application/x-rar-compressed';
+  if (f.endsWith('.7z')) return 'application/x-7z-compressed';
   return undefined;
 }
 
@@ -374,6 +399,18 @@ export class WahaWebhookHandler {
 
       if (hasMediaFlag || isMediaType) {
         mediaMimeType = msg.mimetype || msg._data?.mimetype;
+        const rawFilename =
+          (typeof msg?._data?.filename === 'string' && msg._data.filename.trim()) ||
+          (typeof msg?.media?.filename === 'string' && msg.media.filename.trim()) ||
+          (typeof msg?.filename === 'string' && msg.filename.trim()) ||
+          '';
+        const inferredDocMimeFromFilename = inferDocumentMimeFromFilename(rawFilename);
+        if (
+          inferredDocMimeFromFilename &&
+          (!mediaMimeType || String(mediaMimeType).toLowerCase().trim() === 'application/octet-stream')
+        ) {
+          mediaMimeType = inferredDocMimeFromFilename;
+        }
 
         mediaType = inferMediaTypeFromHints(msg, mediaMimeType);
         const isDocumentPayload =
@@ -384,6 +421,9 @@ export class WahaWebhookHandler {
           mediaType = 'DOCUMENT';
         }
         if (!mediaType && (msg.hasMedia || msg.type === 'document' || msg._data?.type === 'document')) {
+          mediaType = 'DOCUMENT';
+        }
+        if (inferredDocMimeFromFilename) {
           mediaType = 'DOCUMENT';
         }
 
@@ -404,6 +444,8 @@ export class WahaWebhookHandler {
           originalMediaUrl: null,
           thumbnailBase64,
           originalMimeType: mediaMimeType || null,
+          filename: rawFilename || null,
+          originalFilename: rawFilename || null,
           originalFileSize: null,
           width: msg._data?.width || msg.media?.width || null,
           height: msg._data?.height || msg.media?.height || null,

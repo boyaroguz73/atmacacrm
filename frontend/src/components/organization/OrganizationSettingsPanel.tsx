@@ -2,9 +2,11 @@
 
 import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import api from '@/lib/api';
+import api, { getApiErrorMessage } from '@/lib/api';
 import toast from 'react-hot-toast';
 import { useAuthStore } from '@/store/auth';
+import { rewriteMediaUrlForClient } from '@/lib/utils';
+import { HtmlEditor } from '@/components/HtmlEditor';
 import {
   Building2,
   Palette,
@@ -24,6 +26,7 @@ import {
   ChevronRight,
   Shield,
   Users as UsersIcon,
+  Trash2,
 } from 'lucide-react';
 import {
   MENU_CHILD_KEYS,
@@ -48,6 +51,7 @@ export type OrganizationSettingsPanelProps = {
 };
 
 type MenuTab = 'AGENT' | 'ACCOUNTANT' | 'ADMIN';
+type SystemSettingItem = { key: string; value: string };
 
 export default function OrganizationSettingsPanel({
   backHref,
@@ -97,9 +101,12 @@ export default function OrganizationSettingsPanel({
   const [menuSaving, setMenuSaving] = useState(false);
   const [menuSuborder, setMenuSuborder] = useState<Record<string, string[]>>({});
   const [menuSubHidden, setMenuSubHidden] = useState<Record<string, string[]>>({});
+  const [pdfSettings, setPdfSettings] = useState<SystemSettingItem[]>([]);
+  const canManagePdfSettings = user?.role === 'ADMIN' || user?.role === 'SUPERADMIN';
 
   useEffect(() => {
     fetchOrg();
+    fetchPdfSettings();
   }, []);
 
   const currentFormState = {
@@ -225,6 +232,19 @@ export default function OrganizationSettingsPanel({
     } finally {
       setLoading(false);
     }
+  };
+
+  const fetchPdfSettings = async () => {
+    try {
+      const { data } = await api.get<SystemSettingItem[]>('/system-settings');
+      setPdfSettings(Array.isArray(data) ? data : []);
+    } catch {
+      // Sessiz geçiyoruz; PDF ayarları yüklenemese de organizasyon ekranı kullanılabilir kalsın.
+    }
+  };
+
+  const upsertPdfSetting = (key: string, value: string) => {
+    setPdfSettings((prev) => [...prev.filter((s) => s.key !== key), { key, value }]);
   };
 
   const handleSave = async () => {
@@ -882,6 +902,350 @@ export default function OrganizationSettingsPanel({
               })()}
             </>
           )}
+        </div>
+      ) : null}
+
+      {canManagePdfSettings ? (
+        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 space-y-6">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900">PDF Şablon Ayarları</h2>
+            <p className="text-sm text-gray-500 mt-1">Fatura ve teklif PDF'lerinde görünecek bilgileri düzenleyin.</p>
+          </div>
+
+          <div className="rounded-xl border border-gray-200 bg-white p-4 space-y-4">
+            <div>
+              <p className="text-sm font-semibold text-gray-900">Firma Bilgileri</p>
+              <p className="text-xs text-gray-500 mt-0.5">PDF üst bilgisinde ve firma bloğunda görünen temel bilgiler.</p>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {[
+                { key: 'pdf_company_name', label: 'Firma Adı *', placeholder: 'Firma adı' },
+                { key: 'pdf_company_phone', label: 'Telefon', placeholder: 'Telefon numarası' },
+                { key: 'pdf_company_email', label: 'E-posta', placeholder: 'ornek@firma.com' },
+                { key: 'pdf_company_website', label: 'Web Sitesi', placeholder: 'https://firma.com' },
+                { key: 'pdf_company_tax_office', label: 'Vergi Dairesi', placeholder: 'Vergi dairesi' },
+                { key: 'pdf_company_tax_number', label: 'Vergi No', placeholder: 'Vergi numarası' },
+                { key: 'pdf_company_mersis_no', label: 'Mersis No', placeholder: 'Mersis numarası' },
+              ].map((field) => (
+                <div key={field.key}>
+                  <label className="block text-xs font-medium text-gray-600 mb-1.5">{field.label}</label>
+                  <input
+                    type="text"
+                    defaultValue={pdfSettings.find((s) => s.key === field.key)?.value || ''}
+                    placeholder={field.placeholder}
+                    onBlur={async (e) => {
+                      try {
+                        await api.patch('/system-settings', { key: field.key, value: e.target.value });
+                        upsertPdfSetting(field.key, e.target.value);
+                        toast.success(`${field.label} güncellendi`);
+                      } catch {
+                        toast.error('Güncellenemedi');
+                      }
+                    }}
+                    className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-whatsapp"
+                  />
+                </div>
+              ))}
+              <div className="md:col-span-2">
+                <label className="block text-xs font-medium text-gray-600 mb-1.5">Firma Adresi</label>
+                <textarea
+                  defaultValue={pdfSettings.find((s) => s.key === 'pdf_company_address')?.value || ''}
+                  placeholder="Firma adresi"
+                  onBlur={async (e) => {
+                    try {
+                      await api.patch('/system-settings', { key: 'pdf_company_address', value: e.target.value });
+                      upsertPdfSetting('pdf_company_address', e.target.value);
+                      toast.success('Adres güncellendi');
+                    } catch {
+                      toast.error('Güncellenemedi');
+                    }
+                  }}
+                  rows={3}
+                  className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-whatsapp resize-y"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-gray-200 bg-white p-4 space-y-4">
+            <div>
+              <p className="text-sm font-semibold text-gray-900">Logo Ayarları</p>
+              <p className="text-xs text-gray-500 mt-0.5">PDF üst kısmında kullanılacak logo görseli ve boyutu.</p>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-[1fr_220px] gap-4 items-start">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1.5">Logo URL (https://... veya /uploads/...)</label>
+                <input
+                  type="text"
+                  defaultValue={pdfSettings.find((s) => s.key === 'pdf_logo_url')?.value || ''}
+                  onBlur={async (e) => {
+                    try {
+                      await api.patch('/system-settings', { key: 'pdf_logo_url', value: e.target.value });
+                      upsertPdfSetting('pdf_logo_url', e.target.value);
+                      toast.success('Logo URL güncellendi');
+                    } catch {
+                      toast.error('Güncellenemedi');
+                    }
+                  }}
+                  placeholder="https://example.com/logo.png"
+                  className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-whatsapp"
+                />
+                <p className="text-xs text-gray-400 mt-1.5">Logo PNG/JPG formatında olmalı. Tarayıcıdan erişilebilir bir URL girin.</p>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1.5">Yükseklik (px)</label>
+                <input
+                  type="number"
+                  min={20}
+                  max={120}
+                  defaultValue={pdfSettings.find((s) => s.key === 'pdf_logo_height')?.value || '44'}
+                  onBlur={async (e) => {
+                    const nextValue = String(Math.max(20, Math.min(120, Number(e.target.value) || 44)));
+                    e.target.value = nextValue;
+                    try {
+                      await api.patch('/system-settings', { key: 'pdf_logo_height', value: nextValue });
+                      upsertPdfSetting('pdf_logo_height', nextValue);
+                      toast.success('Logo boyutu güncellendi');
+                    } catch {
+                      toast.error('Güncellenemedi');
+                    }
+                  }}
+                  className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-whatsapp"
+                />
+                <p className="text-xs text-gray-400 mt-1.5">20 - 120 px arası. Varsayılan: 44.</p>
+              </div>
+            </div>
+            {pdfSettings.find((s) => s.key === 'pdf_logo_url')?.value ? (
+              <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+                <p className="text-xs text-gray-500 mb-2">Logo önizleme</p>
+                <img
+                  src={pdfSettings.find((s) => s.key === 'pdf_logo_url')?.value}
+                  alt="Logo önizleme"
+                  className="h-14 object-contain border border-gray-200 rounded-lg bg-white p-1"
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).style.display = 'none';
+                  }}
+                />
+              </div>
+            ) : null}
+          </div>
+
+          <div className="rounded-xl border border-gray-200 bg-white p-4 space-y-4">
+            <div>
+              <p className="text-sm font-semibold text-gray-900">Banka Bilgileri</p>
+              <p className="text-xs text-gray-500 mt-0.5">IBAN ve hesap bilgileri PDF'de ödeme alanında gösterilir.</p>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {[
+                { key: 'pdf_bank_info', label: 'Banka 1 (IBAN, Hesap No vb.)' },
+                { key: 'pdf_bank2_info', label: 'Banka 2 (opsiyonel)' },
+              ].map((field) => (
+                <div key={field.key}>
+                  <label className="block text-xs font-medium text-gray-600 mb-1.5">{field.label}</label>
+                  <textarea
+                    defaultValue={pdfSettings.find((s) => s.key === field.key)?.value || ''}
+                    onBlur={async (e) => {
+                      try {
+                        await api.patch('/system-settings', { key: field.key, value: e.target.value });
+                        upsertPdfSetting(field.key, e.target.value);
+                        toast.success('Banka bilgisi güncellendi');
+                      } catch {
+                        toast.error('Güncellenemedi');
+                      }
+                    }}
+                    rows={4}
+                    placeholder="Banka Adı: ...\nIBAN: TR..."
+                    className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-whatsapp resize-y font-mono leading-6"
+                  />
+                </div>
+              ))}
+              <div className="md:col-span-2 rounded-xl border border-gray-200 bg-gray-50/80 p-4">
+                <label className="block text-xs font-medium text-gray-600 mb-2">Banka QR (FAST / EFT - PDF sağ alt)</label>
+                <p className="text-xs text-gray-500 mb-3">
+                  Teklif ve sipariş PDF'lerinde banka metinleriyle aynı blokta, sağ altta basılır. PNG veya JPG yükleyin.
+                </p>
+                <div className="flex flex-wrap items-center gap-3">
+                  <label className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 cursor-pointer transition-colors">
+                    <ImageIcon className="w-4 h-4 text-gray-500" />
+                    Görsel seç
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp,image/gif"
+                      className="hidden"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        e.target.value = '';
+                        if (!file) return;
+                        const fd = new FormData();
+                        fd.append('file', file);
+                        try {
+                          const { data } = await api.post<{ url: string }>('/system-settings/upload-bank-qr', fd, {
+                            headers: { 'Content-Type': 'multipart/form-data' },
+                          });
+                          upsertPdfSetting('pdf_bank_qr_url', data.url);
+                          toast.success('Banka QR kaydedildi');
+                        } catch (err) {
+                          toast.error(getApiErrorMessage(err, 'Yüklenemedi'));
+                        }
+                      }}
+                    />
+                  </label>
+                  {pdfSettings.find((s) => s.key === 'pdf_bank_qr_url')?.value ? (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          await api.patch('/system-settings', { key: 'pdf_bank_qr_url', value: '' });
+                          setPdfSettings((prev) => prev.filter((s) => s.key !== 'pdf_bank_qr_url'));
+                          toast.success('QR kaldırıldı');
+                        } catch {
+                          toast.error('Kaldırılamadı');
+                        }
+                      }}
+                      className="inline-flex items-center gap-1.5 px-3 py-2 text-sm text-red-600 hover:bg-red-50 rounded-lg border border-red-100"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                      Kaldır
+                    </button>
+                  ) : null}
+                </div>
+                {pdfSettings.find((s) => s.key === 'pdf_bank_qr_url')?.value ? (
+                  <div className="mt-3 flex items-start gap-3">
+                    <img
+                      src={rewriteMediaUrlForClient(pdfSettings.find((s) => s.key === 'pdf_bank_qr_url')!.value)}
+                      alt="Banka QR önizleme"
+                      className="w-28 h-28 object-contain border border-gray-200 rounded-lg bg-white p-1"
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).style.display = 'none';
+                      }}
+                    />
+                    <p className="text-[11px] text-gray-400 pt-1">
+                      {pdfSettings.find((s) => s.key === 'pdf_bank_qr_url')?.value}
+                    </p>
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-gray-200 bg-white p-4 space-y-4">
+            <div>
+              <p className="text-sm font-semibold text-gray-900">PDF Metinleri (Koşullar & Notlar)</p>
+              <p className="text-xs text-gray-500 mt-0.5">PDF'de görünecek metinler</p>
+            </div>
+            <div className="space-y-4">
+              {[
+                { key: 'pdf_terms', label: 'Ödeme Koşulları', minHeight: '110px' },
+                { key: 'pdf_footer_note', label: 'Alt Not (PDF footer)', minHeight: '80px' },
+              ].map((field) => (
+                <div key={field.key}>
+                  <label className="block text-xs font-medium text-gray-600 mb-1.5">{field.label}</label>
+                  <HtmlEditor
+                    value={pdfSettings.find((s) => s.key === field.key)?.value || ''}
+                    onChange={() => {}}
+                    onBlurSave={async (html) => {
+                      try {
+                        await api.patch('/system-settings', { key: field.key, value: html });
+                        upsertPdfSetting(field.key, html);
+                        toast.success(`${field.label} güncellendi`);
+                      } catch {
+                        toast.error('Güncellenemedi');
+                      }
+                    }}
+                    placeholder={`${field.label} girin...`}
+                    minHeight={field.key === 'pdf_terms' ? '150px' : field.minHeight}
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-gray-200 bg-white p-4 space-y-4">
+            <div>
+              <p className="text-sm font-semibold text-gray-900">Görünüm Ayarları</p>
+              <p className="text-xs text-gray-500 mt-0.5">Renk, para birimi konumu ve görünüm tercihleri.</p>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1.5">Ana Renk (HEX)</label>
+                <div className="flex gap-2 items-center">
+                  <input
+                    type="color"
+                    defaultValue={pdfSettings.find((s) => s.key === 'pdf_primary_color')?.value || '#1a7a4a'}
+                    onBlur={async (e) => {
+                      try {
+                        await api.patch('/system-settings', { key: 'pdf_primary_color', value: e.target.value });
+                        upsertPdfSetting('pdf_primary_color', e.target.value);
+                        toast.success('Renk güncellendi');
+                      } catch {
+                        toast.error('Güncellenemedi');
+                      }
+                    }}
+                    className="h-10 w-14 rounded border border-gray-200 cursor-pointer"
+                  />
+                  <input
+                    type="text"
+                    defaultValue={pdfSettings.find((s) => s.key === 'pdf_primary_color')?.value || '#1a7a4a'}
+                    onBlur={async (e) => {
+                      try {
+                        await api.patch('/system-settings', { key: 'pdf_primary_color', value: e.target.value });
+                        upsertPdfSetting('pdf_primary_color', e.target.value);
+                        toast.success('Renk güncellendi');
+                      } catch {
+                        toast.error('Güncellenemedi');
+                      }
+                    }}
+                    placeholder="#1a7a4a"
+                    className="flex-1 px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-whatsapp"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1.5">Para Birimi Konumu</label>
+                <select
+                  defaultValue={pdfSettings.find((s) => s.key === 'pdf_currency_position')?.value || 'after'}
+                  onChange={async (e) => {
+                    try {
+                      await api.patch('/system-settings', { key: 'pdf_currency_position', value: e.target.value });
+                      upsertPdfSetting('pdf_currency_position', e.target.value);
+                      toast.success('Güncellendi');
+                    } catch {
+                      toast.error('Güncellenemedi');
+                    }
+                  }}
+                  className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-whatsapp"
+                >
+                  <option value="after">Sonra (1.000,00 TL)</option>
+                  <option value="before">Önce (TL 1.000,00)</option>
+                </select>
+              </div>
+              <div className="flex items-center justify-between gap-3 rounded-lg border border-gray-200 bg-gray-50/60 px-3 py-2.5">
+                <label className="text-xs font-medium text-gray-700">İmza Alanı Göster</label>
+                <button
+                  onClick={async () => {
+                    const current = pdfSettings.find((s) => s.key === 'pdf_show_signature')?.value !== 'false';
+                    try {
+                      const next = current ? 'false' : 'true';
+                      await api.patch('/system-settings', { key: 'pdf_show_signature', value: next });
+                      upsertPdfSetting('pdf_show_signature', next);
+                      toast.success('Güncellendi');
+                    } catch {
+                      toast.error('Güncellenemedi');
+                    }
+                  }}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                    pdfSettings.find((s) => s.key === 'pdf_show_signature')?.value !== 'false' ? 'bg-whatsapp' : 'bg-gray-200'
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                      pdfSettings.find((s) => s.key === 'pdf_show_signature')?.value !== 'false' ? 'translate-x-6' : 'translate-x-1'
+                    }`}
+                  />
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       ) : null}
 

@@ -23,11 +23,6 @@ import {
   MessagesSquare,
   MessageCircleReply,
   Clock,
-  UserX,
-  TrendingDown,
-  History,
-  ShieldAlert,
-  FileText,
   Zap,
   Activity,
   Building2,
@@ -42,7 +37,6 @@ import {
   ClipboardList,
   Calculator,
   Truck,
-  Warehouse,
   X,
 } from 'lucide-react';
 
@@ -112,22 +106,6 @@ const menuItems: MenuItem[] = [
   { href: '/tasks', label: 'Görevler', icon: CalendarCheck, menuKey: 'tasks' },
   { href: '/admin/auto-reply', label: 'Otomasyon', icon: Zap, adminOnly: true, menuKey: 'admin' },
   { href: '/calendar', label: 'Takvim', icon: CalendarDays, menuKey: 'calendar' },
-  {
-    href: '/admin',
-    label: 'Yönetim',
-    icon: ShieldAlert,
-    adminOnly: true,
-    menuKey: 'admin',
-    children: [
-      { href: '/inbox?filter=unassigned', label: 'Atanmamış', icon: UserX, key: 'unassigned', param: 'unassigned' },
-      { href: '/leads?status=LOST', label: 'Kaçırılan Müşteriler', icon: TrendingDown, key: 'lost_leads' },
-      { href: '/admin/history', label: 'Konuşma Geçmişi', icon: History, key: 'admin_history' },
-      { href: '/admin/templates', label: 'Mesaj Şablonları', icon: FileText, key: 'admin_templates' },
-      { href: '/admin/audit-log', label: 'Aktivite Logu', icon: Activity, key: 'admin_audit_log' },
-      { href: '/admin/suppliers', label: 'Tedarikçiler', icon: Warehouse, key: 'admin_suppliers' },
-      { href: '/admin/cargo-companies', label: 'Kargo Firmaları', icon: Truck, key: 'admin_cargo_companies' },
-    ],
-  },
   { href: '/reports', label: 'Raporlar', icon: BarChart3, adminOnly: true, menuKey: 'reports' },
   { href: '/admin/integrations', label: 'Entegrasyonlar', icon: Plug, adminOnly: true, menuKey: 'integrations' },
   { href: '/settings', label: 'Ayarlar', icon: Settings, adminOnly: true, menuKey: 'settings' },
@@ -419,7 +397,7 @@ export default function Sidebar({
       if (ecommerceProvider === 'tsoft') {
         ecommerceChildren.push({
           href: '/orders?tsoft=1',
-          label: `Mağaza (${providerLabel(ecommerceProvider)})`,
+          label: `Siparişler (${providerLabel(ecommerceProvider)})`,
           icon: ShoppingBag,
           key: 'ecom_orders',
         });

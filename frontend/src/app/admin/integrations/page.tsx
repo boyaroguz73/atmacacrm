@@ -218,9 +218,6 @@ export default function IntegrationsPage() {
     }
   };
 
-  const allIntegrations = categories.flatMap((c) =>
-    Array.isArray(c?.integrations) ? c.integrations : [],
-  );
   const visibleCategories = categories
     .map((c) => ({
       ...c,
@@ -230,7 +227,6 @@ export default function IntegrationsPage() {
     }))
     .filter((c) => c.integrations.length > 0);
   const visibleIntegrations = visibleCategories.flatMap((c) => c.integrations);
-  const hiddenIntegrations = allIntegrations.filter((i) => !ACTIVE_INTEGRATION_KEYS.has(i.key));
   const selected = visibleIntegrations.find((i) => i.key === selectedKey) || null;
 
   if (loading) {
@@ -283,14 +279,6 @@ export default function IntegrationsPage() {
           );
         })}
 
-        {hiddenIntegrations.length > 0 ? (
-          <div className="rounded-xl border border-amber-200 bg-amber-50/60 px-4 py-3">
-            <p className="text-xs font-semibold text-amber-800">Yakında</p>
-            <p className="text-xs text-amber-700 mt-1">
-              {hiddenIntegrations.map((i) => i.name).join(', ')} entegrasyonları yakında eklenecek.
-            </p>
-          </div>
-        ) : null}
       </div>
 
       {/* Right: Detail Panel */}
@@ -346,9 +334,7 @@ function IntegrationCard({
         <p className="text-sm font-medium text-gray-900 truncate">{integration.name}</p>
       </div>
       <div className="shrink-0 flex items-center gap-1.5">
-        {integration.comingSoon ? (
-          <span className="text-[10px] text-amber-500 font-medium">Yakında</span>
-        ) : !integration.available ? (
+        {!integration.comingSoon && !integration.available ? (
           <Lock className="w-3 h-3 text-gray-400" />
         ) : null}
         <div className={`w-2 h-2 rounded-full ${statusDot}`} />
@@ -1024,9 +1010,6 @@ function MessagingPanel({ integration }: { integration: Integration }) {
         </div>
       </form>
 
-      <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
-        <p className="text-xs text-amber-800">Yakında aktif — token şimdiden kaydedilebilir.</p>
-      </div>
     </div>
   );
 }
@@ -1553,7 +1536,7 @@ function GenericPanel({ integration }: { integration: Integration }) {
         Yapılandırma
       </h3>
       <p className="text-sm text-gray-500">
-        Bu entegrasyon için yapılandırma seçenekleri yakında eklenecek.
+        Bu entegrasyon için yapılandırma seçenekleri bu ekranda sunulacak.
       </p>
     </div>
   );

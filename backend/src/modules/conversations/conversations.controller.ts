@@ -28,6 +28,7 @@ import {
   isLikelyLidPhone,
   isValidPhoneNumber,
   extractPhoneFromIndividualJid,
+  extractPhoneFromParticipant,
 } from '../../common/contact-phone';
 import { ConversationsService } from './conversations.service';
 import { WahaService } from '../waha/waha.service';
@@ -495,17 +496,53 @@ export class ConversationsController {
           msg.participant ||
           msg._data?.author ||
           msg._data?.participant ||
+          ((msg.from && msg.from !== chatIdForWaha && String(msg.from).includes('@')) ? msg.from : '') ||
           '',
       ).trim();
-      const participantPhone = rawParticipantJid
-        ? (extractPhoneFromIndividualJid(rawParticipantJid) || null)
+      let participantPhone = rawParticipantJid
+        ? (extractPhoneFromParticipant(rawParticipantJid) || null)
         : null;
-      const participantName = String(
+      let participantName = String(
         msg.pushName ||
           msg._data?.notifyName ||
           msg._data?.pushName ||
           '',
       ).trim() || null;
+      if (isGroupConversation && rawParticipantJid) {
+        if (!participantPhone && /@lid$/i.test(rawParticipantJid)) {
+          const pnJid = await this.wahaService
+            .getLinkedPnFromLid(sessionName, rawParticipantJid)
+            .catch(() => null);
+          const resolvedPhone = pnJid ? extractPhoneFromIndividualJid(pnJid) : null;
+          if (resolvedPhone && !isLikelyLidPhone(resolvedPhone)) {
+            participantPhone = resolvedPhone;
+          }
+        }
+
+        if (!participantName) {
+          const details = await this.wahaService
+            .getContactDetails(sessionName, rawParticipantJid)
+            .catch(() => null);
+          participantName = String(
+            details?.name ||
+              details?.pushname ||
+              details?.shortName ||
+              details?.verifiedName ||
+              details?.notify ||
+              '',
+          ).trim() || null;
+        }
+
+        if (participantPhone && !participantName) {
+          const keys = contactPhoneLookupKeys(participantPhone);
+          const peer = await this.prisma.contact.findFirst({
+            where: { phone: { in: keys } },
+            select: { name: true, surname: true },
+          });
+          const mergedName = [peer?.name, peer?.surname].filter(Boolean).join(' ').trim();
+          if (mergedName) participantName = mergedName;
+        }
+      }
 
       let body = msg.body || '';
       let metadata: Record<string, any> | undefined;

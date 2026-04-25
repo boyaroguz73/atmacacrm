@@ -1,223 +1,17 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
-import api, { getApiErrorMessage } from '@/lib/api';
-import { useAuthStore } from '@/store/auth';
 import {
   Users,
-  Loader2,
-  Plus,
-  Pencil,
-  Key,
-  Shield,
-  UserCheck,
-  UserX,
-  X,
-  Settings2,
-  ToggleLeft,
-  ToggleRight,
-  ImageIcon,
-  Trash2,
+  SlidersHorizontal,
   Building2,
+  FileText,
+  Warehouse,
+  Truck,
   ChevronRight,
 } from 'lucide-react';
-import toast from 'react-hot-toast';
-import { rewriteMediaUrlForClient } from '@/lib/utils';
-import { HtmlEditor } from '@/components/HtmlEditor';
-
-interface UserItem {
-  id: string;
-  email: string;
-  name: string;
-  role: string;
-  isActive: boolean;
-  createdAt: string;
-}
-
-interface SystemSettingItem {
-  key: string;
-  value: string;
-}
-
-const roleLabels: Record<string, string> = {
-  SUPERADMIN: 'Yönetici',
-  ADMIN: 'Yönetici',
-  AGENT: 'Temsilci',
-  ACCOUNTANT: 'Muhasebeci',
-};
 
 export default function SettingsPage() {
-  const { user: currentUser } = useAuthStore();
-  const [users, setUsers] = useState<UserItem[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  const [showAddUser, setShowAddUser] = useState(false);
-  const [editingUser, setEditingUser] = useState<UserItem | null>(null);
-  const [passwordUser, setPasswordUser] = useState<UserItem | null>(null);
-
-  const [formName, setFormName] = useState('');
-  const [formEmail, setFormEmail] = useState('');
-  const [formPassword, setFormPassword] = useState('');
-  const [formRole, setFormRole] = useState('AGENT');
-  const [newPassword, setNewPassword] = useState('');
-
-  const [settings, setSettings] = useState<SystemSettingItem[]>([]);
-  const [internalChatEnabled, setInternalChatEnabled] = useState(false);
-
-  const fetchUsers = async () => {
-    try {
-      const { data } = await api.get('/users');
-      setUsers(Array.isArray(data) ? data : []);
-    } catch {
-      toast.error('Kullanıcılar yüklenemedi');
-    }
-  };
-
-  const fetchSettings = async () => {
-    try {
-      const { data } = await api.get('/system-settings');
-      setSettings(data);
-      const ic = data.find((s: SystemSettingItem) => s.key === 'internal_chat_enabled');
-      setInternalChatEnabled(ic?.value === 'true');
-    } catch {
-      toast.error('Ayarlar yüklenemedi');
-    }
-  };
-
-  useEffect(() => {
-    Promise.all([fetchUsers(), fetchSettings()]).finally(() =>
-      setLoading(false),
-    );
-  }, []);
-
-  const handleAddUser = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      await api.post('/users', {
-        name: formName,
-        email: formEmail,
-        password: formPassword,
-        role: formRole,
-      });
-      toast.success('Kullanıcı eklendi');
-      setShowAddUser(false);
-      resetForm();
-      fetchUsers();
-    } catch (err: any) {
-      toast.error(err.response?.data?.message || 'Kullanıcı eklenemedi');
-    }
-  };
-
-  const handleEditUser = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!editingUser) return;
-    try {
-      await api.patch(`/users/${editingUser.id}`, {
-        name: formName,
-        email: formEmail,
-        role: formRole,
-      });
-      toast.success('Kullanıcı güncellendi');
-      setEditingUser(null);
-      resetForm();
-      fetchUsers();
-    } catch (err: any) {
-      toast.error(err.response?.data?.message || 'Güncellenemedi');
-    }
-  };
-
-  const handleResetPassword = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!passwordUser) return;
-    try {
-      await api.patch(`/users/${passwordUser.id}/password`, {
-        password: newPassword,
-      });
-      toast.success('Şifre güncellendi');
-      setPasswordUser(null);
-      setNewPassword('');
-    } catch {
-      toast.error('Şifre güncellenemedi');
-    }
-  };
-
-  const handleDeactivate = async (user: UserItem) => {
-    if (!confirm(`${user.name} kullanıcısı pasif yapılacak. Emin misiniz?`))
-      return;
-    try {
-      await api.delete(`/users/${user.id}`);
-      toast.success('Kullanıcı pasif yapıldı');
-      fetchUsers();
-    } catch {
-      toast.error('İşlem başarısız');
-    }
-  };
-
-  const handleActivate = async (user: UserItem) => {
-    try {
-      await api.patch(`/users/${user.id}/activate`);
-      toast.success('Kullanıcı aktif yapıldı');
-      fetchUsers();
-    } catch {
-      toast.error('İşlem başarısız');
-    }
-  };
-
-  const toggleInternalChat = async () => {
-    const newVal = !internalChatEnabled;
-    try {
-      await api.patch('/system-settings', {
-        key: 'internal_chat_enabled',
-        value: newVal ? 'true' : 'false',
-      });
-      setInternalChatEnabled(newVal);
-      toast.success(
-        newVal ? 'Dahili mesajlaşma açıldı' : 'Dahili mesajlaşma kapatıldı',
-      );
-    } catch {
-      toast.error('Ayar güncellenemedi');
-    }
-  };
-
-  const isSettingEnabled = (key: string, fallback = true) => {
-    const row = settings.find((s) => s.key === key);
-    if (!row) return fallback;
-    return row.value !== 'false';
-  };
-
-  const updateBooleanSetting = async (key: string, enabled: boolean, successText: string) => {
-    await api.patch('/system-settings', { key, value: enabled ? 'true' : 'false' });
-    setSettings((prev) => {
-      const next = prev.filter((s) => s.key !== key);
-      next.push({ key, value: enabled ? 'true' : 'false' });
-      return next;
-    });
-    toast.success(successText);
-  };
-
-  const resetForm = () => {
-    setFormName('');
-    setFormEmail('');
-    setFormPassword('');
-    setFormRole('AGENT');
-  };
-
-  const openEdit = (user: UserItem) => {
-    setEditingUser(user);
-    setFormName(user.name);
-    setFormEmail(user.email);
-    setFormRole(user.role);
-  };
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-full">
-        <div className="w-8 h-8 border-4 border-whatsapp border-t-transparent rounded-full animate-spin" />
-      </div>
-    );
-  }
-
   return (
     <div className="p-6 space-y-8 max-w-5xl">
       <div>
@@ -245,773 +39,95 @@ export default function SettingsPage() {
         <ChevronRight className="w-5 h-5 text-gray-400 group-hover:text-whatsapp shrink-0" />
       </Link>
 
-      {/* Agent Management */}
-      <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-6">
-        <div className="flex items-center justify-between mb-5">
-          <div className="flex items-center gap-2">
-            <Users className="w-5 h-5 text-blue-500" />
-            <h2 className="text-lg font-semibold text-gray-900">
-              Kullanıcı Yönetimi
-            </h2>
+      <Link
+        href="/settings/users"
+        className="flex items-center justify-between gap-4 p-4 rounded-xl border border-gray-100 bg-white shadow-sm hover:border-whatsapp/30 hover:bg-whatsapp/5 transition-colors group"
+      >
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center text-blue-600">
+            <Users className="w-5 h-5" />
           </div>
-          <button
-            onClick={() => {
-              resetForm();
-              setShowAddUser(true);
-            }}
-            className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
-          >
-            <Plus className="w-4 h-4" />
-            Yeni Kullanıcı
-          </button>
-        </div>
-
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-gray-500 border-b border-gray-100">
-                <th className="pb-3 font-medium">Kullanıcı</th>
-                <th className="pb-3 font-medium">Rol</th>
-                <th className="pb-3 font-medium">Durum</th>
-                <th className="pb-3 font-medium text-right">İşlemler</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-50">
-              {users.map((user) => (
-                <tr key={user.id} className="group">
-                  <td className="py-3">
-                    <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 font-bold text-sm">
-                        {user.name.charAt(0).toUpperCase()}
-                      </div>
-                      <div>
-                        <p className="font-medium text-gray-900">{user.name}</p>
-                        <p className="text-xs text-gray-400">{user.email}</p>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="py-3">
-                    <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">
-                      {(user.role === 'SUPERADMIN' || user.role === 'ADMIN') ? (
-                        <Shield className="w-3 h-3" />
-                      ) : null}
-                      {roleLabels[user.role] || user.role}
-                    </span>
-                  </td>
-                  <td className="py-3">
-                    <span
-                      className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full ${
-                        user.isActive
-                          ? 'bg-green-50 text-green-700'
-                          : 'bg-red-50 text-red-700'
-                      }`}
-                    >
-                      {user.isActive ? (
-                        <>
-                          <UserCheck className="w-3 h-3" /> Aktif
-                        </>
-                      ) : (
-                        <>
-                          <UserX className="w-3 h-3" /> Pasif
-                        </>
-                      )}
-                    </span>
-                  </td>
-                  <td className="py-3">
-                    <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button
-                        onClick={() => openEdit(user)}
-                        className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg"
-                        title="Düzenle"
-                      >
-                        <Pencil className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        onClick={() => {
-                          setPasswordUser(user);
-                          setNewPassword('');
-                        }}
-                        className="p-1.5 text-gray-400 hover:text-yellow-600 hover:bg-yellow-50 rounded-lg"
-                        title="Şifre Değiştir"
-                      >
-                        <Key className="w-3.5 h-3.5" />
-                      </button>
-                      {user.isActive ? (
-                        <button
-                          onClick={() => handleDeactivate(user)}
-                          className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg"
-                          title="Pasif Yap"
-                        >
-                          <UserX className="w-3.5 h-3.5" />
-                        </button>
-                      ) : (
-                        <button
-                          onClick={() => handleActivate(user)}
-                          className="p-1.5 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded-lg"
-                          title="Aktif Yap"
-                        >
-                          <UserCheck className="w-3.5 h-3.5" />
-                        </button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* System Settings */}
-      <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-6">
-        <div className="flex items-center gap-2 mb-5">
-          <Settings2 className="w-5 h-5 text-purple-500" />
-          <h2 className="text-lg font-semibold text-gray-900">
-            Sistem Ayarları
-          </h2>
-        </div>
-
-        <div className="space-y-4">
-          <div className="flex items-center justify-between p-4 bg-gray-50 rounded-xl">
-            <div>
-              <p className="font-medium text-sm text-gray-900">
-                Dahili Takım Mesajlaşması
-              </p>
-              <p className="text-xs text-gray-400 mt-0.5">
-                Temsilcilerin kendi aralarında konuşması için not sistemi
-              </p>
-            </div>
-            <button
-              onClick={toggleInternalChat}
-              className="text-gray-400 hover:text-gray-600"
-            >
-              {internalChatEnabled ? (
-                <ToggleRight className="w-10 h-6 text-whatsapp" />
-              ) : (
-                <ToggleLeft className="w-10 h-6" />
-              )}
-            </button>
-          </div>
-          <div className="p-4 bg-gray-50 rounded-xl space-y-3">
-            <p className="font-medium text-sm text-gray-900">Otomatik Görev Kuralları</p>
-            <p className="text-xs text-gray-400">
-              Sistem tarafından otomatik açılan görevleri buradan açıp kapatabilirsiniz.
+          <div>
+            <p className="font-semibold text-gray-900">Kullanıcı Yönetimi</p>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Kullanıcı ekleme, rol düzenleme ve şifre işlemlerini buradan yönetin.
             </p>
-            {[
-              {
-                key: 'auto_task_lead_followup',
-                label: 'Lead durum değişiminde takip görevi',
-                description: 'İletişim kuruldu / İlgileniyor / Teklif gönderildi statülerinde görev açar.',
-              },
-              {
-                key: 'auto_task_quote_deposit_balance',
-                label: 'Teslim öncesi kalan tahsilat görevi',
-                description: '%50 ön ödemeli siparişlerde teslimden 1 gün önce görev açar.',
-              },
-              {
-                key: 'auto_task_tsoft_order_sync',
-                label: 'T-Soft sipariş senkronunda görev',
-                description: 'Site siparişi içeri alındığında sorumlu kullanıcıya görev açar.',
-              },
-              {
-                key: 'auto_task_tsoft_cart_abandon',
-                label: 'T-Soft sepet terk görevi',
-                description: 'Sepet terk (AWAITING_CHECKOUT) siparişlerinde hatırlatma görevi açar.',
-              },
-            ].map((item) => {
-              const enabled = isSettingEnabled(item.key, true);
-              return (
-                <div key={item.key} className="flex items-center justify-between gap-4 rounded-lg border border-gray-100 bg-white px-3 py-2.5">
-                  <div>
-                    <p className="text-sm font-medium text-gray-900">{item.label}</p>
-                    <p className="text-[11px] text-gray-400 mt-0.5">{item.description}</p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      try {
-                        await updateBooleanSetting(
-                          item.key,
-                          !enabled,
-                          !enabled ? 'Otomatik görev açıldı' : 'Otomatik görev kapatıldı',
-                        );
-                      } catch {
-                        toast.error('Ayar güncellenemedi');
-                      }
-                    }}
-                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                      enabled ? 'bg-whatsapp' : 'bg-gray-200'
-                    }`}
-                  >
-                    <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                      enabled ? 'translate-x-6' : 'translate-x-1'
-                    }`} />
-                  </button>
-                </div>
-              );
-            })}
           </div>
-          <div className="p-4 bg-gray-50 rounded-xl space-y-2">
-            <p className="font-medium text-sm text-gray-900">Teklif Varsayılan KDV Oranı</p>
-            <p className="text-xs text-gray-400">
-              Teklifte “Boş satır” eklendiğinde otomatik gelecek KDV yüzdesi.
+        </div>
+        <ChevronRight className="w-5 h-5 text-gray-400 group-hover:text-whatsapp shrink-0" />
+      </Link>
+
+      <Link
+        href="/settings/templates"
+        className="flex items-center justify-between gap-4 p-4 rounded-xl border border-gray-100 bg-white shadow-sm hover:border-whatsapp/30 hover:bg-whatsapp/5 transition-colors group"
+      >
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center text-blue-600">
+            <FileText className="w-5 h-5" />
+          </div>
+          <div>
+            <p className="font-semibold text-gray-900">Mesaj Şablonları</p>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Hazır mesaj metinlerini yönetin, değişkenleri tek yerden görün.
             </p>
-            <div className="flex items-center gap-2">
-              <input
-                type="number"
-                min={0}
-                max={100}
-                defaultValue={settings.find((s) => s.key === 'quote_default_vat_rate')?.value || '20'}
-                onBlur={async (e) => {
-                  const next = String(Math.max(0, Math.min(100, Number(e.target.value) || 20)));
-                  e.target.value = next;
-                  try {
-                    await api.patch('/system-settings', { key: 'quote_default_vat_rate', value: next });
-                    setSettings((prev) => [
-                      ...prev.filter((s) => s.key !== 'quote_default_vat_rate'),
-                      { key: 'quote_default_vat_rate', value: next },
-                    ]);
-                    toast.success('Varsayılan KDV oranı güncellendi');
-                  } catch {
-                    toast.error('Ayar güncellenemedi');
-                  }
-                }}
-                className="w-28 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-whatsapp"
-              />
-              <span className="text-sm text-gray-500">%</span>
-            </div>
           </div>
         </div>
-      </div>
+        <ChevronRight className="w-5 h-5 text-gray-400 group-hover:text-whatsapp shrink-0" />
+      </Link>
 
-      {/* PDF Şablon Ayarları */}
-        {(currentUser?.role === 'ADMIN' || currentUser?.role === 'SUPERADMIN') && (
-          <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 space-y-6">
-            <div>
-              <h2 className="text-lg font-semibold text-gray-900">PDF Şablon Ayarları</h2>
-              <p className="text-sm text-gray-500 mt-1">Fatura ve teklif PDF’lerinde görünecek bilgileri düzenleyin.</p>
-            </div>
-
-            {/* Firma Bilgileri */}
-            <div className="rounded-xl border border-gray-200 bg-white p-4 space-y-4">
-              <div>
-                <p className="text-sm font-semibold text-gray-900">Firma Bilgileri</p>
-                <p className="text-xs text-gray-500 mt-0.5">PDF üst bilgisinde ve firma bloğunda görünen temel bilgiler.</p>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {[
-                  { key: 'pdf_company_name', label: 'Firma Adı *', placeholder: 'Firma adı' },
-                  { key: 'pdf_company_phone', label: 'Telefon', placeholder: 'Telefon numarası' },
-                  { key: 'pdf_company_email', label: 'E-posta', placeholder: 'ornek@firma.com' },
-                  { key: 'pdf_company_website', label: 'Web Sitesi', placeholder: 'https://firma.com' },
-                  { key: 'pdf_company_tax_office', label: 'Vergi Dairesi', placeholder: 'Vergi dairesi' },
-                  { key: 'pdf_company_tax_number', label: 'Vergi No', placeholder: 'Vergi numarası' },
-                  { key: 'pdf_company_mersis_no', label: 'Mersis No', placeholder: 'Mersis numarası' },
-                ].map((field) => (
-                  <div key={field.key}>
-                    <label className="block text-xs font-medium text-gray-600 mb-1.5">{field.label}</label>
-                    <input
-                      type="text"
-                      defaultValue={settings.find((s) => s.key === field.key)?.value || ''}
-                      placeholder={field.placeholder}
-                      onBlur={async (e) => {
-                        try {
-                          await api.patch('/system-settings', { key: field.key, value: e.target.value });
-                          toast.success(`${field.label} güncellendi`);
-                        } catch { toast.error('Güncellenemedi'); }
-                      }}
-                      className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-whatsapp"
-                    />
-                  </div>
-                ))}
-                <div className="md:col-span-2">
-                  <label className="block text-xs font-medium text-gray-600 mb-1.5">Firma Adresi</label>
-                  <textarea
-                    defaultValue={settings.find((s) => s.key === 'pdf_company_address')?.value || ''}
-                    placeholder="Firma adresi"
-                    onBlur={async (e) => {
-                      try {
-                        await api.patch('/system-settings', { key: 'pdf_company_address', value: e.target.value });
-                        toast.success('Adres güncellendi');
-                      } catch { toast.error('Güncellenemedi'); }
-                    }}
-                    rows={3}
-                    className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-whatsapp resize-y"
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Logo */}
-            <div className="rounded-xl border border-gray-200 bg-white p-4 space-y-4">
-              <div>
-                <p className="text-sm font-semibold text-gray-900">Logo Ayarları</p>
-                <p className="text-xs text-gray-500 mt-0.5">PDF üst kısmında kullanılacak logo görseli ve boyutu.</p>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-[1fr_220px] gap-4 items-start">
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1.5">Logo URL (https://... veya /uploads/...)</label>
-                  <input
-                    type="text"
-                    defaultValue={settings.find((s) => s.key === 'pdf_logo_url')?.value || ''}
-                    onBlur={async (e) => {
-                      try {
-                        await api.patch('/system-settings', { key: 'pdf_logo_url', value: e.target.value });
-                        toast.success('Logo URL güncellendi');
-                      } catch { toast.error('Güncellenemedi'); }
-                    }}
-                    placeholder="https://example.com/logo.png"
-                    className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-whatsapp"
-                  />
-                  <p className="text-xs text-gray-400 mt-1.5">Logo PNG/JPG formatında olmalı. Tarayıcıdan erişilebilir bir URL girin.</p>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1.5">Yükseklik (px)</label>
-                  <input
-                    type="number"
-                    min={20}
-                    max={120}
-                    defaultValue={settings.find((s) => s.key === 'pdf_logo_height')?.value || '44'}
-                    onBlur={async (e) => {
-                      const nextValue = String(
-                        Math.max(20, Math.min(120, Number(e.target.value) || 44)),
-                      );
-                      e.target.value = nextValue;
-                      try {
-                        await api.patch('/system-settings', { key: 'pdf_logo_height', value: nextValue });
-                        toast.success('Logo boyutu güncellendi');
-                      } catch {
-                        toast.error('Güncellenemedi');
-                      }
-                    }}
-                    className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-whatsapp"
-                  />
-                  <p className="text-xs text-gray-400 mt-1.5">20 - 120 px arası. Varsayılan: 44.</p>
-                </div>
-              </div>
-              {settings.find((s) => s.key === 'pdf_logo_url')?.value && (
-                <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
-                  <p className="text-xs text-gray-500 mb-2">Logo önizleme</p>
-                  <img
-                    src={settings.find((s) => s.key === 'pdf_logo_url')?.value}
-                    alt="Logo önizleme"
-                    className="h-14 object-contain border border-gray-200 rounded-lg bg-white p-1"
-                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                  />
-                </div>
-              )}
-            </div>
-
-            {/* Banka Bilgileri */}
-            <div className="rounded-xl border border-gray-200 bg-white p-4 space-y-4">
-              <div>
-                <p className="text-sm font-semibold text-gray-900">Banka Bilgileri</p>
-                <p className="text-xs text-gray-500 mt-0.5">IBAN ve hesap bilgileri PDF’de ödeme alanında gösterilir.</p>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {[
-                  { key: 'pdf_bank_info', label: 'Banka 1 (IBAN, Hesap No vb.)' },
-                  { key: 'pdf_bank2_info', label: 'Banka 2 (opsiyonel)' },
-                ].map((field) => (
-                  <div key={field.key}>
-                    <label className="block text-xs font-medium text-gray-600 mb-1.5">{field.label}</label>
-                    <textarea
-                      defaultValue={settings.find((s) => s.key === field.key)?.value || ''}
-                      onBlur={async (e) => {
-                        try {
-                          await api.patch('/system-settings', { key: field.key, value: e.target.value });
-                          toast.success('Banka bilgisi güncellendi');
-                        } catch { toast.error('Güncellenemedi'); }
-                      }}
-                      rows={4}
-                      placeholder="Banka Adı: ...\nIBAN: TR..."
-                      className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-whatsapp resize-y font-mono leading-6"
-                    />
-                  </div>
-                ))}
-                <div className="md:col-span-2 rounded-xl border border-gray-200 bg-gray-50/80 p-4">
-                <label className="block text-xs font-medium text-gray-600 mb-2">Banka QR (FAST / EFT — PDF sağ alt)</label>
-                <p className="text-xs text-gray-500 mb-3">
-                  Teklif ve sipariş PDF’lerinde banka metinleriyle aynı blokta, sağ altta basılır. PNG veya JPG yükleyin.
-                </p>
-                <div className="flex flex-wrap items-center gap-3">
-                  <label className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 cursor-pointer transition-colors">
-                    <ImageIcon className="w-4 h-4 text-gray-500" />
-                    Görsel seç
-                    <input
-                      type="file"
-                      accept="image/jpeg,image/png,image/webp,image/gif"
-                      className="hidden"
-                      onChange={async (e) => {
-                        const file = e.target.files?.[0];
-                        e.target.value = '';
-                        if (!file) return;
-                        const fd = new FormData();
-                        fd.append('file', file);
-                        try {
-                          const { data } = await api.post<{ url: string }>('/system-settings/upload-bank-qr', fd, {
-                            headers: { 'Content-Type': 'multipart/form-data' },
-                          });
-                          setSettings((prev) => [
-                            ...prev.filter((s) => s.key !== 'pdf_bank_qr_url'),
-                            { key: 'pdf_bank_qr_url', value: data.url },
-                          ]);
-                          toast.success('Banka QR kaydedildi');
-                        } catch (err) {
-                          toast.error(getApiErrorMessage(err, 'Yüklenemedi'));
-                        }
-                      }}
-                    />
-                  </label>
-                  {settings.find((s) => s.key === 'pdf_bank_qr_url')?.value ? (
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        try {
-                          await api.patch('/system-settings', { key: 'pdf_bank_qr_url', value: '' });
-                          setSettings((prev) => prev.filter((s) => s.key !== 'pdf_bank_qr_url'));
-                          toast.success('QR kaldırıldı');
-                        } catch {
-                          toast.error('Kaldırılamadı');
-                        }
-                      }}
-                      className="inline-flex items-center gap-1.5 px-3 py-2 text-sm text-red-600 hover:bg-red-50 rounded-lg border border-red-100"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                      Kaldır
-                    </button>
-                  ) : null}
-                </div>
-                {settings.find((s) => s.key === 'pdf_bank_qr_url')?.value ? (
-                  <div className="mt-3 flex items-start gap-3">
-                    <img
-                      src={rewriteMediaUrlForClient(settings.find((s) => s.key === 'pdf_bank_qr_url')!.value)}
-                      alt="Banka QR önizleme"
-                      className="w-28 h-28 object-contain border border-gray-200 rounded-lg bg-white p-1"
-                      onError={(e) => {
-                        (e.target as HTMLImageElement).style.display = 'none';
-                      }}
-                    />
-                    <p className="text-[11px] text-gray-400 pt-1">
-                      {settings.find((s) => s.key === 'pdf_bank_qr_url')?.value}
-                    </p>
-                  </div>
-                ) : null}
-                </div>
-              </div>
-            </div>
-
-            {/* Koşullar & Notlar */}
-            <div className="rounded-xl border border-gray-200 bg-white p-4 space-y-4">
-              <div>
-                <p className="text-sm font-semibold text-gray-900">PDF Metinleri (Koşullar & Notlar)</p>
-                <p className="text-xs text-gray-500 mt-0.5">PDF’de görünecek metinler</p>
-              </div>
-              <div className="space-y-4">
-                {[
-                  { key: 'pdf_terms', label: 'Ödeme Koşulları', minHeight: '110px' },
-                  { key: 'pdf_footer_note', label: 'Alt Not (PDF footer)', minHeight: '80px' },
-                ].map((field) => (
-                  <div key={field.key}>
-                    <label className="block text-xs font-medium text-gray-600 mb-1.5">{field.label}</label>
-                    <HtmlEditor
-                      value={settings.find((s) => s.key === field.key)?.value || ''}
-                      onChange={() => {}}
-                      onBlurSave={async (html) => {
-                        try {
-                          await api.patch('/system-settings', { key: field.key, value: html });
-                          toast.success(`${field.label} güncellendi`);
-                        } catch { toast.error('Güncellenemedi'); }
-                      }}
-                      placeholder={`${field.label} girin…`}
-                      minHeight={field.key === 'pdf_terms' ? '150px' : field.minHeight}
-                    />
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Görünüm */}
-            <div className="rounded-xl border border-gray-200 bg-white p-4 space-y-4">
-              <div>
-                <p className="text-sm font-semibold text-gray-900">Görünüm Ayarları</p>
-                <p className="text-xs text-gray-500 mt-0.5">Renk, para birimi konumu ve görünüm tercihleri.</p>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1.5">Ana Renk (HEX)</label>
-                  <div className="flex gap-2 items-center">
-                    <input
-                      type="color"
-                      defaultValue={settings.find((s) => s.key === 'pdf_primary_color')?.value || '#1a7a4a'}
-                      onBlur={async (e) => {
-                        try {
-                          await api.patch('/system-settings', { key: 'pdf_primary_color', value: e.target.value });
-                          toast.success('Renk güncellendi');
-                        } catch { toast.error('Güncellenemedi'); }
-                      }}
-                      className="h-10 w-14 rounded border border-gray-200 cursor-pointer"
-                    />
-                    <input
-                      type="text"
-                      defaultValue={settings.find((s) => s.key === 'pdf_primary_color')?.value || '#1a7a4a'}
-                      onBlur={async (e) => {
-                        try {
-                          await api.patch('/system-settings', { key: 'pdf_primary_color', value: e.target.value });
-                          toast.success('Renk güncellendi');
-                        } catch { toast.error('Güncellenemedi'); }
-                      }}
-                      placeholder="#1a7a4a"
-                      className="flex-1 px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-whatsapp"
-                    />
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1.5">Para Birimi Konumu</label>
-                  <select
-                    defaultValue={settings.find((s) => s.key === 'pdf_currency_position')?.value || 'after'}
-                    onChange={async (e) => {
-                      try {
-                        await api.patch('/system-settings', { key: 'pdf_currency_position', value: e.target.value });
-                        toast.success('Güncellendi');
-                      } catch { toast.error('Güncellenemedi'); }
-                    }}
-                    className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-whatsapp"
-                  >
-                    <option value="after">Sonra (1.000,00 TL)</option>
-                    <option value="before">Önce (TL 1.000,00)</option>
-                  </select>
-                </div>
-                <div className="flex items-center justify-between gap-3 rounded-lg border border-gray-200 bg-gray-50/60 px-3 py-2.5">
-                  <label className="text-xs font-medium text-gray-700">İmza Alanı Göster</label>
-                  <button
-                    onClick={async () => {
-                      const current = settings.find((s) => s.key === 'pdf_show_signature')?.value !== 'false';
-                      try {
-                        await api.patch('/system-settings', { key: 'pdf_show_signature', value: current ? 'false' : 'true' });
-                        toast.success('Güncellendi');
-                        window.location.reload();
-                      } catch { toast.error('Güncellenemedi'); }
-                    }}
-                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                      settings.find((s) => s.key === 'pdf_show_signature')?.value !== 'false' ? 'bg-whatsapp' : 'bg-gray-200'
-                    }`}
-                  >
-                    <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                      settings.find((s) => s.key === 'pdf_show_signature')?.value !== 'false' ? 'translate-x-6' : 'translate-x-1'
-                    }`} />
-                  </button>
-                </div>
-              </div>
-            </div>
+      <Link
+        href="/settings/suppliers"
+        className="flex items-center justify-between gap-4 p-4 rounded-xl border border-gray-100 bg-white shadow-sm hover:border-whatsapp/30 hover:bg-whatsapp/5 transition-colors group"
+      >
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-orange-50 flex items-center justify-center text-orange-600">
+            <Warehouse className="w-5 h-5" />
           </div>
-        )}
-
-      {/* Add User Modal */}
-      {showAddUser && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-2xl p-6 w-full max-w-md mx-4 shadow-2xl">
-            <div className="flex items-center justify-between mb-5">
-              <h3 className="text-lg font-semibold">Yeni Kullanıcı Ekle</h3>
-              <button
-                onClick={() => setShowAddUser(false)}
-                className="p-1 text-gray-400 hover:text-gray-600"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <form onSubmit={handleAddUser} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Ad Soyad
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={formName}
-                  onChange={(e) => setFormName(e.target.value)}
-                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-blue-500"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  E-posta
-                </label>
-                <input
-                  type="email"
-                  required
-                  value={formEmail}
-                  onChange={(e) => setFormEmail(e.target.value)}
-                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-blue-500"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Şifre
-                </label>
-                <input
-                  type="password"
-                  required
-                  minLength={6}
-                  value={formPassword}
-                  onChange={(e) => setFormPassword(e.target.value)}
-                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-blue-500"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Rol
-                </label>
-                <select
-                  value={formRole}
-                  onChange={(e) => setFormRole(e.target.value)}
-                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-blue-500"
-                >
-                  <option value="AGENT">Temsilci</option>
-                  <option value="ADMIN">Yönetici</option>
-                </select>
-              </div>
-              <div className="flex gap-3 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setShowAddUser(false)}
-                  className="flex-1 px-4 py-2.5 border border-gray-200 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-50"
-                >
-                  İptal
-                </button>
-                <button
-                  type="submit"
-                  className="flex-1 px-4 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700"
-                >
-                  Kullanıcı Ekle
-                </button>
-              </div>
-            </form>
+          <div>
+            <p className="font-semibold text-gray-900">Tedarikçiler</p>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Tedarikçi kayıtlarını yönetin, sipariş ve tekliflerde hızlı kullanın.
+            </p>
           </div>
         </div>
-      )}
+        <ChevronRight className="w-5 h-5 text-gray-400 group-hover:text-whatsapp shrink-0" />
+      </Link>
 
-      {/* Edit User Modal */}
-      {editingUser && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-2xl p-6 w-full max-w-md mx-4 shadow-2xl">
-            <div className="flex items-center justify-between mb-5">
-              <h3 className="text-lg font-semibold">Kullanıcı Düzenle</h3>
-              <button
-                onClick={() => setEditingUser(null)}
-                className="p-1 text-gray-400 hover:text-gray-600"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <form onSubmit={handleEditUser} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Ad Soyad
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={formName}
-                  onChange={(e) => setFormName(e.target.value)}
-                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-blue-500"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  E-posta
-                </label>
-                <input
-                  type="email"
-                  required
-                  value={formEmail}
-                  onChange={(e) => setFormEmail(e.target.value)}
-                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-blue-500"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Rol
-                </label>
-                <select
-                  value={formRole}
-                  onChange={(e) => setFormRole(e.target.value)}
-                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-blue-500"
-                >
-                  <option value="AGENT">Temsilci</option>
-                  <option value="ACCOUNTANT">Muhasebeci</option>
-                  <option value="ADMIN">Yönetici</option>
-                </select>
-              </div>
-              <div className="flex gap-3 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setEditingUser(null)}
-                  className="flex-1 px-4 py-2.5 border border-gray-200 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-50"
-                >
-                  İptal
-                </button>
-                <button
-                  type="submit"
-                  className="flex-1 px-4 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700"
-                >
-                  Kaydet
-                </button>
-              </div>
-            </form>
+      <Link
+        href="/settings/system"
+        className="flex items-center justify-between gap-4 p-4 rounded-xl border border-gray-100 bg-white shadow-sm hover:border-whatsapp/30 hover:bg-whatsapp/5 transition-colors group"
+      >
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-purple-50 flex items-center justify-center text-purple-600">
+            <SlidersHorizontal className="w-5 h-5" />
+          </div>
+          <div>
+            <p className="font-semibold text-gray-900">Sistem Ayarları</p>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Dahili mesajlaşma, otomatik görevler ve varsayılan KDV ayarları.
+            </p>
           </div>
         </div>
-      )}
+        <ChevronRight className="w-5 h-5 text-gray-400 group-hover:text-whatsapp shrink-0" />
+      </Link>
 
-      {/* Password Modal */}
-      {passwordUser && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-2xl p-6 w-full max-w-md mx-4 shadow-2xl">
-            <div className="flex items-center justify-between mb-5">
-              <h3 className="text-lg font-semibold">
-                Şifre Değiştir — {passwordUser.name}
-              </h3>
-              <button
-                onClick={() => setPasswordUser(null)}
-                className="p-1 text-gray-400 hover:text-gray-600"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <form onSubmit={handleResetPassword} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Yeni Şifre
-                </label>
-                <input
-                  type="password"
-                  required
-                  minLength={6}
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-blue-500"
-                  placeholder="En az 6 karakter"
-                />
-              </div>
-              <div className="flex gap-3 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setPasswordUser(null)}
-                  className="flex-1 px-4 py-2.5 border border-gray-200 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-50"
-                >
-                  İptal
-                </button>
-                <button
-                  type="submit"
-                  className="flex-1 px-4 py-2.5 bg-yellow-500 text-white rounded-xl text-sm font-medium hover:bg-yellow-600"
-                >
-                  Şifreyi Değiştir
-                </button>
-              </div>
-            </form>
+      <Link
+        href="/settings/cargo-companies"
+        className="flex items-center justify-between gap-4 p-4 rounded-xl border border-gray-100 bg-white shadow-sm hover:border-whatsapp/30 hover:bg-whatsapp/5 transition-colors group"
+      >
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600">
+            <Truck className="w-5 h-5" />
+          </div>
+          <div>
+            <p className="font-semibold text-gray-900">Kargo Firmaları</p>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Kargo ve ambar firmalarını yönetin, sipariş akışında hızlıca kullanın.
+            </p>
           </div>
         </div>
-      )}
+        <ChevronRight className="w-5 h-5 text-gray-400 group-hover:text-whatsapp shrink-0" />
+      </Link>
     </div>
   );
 }
