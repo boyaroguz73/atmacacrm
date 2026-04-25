@@ -165,6 +165,7 @@ export class ConversationsService {
       isArchived?: boolean;
       search?: string;
       filter?: string;
+      isGroup?: boolean;
       page?: number;
       limit?: number;
     },
@@ -175,6 +176,7 @@ export class ConversationsService {
       isArchived = false,
       search,
       filter,
+      isGroup,
       page = 1,
       limit = 500,
     } = params;
@@ -182,6 +184,7 @@ export class ConversationsService {
     const whereExtras: any = { isArchived };
 
     if (sessionId) whereExtras.sessionId = sessionId;
+    if (typeof isGroup === 'boolean') whereExtras.isGroup = isGroup;
 
     if (filter === 'all') {
       // Yalnızca org kapsamı; atama filtresi yok (temsilci "tüm sohbetler")

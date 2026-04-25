@@ -44,13 +44,17 @@ export default function ConversationList() {
     activeConversation,
     setActiveConversation,
     isLoadingConversations,
+    isLoadingMoreConversations,
+    hasMoreConversations,
     searchQuery,
     setSearchQuery,
     fetchConversations,
+    loadMoreConversations,
   } = useChatStore();
 
   const [user, setUser] = useState<{ role?: string } | null>(null);
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const loadMoreRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     const stored = localStorage.getItem('user');
@@ -72,7 +76,7 @@ export default function ConversationList() {
       if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
       searchDebounceRef.current = setTimeout(() => {
         searchDebounceRef.current = null;
-        fetchConversations(true);
+        fetchConversations({ silent: true, reset: true });
       }, 400);
     },
     [setSearchQuery, fetchConversations],
@@ -105,6 +109,23 @@ export default function ConversationList() {
     () => conversations.filter((c) => (isGroupsRoute ? !!c.isGroup : !c.isGroup)),
     [conversations, isGroupsRoute],
   );
+
+  useEffect(() => {
+    const root = loadMoreRef.current?.closest('.scrollbar-thin');
+    const target = loadMoreRef.current;
+    if (!target || !root) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const hit = entries.some((e) => e.isIntersecting);
+        if (hit) {
+          void loadMoreConversations();
+        }
+      },
+      { root, rootMargin: '200px 0px', threshold: 0.01 },
+    );
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, [loadMoreConversations, visibleConversations.length, hasMoreConversations]);
 
   const lastPreview = (conv: any) => {
     const raw = conv?.lastMessageText ? truncate(conv.lastMessageText, 45) : '';
@@ -195,90 +216,99 @@ export default function ConversationList() {
             </p>
           </div>
         ) : (
-          visibleConversations.map((conv) => (
-            <button
-              key={conv.id}
-              onClick={() => setActiveConversation(conv)}
-              className={cn(
-                'w-full flex items-start gap-3 p-4 border-b border-gray-50 hover:bg-gray-50 transition-colors text-left',
-                activeConversation?.id === conv.id &&
-                  'bg-whatsapp/5 border-l-4 border-l-whatsapp',
-              )}
-            >
-              {conv.isGroup ? (
-                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-green-400 to-green-600 flex items-center justify-center flex-shrink-0">
-                  <Users className="w-5 h-5 text-white" />
-                </div>
-              ) : (
-                <ContactAvatar
-                  name={conv.contact.name}
-                  surname={conv.contact.surname}
-                  phone={conv.contact.phone}
-                  avatarUrl={conv.contact.avatarUrl}
-                  size="md"
-                />
-              )}
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center justify-between gap-1">
-                  <span className="font-semibold text-sm text-gray-900 truncate flex items-center gap-1.5 min-w-0">
-                    {conv.isGroup && (
-                      <span className="text-[10px] bg-green-100 text-green-700 px-1 py-0.5 rounded font-medium flex-shrink-0">
-                        Grup
+          <>
+            {visibleConversations.map((conv) => (
+              <button
+                key={conv.id}
+                onClick={() => setActiveConversation(conv)}
+                className={cn(
+                  'w-full flex items-start gap-3 p-4 border-b border-gray-50 hover:bg-gray-50 transition-colors text-left',
+                  activeConversation?.id === conv.id &&
+                    'bg-whatsapp/5 border-l-4 border-l-whatsapp',
+                )}
+              >
+                {conv.isGroup ? (
+                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-green-400 to-green-600 flex items-center justify-center flex-shrink-0">
+                    <Users className="w-5 h-5 text-white" />
+                  </div>
+                ) : (
+                  <ContactAvatar
+                    name={conv.contact.name}
+                    surname={conv.contact.surname}
+                    phone={conv.contact.phone}
+                    avatarUrl={conv.contact.avatarUrl}
+                    size="md"
+                  />
+                )}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between gap-1">
+                    <span className="font-semibold text-sm text-gray-900 truncate flex items-center gap-1.5 min-w-0">
+                      {conv.isGroup && (
+                        <span className="text-[10px] bg-green-100 text-green-700 px-1 py-0.5 rounded font-medium flex-shrink-0">
+                          Grup
+                        </span>
+                      )}
+                      <span className="truncate">
+                        {conv.isGroup
+                          ? (conv.groupName || conv.contact?.name || 'WhatsApp Grubu')
+                          : getContactDisplayTitle(conv.contact)
+                        }
+                      </span>
+                      {!conv.isGroup && <EcommerceCustomerBadge metadata={conv.contact.metadata} />}
+                    </span>
+                    <span className="text-xs text-gray-400 flex-shrink-0 ml-2">
+                      {formatDate(conv.lastMessageAt)}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between mt-0.5">
+                    <span className="text-xs text-gray-500 truncate">
+                      {lastPreview(conv)}
+                    </span>
+                    {conv.unreadCount > 0 && (
+                      <span className="bg-whatsapp text-white text-xs rounded-full w-5 h-5 flex items-center justify-center flex-shrink-0 ml-2 font-bold">
+                        {conv.unreadCount > 9 ? '9+' : conv.unreadCount}
                       </span>
                     )}
-                    <span className="truncate">
-                      {conv.isGroup 
-                        ? (conv.groupName || conv.contact?.name || 'WhatsApp Grubu')
-                        : getContactDisplayTitle(conv.contact)
-                      }
+                  </div>
+                  <div className="flex items-center gap-1 mt-1">
+                    <span className="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded">
+                      {/^default$/i.test(String(conv.session.name ?? ''))
+                        ? 'Varsayılan'
+                        : conv.session.name}
                     </span>
-                    {!conv.isGroup && <EcommerceCustomerBadge metadata={conv.contact.metadata} />}
-                  </span>
-                  <span className="text-xs text-gray-400 flex-shrink-0 ml-2">
-                    {formatDate(conv.lastMessageAt)}
-                  </span>
+                    {conv.assignments?.[0] && (
+                      <span className="text-[10px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded">
+                        {conv.assignments[0].user.name}
+                      </span>
+                    )}
+                    {(conv.contact as any)?.source && (
+                      <span className="text-[10px] bg-purple-50 text-purple-500 px-1.5 py-0.5 rounded">
+                        {(conv.contact as any).source}
+                      </span>
+                    )}
+                    {(conv.contact as any)?.lead && (
+                      <span
+                        className={cn(
+                          'text-[10px] px-1.5 py-0.5 rounded font-medium',
+                          LEAD_STATUS_COLORS[(conv.contact as any).lead.status] ||
+                            'bg-green-50 text-green-700',
+                        )}
+                      >
+                        {LEAD_STATUS_LABELS[(conv.contact as any).lead.status] || 'Potansiyel'}
+                      </span>
+                    )}
+                  </div>
                 </div>
-                <div className="flex items-center justify-between mt-0.5">
-                  <span className="text-xs text-gray-500 truncate">
-                    {lastPreview(conv)}
-                  </span>
-                  {conv.unreadCount > 0 && (
-                    <span className="bg-whatsapp text-white text-xs rounded-full w-5 h-5 flex items-center justify-center flex-shrink-0 ml-2 font-bold">
-                      {conv.unreadCount > 9 ? '9+' : conv.unreadCount}
-                    </span>
-                  )}
-                </div>
-                <div className="flex items-center gap-1 mt-1">
-                  <span className="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded">
-                    {/^default$/i.test(String(conv.session.name ?? ''))
-                      ? 'Varsayılan'
-                      : conv.session.name}
-                  </span>
-                  {conv.assignments?.[0] && (
-                    <span className="text-[10px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded">
-                      {conv.assignments[0].user.name}
-                    </span>
-                  )}
-                  {(conv.contact as any)?.source && (
-                    <span className="text-[10px] bg-purple-50 text-purple-500 px-1.5 py-0.5 rounded">
-                      {(conv.contact as any).source}
-                    </span>
-                  )}
-                  {(conv.contact as any)?.lead && (
-                    <span
-                      className={cn(
-                        'text-[10px] px-1.5 py-0.5 rounded font-medium',
-                        LEAD_STATUS_COLORS[(conv.contact as any).lead.status] ||
-                          'bg-green-50 text-green-700',
-                      )}
-                    >
-                      {LEAD_STATUS_LABELS[(conv.contact as any).lead.status] || 'Potansiyel'}
-                    </span>
-                  )}
-                </div>
-              </div>
-            </button>
-          ))
+              </button>
+            ))}
+            <div ref={loadMoreRef} className="h-10 flex items-center justify-center">
+              {isLoadingMoreConversations ? (
+                <div className="w-5 h-5 border-2 border-whatsapp border-t-transparent rounded-full animate-spin" />
+              ) : !hasMoreConversations ? (
+                <span className="text-[11px] text-gray-400">Tüm sohbetler yüklendi</span>
+              ) : null}
+            </div>
+          </>
         )}
       </div>
     </div>

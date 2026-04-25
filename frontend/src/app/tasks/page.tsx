@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useRef, useCallback } from 'react';
+import { useSearchParams } from 'next/navigation';
 import api from '@/lib/api';
 import { useAuthStore } from '@/store/auth';
 import { formatPhone } from '@/lib/utils';
@@ -38,6 +39,7 @@ interface TaskStats {
 }
 
 export default function TasksPage() {
+  const searchParams = useSearchParams();
   const { user } = useAuthStore();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [stats, setStats] = useState<TaskStats>({ pending: 0, overdue: 0, completedToday: 0 });
@@ -116,6 +118,23 @@ export default function TasksPage() {
   useEffect(() => {
     if (user) fetchTasks();
   }, [filter, dateFrom, dateTo, user?.role]);
+
+  useEffect(() => {
+    const shouldOpen = searchParams.get('new') === '1';
+    if (!shouldOpen) return;
+    const rawDate = searchParams.get('date');
+    const safeDate =
+      rawDate && /^\d{4}-\d{2}-\d{2}$/.test(rawDate)
+        ? `${rawDate}T10:00`
+        : '';
+    setShowForm(true);
+    if (safeDate) {
+      setNewTask((prev) => ({
+        ...prev,
+        dueAt: prev.dueAt || safeDate,
+      }));
+    }
+  }, [searchParams]);
 
   const completeTask = async (id: string) => {
     try {

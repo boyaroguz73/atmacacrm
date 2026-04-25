@@ -53,7 +53,7 @@ const LEAD_FLOW_ORDER = ['NEW', 'CONTACTED', 'INTERESTED', 'OFFER_SENT', 'WON', 
 
 function isLeadStatusTransitionAllowed(from: string, to: string): boolean {
   if (!from || !to) return false;
-  if (from === to) return true;
+  if (from === to) return false;
   const isClosed = from === 'WON' || from === 'LOST';
   if (isClosed) return to === 'NEW' || to === 'CONTACTED';
   if (to === 'WON' || to === 'LOST') return true;
@@ -218,6 +218,7 @@ export default function ContactPanel({
 
   const updateLeadStatus = async (status: string) => {
     if (!lead) return;
+    if (String(lead.status) === status) return;
     if (!isLeadStatusTransitionAllowed(String(lead.status), status)) {
       toast.error('Bu durum geçişine izin verilmiyor');
       return;
@@ -233,7 +234,9 @@ export default function ContactPanel({
       await api.patch(`/leads/${lead.id}/status`, { status, lossReason });
       toast.success('Durum güncellendi');
       fetchContact();
-    } catch { toast.error('Güncellenemedi'); }
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'Güncellenemedi');
+    }
   };
 
   const assignAgent = async (userId: string) => {
@@ -574,6 +577,9 @@ export default function ContactPanel({
                       onChange={(e) => updateLeadStatus(e.target.value)}
                       className={`w-full px-2.5 py-2 border rounded-lg text-xs font-medium focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white transition ${LEAD_STATUS_COLORS[lead.status]?.replace('bg-', 'border-').split(' ')[0] || 'border-gray-200'}`}
                     >
+                      <option value={lead.status}>
+                        {LEAD_STATUS_LABELS[lead.status] || lead.status} (Mevcut)
+                      </option>
                       {LEAD_STATUSES.filter((s) => isLeadStatusTransitionAllowed(String(lead.status), s.value)).map((s) => (
                         <option key={s.value} value={s.value}>{s.label}</option>
                       ))}

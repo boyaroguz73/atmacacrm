@@ -13,7 +13,6 @@ import {
   AlertTriangle,
   CalendarDays,
   Plus,
-  X,
 } from 'lucide-react';
 
 interface Task {
@@ -64,11 +63,6 @@ export default function CalendarPage() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [userRole, setUserRole] = useState('AGENT');
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [newTask, setNewTask] = useState({ title: '', description: '', dueAt: '' });
-  const [saving, setSaving] = useState(false);
-  const [contacts, setContacts] = useState<{ id: string; name: string; phone: string }[]>([]);
-  const [selectedContactId, setSelectedContactId] = useState('');
 
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
@@ -83,14 +77,6 @@ export default function CalendarPage() {
         if (u.role) setUserRole(u.role);
       }
     } catch {}
-    api.get('/contacts').then(({ data }) => {
-      const list = (data.contacts || data || []).map((c: any) => ({
-        id: c.id,
-        name: [c.name, c.surname].filter(Boolean).join(' ') || c.phone,
-        phone: c.phone,
-      }));
-      setContacts(list);
-    }).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -144,33 +130,12 @@ export default function CalendarPage() {
     } catch {}
   };
 
-  const openAddModal = (date?: Date) => {
+  const tasksCreateHref = (date?: Date) => {
     const d = date || selectedDate || new Date();
     const yyyy = d.getFullYear();
     const mm = String(d.getMonth() + 1).padStart(2, '0');
     const dd = String(d.getDate()).padStart(2, '0');
-    setNewTask({ title: '', description: '', dueAt: `${yyyy}-${mm}-${dd}T10:00` });
-    setSelectedContactId('');
-    setShowAddModal(true);
-  };
-
-  const handleAddTask = async () => {
-    if (!newTask.title.trim() || !newTask.dueAt) return;
-    setSaving(true);
-    try {
-      await api.post('/tasks', {
-        title: newTask.title,
-        description: newTask.description || undefined,
-        dueAt: new Date(newTask.dueAt).toISOString(),
-        contactId: selectedContactId || undefined,
-      });
-      setShowAddModal(false);
-      fetchTasks();
-    } catch (err: any) {
-      alert(err?.response?.data?.message || 'Görev oluşturulamadı');
-    } finally {
-      setSaving(false);
-    }
+    return `/tasks?new=1&date=${yyyy}-${mm}-${dd}`;
   };
 
   return (
@@ -190,13 +155,13 @@ export default function CalendarPage() {
           >
             Bugün
           </button>
-          <button
-            onClick={() => openAddModal()}
+          <Link
+            href={tasksCreateHref()}
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-whatsapp text-white rounded-lg hover:bg-green-600 transition-colors"
           >
             <Plus className="w-3.5 h-3.5" />
             Görev Ekle
-          </button>
+          </Link>
         </div>
       </div>
 
@@ -323,13 +288,13 @@ export default function CalendarPage() {
                 </h3>
               </div>
               {selectedDate && (
-                <button
-                  onClick={() => openAddModal(selectedDate)}
+                <Link
+                  href={tasksCreateHref(selectedDate)}
                   className="p-1.5 text-whatsapp hover:bg-green-50 rounded-lg transition-colors"
                   title="Bu güne görev ekle"
                 >
                   <Plus className="w-4 h-4" />
-                </button>
+                </Link>
               )}
             </div>
             {selectedDate && (
@@ -349,13 +314,13 @@ export default function CalendarPage() {
               <div className="text-center py-12 text-gray-300">
                 <CheckCircle2 className="w-10 h-10 mx-auto mb-2" />
                 <p className="text-sm">Bu gün için görev yok</p>
-                <button
-                  onClick={() => openAddModal(selectedDate!)}
+                <Link
+                  href={tasksCreateHref(selectedDate!)}
                   className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-whatsapp text-white rounded-lg hover:bg-green-600 transition-colors"
                 >
                   <Plus className="w-3.5 h-3.5" />
                   Görev Ekle
-                </button>
+                </Link>
               </div>
             ) : (
               selectedTasks.map((task) => {
@@ -424,91 +389,6 @@ export default function CalendarPage() {
           </div>
         </div>
       </div>
-      {/* Add Task Modal */}
-      {showAddModal && (
-        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl w-full max-w-md shadow-xl">
-            <div className="p-5 border-b flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-gray-900">Yeni Görev</h2>
-              <button
-                onClick={() => setShowAddModal(false)}
-                className="p-1 text-gray-400 hover:text-gray-600"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="p-5 space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Başlık *
-                </label>
-                <input
-                  type="text"
-                  value={newTask.title}
-                  onChange={(e) => setNewTask({ ...newTask, title: e.target.value })}
-                  placeholder="Örn: Müşteriyi ara"
-                  className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-whatsapp/20"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Açıklama
-                </label>
-                <textarea
-                  value={newTask.description}
-                  onChange={(e) => setNewTask({ ...newTask, description: e.target.value })}
-                  rows={3}
-                  placeholder="Görev detayları..."
-                  className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-whatsapp/20 resize-none"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Tarih ve Saat *
-                </label>
-                <input
-                  type="datetime-local"
-                  value={newTask.dueAt}
-                  onChange={(e) => setNewTask({ ...newTask, dueAt: e.target.value })}
-                  className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-whatsapp/20"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  İlgili Kişi
-                </label>
-                <select
-                  value={selectedContactId}
-                  onChange={(e) => setSelectedContactId(e.target.value)}
-                  className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-whatsapp/20"
-                >
-                  <option value="">Kişi seçin (opsiyonel)</option>
-                  {contacts.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name} ({c.phone})
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-            <div className="p-5 border-t flex justify-end gap-2">
-              <button
-                onClick={() => setShowAddModal(false)}
-                className="px-4 py-2 text-gray-600 hover:bg-gray-50 rounded-lg text-sm"
-              >
-                İptal
-              </button>
-              <button
-                onClick={handleAddTask}
-                disabled={!newTask.title.trim() || !newTask.dueAt || saving}
-                className="px-4 py-2 bg-whatsapp text-white rounded-lg text-sm hover:bg-green-600 disabled:opacity-50 transition-colors"
-              >
-                {saving ? 'Kaydediliyor...' : 'Oluştur'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

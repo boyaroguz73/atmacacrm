@@ -84,6 +84,28 @@ function inferMediaTypeFromHints(msg: any, mediaMimeType?: string): string | und
   return undefined;
 }
 
+function detectMimeFromBuffer(buf?: Buffer): string | undefined {
+  if (!buf || buf.length < 12) return undefined;
+  if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return 'image/jpeg';
+  if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) return 'image/png';
+  if (buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x38) return 'image/gif';
+  if (
+    buf[0] === 0x52 &&
+    buf[1] === 0x49 &&
+    buf[2] === 0x46 &&
+    buf[3] === 0x46 &&
+    buf[8] === 0x57 &&
+    buf[9] === 0x45 &&
+    buf[10] === 0x42 &&
+    buf[11] === 0x50
+  ) return 'image/webp';
+  if (buf[0] === 0x25 && buf[1] === 0x50 && buf[2] === 0x44 && buf[3] === 0x46) return 'application/pdf';
+  if (buf[0] === 0x1a && buf[1] === 0x45 && buf[2] === 0xdf && buf[3] === 0xa3) return 'video/webm';
+  if (buf[0] === 0x4f && buf[1] === 0x67 && buf[2] === 0x67 && buf[3] === 0x53) return 'audio/ogg';
+  if (buf[4] === 0x66 && buf[5] === 0x74 && buf[6] === 0x79 && buf[7] === 0x70) return 'video/mp4';
+  return undefined;
+}
+
 function looksLikeBase64Blob(value: unknown): boolean {
   if (typeof value !== 'string') return false;
   const s = value.trim();
@@ -393,13 +415,19 @@ export class WahaWebhookHandler {
             try {
               const byId = await this.wahaService.downloadFile(sessionName, fileId);
               if (byId?.data?.length) {
+                const sniffedMime = detectMimeFromBuffer(byId.data);
+                const effectiveMime =
+                  byId.mimetype && byId.mimetype !== 'application/octet-stream'
+                    ? byId.mimetype
+                    : (sniffedMime || mediaMimeType);
                 const dir = this.ensureUploadsDir();
-                const ext = this.getExtFromMime(byId.mimetype || mediaMimeType);
+                const ext = this.getExtFromMime(effectiveMime);
                 const filename = `${uuid()}${ext}`;
                 const filePath = join(dir, filename);
                 writeFileSync(filePath, byId.data);
                 mediaUrl = `/uploads/${filename}`;
-                mediaMimeType = byId.mimetype || mediaMimeType;
+                mediaMimeType = effectiveMime;
+                mediaType = mediaType || inferMediaTypeFromHints(msg, mediaMimeType);
                 mediaMeta.source = 'waha_file_by_message_id';
                 mediaMeta.originalMediaUrl = mediaUrl;
                 mediaMeta.originalMimeType = mediaMimeType || null;
@@ -786,9 +814,16 @@ export class WahaWebhookHandler {
       'image/png': '.png',
       'image/gif': '.gif',
       'image/webp': '.webp',
+      'image/heic': '.heic',
+      'image/heif': '.heif',
       'video/mp4': '.mp4',
+      'video/webm': '.webm',
+      'video/quicktime': '.mov',
       'audio/ogg': '.ogg',
       'audio/mpeg': '.mp3',
+      'audio/mp4': '.m4a',
+      'audio/aac': '.aac',
+      'audio/wav': '.wav',
       'application/pdf': '.pdf',
     };
     return map[mimetype] || '.bin';
@@ -875,16 +910,20 @@ export class WahaWebhookHandler {
         }
       }
 
-      const dir = this.ensureUploadsDir();
-      const ext = this.getExtFromMime(mimetype);
-      const filename = `${uuid()}${ext}`;
-      const filePath = join(dir, filename);
-
       const buf = await this.wahaService.downloadMediaBuffer(rewritten);
       if (!buf?.length) {
         this.logger.warn(`Medya indirilemedi veya boş: ${rewritten}`);
         return undefined;
       }
+      const sniffedMime = detectMimeFromBuffer(buf);
+      const effectiveMime =
+        mimetype && mimetype !== 'application/octet-stream'
+          ? mimetype
+          : (sniffedMime || mimetype);
+      const dir = this.ensureUploadsDir();
+      const ext = this.getExtFromMime(effectiveMime);
+      const filename = `${uuid()}${ext}`;
+      const filePath = join(dir, filename);
       writeFileSync(filePath, buf);
       this.logger.debug(`Downloaded media: ${filename} from ${rewritten}`);
       return `/uploads/${filename}`;

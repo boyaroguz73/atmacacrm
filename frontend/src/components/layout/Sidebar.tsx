@@ -150,6 +150,7 @@ const menuItems: MenuItem[] = [
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL?.replace('/api', '') || 'http://localhost:3002';
 const MENU_CACHE_KEY = 'crm_menu_visibility_cache_v1';
+const ECOMMERCE_STATUS_CACHE_KEY = 'crm_ecommerce_status_cache_v1';
 
 /** Alt menü `href` değeri query içeriyorsa (örn. /orders?tsoft=1) pathname + search ile eşleştirir */
 function childHrefMatches(pathname: string, searchParams: URLSearchParams, href: string): boolean {
@@ -230,6 +231,36 @@ function writeMenuCacheMerged(partial: Partial<MenuCachePayload>) {
   });
 }
 
+type EcommerceStatusCache = {
+  menuVisible: boolean;
+  provider: string | null;
+};
+
+function readEcommerceStatusCache(): EcommerceStatusCache | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(ECOMMERCE_STATUS_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as EcommerceStatusCache;
+    if (!parsed || typeof parsed !== 'object') return null;
+    return {
+      menuVisible: !!parsed.menuVisible,
+      provider: typeof parsed.provider === 'string' ? parsed.provider : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function writeEcommerceStatusCache(payload: EcommerceStatusCache) {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(ECOMMERCE_STATUS_CACHE_KEY, JSON.stringify(payload));
+  } catch {
+    // ignore
+  }
+}
+
 export default function Sidebar({
   mobileOpen = false,
   onClose,
@@ -244,8 +275,13 @@ export default function Sidebar({
   const currentStatus = searchParams.get('status');
   const isAdmin = user?.role === 'ADMIN' || user?.role === 'SUPERADMIN';
   const isSuperAdmin = user?.role === 'SUPERADMIN';
-  const [ecommerceMenuVisible, setEcommerceMenuVisible] = useState(false);
-  const [ecommerceProvider, setEcommerceProvider] = useState<string | null>(null);
+  const cachedEcommerce = useMemo(() => readEcommerceStatusCache(), []);
+  const [ecommerceMenuVisible, setEcommerceMenuVisible] = useState<boolean>(
+    cachedEcommerce?.menuVisible ?? false,
+  );
+  const [ecommerceProvider, setEcommerceProvider] = useState<string | null>(
+    cachedEcommerce?.provider ?? null,
+  );
   const cachedMenu = useMemo(() => readMenuCache(), []);
   /** Sunucudan gelen izinli menü anahtarları; null = filtre yok (yüklenemedi veya süper admin) */
   const [allowedMenuKeys, setAllowedMenuKeys] = useState<Set<string> | null>(
@@ -323,6 +359,7 @@ export default function Sidebar({
   useEffect(() => {
     if (!isAdmin || isSuperAdmin) {
       setEcommerceMenuVisible(false);
+      setEcommerceProvider(null);
       return;
     }
     let cancelled = false;
@@ -330,15 +367,15 @@ export default function Sidebar({
       .get('/ecommerce/status')
       .then(({ data }) => {
         if (!cancelled) {
-          setEcommerceMenuVisible(!!data?.menuVisible);
-          setEcommerceProvider(typeof data?.provider === 'string' ? data.provider : null);
+          const menuVisible = !!data?.menuVisible;
+          const provider = typeof data?.provider === 'string' ? data.provider : null;
+          setEcommerceMenuVisible(menuVisible);
+          setEcommerceProvider(provider);
+          writeEcommerceStatusCache({ menuVisible, provider });
         }
       })
       .catch(() => {
-        if (!cancelled) {
-          setEcommerceMenuVisible(false);
-          setEcommerceProvider(null);
-        }
+        // Ağ hatasında cache'deki son durum korunur; menü flicker yapmaz.
       });
     return () => {
       cancelled = true;

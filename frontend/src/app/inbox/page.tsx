@@ -120,12 +120,12 @@ export default function InboxPage() {
 
   useEffect(() => {
     // Grup sekmesinde atama bazlı varsayılan filtreler yerine tüm konuşmaları çek.
-    const effectiveFilter = isGroupsRoute ? 'all' : filter;
+    const effectiveFilter = isGroupsRoute ? 'groups_only' : filter;
     setListFilter(effectiveFilter);
     const silent = inboxLoadedOnce.current;
     inboxLoadedOnce.current = true;
     autoSelectedRef.current = false;
-    fetchConversations(silent);
+    fetchConversations({ silent, reset: true });
 
     const socket = connectSocket();
     socket.emit('join:inbox');

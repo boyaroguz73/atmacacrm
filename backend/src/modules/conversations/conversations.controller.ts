@@ -66,6 +66,7 @@ export class ConversationsController {
     @Query('archived') archived?: string,
     @Query('search') search?: string,
     @Query('filter') filter?: string,
+    @Query('isGroup') isGroup?: string,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
   ) {
@@ -99,6 +100,14 @@ export class ConversationsController {
       isArchived: archived === 'true',
       search,
       filter: effectiveFilter,
+      isGroup:
+        typeof isGroup === 'string'
+          ? isGroup === 'true'
+            ? true
+            : isGroup === 'false'
+              ? false
+              : undefined
+          : undefined,
       page: Number.isFinite(pageNum) && pageNum > 0 ? pageNum : 1,
       limit: safeLimit,
     });

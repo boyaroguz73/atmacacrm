@@ -1061,8 +1061,12 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
                 const msg = item.message;
                 const isOutgoing = msg.direction === 'OUTGOING';
                 const mediaUrlResolved = resolveMediaUrl(msg);
+                const resolvedMime = String(
+                  msg.mediaMimeType || msg.metadata?.originalMimeType || '',
+                ).toLowerCase();
                 const isImage =
                   msg.mediaType === 'IMAGE' ||
+                  resolvedMime.startsWith('image/') ||
                   mediaUrlResolved?.match(/\.(jpg|jpeg|png|gif|webp)(\?|$)/i);
                 const isImageMessage = !!(mediaUrlResolved && isImage);
                 const replyPreview =
@@ -1176,7 +1180,7 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
                         <div className="text-xs font-semibold text-green-600 mb-1 truncate">
                           {isOutgoing
                             ? (msg.participantName || msg.sentBy?.name || 'Siz')
-                            : (msg.participantName || formatPhone(msg.participantPhone) || '—')}
+                            : (msg.participantName || formatPhone(msg.participantPhone) || msg.sentBy?.name || 'Katılımcı')}
                         </div>
                       )}
                       {/* Bire bir: aynı müşteriye birden fazla temsilci yazabildiği için gönderen adı */}

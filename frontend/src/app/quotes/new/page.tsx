@@ -12,9 +12,13 @@ import toast from 'react-hot-toast';
 import {
   ArrowLeft,
   Building2,
+  ChevronDown,
+  ChevronRight,
   Loader2,
   MessageSquare,
   Package,
+  PanelRightClose,
+  PanelRightOpen,
   Search,
   Trash2,
   Upload,
@@ -322,6 +326,11 @@ export default function NewQuotePage() {
   const [footerTouched, setFooterTouched] = useState(false);
   const [grandTotalOverride, setGrandTotalOverride] = useState<string>('');
   const [submitting, setSubmitting] = useState(false);
+  const [showCustomerDetails, setShowCustomerDetails] = useState(false);
+  const [showOptionalDetails, setShowOptionalDetails] = useState(false);
+  const [showDiscount, setShowDiscount] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
+  const [expandedLineKey, setExpandedLineKey] = useState<string | null>(null);
 
   const [billingDraft, setBillingDraft] = useState<BillingFields | null>(null);
   /** Sunucuya son kaydedilen / yüklenen firma-fatura kopyası (kayıtsız düzenleme tespiti). */
@@ -387,12 +396,14 @@ export default function NewQuotePage() {
     setSelectedContact(c);
     setContactQuery(c.name ? `${c.name} (${formatPhone(c.phone)})` : formatPhone(c.phone));
     setContactDropdownOpen(false);
+    setChatOpen(true);
   };
 
   const clearContact = () => {
     setSelectedContact(null);
     setContactQuery('');
     setContactResults([]);
+    setChatOpen(false);
   };
 
   const openQuickContactModal = async () => {
@@ -985,7 +996,8 @@ export default function NewQuotePage() {
           </div>
         </div>
       )}
-      <div className="flex items-center gap-4 mb-8 rounded-2xl border border-gray-100 bg-white/90 shadow-sm px-4 py-4 md:px-6">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-6 rounded-2xl border border-gray-100 bg-white/90 shadow-sm px-4 py-4 md:px-6">
+        <div className="flex items-center gap-4">
         <button
           type="button"
           onClick={() => router.push('/quotes')}
@@ -996,27 +1008,42 @@ export default function NewQuotePage() {
         </button>
         <div className="min-w-0">
           <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Yeni Teklif</h1>
+            <p className="text-xs text-gray-500 mt-0.5">Hedef: 30-60 saniyede teklif oluşturma</p>
+        </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <label className="text-xs text-gray-500">Para birimi</label>
+          <select
+            value={currency}
+            onChange={(e) => setCurrency(e.target.value)}
+            className="px-2.5 py-2 border border-gray-200 rounded-lg text-xs bg-white focus:outline-none focus:border-whatsapp"
+          >
+            <option value="TRY">TL (₺)</option>
+            <option value="USD">USD ($)</option>
+            <option value="EUR">EUR (€)</option>
+          </select>
+          <button
+            type="button"
+            onClick={() => setShowDiscount((v) => !v)}
+            className={cn(
+              'text-xs px-2.5 py-2 rounded-lg border transition-colors',
+              showDiscount
+                ? 'border-green-200 bg-green-50 text-green-700'
+                : 'border-gray-200 text-gray-600 hover:bg-gray-50',
+            )}
+          >
+            İndirim {showDiscount ? 'Açık' : 'Kapalı'}
+          </button>
         </div>
       </div>
 
       <form
         onSubmit={handleSubmit}
-        className="flex flex-col xl:flex-row xl:items-start xl:gap-8 gap-6"
+        className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_320px] gap-6 items-start"
       >
-        <aside className="w-full xl:w-72 xl:shrink-0 space-y-2 order-2 xl:order-1">
-          <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Sohbet</h3>
-          {selectedContact ? (
-            <QuoteEmbeddedChat contactId={selectedContact.id} contactPhone={selectedContact.phone} />
-          ) : (
-            <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50/50 p-4 text-xs text-gray-500 text-center">
-              Müşteri seçildiğinde WhatsApp sohbeti burada görünür.
-            </div>
-          )}
-        </aside>
-        <div className="flex-1 min-w-0 space-y-6 order-1 xl:order-2 w-full">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+        <div className="min-w-0 space-y-5 w-full">
           {/* Kişi */}
-          <section className="bg-white rounded-xl border border-gray-100 shadow-sm p-5 space-y-3">
+          <section className="bg-white rounded-xl border border-gray-100 shadow-sm p-4 space-y-3">
             <div className="flex items-center justify-between gap-3">
               <h2 className="text-sm font-semibold text-gray-900">Müşteri</h2>
               <button
@@ -1084,10 +1111,146 @@ export default function NewQuotePage() {
                 </div>
               )}
             </div>
+            {selectedContact ? (
+              <div className="rounded-xl border border-gray-100 bg-gray-50/70">
+                <button
+                  type="button"
+                  onClick={() => setShowCustomerDetails((v) => !v)}
+                  className="w-full px-3 py-2.5 text-xs text-gray-700 font-medium flex items-center justify-between"
+                >
+                  <span className="inline-flex items-center gap-2">
+                    <Building2 className="w-3.5 h-3.5 text-amber-700" />
+                    Detayları göster
+                  </span>
+                  {showCustomerDetails ? (
+                    <ChevronDown className="w-4 h-4 text-gray-500" />
+                  ) : (
+                    <ChevronRight className="w-4 h-4 text-gray-500" />
+                  )}
+                </button>
+                {showCustomerDetails && (
+                  <div
+                    className={cn(
+                      'px-3 pb-3 border-t border-gray-100 space-y-3 transition-[box-shadow,border-color]',
+                      billingShake && 'animate-crm-shake ring-2 ring-red-500 border-red-400',
+                      !billingShake && billingDirty && 'border-amber-400 ring-1 ring-amber-200/80',
+                      !billingShake && !billingDirty && 'border-amber-100',
+                    )}
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2 pt-3">
+                      <p className="text-[11px] text-gray-500">
+                        PDF ve sipariş ekranında kullanılır.
+                        {billingDirty ? (
+                          <span className="text-red-600 font-medium">
+                            {' '}
+                            Kayıtsız değişiklik varken teklif oluşturulamaz.
+                          </span>
+                        ) : null}
+                      </p>
+                      <div className="flex items-center gap-2">
+                        {billingDirty ? (
+                          <button
+                            type="button"
+                            onClick={() => billingBaseline && setBillingDraft({ ...billingBaseline })}
+                            className="text-xs font-medium text-gray-600 hover:text-gray-900 px-2 py-1.5 rounded-lg border border-gray-200 bg-white"
+                          >
+                            Sıfırla
+                          </button>
+                        ) : null}
+                        <button
+                          type="button"
+                          onClick={() => void saveBilling()}
+                          disabled={billingLoading || billingSaving || !billingDraft || !billingDirty}
+                          className={cn(
+                            'text-xs font-semibold px-3 py-1.5 rounded-lg text-white inline-flex items-center gap-1 disabled:opacity-50',
+                            billingDirty ? 'bg-amber-600 hover:bg-amber-700' : 'bg-gray-300 cursor-not-allowed',
+                          )}
+                        >
+                          {billingSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+                          Kaydet
+                        </button>
+                      </div>
+                    </div>
+                    {billingLoading || !billingDraft ? (
+                      <div className="flex items-center gap-2 text-xs text-gray-400 py-2">
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Yükleniyor…
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                        <label className="sm:col-span-2 block">
+                          <span className="text-xs text-gray-500">Ticari unvan / şirket</span>
+                          <input
+                            className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl"
+                            value={billingDraft.company}
+                            onChange={(e) =>
+                              setBillingDraft((d) => (d ? { ...d, company: e.target.value } : d))
+                            }
+                          />
+                        </label>
+                        <label className="sm:col-span-2 block">
+                          <span className="text-xs text-gray-500">Açık adres</span>
+                          <textarea
+                            rows={2}
+                            className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl resize-y"
+                            value={billingDraft.address}
+                            onChange={(e) =>
+                              setBillingDraft((d) => (d ? { ...d, address: e.target.value } : d))
+                            }
+                          />
+                        </label>
+                        <label className="sm:col-span-2 block">
+                          <span className="text-xs text-gray-500">Fatura adresi (öncelikli)</span>
+                          <textarea
+                            rows={2}
+                            className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl resize-y"
+                            placeholder="Boşsa açık adres kullanılır"
+                            value={billingDraft.billingAddress}
+                            onChange={(e) =>
+                              setBillingDraft((d) => (d ? { ...d, billingAddress: e.target.value } : d))
+                            }
+                          />
+                        </label>
+                        <label className="block">
+                          <span className="text-xs text-gray-500">Vergi dairesi</span>
+                          <input
+                            className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl"
+                            value={billingDraft.taxOffice}
+                            onChange={(e) =>
+                              setBillingDraft((d) => (d ? { ...d, taxOffice: e.target.value } : d))
+                            }
+                          />
+                        </label>
+                        <label className="block">
+                          <span className="text-xs text-gray-500">VKN</span>
+                          <input
+                            className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl"
+                            value={billingDraft.taxNumber}
+                            onChange={(e) =>
+                              setBillingDraft((d) => (d ? { ...d, taxNumber: e.target.value } : d))
+                            }
+                          />
+                        </label>
+                        <label className="sm:col-span-2 block">
+                          <span className="text-xs text-gray-500">TC Kimlik No</span>
+                          <input
+                            className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl"
+                            value={billingDraft.identityNumber}
+                            onChange={(e) =>
+                              setBillingDraft((d) => (d ? { ...d, identityNumber: e.target.value } : d))
+                            }
+                          />
+                        </label>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            ) : null}
           </section>
 
-          {/* Ürün arama */}
-          <section className="bg-white rounded-xl border border-gray-100 shadow-sm p-5 space-y-3">
+          {/* Ürün arama + liste */}
+          <section className="bg-white rounded-xl border border-gray-100 shadow-sm p-4 space-y-3">
             <h2 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
               <Package className="w-4 h-4 text-whatsapp" />
               Ürün ekle
@@ -1118,181 +1281,104 @@ export default function NewQuotePage() {
                 </div>
               )}
             </div>
-          </section>
-          </div>
-
-          {selectedContact && (
-            <section
-              className={cn(
-                'bg-white rounded-xl border shadow-sm p-5 space-y-3 transition-[box-shadow,border-color]',
-                billingShake && 'animate-crm-shake ring-2 ring-red-500 border-red-400',
-                !billingShake && billingDirty && 'border-amber-400 ring-1 ring-amber-200/80',
-                !billingShake && !billingDirty && 'border-amber-100',
-              )}
-            >
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <h2 className="text-sm font-semibold text-gray-900 flex items-center gap-2 flex-wrap">
-                  <Building2 className="w-4 h-4 text-amber-700" />
-                  Firma / fatura bilgileri
-                  {billingDirty ? (
-                    <span className="text-[10px] font-semibold uppercase tracking-wide text-red-600 bg-red-50 px-2 py-0.5 rounded-full">
-                      Kaydedilmedi
-                    </span>
-                  ) : null}
-                </h2>
-                <div className="flex items-center gap-2">
-                  {billingDirty ? (
-                    <button
-                      type="button"
-                      onClick={() => billingBaseline && setBillingDraft({ ...billingBaseline })}
-                      className="text-xs font-medium text-gray-600 hover:text-gray-900 px-2 py-1.5 rounded-lg border border-gray-200 bg-white"
-                    >
-                      Sıfırla
-                    </button>
-                  ) : null}
-                  <button
-                    type="button"
-                    onClick={() => void saveBilling()}
-                    disabled={billingLoading || billingSaving || !billingDraft || !billingDirty}
-                    className={cn(
-                      'text-xs font-semibold px-3 py-1.5 rounded-lg text-white inline-flex items-center gap-1 disabled:opacity-50',
-                      billingDirty ? 'bg-amber-600 hover:bg-amber-700' : 'bg-gray-300 cursor-not-allowed',
-                    )}
-                  >
-                    {billingSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
-                    Kaydet
-                  </button>
-                </div>
-              </div>
-              <p className="text-[11px] text-gray-500">
-                Teklif PDF’inde müşteri bloğunda ve sipariş / muhasebe ekranlarında kullanılır.
-                {billingDirty ? (
-                  <span className="text-red-600 font-medium"> Kayıtsız değişiklik varken teklif oluşturulamaz.</span>
-                ) : null}
-              </p>
-              {billingLoading || !billingDraft ? (
-                <div className="flex items-center gap-2 text-xs text-gray-400 py-2">
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  Yükleniyor…
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
-                  <label className="sm:col-span-2 block">
-                    <span className="text-xs text-gray-500">Ticari unvan / şirket</span>
-                    <input
-                      className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl"
-                      value={billingDraft.company}
-                      onChange={(e) =>
-                        setBillingDraft((d) => (d ? { ...d, company: e.target.value } : d))
-                      }
-                    />
-                  </label>
-                  <label className="sm:col-span-2 block">
-                    <span className="text-xs text-gray-500">Açık adres</span>
-                    <textarea
-                      rows={2}
-                      className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl resize-y"
-                      value={billingDraft.address}
-                      onChange={(e) =>
-                        setBillingDraft((d) => (d ? { ...d, address: e.target.value } : d))
-                      }
-                    />
-                  </label>
-                  <label className="sm:col-span-2 block">
-                    <span className="text-xs text-gray-500">Fatura adresi (öncelikli)</span>
-                    <textarea
-                      rows={2}
-                      className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl resize-y"
-                      placeholder="Boşsa açık adres kullanılır"
-                      value={billingDraft.billingAddress}
-                      onChange={(e) =>
-                        setBillingDraft((d) => (d ? { ...d, billingAddress: e.target.value } : d))
-                      }
-                    />
-                  </label>
-                  <label className="block">
-                    <span className="text-xs text-gray-500">Vergi dairesi</span>
-                    <input
-                      className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl"
-                      value={billingDraft.taxOffice}
-                      onChange={(e) =>
-                        setBillingDraft((d) => (d ? { ...d, taxOffice: e.target.value } : d))
-                      }
-                    />
-                  </label>
-                  <label className="block">
-                    <span className="text-xs text-gray-500">VKN</span>
-                    <input
-                      className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl"
-                      value={billingDraft.taxNumber}
-                      onChange={(e) =>
-                        setBillingDraft((d) => (d ? { ...d, taxNumber: e.target.value } : d))
-                      }
-                    />
-                  </label>
-                  <label className="sm:col-span-2 block">
-                    <span className="text-xs text-gray-500">TC Kimlik No</span>
-                    <input
-                      className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl"
-                      value={billingDraft.identityNumber}
-                      onChange={(e) =>
-                        setBillingDraft((d) => (d ? { ...d, identityNumber: e.target.value } : d))
-                      }
-                    />
-                  </label>
-                </div>
-              )}
-            </section>
-          )}
-
-          {/* Satırlar — tam genişlik (orta sütun flex-1) */}
-          <section className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden w-full">
-            <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-gray-900">Kalemler</h2>
-              <button
-                type="button"
-                onClick={() => setLines((p) => [...p, emptyLine(defaultVatRate)])}
-                className="text-xs font-semibold text-whatsapp hover:text-green-700"
-              >
-                + Boş satır
-              </button>
-            </div>
-            
-            <div className="overflow-x-auto w-full min-w-0">
-                <table className="w-full text-xs min-w-[1020px]">
-                <thead>
-                  <tr className="bg-gray-50/90 text-gray-500 font-semibold uppercase tracking-wide text-[10px]">
-                    <th className="text-left px-2 py-2 w-20 sm:w-24">Görsel</th>
-                    <th className="text-left px-3 py-2 w-[18%]">Ürün</th>
-                    <th className="text-left px-2 py-2 w-[14%]">Renk/Kumaş</th>
-                    <th className="text-left px-2 py-2 w-[12%]">Ölçü</th>
-                    <th className="text-left px-2 py-2 w-14">Miktar</th>
-                    <th className="text-left px-2 py-2 w-28">Birim fiyat</th>
-                    <th className="text-right px-3 py-2 w-28">Toplam</th>
-                    <th className="w-10" />
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {lines.map((line, idx) => (
-                    <tr key={line.key} className="align-top">
-                      <td className="px-2 py-2 w-16">
-                        <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-lg border border-gray-100 bg-gray-50 overflow-hidden shrink-0">
-                          {line.lineImageUrl ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img
-                              src={rewriteMediaUrlForClient(line.lineImageUrl)}
-                              alt=""
-                              className="w-full h-full object-cover"
+            <div className="space-y-2">
+              {lines.map((line, idx) => {
+                const isExpanded = expandedLineKey === line.key;
+                return (
+                  <div key={line.key} className="rounded-xl border border-gray-100 overflow-hidden">
+                    <div className="grid grid-cols-[minmax(0,1fr)_80px_140px_140px_40px] items-center gap-2 px-3 py-2.5 bg-white">
+                      <button
+                        type="button"
+                        onClick={() => setExpandedLineKey((prev) => (prev === line.key ? null : line.key))}
+                        className="text-left min-w-0"
+                      >
+                        <p className="text-sm font-semibold text-gray-900 truncate">
+                          {line.name?.trim() || `Kalem ${idx + 1}`}
+                        </p>
+                        <p className="text-[11px] text-gray-500 truncate">
+                          {line.priceIncludesVat ? 'KDV dahil' : 'KDV hariç'} · %{line.vatRate}
+                        </p>
+                      </button>
+                      <input
+                        type="number"
+                        min={1}
+                        step={1}
+                        value={line.quantity}
+                        onChange={(e) =>
+                          updateLine(line.key, {
+                            quantity: Math.max(1, parseInt(e.target.value, 10) || 1),
+                          })
+                        }
+                        className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm text-right tabular-nums"
+                      />
+                      <input
+                        type="number"
+                        min={0}
+                        step={0.01}
+                        value={line.unitPrice}
+                        onChange={(e) => updateLine(line.key, { unitPrice: parseFloat(e.target.value) || 0 })}
+                        className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm text-right tabular-nums"
+                      />
+                      <div className="text-right text-sm font-bold text-red-600 tabular-nums">
+                        {sym}
+                        {fmt(totals.lineTotals[idx] ?? 0)}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => removeLine(line.key)}
+                        className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg"
+                        title="Satırı sil"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                    {isExpanded && (
+                      <div className="px-3 pb-3 pt-2 border-t border-gray-100 bg-gray-50/60 space-y-3">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          <label className="block">
+                            <span className="text-xs text-gray-500">Ürün adı</span>
+                            <input
+                              value={line.name}
+                              onChange={(e) => updateLine(line.key, { name: e.target.value })}
+                              placeholder="Ürün adı"
+                              className="mt-1 w-full px-2.5 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-whatsapp bg-white"
                             />
-                          ) : (
-                            <span className="flex w-full h-full items-center justify-center text-[9px] text-gray-300">
-                              —
-                            </span>
-                          )}
+                          </label>
+                          <label className="block">
+                            <span className="text-xs text-gray-500">Açıklama</span>
+                            <input
+                              value={line.description ?? ''}
+                              onChange={(e) => updateLine(line.key, { description: e.target.value })}
+                              placeholder="Satır açıklaması"
+                              className="mt-1 w-full px-2.5 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-whatsapp bg-white"
+                            />
+                          </label>
+                          <label className="block">
+                            <span className="text-xs text-gray-500">Renk / kumaş</span>
+                            <input
+                              value={line.colorFabricInfo ?? ''}
+                              onChange={(e) => updateLine(line.key, { colorFabricInfo: e.target.value })}
+                              placeholder="Örn. krem"
+                              className="mt-1 w-full px-2.5 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-whatsapp bg-white"
+                            />
+                          </label>
+                          <label className="block">
+                            <span className="text-xs text-gray-500">Ölçü</span>
+                            <input
+                              value={line.measurementInfo ?? ''}
+                              onChange={(e) => updateLine(line.key, { measurementInfo: e.target.value })}
+                              placeholder="Örn. 180x200"
+                              className="mt-1 w-full px-2.5 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-whatsapp bg-white"
+                            />
+                          </label>
                         </div>
-                        <div className="mt-1 flex items-center gap-1">
-                          <label className="inline-flex items-center gap-1 px-1.5 py-0.5 border border-gray-200 rounded text-[10px] text-gray-700 cursor-pointer hover:bg-gray-50">
-                            {uploadingLineKey === line.key ? <Loader2 className="w-3 h-3 animate-spin" /> : <Upload className="w-3 h-3" />}
+                        <div className="flex items-center gap-2">
+                          <label className="inline-flex items-center gap-1.5 px-2 py-1 border border-gray-200 rounded text-xs text-gray-700 cursor-pointer hover:bg-white bg-white">
+                            {uploadingLineKey === line.key ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                              <Upload className="w-3.5 h-3.5" />
+                            )}
                             Görsel yükle
                             <input
                               type="file"
@@ -1306,192 +1392,144 @@ export default function NewQuotePage() {
                               }}
                             />
                           </label>
-                          {line.lineImageUrl && (
-                            <button
-                              type="button"
-                              onClick={() => updateLine(line.key, { lineImageUrl: undefined })}
-                              className="px-1.5 py-0.5 border border-gray-200 rounded text-[10px] text-gray-600 hover:bg-gray-50"
-                            >
-                              Temizle
-                            </button>
-                          )}
+                          {line.lineImageUrl ? (
+                            <>
+                              <div className="w-10 h-10 rounded border border-gray-200 overflow-hidden bg-white">
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img
+                                  src={rewriteMediaUrlForClient(line.lineImageUrl)}
+                                  alt=""
+                                  className="w-full h-full object-cover"
+                                />
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => updateLine(line.key, { lineImageUrl: undefined })}
+                                className="px-2 py-1 border border-gray-200 rounded text-xs text-gray-600 hover:bg-white"
+                              >
+                                Temizle
+                              </button>
+                            </>
+                          ) : null}
                         </div>
-                      </td>
-                      <td className="px-3 py-2">
-                        <input
-                          value={line.name}
-                          onChange={(e) => updateLine(line.key, { name: e.target.value })}
-                          placeholder="Ürün adı"
-                          className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-whatsapp"
-                        />
-                      </td>
-                      <td className="px-2 py-2">
-                        <input
-                          value={line.colorFabricInfo ?? ''}
-                          onChange={(e) =>
-                            updateLine(line.key, { colorFabricInfo: e.target.value })
-                          }
-                          placeholder="Örn. krem"
-                          className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-whatsapp"
-                        />
-                      </td>
-                      <td className="px-2 py-2">
-                        <input
-                          value={line.measurementInfo ?? ''}
-                          onChange={(e) => updateLine(line.key, { measurementInfo: e.target.value })}
-                          placeholder="Örn. 180×200"
-                          className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-whatsapp"
-                        />
-                      </td>
-                      <td className="px-2 py-2">
-                        <input
-                          type="number"
-                          min={1}
-                          step={1}
-                          value={line.quantity}
-                          onChange={(e) =>
-                            updateLine(line.key, {
-                              quantity: Math.max(1, parseInt(e.target.value, 10) || 1),
-                            })
-                          }
-                          className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm tabular-nums"
-                        />
-                      </td>
-                      <td className="px-2 py-2">
-                        <div className="flex flex-col gap-1">
-                          <input
-                            type="number"
-                            min={0}
-                            step={0.01}
-                            value={line.unitPrice}
-                            onChange={(e) =>
-                              updateLine(line.key, { unitPrice: parseFloat(e.target.value) || 0 })
-                            }
-                            className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm tabular-nums"
-                          />
-                          <span className="text-[10px] text-gray-400 px-0.5">
-                            {line.priceIncludesVat ? 'KDV dahil' : 'KDV hariç'} · %{line.vatRate}
-                          </span>
-                        </div>
-                      </td>
-                      <td className="px-3 py-2 text-right text-sm font-semibold text-gray-800 tabular-nums">
-                        {sym}
-                        {fmt(totals.lineTotals[idx] ?? 0)}
-                      </td>
-                      <td className="px-1 py-2 text-center">
-                        <button
-                          type="button"
-                          onClick={() => removeLine(line.key)}
-                          className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg"
-                          title="Satırı sil"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+              <button
+                type="button"
+                onClick={() => setLines((p) => [...p, emptyLine(defaultVatRate)])}
+                className="w-full border border-dashed border-gray-300 rounded-xl py-2.5 text-xs font-semibold text-gray-600 hover:bg-gray-50"
+              >
+                + Boş satır ekle
+              </button>
             </div>
           </section>
 
-          <section className="bg-white rounded-xl border border-gray-100 shadow-sm p-5 grid sm:grid-cols-2 gap-4 w-full">
-            <div>
-              <label className="block text-xs font-semibold text-gray-500 mb-1">Genel indirim tipi</label>
-              <select
-                value={discountType}
-                onChange={(e) => setDiscountType(e.target.value as DiscountType)}
-                className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:border-whatsapp"
-              >
-                <option value="PERCENT">Yüzde (%)</option>
-                <option value="AMOUNT">Tutar (TL)</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-gray-500 mb-1">Genel indirim değeri</label>
-              <input
-                type="number"
-                min={0}
-                step={0.01}
-                value={discountValue}
-                onChange={(e) => setDiscountValue(parseFloat(e.target.value) || 0)}
-                className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-whatsapp tabular-nums"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-gray-500 mb-1">Para birimi</label>
-              <select
-                value={currency}
-                onChange={(e) => setCurrency(e.target.value)}
-                className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:border-whatsapp"
-              >
-                <option value="TRY">TL (₺)</option>
-                <option value="USD">USD ($)</option>
-                <option value="EUR">EUR (€)</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-gray-500 mb-1">Geçerlilik tarihi</label>
-              <input
-                type="date"
-                value={validUntil}
-                onChange={(e) => setValidUntil(e.target.value)}
-                className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-whatsapp"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-gray-500 mb-1">Teslimat tarihi</label>
-              <input
-                type="date"
-                value={deliveryDate}
-                onChange={(e) => setDeliveryDate(e.target.value)}
-                className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-whatsapp"
-              />
-            </div>
-            <div className="sm:col-span-2">
-              <label className="block text-xs font-semibold text-gray-500 mb-1">Notlar</label>
-              <HtmlEditor
-                value={notes}
-                onChange={setNotes}
-                placeholder="Teklif ile ilgili notlar…"
-                minHeight="80px"
-              />
-            </div>
-            <div className="sm:col-span-2">
-              <label className="block text-xs font-semibold text-gray-500 mb-1">
-                Ödeme Koşulları (bu teklife özel)
-              </label>
-              <HtmlEditor
-                value={termsOverride}
-                onChange={(val) => {
-                  setTermsTouched(true);
-                  setTermsOverride(val);
-                }}
-                placeholder="Bu teklifte PDF'e basılacak ödeme koşulları…"
-                minHeight="96px"
-              />
-            </div>
-            <div className="sm:col-span-2">
-              <label className="block text-xs font-semibold text-gray-500 mb-1">
-                Alt Not (bu teklife özel)
-              </label>
-              <HtmlEditor
-                value={footerNoteOverride}
-                onChange={(val) => {
-                  setFooterTouched(true);
-                  setFooterNoteOverride(val);
-                }}
-                placeholder="Bu teklifte PDF'e basılacak alt not…"
-                minHeight="80px"
-              />
-            </div>
+          <section className="bg-white rounded-xl border border-gray-100 shadow-sm">
+            <button
+              type="button"
+              onClick={() => setShowOptionalDetails((v) => !v)}
+              className="w-full px-4 py-3 text-sm font-semibold text-gray-700 flex items-center justify-between"
+            >
+              <span>Opsiyonel detaylar (notlar ve koşullar)</span>
+              {showOptionalDetails ? (
+                <ChevronDown className="w-4 h-4 text-gray-500" />
+              ) : (
+                <ChevronRight className="w-4 h-4 text-gray-500" />
+              )}
+            </button>
+            {showOptionalDetails && (
+              <div className="p-4 pt-0 grid sm:grid-cols-2 gap-4 border-t border-gray-100">
+                {showDiscount ? (
+                  <>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-500 mb-1">Genel indirim tipi</label>
+                      <select
+                        value={discountType}
+                        onChange={(e) => setDiscountType(e.target.value as DiscountType)}
+                        className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:border-whatsapp"
+                      >
+                        <option value="PERCENT">Yüzde (%)</option>
+                        <option value="AMOUNT">Tutar ({currency === 'TRY' ? 'TL' : currency})</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-500 mb-1">Genel indirim değeri</label>
+                      <input
+                        type="number"
+                        min={0}
+                        step={0.01}
+                        value={discountValue}
+                        onChange={(e) => setDiscountValue(parseFloat(e.target.value) || 0)}
+                        className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-whatsapp tabular-nums"
+                      />
+                    </div>
+                  </>
+                ) : null}
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 mb-1">Geçerlilik tarihi</label>
+                  <input
+                    type="date"
+                    value={validUntil}
+                    onChange={(e) => setValidUntil(e.target.value)}
+                    className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-whatsapp"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 mb-1">Teslimat tarihi</label>
+                  <input
+                    type="date"
+                    value={deliveryDate}
+                    onChange={(e) => setDeliveryDate(e.target.value)}
+                    className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-whatsapp"
+                  />
+                </div>
+                <div className="sm:col-span-2">
+                  <label className="block text-xs font-semibold text-gray-500 mb-1">Notlar</label>
+                  <HtmlEditor
+                    value={notes}
+                    onChange={setNotes}
+                    placeholder="Teklif ile ilgili notlar…"
+                    minHeight="80px"
+                  />
+                </div>
+                <div className="sm:col-span-2">
+                  <label className="block text-xs font-semibold text-gray-500 mb-1">
+                    Ödeme Koşulları (bu teklife özel)
+                  </label>
+                  <HtmlEditor
+                    value={termsOverride}
+                    onChange={(val) => {
+                      setTermsTouched(true);
+                      setTermsOverride(val);
+                    }}
+                    placeholder="Bu teklifte PDF'e basılacak ödeme koşulları…"
+                    minHeight="96px"
+                  />
+                </div>
+                <div className="sm:col-span-2">
+                  <label className="block text-xs font-semibold text-gray-500 mb-1">
+                    Alt Not (bu teklife özel)
+                  </label>
+                  <HtmlEditor
+                    value={footerNoteOverride}
+                    onChange={(val) => {
+                      setFooterTouched(true);
+                      setFooterNoteOverride(val);
+                    }}
+                    placeholder="Bu teklifte PDF'e basılacak alt not…"
+                    minHeight="80px"
+                  />
+                </div>
+              </div>
+            )}
           </section>
         </div>
 
-        {/* Özet + aksiyonlar (butonlar özetin altında) */}
-        <aside className="w-full xl:w-72 xl:shrink-0 order-3 flex flex-col gap-4">
-          <div className="xl:sticky xl:top-6 space-y-4">
-            <div className="bg-gradient-to-b from-green-50/80 to-white rounded-2xl border border-green-100 shadow-md p-6 space-y-4">
+        <aside className="w-full xl:w-[320px] xl:sticky xl:top-6 space-y-4">
+          <div className="bg-gradient-to-b from-green-50/80 to-white rounded-2xl border border-green-100 shadow-md p-5 space-y-4">
             <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wide text-whatsapp">
               Özet
             </h3>
@@ -1530,10 +1568,10 @@ export default function NewQuotePage() {
               )}
               <div className="pt-3 border-t border-green-100 flex justify-between items-baseline gap-2">
                 <dt className="text-base font-bold text-gray-900">GENEL TOPLAM (KDV dahil)</dt>
-                <dd className="text-2xl font-extrabold text-whatsapp tabular-nums">
+                <dd className="text-2xl font-extrabold text-red-600 tabular-nums">
                   {sym}
-                  {fmt(grandTotalOverride && parseFloat(grandTotalOverride) > 0 
-                    ? parseFloat(grandTotalOverride) 
+                  {fmt(grandTotalOverride && parseFloat(grandTotalOverride) > 0
+                    ? parseFloat(grandTotalOverride)
                     : totals.grandTotal)}
                 </dd>
               </div>
@@ -1553,8 +1591,7 @@ export default function NewQuotePage() {
                 className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-whatsapp tabular-nums bg-white"
               />
             </div>
-            
-            </div>
+          </div>
           <div className="flex flex-col gap-2">
             <button
               type="button"
@@ -1572,9 +1609,42 @@ export default function NewQuotePage() {
               Teklifi kaydet
             </button>
           </div>
-        </div>
         </aside>
       </form>
+      <div className="fixed bottom-6 right-6 z-40">
+        <button
+          type="button"
+          onClick={() => selectedContact && setChatOpen((v) => !v)}
+          disabled={!selectedContact}
+          className={cn(
+            'inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm shadow-lg border',
+            selectedContact
+              ? 'bg-white border-whatsapp/30 text-gray-800 hover:bg-green-50'
+              : 'bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed',
+          )}
+        >
+          {chatOpen ? <PanelRightClose className="w-4 h-4" /> : <PanelRightOpen className="w-4 h-4" />}
+          WhatsApp
+        </button>
+      </div>
+      {selectedContact && chatOpen && (
+        <>
+          <div className="fixed inset-0 bg-black/20 z-40" onClick={() => setChatOpen(false)} />
+          <aside className="fixed top-0 right-0 h-full w-full sm:w-[420px] bg-white z-50 shadow-2xl border-l border-gray-200 p-3">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-sm font-semibold text-gray-900">WhatsApp Sohbet</h3>
+              <button
+                type="button"
+                onClick={() => setChatOpen(false)}
+                className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <QuoteEmbeddedChat contactId={selectedContact.id} contactPhone={selectedContact.phone} />
+          </aside>
+        </>
+      )}
     </div>
   );
 }

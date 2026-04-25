@@ -1,8 +1,8 @@
 import { create } from 'zustand';
 import api from '@/lib/api';
 
-/** Gelen kutusu liste boyutu (API `limit`; backend üst sınırı 2000) */
-const CONVERSATIONS_LIST_LIMIT = 1000;
+/** Gelen kutusu sayfa boyutu (infinite scroll) */
+const CONVERSATIONS_PAGE_LIMIT = 70;
 
 export interface Contact {
   id: string;
@@ -104,6 +104,9 @@ export interface Message {
 
 interface ChatState {
   conversations: Conversation[];
+  conversationsPage: number;
+  hasMoreConversations: boolean;
+  isLoadingMoreConversations: boolean;
   activeConversation: Conversation | null;
   messages: Message[];
   isLoadingConversations: boolean;
@@ -116,7 +119,10 @@ interface ChatState {
   setSearchQuery: (q: string) => void;
   setSessionFilter: (id: string | null) => void;
   setListFilter: (filter: string | undefined) => void;
-  fetchConversations: (silent?: boolean) => Promise<void>;
+  fetchConversations: (
+    opts?: boolean | { silent?: boolean; reset?: boolean; append?: boolean },
+  ) => Promise<void>;
+  loadMoreConversations: () => Promise<void>;
   setActiveConversation: (conv: Conversation) => void;
   fetchMessages: (conversationId: string) => Promise<void>;
   sendMessage: (params: {
@@ -159,6 +165,9 @@ interface ChatState {
 
 export const useChatStore = create<ChatState>((set, get) => ({
   conversations: [],
+  conversationsPage: 1,
+  hasMoreConversations: true,
+  isLoadingMoreConversations: false,
   activeConversation: null,
   messages: [],
   isLoadingConversations: false,
@@ -171,16 +180,35 @@ export const useChatStore = create<ChatState>((set, get) => ({
   setSessionFilter: (id) => set({ sessionFilter: id }),
   setListFilter: (filter) => set({ listFilter: filter }),
 
-  fetchConversations: async (silent?: boolean) => {
-    if (!silent) set({ isLoadingConversations: true });
+  fetchConversations: async (opts) => {
+    const options =
+      typeof opts === 'boolean'
+        ? { silent: opts, reset: true, append: false }
+        : {
+            silent: opts?.silent ?? false,
+            reset: opts?.reset ?? true,
+            append: opts?.append ?? false,
+          };
+    const targetPage = options.append ? get().conversationsPage + 1 : 1;
+    if (options.append) {
+      set({ isLoadingMoreConversations: true });
+    } else if (!options.silent) {
+      set({ isLoadingConversations: true });
+    }
     try {
       const params: Record<string, string | number> = {
-        limit: CONVERSATIONS_LIST_LIMIT,
+        page: targetPage,
+        limit: CONVERSATIONS_PAGE_LIMIT,
       };
       const { searchQuery, sessionFilter, listFilter } = get();
       if (searchQuery) params.search = searchQuery;
       if (sessionFilter) params.sessionId = sessionFilter;
-      if (listFilter) params.filter = listFilter;
+      if (listFilter === 'groups_only') {
+        params.filter = 'all';
+        params.isGroup = 'true';
+      } else if (listFilter) {
+        params.filter = listFilter;
+      }
 
       const { data } = await api.get('/conversations', { params });
       // WhatsApp kanallarını filtrele (newsletter ve broadcast)
@@ -189,17 +217,43 @@ export const useChatStore = create<ChatState>((set, get) => ({
         const phone = c.contact?.phone || '';
         return !phone.includes('@newsletter') && !phone.includes('@broadcast');
       });
-      const sorted = [...filtered].sort(
+      const incomingSorted = [...filtered].sort(
         (a: Conversation, b: Conversation) =>
           new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime(),
       );
-      set({ conversations: sorted, isLoadingConversations: false });
+      const prev = get().conversations;
+      const merged = options.append
+        ? (() => {
+            const map = new Map<string, Conversation>();
+            for (const c of prev) map.set(c.id, c);
+            for (const c of incomingSorted) map.set(c.id, c);
+            return Array.from(map.values()).sort(
+              (a, b) =>
+                new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime(),
+            );
+          })()
+        : incomingSorted;
+      const hasMore = incomingSorted.length >= CONVERSATIONS_PAGE_LIMIT;
+      set({
+        conversations: merged,
+        conversationsPage: targetPage,
+        hasMoreConversations: hasMore,
+        isLoadingConversations: false,
+        isLoadingMoreConversations: false,
+      });
     } catch {
       set((state) => ({
         isLoadingConversations: false,
-        conversations: silent ? state.conversations : [],
+        isLoadingMoreConversations: false,
+        conversations: options.silent ? state.conversations : [],
       }));
     }
+  },
+
+  loadMoreConversations: async () => {
+    const { isLoadingConversations, isLoadingMoreConversations, hasMoreConversations } = get();
+    if (isLoadingConversations || isLoadingMoreConversations || !hasMoreConversations) return;
+    await get().fetchConversations({ silent: true, append: true, reset: false });
   },
 
   setActiveConversation: (conv) => {
