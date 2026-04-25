@@ -3,6 +3,7 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 import { TasksService } from '../tasks/tasks.service';
 import { QuotePaymentMode } from '@prisma/client';
+import { SettingsService } from '../settings/settings.service';
 
 function startOfLocalDay(d: Date): Date {
   const x = new Date(d);
@@ -18,10 +19,14 @@ export class QuoteDepositReminderScheduler {
   constructor(
     private readonly prisma: PrismaService,
     private readonly tasksService: TasksService,
+    private readonly settingsService: SettingsService,
   ) {}
 
   @Cron(CronExpression.EVERY_DAY_AT_8AM)
   async run(): Promise<void> {
+    const enabled = (await this.settingsService.get('auto_task_quote_deposit_balance')) !== 'false';
+    if (!enabled) return;
+
     const today = startOfLocalDay(new Date());
 
     const orders = await this.prisma.salesOrder.findMany({

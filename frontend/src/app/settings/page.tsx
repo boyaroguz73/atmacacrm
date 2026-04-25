@@ -180,6 +180,22 @@ export default function SettingsPage() {
     }
   };
 
+  const isSettingEnabled = (key: string, fallback = true) => {
+    const row = settings.find((s) => s.key === key);
+    if (!row) return fallback;
+    return row.value !== 'false';
+  };
+
+  const updateBooleanSetting = async (key: string, enabled: boolean, successText: string) => {
+    await api.patch('/system-settings', { key, value: enabled ? 'true' : 'false' });
+    setSettings((prev) => {
+      const next = prev.filter((s) => s.key !== key);
+      next.push({ key, value: enabled ? 'true' : 'false' });
+      return next;
+    });
+    toast.success(successText);
+  };
+
   const resetForm = () => {
     setFormName('');
     setFormEmail('');
@@ -375,6 +391,65 @@ export default function SettingsPage() {
                 <ToggleLeft className="w-10 h-6" />
               )}
             </button>
+          </div>
+          <div className="p-4 bg-gray-50 rounded-xl space-y-3">
+            <p className="font-medium text-sm text-gray-900">Otomatik Görev Kuralları</p>
+            <p className="text-xs text-gray-400">
+              Sistem tarafından otomatik açılan görevleri buradan açıp kapatabilirsiniz.
+            </p>
+            {[
+              {
+                key: 'auto_task_lead_followup',
+                label: 'Lead durum değişiminde takip görevi',
+                description: 'İletişim kuruldu / İlgileniyor / Teklif gönderildi statülerinde görev açar.',
+              },
+              {
+                key: 'auto_task_quote_deposit_balance',
+                label: 'Teslim öncesi kalan tahsilat görevi',
+                description: '%50 ön ödemeli siparişlerde teslimden 1 gün önce görev açar.',
+              },
+              {
+                key: 'auto_task_tsoft_order_sync',
+                label: 'T-Soft sipariş senkronunda görev',
+                description: 'Site siparişi içeri alındığında sorumlu kullanıcıya görev açar.',
+              },
+              {
+                key: 'auto_task_tsoft_cart_abandon',
+                label: 'T-Soft sepet terk görevi',
+                description: 'Sepet terk (AWAITING_CHECKOUT) siparişlerinde hatırlatma görevi açar.',
+              },
+            ].map((item) => {
+              const enabled = isSettingEnabled(item.key, true);
+              return (
+                <div key={item.key} className="flex items-center justify-between gap-4 rounded-lg border border-gray-100 bg-white px-3 py-2.5">
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">{item.label}</p>
+                    <p className="text-[11px] text-gray-400 mt-0.5">{item.description}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        await updateBooleanSetting(
+                          item.key,
+                          !enabled,
+                          !enabled ? 'Otomatik görev açıldı' : 'Otomatik görev kapatıldı',
+                        );
+                      } catch {
+                        toast.error('Ayar güncellenemedi');
+                      }
+                    }}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                      enabled ? 'bg-whatsapp' : 'bg-gray-200'
+                    }`}
+                  >
+                    <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                      enabled ? 'translate-x-6' : 'translate-x-1'
+                    }`} />
+                  </button>
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>

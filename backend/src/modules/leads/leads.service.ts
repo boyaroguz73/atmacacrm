@@ -4,6 +4,7 @@ import { LeadStatus } from '@prisma/client';
 import { TasksService } from '../tasks/tasks.service';
 import { assertLeadStatusTransition } from '../../common/lead-status-transitions';
 import { AuditLogService } from '../audit-log/audit-log.service';
+import { SettingsService } from '../settings/settings.service';
 
 @Injectable()
 export class LeadsService {
@@ -11,6 +12,7 @@ export class LeadsService {
     private prisma: PrismaService,
     private tasksService: TasksService,
     private auditLog: AuditLogService,
+    private settingsService: SettingsService,
   ) {}
 
   private readonly statusLabels: Record<string, string> = {
@@ -107,13 +109,17 @@ export class LeadsService {
         LeadStatus.OFFER_SENT,
       ];
       if (followUpStatuses.includes(params.to)) {
-        await this.tasksService.createFollowUpReminder({
-          userId: actingUserId,
-          contactId: updated.contactId,
-          contactName: updated.contact.name || updated.contact.phone,
-          trigger: params.to,
-          delayHours: 24,
-        });
+        const autoFollowUpEnabled =
+          (await this.settingsService.get('auto_task_lead_followup')) !== 'false';
+        if (autoFollowUpEnabled) {
+          await this.tasksService.createFollowUpReminder({
+            userId: actingUserId,
+            contactId: updated.contactId,
+            contactName: updated.contact.name || updated.contact.phone,
+            trigger: params.to,
+            delayHours: 24,
+          });
+        }
       }
     }
 

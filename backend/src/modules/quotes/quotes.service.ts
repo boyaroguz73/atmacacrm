@@ -47,6 +47,24 @@ export class QuotesService {
     return Math.round(n * 100) / 100;
   }
 
+  private addBusinessDays(startDate: Date, businessDays: number): Date {
+    const d = new Date(startDate);
+    let added = 0;
+    while (added < businessDays) {
+      d.setDate(d.getDate() + 1);
+      const day = d.getDay();
+      if (day !== 0 && day !== 6) added += 1; // pazar=0, cumartesi=6
+    }
+    return d;
+  }
+
+  private defaultDeliveryDateRangeText(baseDate: Date): string {
+    const from = this.addBusinessDays(baseDate, 15);
+    const to = this.addBusinessDays(baseDate, 20);
+    const fmt = (d: Date) => d.toLocaleDateString('tr-TR');
+    return `${fmt(from)} - ${fmt(to)}`;
+  }
+
   /**
    * Satır indirimi sonrası KDV hariç tutar ve KDV dahil brüt (genel iskonto öncesi).
    * Birim fiyat: priceIncludesVat true ise KDV dahil, false ise KDV hariç.
@@ -607,12 +625,29 @@ export class QuotesService {
       (c.address && String(c.address).trim()) ||
       undefined;
 
+    const overrideGrandTotal =
+      typeof (quote as any).grandTotalOverride === 'number' && (quote as any).grandTotalOverride > 0
+        ? Number((quote as any).grandTotalOverride)
+        : null;
+    const baseSubtotal = Number(quote.subtotal) || 0;
+    const baseVatTotal = Number(quote.vatTotal) || 0;
+    const effectiveVatRate =
+      baseSubtotal > 0 && baseVatTotal >= 0 ? baseVatTotal / baseSubtotal : 0;
+    const effectiveGrandTotal = overrideGrandTotal ?? (Number(quote.grandTotal) || 0);
+    const effectiveSubtotal = overrideGrandTotal != null
+      ? this.roundMoney(effectiveGrandTotal / (1 + effectiveVatRate))
+      : baseSubtotal;
+    const effectiveVatTotal = overrideGrandTotal != null
+      ? this.roundMoney(Math.max(0, effectiveGrandTotal - effectiveSubtotal))
+      : baseVatTotal;
+
+    const fallbackDeliveryRange = this.defaultDeliveryDateRangeText(new Date(quote.createdAt));
     const pdfUrl = await this.pdfService.generateQuotePdf({
       title,
       documentNumber: `TKL-${String(quote.quoteNumber).padStart(5, '0')}`,
       date: new Date(quote.createdAt).toLocaleDateString('tr-TR'),
       validUntil: fmt(quote.validUntil),
-      deliveryDate: fmt(quote.deliveryDate) || '15-20 İŞ GÜNÜ',
+      deliveryDate: fmt(quote.deliveryDate) || fallbackDeliveryRange,
       contactName: [c.name, c.surname].filter(Boolean).join(' ') || c.phone,
       contactCompany: c.company || undefined,
       contactPhone: c.phone,
@@ -646,11 +681,11 @@ export class QuotesService {
         };
       }),
       currency: quote.currency,
-      subtotal: quote.subtotal,
+      subtotal: effectiveSubtotal,
       /** Yalnızca genel iskonto (KDV hariç); PDF özetinde iskonto öncesi/sonrası satırları için */
       discountTotal: Number(quote.discountTotal) || 0,
-      vatTotal: quote.vatTotal,
-      grandTotal: (quote as any).grandTotalOverride ?? quote.grandTotal,
+      vatTotal: effectiveVatTotal,
+      grandTotal: effectiveGrandTotal,
       notes: quote.notes || undefined,
       termsOverride: quote.termsOverride || undefined,
       footerNoteOverride: quote.footerNoteOverride || undefined,

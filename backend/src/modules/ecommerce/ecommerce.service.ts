@@ -28,6 +28,7 @@ import {
 } from './tsoft-customer.util';
 import { OrdersService } from '../orders/orders.service';
 import { AutoReplyEngineService } from '../auto-reply/auto-reply-engine.service';
+import { SettingsService } from '../settings/settings.service';
 
 const TSOFT_LABEL = 'Site müşterisi';
 const TSOFT_SOURCE = 'TSOFT';
@@ -63,6 +64,7 @@ export class EcommerceService {
     private readonly autoReplyEngine: AutoReplyEngineService,
     @Inject(forwardRef(() => OrdersService))
     private readonly ordersService: OrdersService,
+    private readonly settingsService: SettingsService,
   ) {}
 
   async getStatus(organizationId: string): Promise<EcommerceStatusResult> {
@@ -573,6 +575,10 @@ export class EcommerceService {
         ? ((integration.config as Record<string, unknown>).sync as Record<string, unknown> | undefined)
         : undefined;
     const createCartAbandonTasks = syncCfg?.cartAbandonTasks !== false;
+    const autoTaskTsoftOrdersEnabled =
+      (await this.settingsService.get('auto_task_tsoft_order_sync')) !== 'false';
+    const autoTaskTsoftCartAbandonEnabled =
+      (await this.settingsService.get('auto_task_tsoft_cart_abandon')) !== 'false';
     this.logger.log(
       `[TSOFT-SYNC-ORDERS] Başlatılıyor orgId=${organizationId} aralık=${dateStart.toISOString()}..${dateEnd.toISOString()}`,
     );
@@ -802,7 +808,14 @@ export class EcommerceService {
 
         // Otomatik görev oluştur
         try {
-          if (crmStatus === 'AWAITING_CHECKOUT' && !createCartAbandonTasks) {
+          if (!autoTaskTsoftOrdersEnabled) {
+            imported++;
+            this.logger.debug(
+              `[TSOFT-SYNC-ORDERS] Otomatik T-Soft görevleri kapalı, task atlandı: ${newOrder.id}`,
+            );
+            continue;
+          }
+          if (crmStatus === 'AWAITING_CHECKOUT' && (!createCartAbandonTasks || !autoTaskTsoftCartAbandonEnabled)) {
             imported++;
             this.logger.debug(
               `[TSOFT-SYNC-ORDERS] Sepet terk görevleri kapalı, task atlandı: ${newOrder.id}`,

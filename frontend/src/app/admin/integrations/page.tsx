@@ -1085,6 +1085,15 @@ function TsoftPanel({ integration }: { integration: Integration }) {
   const [baseUrl, setBaseUrl] = useState(String(ic.baseUrl || ic.storeUrl || ''));
   const [apiEmail, setApiEmail] = useState(String(ic.apiEmail || ''));
   const [apiPassword, setApiPassword] = useState('');
+  const [orderWsEnabled, setOrderWsEnabled] = useState(ic.orderWsEnabled === true);
+  const [orderWsUrl, setOrderWsUrl] = useState(String(ic.orderWsUrl || ''));
+  const [orderWsToken, setOrderWsToken] = useState('');
+  const [orderWsReconnectSeconds, setOrderWsReconnectSeconds] = useState(
+    Number(ic.orderWsReconnectSeconds ?? 15) || 15,
+  );
+  const [orderWsLookbackMinutes, setOrderWsLookbackMinutes] = useState(
+    Number(ic.orderWsLookbackMinutes ?? 90) || 90,
+  );
   const [usePanelApi, setUsePanelApi] = useState(
     ic.pathPrefix === '/panel' || String(ic.pathPrefix || '').toLowerCase() === 'panel',
   );
@@ -1124,6 +1133,11 @@ function TsoftPanel({ integration }: { integration: Integration }) {
     setBaseUrl(String(c.baseUrl || c.storeUrl || ''));
     setApiEmail(String(c.apiEmail || ''));
     setApiPassword('');
+    setOrderWsEnabled(c.orderWsEnabled === true);
+    setOrderWsUrl(String(c.orderWsUrl || ''));
+    setOrderWsToken('');
+    setOrderWsReconnectSeconds(Number(c.orderWsReconnectSeconds ?? 15) || 15);
+    setOrderWsLookbackMinutes(Number(c.orderWsLookbackMinutes ?? 90) || 90);
     setUsePanelApi(c.pathPrefix === '/panel' || String(c.pathPrefix || '').toLowerCase() === 'panel');
     setFlags(readSyncFlags(c));
   }, [integration.key, configSnapshot]);
@@ -1138,6 +1152,11 @@ function TsoftPanel({ integration }: { integration: Integration }) {
           apiEmail: apiEmail.trim(),
           apiPassword,
           pathPrefix: usePanelApi ? '/panel' : '',
+          orderWsEnabled,
+          orderWsUrl: orderWsUrl.trim(),
+          orderWsToken,
+          orderWsReconnectSeconds: Math.max(5, Number(orderWsReconnectSeconds) || 15),
+          orderWsLookbackMinutes: Math.max(5, Number(orderWsLookbackMinutes) || 90),
           sync: flags,
         },
         { params: integrationOrgParams() },
@@ -1274,6 +1293,63 @@ function TsoftPanel({ integration }: { integration: Integration }) {
             placeholder="Boş bırakılırsa mevcut şifre korunur"
             className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-orange-500"
           />
+        </div>
+        <div className="rounded-xl border border-orange-100 bg-orange-50/40 p-3 space-y-3">
+          <label className="flex items-center gap-2 text-xs font-medium text-orange-700 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={orderWsEnabled}
+              onChange={(e) => setOrderWsEnabled(e.target.checked)}
+              className="rounded border-orange-300"
+            />
+            Yeni siparişleri WebSocket ile dinle
+          </label>
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1">WebSocket URL (wss://...)</label>
+            <input
+              type="url"
+              value={orderWsUrl}
+              onChange={(e) => setOrderWsUrl(e.target.value)}
+              placeholder="wss://.../orders"
+              className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-orange-500"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1">
+              WebSocket token (opsiyonel)
+            </label>
+            <input
+              type="password"
+              value={orderWsToken}
+              onChange={(e) => setOrderWsToken(e.target.value)}
+              placeholder="Boş bırakılırsa mevcut token korunur"
+              className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-orange-500"
+            />
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">Reconnect (sn)</label>
+              <input
+                type="number"
+                min={5}
+                value={orderWsReconnectSeconds}
+                onChange={(e) => setOrderWsReconnectSeconds(Number(e.target.value || 15))}
+                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-orange-500"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">
+                Event sonrası lookback (dk)
+              </label>
+              <input
+                type="number"
+                min={5}
+                value={orderWsLookbackMinutes}
+                onChange={(e) => setOrderWsLookbackMinutes(Number(e.target.value || 90))}
+                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-orange-500"
+              />
+            </div>
+          </div>
         </div>
         <div className="flex flex-wrap gap-2">
           <button

@@ -7,6 +7,7 @@ import { TsoftApiService } from './tsoft-api.service';
 import { TsoftProductSyncService } from './tsoft-product-sync.service';
 import { TsoftPushService } from './tsoft-push.service';
 import { TsoftSyncScheduler } from './tsoft-sync.scheduler';
+import { TsoftOrderWebsocketListener } from './tsoft-order-websocket.listener';
 import { AutoReplyModule } from '../auto-reply/auto-reply.module';
 
 @Module({
@@ -18,6 +19,7 @@ import { AutoReplyModule } from '../auto-reply/auto-reply.module';
     TsoftProductSyncService,
     TsoftPushService,
     TsoftSyncScheduler,
+    TsoftOrderWebsocketListener,
   ],
   exports: [
     EcommerceService,

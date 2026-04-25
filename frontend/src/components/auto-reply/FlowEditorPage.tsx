@@ -350,11 +350,32 @@ export default function FlowEditorPage({ flowId }: { flowId?: string }) {
                 </div>
               )}
               {step.type === 'condition' && (
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  <input type="number" min={0} value={step.data?.days || 0} onChange={(e) => updateStepData(idx, { days: parseInt(e.target.value || '0', 10) || 0 })} className="w-full px-3 py-2 border rounded-lg text-sm" placeholder="Gün" />
-                  <input type="number" min={0} value={step.data?.hours || 0} onChange={(e) => updateStepData(idx, { hours: parseInt(e.target.value || '0', 10) || 0 })} className="w-full px-3 py-2 border rounded-lg text-sm" placeholder="Saat" />
-                  <input type="number" min={0} value={step.data?.minutes || 0} onChange={(e) => updateStepData(idx, { minutes: parseInt(e.target.value || '0', 10) || 0 })} className="w-full px-3 py-2 border rounded-lg text-sm" placeholder="Dakika" />
-                  <input type="number" min={0} value={step.data?.seconds || 0} onChange={(e) => updateStepData(idx, { seconds: parseInt(e.target.value || '0', 10) || 0 })} className="w-full px-3 py-2 border rounded-lg text-sm" placeholder="Saniye" />
+                <div className="space-y-2">
+                  <p className="text-xs text-gray-600">
+                    Bu adım, müşteriden gelen son mesajın ne kadar eski olduğunu kontrol eder.
+                    Girilen süre dolmuşsa akış bir sonraki adıma geçer.
+                  </p>
+                  <p className="text-[11px] text-gray-500">
+                    Örnek: <span className="font-medium">2 gün 0 saat 0 dk 0 sn</span> = Son müşteri mesajı en az 2 gün önceyse çalışır.
+                  </p>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    <label className="text-xs text-gray-600">
+                      Gün
+                      <input type="number" min={0} value={step.data?.days || 0} onChange={(e) => updateStepData(idx, { days: parseInt(e.target.value || '0', 10) || 0 })} className="mt-1 w-full px-3 py-2 border rounded-lg text-sm" placeholder="0" />
+                    </label>
+                    <label className="text-xs text-gray-600">
+                      Saat
+                      <input type="number" min={0} value={step.data?.hours || 0} onChange={(e) => updateStepData(idx, { hours: parseInt(e.target.value || '0', 10) || 0 })} className="mt-1 w-full px-3 py-2 border rounded-lg text-sm" placeholder="0" />
+                    </label>
+                    <label className="text-xs text-gray-600">
+                      Dakika
+                      <input type="number" min={0} value={step.data?.minutes || 0} onChange={(e) => updateStepData(idx, { minutes: parseInt(e.target.value || '0', 10) || 0 })} className="mt-1 w-full px-3 py-2 border rounded-lg text-sm" placeholder="0" />
+                    </label>
+                    <label className="text-xs text-gray-600">
+                      Saniye
+                      <input type="number" min={0} value={step.data?.seconds || 0} onChange={(e) => updateStepData(idx, { seconds: parseInt(e.target.value || '0', 10) || 0 })} className="mt-1 w-full px-3 py-2 border rounded-lg text-sm" placeholder="0" />
+                    </label>
+                  </div>
                 </div>
               )}
               {step.type === 'add_tag' && (

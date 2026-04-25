@@ -178,6 +178,18 @@ export class PdfService {
       .trim();
   }
 
+  /**
+   * Rich text içeriğin gerçekten metin içerip içermediğini kontrol eder.
+   * Sadece etiket/boşluk (ör. <p><br></p>) varsa false döner.
+   */
+  private hasMeaningfulText(html?: string | null): boolean {
+    if (html == null) return false;
+    const raw = String(html);
+    if (!raw.trim()) return false;
+    const plain = this.htmlToPlainText(raw).replace(/\s+/g, ' ').trim();
+    return plain.length > 0;
+  }
+
   /** Basit HTML (b/strong, i/em, br, p, li) -> satir bazli stilli metin */
   private htmlToStyledLines(html: string): StyledRun[][] {
     if (!html) return [];
@@ -560,7 +572,13 @@ export class PdfService {
         doc.rect(ML, tableY, PW, HEADER_H).fill(primary);
         let colX = ML;
         cols.forEach((col) => {
-          txt(col.label, colX + 3, tableY + 5, { size: 7.5, bold: true, color: '#ffffff', width: col.w - 6 });
+          txt(col.label, colX + 3, tableY + 5, {
+            size: 7.5,
+            bold: true,
+            color: '#ffffff',
+            width: col.w - 6,
+            align: 'center',
+          });
           colX += col.w;
         });
 
@@ -643,12 +661,16 @@ export class PdfService {
             }
             rx += cols[1].w;
             doc.fontSize(8).fillColor('#333');
-            doc.text(String(item.quantity), rx, rowY + 10, { width: cols[2].w - 6, align: 'right', lineBreak: false });
+            doc.text(String(item.quantity), rx, rowY + 10, { width: cols[2].w - 6, align: 'center', lineBreak: false });
             rx += cols[2].w;
-            doc.text(item.unitPrice.toFixed(2), rx, rowY + 10, { width: cols[3].w - 6, align: 'right', lineBreak: false });
+            doc.text(item.unitPrice.toFixed(2), rx, rowY + 10, { width: cols[3].w - 6, align: 'center', lineBreak: false });
             rx += cols[3].w;
             B(); doc.fillColor(primary);
-            doc.text((item.unitPrice * item.quantity).toFixed(2), rx, rowY + 10, { width: cols[4].w - 6, align: 'right', lineBreak: false });
+            doc.text((item.unitPrice * item.quantity).toFixed(2), rx, rowY + 10, {
+              width: cols[4].w - 6,
+              align: 'center',
+              lineBreak: false,
+            });
             rowY += itemH + 6;
           } else {
             if (idx % 2 === 1) {
@@ -665,21 +687,31 @@ export class PdfService {
               } catch { /* */ }
             }
             R(); doc.fontSize(8).fillColor('#333333');
-            doc.text(this.t(item.name), nameColX + pad, rowY + 6, {
-              width: cols[1].w - pad - 3,
+            const nameBlockWidth = cols[1].w - pad - 3;
+            const detailBlockWidth = cols[1].w - pad - 3;
+            const nameHeight = doc.heightOfString(this.t(item.name), { width: nameBlockWidth, align: 'center' });
+            const detailHeight = lineDetailRaw
+              ? doc.heightOfString(this.t(lineDetailRaw), { width: detailBlockWidth, align: 'center' })
+              : 0;
+            const stackedHeight = nameHeight + (lineDetailRaw ? 2 + detailHeight : 0);
+            const contentStartY = rowY + Math.max(4, (rowHDefault - stackedHeight) / 2);
+            doc.text(this.t(item.name), nameColX + pad, contentStartY, {
+              width: nameBlockWidth,
+              align: 'center',
               lineBreak: true,
             });
             if (lineDetailRaw) {
               doc.fontSize(7).fillColor('#444444');
-              doc.text(this.t(lineDetailRaw), nameColX + pad, rowY + 6 + nameHDefault + 2, {
-                width: cols[1].w - pad - 3,
+              doc.text(this.t(lineDetailRaw), nameColX + pad, contentStartY + nameHeight + 2, {
+                width: detailBlockWidth,
+                align: 'center',
                 lineBreak: true,
               });
             }
             rx += cols[1].w;
-            txt(String(item.quantity), rx + 3, rowY + 6, { size: 8, width: cols[2].w - 6, align: 'right' }); rx += cols[2].w;
-            txt(item.unitPrice.toFixed(2), rx + 3, rowY + 6, { size: 8, width: cols[3].w - 6, align: 'right' }); rx += cols[3].w;
-            txt((item.unitPrice * item.quantity).toFixed(2), rx + 3, rowY + 6, { size: 8, width: cols[4].w - 6, align: 'right' });
+            txt(String(item.quantity), rx + 3, rowY + 6, { size: 8, width: cols[2].w - 6, align: 'center' }); rx += cols[2].w;
+            txt(item.unitPrice.toFixed(2), rx + 3, rowY + 6, { size: 8, width: cols[3].w - 6, align: 'center' }); rx += cols[3].w;
+            txt((item.unitPrice * item.quantity).toFixed(2), rx + 3, rowY + 6, { size: 8, width: cols[4].w - 6, align: 'center' });
             rowY += rowHDefault;
           }
         });
@@ -730,8 +762,14 @@ export class PdfService {
 
         // ── NOTES / TERMS / BANK ─────────────────────────────────────────
         rowY += 6;
-        const termsText = this.htmlToPlainText(data.termsOverride?.trim() || settings.terms);
-        const footerNoteText = this.htmlToPlainText(data.footerNoteOverride?.trim() || settings.footerNote);
+        const rawTermsSource = this.hasMeaningfulText(data.termsOverride)
+          ? String(data.termsOverride)
+          : settings.terms;
+        const rawFooterSource = this.hasMeaningfulText(data.footerNoteOverride)
+          ? String(data.footerNoteOverride)
+          : settings.footerNote;
+        const termsText = this.htmlToPlainText(rawTermsSource);
+        const footerNoteText = this.htmlToPlainText(rawFooterSource);
         const ensureSpace = (neededHeight: number) => {
           if (rowY + neededHeight <= PAGE_H - 95) return;
           doc.addPage({ margin: 0 });
@@ -770,8 +808,8 @@ export class PdfService {
             const block = p.replace(/\n/g, ' \n');
             const hBlock = doc.heightOfString(block, { width: termsBlockWidth }) + 3;
             ensureSpace(hBlock + 10);
-            if (String(data.termsOverride?.trim() || settings.terms).includes('<')) {
-              rowY += richTxt(String(data.termsOverride?.trim() || settings.terms), ML, rowY, {
+            if (String(rawTermsSource).includes('<')) {
+              rowY += richTxt(String(rawTermsSource), ML, rowY, {
                 width: termsBlockWidth,
                 size: 7.5,
                 color: '#333333',
@@ -788,8 +826,8 @@ export class PdfService {
           R(); doc.fontSize(8).fillColor('#444');
           const h = doc.heightOfString(this.t(footerNoteText), { width: PW }) + 8;
           ensureSpace(h);
-          if (String(data.footerNoteOverride?.trim() || settings.footerNote).includes('<')) {
-            rowY += richTxt(String(data.footerNoteOverride?.trim() || settings.footerNote), ML, rowY, {
+          if (String(rawFooterSource).includes('<')) {
+            rowY += richTxt(String(rawFooterSource), ML, rowY, {
               width: PW,
               size: 8,
               color: '#444',

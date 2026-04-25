@@ -23,6 +23,48 @@ function isWeakGroupLabel(name: string | null | undefined): boolean {
   return lower === 'grup' || lower === 'whatsapp grubu';
 }
 
+function normalizeSearchText(v: string | null | undefined): string {
+  return (v || '').toLocaleLowerCase('tr-TR').trim();
+}
+
+function searchNeedles(rawSearch: string): { rawNeedles: string[]; digitNeedles: string[] } {
+  const raw = rawSearch.trim();
+  const digits = raw.replace(/\D/g, '');
+  const rawSet = new Set<string>();
+  const digitSet = new Set<string>();
+  if (raw) rawSet.add(raw);
+  if (digits) {
+    digitSet.add(digits);
+    const withoutLeadingZeros = digits.replace(/^0+/, '');
+    if (withoutLeadingZeros && withoutLeadingZeros !== digits) digitSet.add(withoutLeadingZeros);
+  }
+  return { rawNeedles: Array.from(rawSet), digitNeedles: Array.from(digitSet) };
+}
+
+function scoreConversationMatch(conv: any, rawNeedles: string[], digitNeedles: string[]): number {
+  const name = normalizeSearchText(conv?.contact?.name);
+  const surname = normalizeSearchText(conv?.contact?.surname);
+  const fullName = `${name} ${surname}`.trim();
+  const phone = String(conv?.contact?.phone || '');
+  const phoneDigits = phone.replace(/\D/g, '');
+  let score = 0;
+
+  for (const needle of rawNeedles.map((n) => normalizeSearchText(n)).filter(Boolean)) {
+    if (fullName === needle || name === needle || surname === needle) score += 1000;
+    else if (fullName.startsWith(needle) || name.startsWith(needle) || surname.startsWith(needle)) score += 700;
+    else if (fullName.includes(needle) || name.includes(needle) || surname.includes(needle)) score += 350;
+  }
+
+  for (const needle of digitNeedles.filter(Boolean)) {
+    if (phoneDigits === needle) score += 1400;
+    else if (phoneDigits.endsWith(needle)) score += 1100;
+    else if (phoneDigits.startsWith(needle)) score += 800;
+    else if (phoneDigits.includes(needle)) score += 450;
+  }
+
+  return score;
+}
+
 @Injectable()
 export class ConversationsService {
   private readonly logger = new Logger(ConversationsService.name);
@@ -174,11 +216,14 @@ export class ConversationsService {
       };
     }
 
-    if (search) {
+    const trimmedSearch = (search || '').trim();
+    if (trimmedSearch) {
+      const { rawNeedles, digitNeedles } = searchNeedles(trimmedSearch);
       const searchConditions = [
-        { name: { contains: search, mode: 'insensitive' as const } },
-        { surname: { contains: search, mode: 'insensitive' as const } },
-        { phone: { contains: search } },
+        ...rawNeedles.map((needle) => ({ name: { contains: needle, mode: 'insensitive' as const } })),
+        ...rawNeedles.map((needle) => ({ surname: { contains: needle, mode: 'insensitive' as const } })),
+        ...rawNeedles.map((needle) => ({ phone: { contains: needle } })),
+        ...digitNeedles.map((needle) => ({ phone: { contains: needle } })),
       ];
       if (whereExtras.contact) {
         whereExtras.contact = { ...whereExtras.contact, OR: searchConditions };
@@ -208,30 +253,62 @@ export class ConversationsService {
 
     const where = whereConversationsForOrg(user, whereExtras);
 
-    const [conversations, total] = await Promise.all([
-      this.prisma.conversation.findMany({
-        where,
+    const include = {
+      contact: { include: { lead: true } },
+      session: { select: { id: true, name: true, phone: true, organizationId: true } },
+      messages: {
+        orderBy: { timestamp: 'desc' as const },
+        take: 1,
+        select: { direction: true },
+      },
+      assignments: {
+        where: { unassignedAt: null },
         include: {
-          contact: { include: { lead: true } },
-          session: { select: { id: true, name: true, phone: true, organizationId: true } },
-          messages: {
-            orderBy: { timestamp: 'desc' },
-            take: 1,
-            select: { direction: true },
-          },
-          assignments: {
-            where: { unassignedAt: null },
-            include: {
-              user: { select: { id: true, name: true, avatar: true } },
-            },
-          },
+          user: { select: { id: true, name: true, avatar: true } },
         },
-        orderBy: { lastMessageAt: 'desc' },
-        skip: (page - 1) * limit,
-        take: limit,
-      }),
-      this.prisma.conversation.count({ where }),
-    ]);
+      },
+    };
+
+    const totalPromise = this.prisma.conversation.count({ where });
+    let conversations: any[] = [];
+    let total = 0;
+
+    if (trimmedSearch) {
+      const fetchCap = Math.min(2000, Math.max(limit * 8, 500));
+      const [allMatched, counted] = await Promise.all([
+        this.prisma.conversation.findMany({
+          where,
+          include,
+          orderBy: { lastMessageAt: 'desc' },
+          take: fetchCap,
+        }),
+        totalPromise,
+      ]);
+      const { rawNeedles, digitNeedles } = searchNeedles(trimmedSearch);
+      const ranked = [...allMatched].sort((a, b) => {
+        const scoreDiff =
+          scoreConversationMatch(b, rawNeedles, digitNeedles) -
+          scoreConversationMatch(a, rawNeedles, digitNeedles);
+        if (scoreDiff !== 0) return scoreDiff;
+        return (
+          new Date(b.lastMessageAt || 0).getTime() -
+          new Date(a.lastMessageAt || 0).getTime()
+        );
+      });
+      conversations = ranked.slice((page - 1) * limit, page * limit);
+      total = counted;
+    } else {
+      [conversations, total] = await Promise.all([
+        this.prisma.conversation.findMany({
+          where,
+          include,
+          orderBy: { lastMessageAt: 'desc' },
+          skip: (page - 1) * limit,
+          take: limit,
+        }),
+        totalPromise,
+      ]);
+    }
 
     return {
       conversations: conversations.map((c: any) => ({

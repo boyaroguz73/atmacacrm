@@ -149,6 +149,7 @@ const menuItems: MenuItem[] = [
 ];
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL?.replace('/api', '') || 'http://localhost:3002';
+const MENU_CACHE_KEY = 'crm_menu_visibility_cache_v1';
 
 /** Alt menü `href` değeri query içeriyorsa (örn. /orders?tsoft=1) pathname + search ile eşleştirir */
 function childHrefMatches(pathname: string, searchParams: URLSearchParams, href: string): boolean {
@@ -192,6 +193,34 @@ function providerLabel(provider?: string | null): string {
   return p.charAt(0).toUpperCase() + p.slice(1);
 }
 
+type MenuCachePayload = {
+  allowedKeys?: string[];
+  orderedKeys?: string[];
+  submenuOrder?: Record<string, string[]>;
+  submenuHidden?: Record<string, string[]>;
+};
+
+function readMenuCache(): MenuCachePayload | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(MENU_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as MenuCachePayload;
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeMenuCache(payload: MenuCachePayload) {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(MENU_CACHE_KEY, JSON.stringify(payload));
+  } catch {
+    // ignore quota / privacy errors
+  }
+}
+
 export default function Sidebar({
   mobileOpen = false,
   onClose,
@@ -208,16 +237,26 @@ export default function Sidebar({
   const isSuperAdmin = user?.role === 'SUPERADMIN';
   const [ecommerceMenuVisible, setEcommerceMenuVisible] = useState(false);
   const [ecommerceProvider, setEcommerceProvider] = useState<string | null>(null);
+  const cachedMenu = useMemo(() => readMenuCache(), []);
   /** Sunucudan gelen izinli menü anahtarları; null = filtre yok (yüklenemedi veya süper admin) */
-  const [allowedMenuKeys, setAllowedMenuKeys] = useState<Set<string> | null>(null);
-  const [orderedMenuKeys, setOrderedMenuKeys] = useState<string[] | null>(null);
-  const [submenuOrder, setSubmenuOrder] = useState<Record<string, string[]>>({});
-  const [submenuHidden, setSubmenuHidden] = useState<Record<string, string[]>>({});
+  const [allowedMenuKeys, setAllowedMenuKeys] = useState<Set<string> | null>(
+    cachedMenu?.allowedKeys?.length ? new Set(cachedMenu.allowedKeys) : null,
+  );
+  const [orderedMenuKeys, setOrderedMenuKeys] = useState<string[] | null>(
+    cachedMenu?.orderedKeys?.length ? cachedMenu.orderedKeys : null,
+  );
+  const [submenuOrder, setSubmenuOrder] = useState<Record<string, string[]>>(
+    cachedMenu?.submenuOrder || {},
+  );
+  const [submenuHidden, setSubmenuHidden] = useState<Record<string, string[]>>(
+    cachedMenu?.submenuHidden || {},
+  );
   const [menuVisibilityEpoch, setMenuVisibilityEpoch] = useState(0);
 
   const refreshMenuVisibility = useCallback(() => {
     if (isSuperAdmin) {
       setAllowedMenuKeys(null);
+      setOrderedMenuKeys(null);
       return;
     }
     api
@@ -226,18 +265,42 @@ export default function Sidebar({
         if (Array.isArray(data?.allowedKeys)) {
           setAllowedMenuKeys(new Set(data.allowedKeys));
           setOrderedMenuKeys(data.allowedKeys);
+          writeMenuCache({
+            allowedKeys: data.allowedKeys,
+            orderedKeys: data.allowedKeys,
+            submenuOrder,
+            submenuHidden,
+          });
         }
       })
       .catch(() => setAllowedMenuKeys(null));
     api
       .get<{ suborder?: Record<string, string[]> }>('/organizations/my/menu-suborder')
-      .then(({ data }) => setSubmenuOrder(data?.suborder || {}))
+      .then(({ data }) => {
+        const next = data?.suborder || {};
+        setSubmenuOrder(next);
+        writeMenuCache({
+          allowedKeys: orderedMenuKeys || undefined,
+          orderedKeys: orderedMenuKeys || undefined,
+          submenuOrder: next,
+          submenuHidden,
+        });
+      })
       .catch(() => setSubmenuOrder({}));
     api
       .get<{ subHidden?: Record<string, string[]> }>('/organizations/my/menu-sub-hidden')
-      .then(({ data }) => setSubmenuHidden(data?.subHidden || {}))
+      .then(({ data }) => {
+        const next = data?.subHidden || {};
+        setSubmenuHidden(next);
+        writeMenuCache({
+          allowedKeys: orderedMenuKeys || undefined,
+          orderedKeys: orderedMenuKeys || undefined,
+          submenuOrder,
+          submenuHidden: next,
+        });
+      })
       .catch(() => setSubmenuHidden({}));
-  }, [isSuperAdmin]);
+  }, [isSuperAdmin, orderedMenuKeys, submenuOrder, submenuHidden]);
 
   useEffect(() => {
     refreshMenuVisibility();

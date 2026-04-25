@@ -203,11 +203,26 @@ export class IntegrationsService {
     ) {
       next.apiPassword = prev.apiPassword;
     }
+    if (
+      integrationKey === 'tsoft' &&
+      (!config?.orderWsToken || String(config.orderWsToken).trim() === '') &&
+      prev.orderWsToken
+    ) {
+      next.orderWsToken = prev.orderWsToken;
+    }
 
     if (integrationKey === 'tsoft' && config && 'pathPrefix' in config) {
       const p = (config as { pathPrefix?: unknown }).pathPrefix;
       if (p == null || p === '' || p === false) {
         delete next.pathPrefix;
+      }
+    }
+    if (integrationKey === 'tsoft' && config && 'orderWsUrl' in config) {
+      const wsUrl = String((config as { orderWsUrl?: unknown }).orderWsUrl ?? '').trim();
+      if (!wsUrl) {
+        delete next.orderWsUrl;
+      } else {
+        next.orderWsUrl = wsUrl;
       }
     }
 

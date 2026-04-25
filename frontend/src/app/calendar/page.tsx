@@ -383,13 +383,13 @@ export default function CalendarPage() {
                           {task.contact && (
                             <div className="mt-1 flex items-center gap-2">
                               <Link
-                                href={`/inbox?contactId=${encodeURIComponent(task.contact.id)}`}
+                                href={`/inbox?filter=all&contactId=${encodeURIComponent(String(task.contact.id || ''))}`}
                                 className="text-[10px] text-blue-500 inline-block hover:text-blue-700 underline"
                               >
                                 {task.contact.name || task.contact.phone}
                               </Link>
                               <Link
-                                href={`/inbox?contactId=${encodeURIComponent(task.contact.id)}`}
+                                href={`/inbox?filter=all&contactId=${encodeURIComponent(String(task.contact.id || ''))}`}
                                 className="text-[10px] px-1.5 py-0.5 rounded-md bg-blue-50 text-blue-600 border border-blue-200 hover:bg-blue-100"
                               >
                                 Mesaja git

@@ -4,6 +4,16 @@ export interface TsoftIntegrationConfig {
   apiPassword: string;
   /** Bazı mağazalarda Admin API kökü https://alanadiniz/panel olur */
   pathPrefix?: '/panel' | null;
+  /** T-Soft sipariş event websocket adresi (opsiyonel) */
+  orderWsUrl?: string;
+  /** Bearer/JWT gibi auth token (opsiyonel) */
+  orderWsToken?: string;
+  /** Websocket dinleyicisi aktif/pasif */
+  orderWsEnabled?: boolean;
+  /** Yeniden bağlanma aralığı (sn) */
+  orderWsReconnectSeconds?: number;
+  /** Event geldiğinde kaç dk geriye dönük sipariş çekilecek */
+  orderWsLookbackMinutes?: number;
 }
 
 export interface CreateTsoftSiteCustomerPayload {

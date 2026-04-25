@@ -63,6 +63,7 @@ export default function InboxPage() {
 
   useEffect(() => {
     if (!contactId) return;
+    if (contactId === 'undefined' || contactId === 'null') return;
     const found = conversations.find((c) => c.contactId === contactId);
     if (found) {
       setActiveConversation(found);
@@ -71,12 +72,22 @@ export default function InboxPage() {
     api
       .get(`/conversations/for-contact/${contactId}`)
       .then(({ data }) => {
-        if (data?.id) setActiveConversation(data);
+        const hasMinimumShape =
+          !!data?.id &&
+          !!data?.contact &&
+          typeof data?.contact?.phone === 'string' &&
+          !!data?.session &&
+          typeof data?.session?.name === 'string';
+        if (hasMinimumShape) {
+          setActiveConversation(data);
+        } else {
+          fetchConversations(true).catch(() => {});
+        }
       })
       .catch(() => {
         /* ignore */
       });
-  }, [contactId, conversations, setActiveConversation]);
+  }, [contactId, conversations, setActiveConversation, fetchConversations]);
 
   /** lg (1024px) altında: sohbet seçilince tam ekran chat. Üstünde: sol liste asla kaybolmaz (md=768 çok dar kalıyordu). */
   useEffect(() => {
