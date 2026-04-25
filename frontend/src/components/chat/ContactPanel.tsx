@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import api from '@/lib/api';
-import { getContactDisplayTitle, getContactSecondaryPhoneLine } from '@/lib/utils';
+import { formatPhone, getContactDisplayTitle } from '@/lib/utils';
 import {
   X,
   User,
@@ -105,8 +105,8 @@ export default function ContactPanel({
   const [openSections, setOpenSections] = useState({
     info: true,
     lead: true,
-    actions: true,
-    notes: true,
+    actions: false,
+    notes: false,
   });
 
   const toggleSection = (key: keyof typeof openSections) => {
@@ -157,7 +157,7 @@ export default function ContactPanel({
   const availableDistricts = useMemo(() => {
     return CITY_DISTRICTS[editData.city] || [];
   }, [editData.city]);
-  const secondaryPhoneLine = getContactSecondaryPhoneLine(contact);
+  const primaryPhoneLine = formatPhone(contact.phone);
 
   const startEdit = () => {
     setEditData({
@@ -340,7 +340,7 @@ export default function ContactPanel({
             onClick={() => toggleSection('info')}
             className="w-full flex items-center justify-between px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wider hover:bg-white/60 transition"
           >
-            Kişi Detayları
+            Kişi
             {openSections.info ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
           </button>
 
@@ -358,14 +358,9 @@ export default function ContactPanel({
                   ) : (
                     <p className="text-base font-bold text-gray-900 truncate">{getContactDisplayTitle(contact)}</p>
                   )}
-                  {secondaryPhoneLine && <p className="text-xs text-gray-500 truncate mt-0.5">{secondaryPhoneLine}</p>}
+                  {primaryPhoneLine && <p className="text-xs text-gray-500 truncate mt-0.5">{primaryPhoneLine}</p>}
                   <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
                     <EcommerceCustomerBadge metadata={contact.metadata} />
-                    {lead && (
-                      <span className={`text-[11px] font-semibold px-2.5 py-1 rounded-full ${LEAD_STATUS_COLORS[lead.status] || 'bg-gray-100 text-gray-600'}`}>
-                        {LEAD_STATUS_LABELS[lead.status] || lead.status}
-                      </span>
-                    )}
                   </div>
                 </div>
                 {!editing ? (
@@ -388,11 +383,18 @@ export default function ContactPanel({
                     <ClipboardList className="w-3.5 h-3.5" />
                     Teklif Oluştur
                   </Link>
+                  <Link
+                    href={`/orders/new?contactId=${contact.id}`}
+                    className="w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-whatsapp text-white rounded-lg text-xs font-semibold hover:bg-green-700 transition"
+                  >
+                    <Truck className="w-3.5 h-3.5" />
+                    Sipariş Oluştur
+                  </Link>
                   {lead ? (
                     <select
                       value={lead.status}
                       onChange={(e) => updateLeadStatus(e.target.value)}
-                      className={`w-full px-2.5 py-2.5 border rounded-lg text-xs font-medium focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white transition ${LEAD_STATUS_COLORS[lead.status]?.replace('bg-', 'border-').split(' ')[0] || 'border-gray-200'}`}
+                      className={`w-full px-2.5 py-2.5 border rounded-lg text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-blue-400 transition ${LEAD_STATUS_COLORS[lead.status] || 'bg-gray-100 text-gray-600'} ${LEAD_STATUS_COLORS[lead.status]?.replace('bg-', 'border-').split(' ')[0] || 'border-gray-200'}`}
                     >
                       <option value={lead.status}>
                         {LEAD_STATUS_LABELS[lead.status] || lead.status} (Mevcut)
@@ -573,57 +575,6 @@ export default function ContactPanel({
                 )}
 
               </div>
-            </div>
-          )}
-        </div>}
-
-        {/* Lead / Pipeline — gruplar için gizle */}
-        {!isGroup && <div className="border-b border-gray-100">
-          <button
-            onClick={() => toggleSection('lead')}
-            className="w-full flex items-center justify-between px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wider hover:bg-white/60 transition"
-          >
-            Potansiyel Müşteri
-            {openSections.lead ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-          </button>
-
-          {openSections.lead && (
-            <div className="px-4 pb-5 space-y-2.5">
-              {lead ? (
-                <div className="space-y-2.5">
-                  {/* Dropdown durum seçici */}
-                  <div>
-                    <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1">Durum</p>
-                    <select
-                      value={lead.status}
-                      onChange={(e) => updateLeadStatus(e.target.value)}
-                      className={`w-full px-2.5 py-2 border rounded-lg text-xs font-medium focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white transition ${LEAD_STATUS_COLORS[lead.status]?.replace('bg-', 'border-').split(' ')[0] || 'border-gray-200'}`}
-                    >
-                      <option value={lead.status}>
-                        {LEAD_STATUS_LABELS[lead.status] || lead.status} (Mevcut)
-                      </option>
-                      {LEAD_STATUSES.filter((s) => isLeadStatusTransitionAllowed(String(lead.status), s.value)).map((s) => (
-                        <option key={s.value} value={s.value}>{s.label}</option>
-                      ))}
-                    </select>
-                  </div>
-                  {lead.value && (
-                    <p className="text-xs text-gray-500">Değer: <span className="font-medium">{lead.value} TL</span></p>
-                  )}
-                  {lead.notes && (
-                    <p className="text-xs text-gray-500">Not: {lead.notes}</p>
-                  )}
-                </div>
-              ) : (
-                <button
-                  onClick={createLead}
-                  className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-blue-50 text-blue-700 rounded-lg text-xs font-medium hover:bg-blue-100 transition"
-                >
-                  <Target className="w-3.5 h-3.5" />
-                  Potansiyel Müşteri Olarak İşaretle
-                </button>
-              )}
-
             </div>
           )}
         </div>}

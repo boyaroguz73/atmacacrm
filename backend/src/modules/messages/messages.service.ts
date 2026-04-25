@@ -592,6 +592,22 @@ export class MessagesService implements OnModuleInit {
       variant?.metadata && typeof variant.metadata === 'object' && !Array.isArray(variant.metadata)
         ? (variant.metadata as Record<string, unknown>)
         : null;
+    // Bazı T-Soft kurulumlarında ürün URL'si yalnızca alt ürün metadata'sında geliyor.
+    // Ürün+seçili varyantta link yoksa diğer aktif varyantlardan da fallback topla.
+    const siblingVariantRows = !variant
+      ? await this.prisma.productVariant.findMany({
+          where: { productId, isActive: true },
+          select: { metadata: true },
+          take: 24,
+        })
+      : [];
+    const siblingVariantUrlCandidates = siblingVariantRows.flatMap((row) =>
+      this.extractUrlCandidatesFromRecord(
+        row?.metadata && typeof row.metadata === 'object' && !Array.isArray(row.metadata)
+          ? (row.metadata as Record<string, unknown>)
+          : null,
+      ),
+    );
     const fallbackMainLink = variantMeta
       ? String(
           variantMeta.MainProductUrl ??
@@ -633,6 +649,7 @@ export class MessagesService implements OnModuleInit {
       directVariantUrl,
       directProductUrl,
       ...metadataUrlCandidates,
+      ...siblingVariantUrlCandidates,
     ].filter(Boolean);
 
     const siteLinkRaw = siteLinkRawCandidates.find(Boolean) || '';

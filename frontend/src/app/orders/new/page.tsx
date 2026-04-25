@@ -1,13 +1,14 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import api, { getApiErrorMessage } from '@/lib/api';
 import { formatPhone, rewriteMediaUrlForClient } from '@/lib/utils';
 import toast from 'react-hot-toast';
-import { ArrowLeft, Loader2, Package, Search, Trash2 } from 'lucide-react';
+import { ArrowLeft, Loader2, MessageSquare, Package, Search, Trash2 } from 'lucide-react';
 import { ColorFabricLineCell } from '@/components/quotes/ColorFabricLineCell';
 import { VariantPickerOption } from '@/components/quotes/VariantPickerOption';
+import { QuoteEmbeddedChat } from '@/components/quotes/QuoteEmbeddedChat';
 
 interface LocalLineItem {
   key: string;
@@ -104,6 +105,8 @@ function fmt(amount: number) {
 
 export default function NewOrderPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const preselectedContactId = searchParams.get('contactId');
   const [contactQuery, setContactQuery] = useState('');
   const [contactResults, setContactResults] = useState<{ id: string; name: string | null; phone: string }[]>([]);
   const [selectedContact, setSelectedContact] = useState<{ id: string; name: string | null; phone: string } | null>(null);
@@ -124,6 +127,7 @@ export default function NewOrderPage() {
   const [submitting, setSubmitting] = useState(false);
   const [suppliers, setSuppliers] = useState<SupplierHit[]>([]);
   const [pushToTsoft, setPushToTsoft] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
 
   const [variantPick, setVariantPick] = useState<{
     product: ProductHit;
@@ -148,6 +152,18 @@ export default function NewOrderPage() {
       .then(({ data }) => setSuppliers(data.suppliers || []))
       .catch(() => setSuppliers([]));
   }, []);
+
+  useEffect(() => {
+    if (preselectedContactId && !selectedContact) {
+      api.get(`/contacts/${preselectedContactId}`)
+        .then(({ data }) => {
+          setSelectedContact({ id: data.id, name: data.name, phone: data.phone });
+          setContactQuery(data.name ? `${data.name} (${formatPhone(data.phone)})` : formatPhone(data.phone));
+          setChatOpen(true);
+        })
+        .catch(() => {});
+    }
+  }, [preselectedContactId, selectedContact]);
 
   const searchContacts = useCallback(async (q: string) => {
     if (q.length < 2) {
@@ -195,6 +211,7 @@ export default function NewOrderPage() {
     setSelectedContact(c);
     setContactQuery(c.name ? `${c.name} (${formatPhone(c.phone)})` : formatPhone(c.phone));
     setContactDropdownOpen(false);
+    setChatOpen(true);
   };
 
   const handleProductSearch = (val: string) => {
@@ -447,6 +464,27 @@ export default function NewOrderPage() {
             />
           </div>
         </div>
+
+        {selectedContact && (
+          <div className="rounded-xl border border-gray-200 bg-gray-50/60 p-3 space-y-2">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-semibold text-gray-700">
+                WhatsApp Sohbeti
+              </p>
+              <button
+                type="button"
+                onClick={() => setChatOpen((v) => !v)}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
+              >
+                <MessageSquare className="w-3.5 h-3.5" />
+                {chatOpen ? 'Gizle' : 'Göster'}
+              </button>
+            </div>
+            {chatOpen ? (
+              <QuoteEmbeddedChat contactId={selectedContact.id} contactPhone={selectedContact.phone} />
+            ) : null}
+          </div>
+        )}
 
         <div className="relative">
           <label className="text-xs text-gray-500 font-medium">Ürün ekle</label>

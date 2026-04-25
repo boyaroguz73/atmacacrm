@@ -56,6 +56,55 @@ function pickString(...candidates: unknown[]): string | null {
   return null;
 }
 
+function collectProductUrlCandidates(row: Record<string, unknown>): string[] {
+  const out: string[] = [];
+  const push = (value: unknown) => {
+    const s = pickString(value);
+    if (s) out.push(s);
+  };
+
+  // Main product-level keys from different T-Soft payload shapes.
+  push(row.ProductUrl);
+  push(row.productUrl);
+  push(row.DetailUrl);
+  push(row.detailUrl);
+  push(row.SeoUrl);
+  push(row.seoUrl);
+  push(row.Url);
+  push(row.url);
+  push(row.Link);
+  push(row.link);
+  push(row.MainProductUrl);
+  push(row.mainProductUrl);
+  push(row.ParentProductUrl);
+  push(row.parentProductUrl);
+
+  // Some installations only expose storefront URL on subproducts.
+  const subs = row.SubProducts ?? row.subProducts;
+  if (Array.isArray(subs)) {
+    for (const raw of subs) {
+      if (!raw || typeof raw !== 'object') continue;
+      const sub = raw as Record<string, unknown>;
+      push(sub.ProductUrl);
+      push(sub.productUrl);
+      push(sub.DetailUrl);
+      push(sub.detailUrl);
+      push(sub.SeoUrl);
+      push(sub.seoUrl);
+      push(sub.Url);
+      push(sub.url);
+      push(sub.Link);
+      push(sub.link);
+      push(sub.MainProductUrl);
+      push(sub.mainProductUrl);
+      push(sub.ParentProductUrl);
+      push(sub.parentProductUrl);
+    }
+  }
+
+  return Array.from(new Set(out.map((x) => x.trim()).filter(Boolean)));
+}
+
 /** Mağaza kökü ile göreli veya tam ürün sayfası URL’si (WhatsApp ürün linki için) */
 function resolveStorefrontProductUrl(raw: string | null, storeBase: string): string | null {
   const s = String(raw || '').trim();
@@ -405,14 +454,7 @@ export class TsoftProductSyncService {
     const priceList = toNullableNumber(row.ListPrice ?? row.listPrice);
     // unitPrice = normal satış fiyatı; salePriceAmount = indirimli fiyat (farklıysa)
     const unitPrice = priceSelling ?? priceList ?? discountedSelling ?? 0;
-    const productUrlRaw = pickString(
-      row.ProductUrl,
-      row.productUrl,
-      row.DetailUrl,
-      row.detailUrl,
-      row.SeoUrl,
-      row.seoUrl,
-    );
+    const productUrlRaw = collectProductUrlCandidates(row)[0] ?? null;
     const productUrlResolved = resolveStorefrontProductUrl(productUrlRaw, flags.imageBaseUrl);
     const currency = (pickString(row.Currency, row.currency) || 'TRY').slice(0, 12);
     const vatRate = toNullableInt(row.Vat ?? row.vat ?? row.VatRate) ?? 20;

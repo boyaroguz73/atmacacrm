@@ -1069,14 +1069,47 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
                 const mediaUrlResolved = resolveMediaUrl(msg);
                 const resolvedMime = String(
                   msg.mediaMimeType || msg.metadata?.originalMimeType || '',
+                )
+                  .toLowerCase()
+                  .split(';')[0]
+                  .trim();
+                const metadata = (msg.metadata || {}) as Record<string, unknown>;
+                const filenameHint = String(
+                  (typeof metadata.filename === 'string' ? metadata.filename : '') ||
+                  (typeof metadata.originalFilename === 'string' ? metadata.originalFilename : '') ||
+                  msg.body ||
+                  '',
                 ).toLowerCase();
-                const isPdf = resolvedMime.includes('application/pdf') || /\.pdf(\?|$)/i.test(String(mediaUrlResolved || ''));
+                const urlHint = String(mediaUrlResolved || '').toLowerCase();
+                const isPdf =
+                  resolvedMime === 'application/pdf' ||
+                  /\.pdf(\?|$)/i.test(urlHint) ||
+                  /\.pdf\b/i.test(filenameHint);
+                const isAudio =
+                  msg.mediaType === 'AUDIO' ||
+                  resolvedMime.startsWith('audio/') ||
+                  /\.(ogg|opus|mp3|m4a|aac|wav|webm)(\?|$)/i.test(urlHint);
+                const isVideo =
+                  msg.mediaType === 'VIDEO' ||
+                  resolvedMime.startsWith('video/') ||
+                  /\.(mp4|mov|m4v|webm|3gp)(\?|$)/i.test(urlHint);
+                const looksLikeDocumentByName =
+                  /\.(pdf|docx?|xlsx?|pptx?|txt|csv|zip|rar|7z)(\?|$)/i.test(urlHint) ||
+                  /\.(pdf|docx?|xlsx?|pptx?|txt|csv|zip|rar|7z)\b/i.test(filenameHint);
+                const isDocumentLike =
+                  isPdf ||
+                  msg.mediaType === 'DOCUMENT' ||
+                  looksLikeDocumentByName ||
+                  (resolvedMime.startsWith('application/') &&
+                    !resolvedMime.startsWith('application/json'));
                 const isImage =
-                  !isPdf &&
+                  !isDocumentLike &&
+                  !isAudio &&
+                  !isVideo &&
                   (
                     msg.mediaType === 'IMAGE' ||
                     resolvedMime.startsWith('image/') ||
-                    mediaUrlResolved?.match(/\.(jpg|jpeg|png|gif|webp)(\?|$)/i)
+                    /\.(jpg|jpeg|png|gif|webp|bmp|heic|heif)(\?|$)/i.test(urlHint)
                   );
                 const isImageMessage = !!(mediaUrlResolved && isImage);
                 const replyPreview =
@@ -1226,12 +1259,12 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
                           />
                         </div>
                       )}
-                      {msg.mediaType === 'AUDIO' && !mediaUrlResolved && (
+                      {isAudio && !mediaUrlResolved && (
                         <div className="mb-1 text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-2 py-1.5">
                           🎵 Ses dosyası sunucuya alınamadı. Sohbeti kapatıp tekrar açın veya sayfayı yenileyin.
                         </div>
                       )}
-                      {msg.mediaType === 'AUDIO' && mediaUrlResolved && (
+                      {isAudio && mediaUrlResolved && (
                         <div className="mb-1">
                           {(() => {
                             const url = mediaUrlResolved.split('?')[0] || '';
@@ -1263,12 +1296,12 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
                           })()}
                         </div>
                       )}
-                      {msg.mediaType === 'VIDEO' && !mediaUrlResolved && (
+                      {isVideo && !mediaUrlResolved && (
                         <div className="mb-1 text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-2 py-1.5">
                           🎬 Video sunucuya alınamadı. Sohbeti kapatıp tekrar açın veya sayfayı yenileyin.
                         </div>
                       )}
-                      {msg.mediaType === 'VIDEO' && mediaUrlResolved && (
+                      {isVideo && mediaUrlResolved && (
                         <div className="mb-1">
                           <video
                             controls
@@ -1281,7 +1314,7 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
                           </video>
                         </div>
                       )}
-                      {mediaUrlResolved && !isImage && msg.mediaType && msg.mediaType !== 'AUDIO' && msg.mediaType !== 'VIDEO' && (
+                      {mediaUrlResolved && !isImage && !isAudio && !isVideo && (
                         <div
                           role="button"
                           tabIndex={0}
