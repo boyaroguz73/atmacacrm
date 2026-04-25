@@ -74,6 +74,10 @@ function inferMediaTypeFromHints(msg: any, mediaMimeType?: string): string | und
     .map((v) => String(v || '').toLowerCase())
     .join(' ');
 
+  // WA payload bazı kurulumlarda thumbnail/mediaType yüzünden IMAGE sinyali verebiliyor.
+  // Mesaj tipi document ise öncelik her zaman DOCUMENT olmalı.
+  if (typeHints.some((t) => t.includes('document'))) return 'DOCUMENT';
+
   if (mime.startsWith('image/') || typeHints.some((t) => t.includes('image') || t.includes('sticker'))) return 'IMAGE';
   if (mime.startsWith('video/') || typeHints.some((t) => t.includes('video'))) return 'VIDEO';
   if (mime.startsWith('audio/') || typeHints.some((t) => t.includes('audio') || t.includes('ptt') || t.includes('voice'))) return 'AUDIO';
@@ -372,6 +376,13 @@ export class WahaWebhookHandler {
         mediaMimeType = msg.mimetype || msg._data?.mimetype;
 
         mediaType = inferMediaTypeFromHints(msg, mediaMimeType);
+        const isDocumentPayload =
+          String(msg?.type || '').toLowerCase() === 'document' ||
+          String(msg?._data?.type || '').toLowerCase() === 'document';
+        if (isDocumentPayload) {
+          // document event'lerinde thumbnail sinyalleri IMAGE'e kaydırmasın.
+          mediaType = 'DOCUMENT';
+        }
         if (!mediaType && (msg.hasMedia || msg.type === 'document' || msg._data?.type === 'document')) {
           mediaType = 'DOCUMENT';
         }

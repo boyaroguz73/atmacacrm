@@ -1101,13 +1101,14 @@ export class WahaService implements OnModuleInit {
     const encodedChatId = encodeURIComponent(chatId);
     const encodedMsgId = encodeURIComponent(messageId);
     const attempts: Array<{ method: 'put' | 'post'; path: string; payload: Record<string, unknown> }> = [
+      // Kullanıcının WAHA endpoint beklentisi: PUT /api/reaction
       {
         method: 'put',
-        path: `/api/${encodedSession}/chats/${encodedChatId}/messages/${encodedMsgId}/reaction`,
-        payload: { reaction: emoji, emoji, text: emoji },
+        path: '/api/reaction',
+        payload: { session: sessionName, messageId, reaction: emoji },
       },
       {
-        method: 'post',
+        method: 'put',
         path: `/api/${encodedSession}/chats/${encodedChatId}/messages/${encodedMsgId}/reaction`,
         payload: { reaction: emoji, emoji, text: emoji },
       },
@@ -1119,11 +1120,6 @@ export class WahaService implements OnModuleInit {
       {
         method: 'post',
         path: '/api/sendReactionByMessage',
-        payload: { session: sessionName, chatId, messageId, reaction: emoji, emoji, text: emoji },
-      },
-      {
-        method: 'post',
-        path: '/api/reaction',
         payload: { session: sessionName, chatId, messageId, reaction: emoji, emoji, text: emoji },
       },
     ];

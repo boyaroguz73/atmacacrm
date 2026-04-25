@@ -350,18 +350,11 @@ export class ConversationsController {
     let conversation = await this.conversationsService.findById(id, {
       skipContactEnrichment: true,
     });
-    if (conversation.isGroup) {
-      return {
-        synced: 0,
-        message: 'Grup sohbetleri bu senkron ile desteklenmez',
-        conversationId: id,
-      };
-    }
-
     let rawPhone = conversation.contact.phone;
     const sessionName = conversation.session.name;
+    const isGroupConversation = !!conversation.isGroup;
 
-    if (isLikelyLidPhone(rawPhone)) {
+    if (!isGroupConversation && isLikelyLidPhone(rawPhone)) {
       const resolved = await this.tryResolveLidPhone(
         conversation.contact.id,
         rawPhone,
@@ -442,14 +435,27 @@ export class ConversationsController {
     }
 
     const effectiveConversationId = conversation.id;
-    const waDigits =
-      this.contactsService.digitsForWahaProfile(rawPhone) ||
-      canonicalContactPhone(rawPhone) ||
-      '';
-    if (!waDigits || !/^\d{10,15}$/.test(waDigits)) {
-      return { synced: 0, message: 'Geçersiz telefon veya kimlik', conversationId: effectiveConversationId };
+    let chatIdForWaha = '';
+    if (isGroupConversation) {
+      const groupJid = String(conversation.waGroupId || '').trim();
+      if (!groupJid || !groupJid.endsWith('@g.us')) {
+        return {
+          synced: 0,
+          message: 'Geçersiz grup kimliği',
+          conversationId: effectiveConversationId,
+        };
+      }
+      chatIdForWaha = groupJid;
+    } else {
+      const waDigits =
+        this.contactsService.digitsForWahaProfile(rawPhone) ||
+        canonicalContactPhone(rawPhone) ||
+        '';
+      if (!waDigits || !/^\d{10,15}$/.test(waDigits)) {
+        return { synced: 0, message: 'Geçersiz telefon veya kimlik', conversationId: effectiveConversationId };
+      }
+      chatIdForWaha = `${waDigits}@c.us`;
     }
-    const chatIdForWaha = `${waDigits}@c.us`;
 
     const downloadMedia = opts?.downloadMedia !== false;
     const wahaMessages = await this.wahaService.getChatMessages(
@@ -484,6 +490,22 @@ export class ConversationsController {
       const direction = msg.fromMe
         ? MessageDirection.OUTGOING
         : MessageDirection.INCOMING;
+      const rawParticipantJid = String(
+        msg.author ||
+          msg.participant ||
+          msg._data?.author ||
+          msg._data?.participant ||
+          '',
+      ).trim();
+      const participantPhone = rawParticipantJid
+        ? (extractPhoneFromIndividualJid(rawParticipantJid) || null)
+        : null;
+      const participantName = String(
+        msg.pushName ||
+          msg._data?.notifyName ||
+          msg._data?.pushName ||
+          '',
+      ).trim() || null;
 
       let body = msg.body || '';
       let metadata: Record<string, any> | undefined;
@@ -550,6 +572,16 @@ export class ConversationsController {
         mediaMimeType,
         ...(metadata ? { metadata } : {}),
         ...(reactions?.length ? { reactions } : {}),
+        ...(isGroupConversation
+          ? {
+              participantName: direction === MessageDirection.OUTGOING
+                ? (participantName || 'Siz')
+                : participantName,
+              participantPhone: direction === MessageDirection.INCOMING
+                ? participantPhone
+                : undefined,
+            }
+          : {}),
         status:
           direction === MessageDirection.OUTGOING
             ? MessageStatus.SENT
@@ -815,7 +847,7 @@ export class ConversationsController {
         const personalChats = chats.filter((chat) => {
           const cid = chat.id?._serialized || chat.id;
           if (!cid) return false;
-          if (!cid.endsWith('@c.us')) return false;
+          if (!cid.endsWith('@c.us') && !cid.endsWith('@g.us')) return false;
           if (cid === 'status@broadcast') return false;
           if (cid.includes('@broadcast')) return false;
           return true;
@@ -850,16 +882,17 @@ export class ConversationsController {
 
         for (const chat of personalChats) {
           const chatId = chat.id?._serialized || chat.id;
-          const phoneRaw = chatId.replace('@c.us', '');
-          if (!phoneRaw || phoneRaw.length < 6) continue;
-          const phone = canonicalContactPhone(phoneRaw) || phoneRaw;
+          const isGroupChat = chatId.endsWith('@g.us');
+          const phoneRaw = isGroupChat ? '' : chatId.replace('@c.us', '');
+          const phone = isGroupChat ? '' : (canonicalContactPhone(phoneRaw) || phoneRaw);
+          if (!isGroupChat && (!phoneRaw || phoneRaw.length < 6)) continue;
 
-          const contactName = chat.pushname || chat.name || phone;
+          const contactName = chat.pushname || chat.name || chat.subject || phone || 'WhatsApp Grubu';
           const wahaTs = chat.timestamp
             ? new Date(chat.timestamp * 1000)
             : null;
 
-          const existing = dbConvMap.get(phone);
+          const existing = isGroupChat ? null : dbConvMap.get(phone);
           if (existing && this.wahaService.syncSkipUpToDateConversations) {
             const dbTs = existing.lastMessageAt
               ? Math.floor(existing.lastMessageAt.getTime() / 1000)
@@ -873,15 +906,31 @@ export class ConversationsController {
             }
           }
 
-          const contact = await this.contactsService.findOrCreate(
-            phoneRaw,
-            contactName,
-            session.organizationId,
-          );
-          const conversation = await this.conversationsService.findOrCreate(
-            contact.id,
-            session.id,
-          );
+          let conversation: any;
+          let contact: any;
+          if (isGroupChat) {
+            contact = await this.contactsService.findOrCreateForGroup(
+              chatId,
+              contactName,
+              session.organizationId,
+            );
+            conversation = await this.conversationsService.findOrCreateGroup(
+              contact.id,
+              session.id,
+              chatId,
+              contactName,
+            );
+          } else {
+            contact = await this.contactsService.findOrCreate(
+              phoneRaw,
+              contactName,
+              session.organizationId,
+            );
+            conversation = await this.conversationsService.findOrCreate(
+              contact.id,
+              session.id,
+            );
+          }
 
           let preview: string | null = null;
           const lastMsg = chat.lastMessage;
@@ -893,7 +942,7 @@ export class ConversationsController {
             conversationId: conversation.id,
             contactId: contact.id,
             hasAvatar: !!contact.avatarUrl,
-            phone,
+            phone: isGroupChat ? chatId : phone,
             preview,
             wahaTs,
           });
@@ -924,7 +973,7 @@ export class ConversationsController {
               .enrichConversationContactFromWaha(result.conversationId || task.conversationId)
               .catch(() => {});
 
-            if (!task.hasAvatar) {
+            if (!task.hasAvatar && !String(task.phone || '').endsWith('@g.us')) {
               try {
                 const waDigits =
                   this.contactsService.digitsForWahaProfile(task.phone) ||

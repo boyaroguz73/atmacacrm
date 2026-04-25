@@ -8,6 +8,49 @@ import { connectSocket, disconnectSocket } from '@/lib/socket';
 import Sidebar from './Sidebar';
 import { Menu } from 'lucide-react';
 
+const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL?.replace('/api', '') || 'http://localhost:3002';
+
+function pageTitleFromPath(pathname: string): string {
+  const p = String(pathname || '/');
+  if (p === '/' || p.startsWith('/dashboard')) return 'Gösterge Paneli';
+  if (p.startsWith('/inbox')) return 'Gelen Kutusu';
+  if (p.startsWith('/contacts/')) return 'Kişi Detayı';
+  if (p.startsWith('/contacts')) return 'Kişiler';
+  if (p.startsWith('/quotes/new')) return 'Yeni Teklif';
+  if (p.startsWith('/quotes/')) return 'Teklif Detayı';
+  if (p.startsWith('/quotes')) return 'Teklifler';
+  if (p.startsWith('/orders/new')) return 'Yeni Sipariş';
+  if (p.startsWith('/orders/')) return 'Sipariş Detayı';
+  if (p.startsWith('/orders')) return 'Siparişler';
+  if (p.startsWith('/tasks')) return 'Görevler';
+  if (p.startsWith('/calendar')) return 'Takvim';
+  if (p.startsWith('/reports')) return 'Raporlar';
+  if (p.startsWith('/products')) return 'Ürünler';
+  if (p.startsWith('/accounting')) return 'Muhasebe';
+  if (p.startsWith('/leads')) return 'Potansiyel Müşteriler';
+  if (p.startsWith('/settings/organization')) return 'Organizasyon Ayarları';
+  if (p.startsWith('/settings')) return 'Ayarlar';
+  if (p.startsWith('/profile')) return 'Profil';
+  if (p.startsWith('/ecommerce')) return 'E-Ticaret';
+  if (p.startsWith('/admin')) return 'Yönetim';
+  if (p.startsWith('/superadmin')) return 'Süper Admin';
+  return 'Atmaca Ofis';
+}
+
+function ensureFavicon(href: string) {
+  if (typeof document === 'undefined') return;
+  const rels = ['icon', 'shortcut icon', 'apple-touch-icon'];
+  for (const rel of rels) {
+    let el = document.querySelector<HTMLLinkElement>(`link[rel='${rel}']`);
+    if (!el) {
+      el = document.createElement('link');
+      el.setAttribute('rel', rel);
+      document.head.appendChild(el);
+    }
+    el.href = href;
+  }
+}
+
 function SidebarFallback() {
   return (
     <aside className="w-64 shrink-0 bg-sidebar text-white flex flex-col h-screen sticky top-0">
@@ -84,12 +127,22 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     };
   }, [userId, router]);
 
-  // Dinamik title
+  // Sayfa başlığı standardı: {Sayfa Adı} | Atmaca Ofis
   useEffect(() => {
-    if (organization?.name) {
-      document.title = `${organization.name} CRM`;
+    const page = pageTitleFromPath(pathname || '/');
+    document.title = page === 'Atmaca Ofis' ? 'Atmaca Ofis' : `${page} | Atmaca Ofis`;
+  }, [pathname]);
+
+  // Favicon: /settings/organization üzerinden yüklenen organizasyon logosu
+  useEffect(() => {
+    const logoPath = String(organization?.logo || '').trim();
+    if (!logoPath) {
+      ensureFavicon('/favicon.ico');
+      return;
     }
-  }, [organization?.name]);
+    const href = /^https?:\/\//i.test(logoPath) ? logoPath : `${BACKEND_URL}${logoPath}`;
+    ensureFavicon(href);
+  }, [organization?.logo]);
 
   useEffect(() => {
     setMobileMenuOpen(false);

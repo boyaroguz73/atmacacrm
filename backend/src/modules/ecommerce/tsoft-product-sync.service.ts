@@ -70,6 +70,9 @@ function collectProductUrlCandidates(row: Record<string, unknown>): string[] {
   push(row.detailUrl);
   push(row.SeoUrl);
   push(row.seoUrl);
+  push(row.SeoLink);
+  push(row.seoLink);
+  push(row.seolink);
   push(row.Url);
   push(row.url);
   push(row.Link);
@@ -91,6 +94,9 @@ function collectProductUrlCandidates(row: Record<string, unknown>): string[] {
       push(sub.detailUrl);
       push(sub.SeoUrl);
       push(sub.seoUrl);
+      push(sub.SeoLink);
+      push(sub.seoLink);
+      push(sub.seolink);
       push(sub.Url);
       push(sub.url);
       push(sub.Link);
@@ -102,7 +108,14 @@ function collectProductUrlCandidates(row: Record<string, unknown>): string[] {
     }
   }
 
-  return Array.from(new Set(out.map((x) => x.trim()).filter(Boolean)));
+  return Array.from(
+    new Set(
+      out
+        .map((x) => x.trim())
+        .map((x) => x.replace(/^\/+/, ''))
+        .filter(Boolean),
+    ),
+  );
 }
 
 /** Mağaza kökü ile göreli veya tam ürün sayfası URL’si (WhatsApp ürün linki için) */

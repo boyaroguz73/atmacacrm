@@ -99,7 +99,8 @@ interface LocalLineItem {
   productVariantId?: string;
   lineImageUrl?: string;
   name: string;
-  description?: string;
+  /** Sadece önizleme içindir, teklife kaydedilmez */
+  previewDescription?: string;
   /** Satıra özel (PDF’de kalem altında) */
   colorFabricInfo?: string;
   measurementInfo?: string;
@@ -580,7 +581,7 @@ export default function NewQuotePage() {
         productVariantId: variant?.id ?? undefined,
         lineImageUrl: (variant?.imageUrl && String(variant.imageUrl).trim()) || p.imageUrl || undefined,
         name: variant ? variant.name : String(p.name ?? ''),
-        description: p.description || undefined,
+        previewDescription: p.description || undefined,
         colorFabricInfo: '',
         measurementInfo: variant?.property2 ?? '',
         quantity: 1,
@@ -721,7 +722,6 @@ export default function NewQuotePage() {
           productVariantId: l.productVariantId || undefined,
           lineImageUrl: l.lineImageUrl?.trim() || undefined,
           name: String(l.name ?? '').trim(),
-          description: l.description || undefined,
           quantity: l.quantity,
           unitPrice: l.unitPrice,
           vatRate: Math.round(l.vatRate),
@@ -1371,21 +1371,15 @@ export default function NewQuotePage() {
                               className="mt-1 w-full px-2.5 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-whatsapp bg-white"
                             />
                           </label>
-                          <label className="block">
+                          <div className="block">
                             <span className="text-xs text-gray-500">Açıklama</span>
-                            <input
-                              value={line.description ?? ''}
-                              onChange={(e) => updateLine(line.key, { description: e.target.value })}
-                              placeholder="Satır açıklaması"
-                              className="mt-1 w-full px-2.5 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-whatsapp bg-white"
-                            />
-                            {line.description?.trim() ? (
+                            {line.previewDescription?.trim() ? (
                               <button
                                 type="button"
                                 onClick={() =>
                                   setDescriptionPreview({
                                     title: String(line.name || `Kalem ${idx + 1}`),
-                                    html: String(line.description),
+                                    html: String(line.previewDescription),
                                   })
                                 }
                                 className="mt-1 inline-flex items-center gap-1 text-[11px] font-medium text-whatsapp hover:text-green-700"
@@ -1393,8 +1387,13 @@ export default function NewQuotePage() {
                                 <Eye className="w-3.5 h-3.5" />
                                 Açıklamayı gör
                               </button>
-                            ) : null}
-                          </label>
+                            ) : (
+                              <p className="mt-1 text-[11px] text-gray-400">Açıklama yok</p>
+                            )}
+                            <p className="mt-1 text-[10px] text-gray-400">
+                              Bu açıklama teklife yazılmaz, yalnızca sizin görmeniz için gösterilir.
+                            </p>
+                          </div>
                           <label className="block">
                             <span className="text-xs text-gray-500">Renk / kumaş</span>
                             <input

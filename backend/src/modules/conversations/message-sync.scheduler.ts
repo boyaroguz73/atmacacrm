@@ -63,7 +63,12 @@ export class MessageSyncScheduler implements OnModuleInit {
 
           const personalChats = chats.filter((chat: any) => {
             const cid = chat.id?._serialized || chat.id;
-            return cid && cid.endsWith('@c.us') && cid !== 'status@broadcast' && !cid.includes('@broadcast');
+            return (
+              cid &&
+              (cid.endsWith('@c.us') || cid.endsWith('@g.us')) &&
+              cid !== 'status@broadcast' &&
+              !cid.includes('@broadcast')
+            );
           });
 
           /** timestamp olmayan sohbetler eskiden tamamen atlanıyordu; sonda yine de senkronlanır */
@@ -76,20 +81,23 @@ export class MessageSyncScheduler implements OnModuleInit {
           for (const chat of sortedChats) {
             try {
               const chatId = chat.id?._serialized || chat.id;
-              const rawPhone = chatId.replace('@c.us', '');
-              if (!rawPhone || rawPhone.length < 6) continue;
-              const phone = canonicalContactPhone(rawPhone) || rawPhone;
+              const isGroup = chatId.endsWith('@g.us');
+              const rawPhone = isGroup ? '' : chatId.replace('@c.us', '');
+              if (!isGroup && (!rawPhone || rawPhone.length < 6)) continue;
+              const phone = isGroup ? '' : (canonicalContactPhone(rawPhone) || rawPhone);
 
               // WAHA'da chat.name bazı hesaplarda kendi işletme adını dönebilir; pushname'i öncele.
-              const candidateName = chat.pushname || chat.name || '';
-              const contactName = !isFallbackContactName(candidateName, phone)
-                ? candidateName
-                : undefined;
-              const contact = await this.contactsService.findOrCreate(phone, contactName, session.organizationId);
-              const conversation = await this.conversationsService.findOrCreate(
-                contact.id,
-                session.id,
-              );
+              const candidateName = chat.pushname || chat.name || chat.subject || '';
+              const contactName =
+                isGroup
+                  ? (candidateName || 'WhatsApp Grubu')
+                  : (!isFallbackContactName(candidateName, phone) ? candidateName : undefined);
+              const contact = isGroup
+                ? await this.contactsService.findOrCreateForGroup(chatId, contactName || 'WhatsApp Grubu', session.organizationId)
+                : await this.contactsService.findOrCreate(phone, contactName, session.organizationId);
+              const conversation = isGroup
+                ? await this.conversationsService.findOrCreateGroup(contact.id, session.id, chatId, contactName || 'WhatsApp Grubu')
+                : await this.conversationsService.findOrCreate(contact.id, session.id);
 
               const result = await this.controller.syncMessagesCore(conversation.id, {
                 downloadMedia: false,
@@ -97,7 +105,7 @@ export class MessageSyncScheduler implements OnModuleInit {
               totalSynced += result.synced;
               if (result.synced > 0) totalConversations++;
 
-              if (!contact.avatarUrl) {
+              if (!contact.avatarUrl && !isGroup) {
                 try {
                   const picUrl = await this.wahaService.getProfilePicture(session.name, phone);
                   if (picUrl) {

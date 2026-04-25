@@ -6,8 +6,16 @@ import { Toaster } from 'react-hot-toast';
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  title: 'WhatsApp CRM',
+  title: {
+    default: 'Atmaca Ofis',
+    template: '%s | Atmaca Ofis',
+  },
   description: 'WhatsApp CRM & Müşteri Yönetim Sistemi',
+  icons: {
+    icon: '/favicon.ico',
+    shortcut: '/favicon.ico',
+    apple: '/favicon.ico',
+  },
 };
 
 export default function RootLayout({

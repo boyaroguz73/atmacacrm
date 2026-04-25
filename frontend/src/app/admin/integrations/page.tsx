@@ -981,9 +981,14 @@ function MessagingPanel({ integration }: { integration: Integration }) {
     }
   };
 
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    await handleSave();
+  };
+
   return (
     <div className="space-y-5">
-      <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-4">
+      <form onSubmit={handleSubmit} className="bg-white rounded-xl border border-gray-200 p-5 space-y-4">
         <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
           <Key className="w-4 h-4 text-blue-500" />
           Bağlantı Ayarları
@@ -1000,7 +1005,7 @@ function MessagingPanel({ integration }: { integration: Integration }) {
         </div>
         <div className="flex items-center gap-3">
           <button
-            onClick={handleSave}
+            type="submit"
             disabled={saving}
             className="flex items-center gap-2 px-4 py-2.5 bg-blue-500 text-white rounded-xl text-sm font-medium hover:bg-blue-600 transition-colors disabled:opacity-50"
           >
@@ -1017,7 +1022,7 @@ function MessagingPanel({ integration }: { integration: Integration }) {
             Dokümantasyon
           </a>
         </div>
-      </div>
+      </form>
 
       <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
         <p className="text-xs text-amber-800">Yakında aktif — token şimdiden kaydedilebilir.</p>
@@ -1170,6 +1175,11 @@ function TsoftPanel({ integration }: { integration: Integration }) {
     }
   };
 
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    await handleSave();
+  };
+
   const handleTest = async () => {
     setTesting(true);
     try {
@@ -1270,7 +1280,7 @@ function TsoftPanel({ integration }: { integration: Integration }) {
 
   return (
     <div className="space-y-5">
-      <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-5">
+      <form onSubmit={handleSubmit} className="bg-white rounded-xl border border-gray-200 p-5 space-y-5">
         <div>
           <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
             <Globe className="w-5 h-5 text-orange-500" />
@@ -1359,8 +1369,7 @@ function TsoftPanel({ integration }: { integration: Integration }) {
 
         <div className="flex flex-wrap items-center gap-2 pt-1">
           <button
-            type="button"
-            onClick={handleSave}
+            type="submit"
             disabled={saving}
             className="flex items-center gap-2 px-4 py-2.5 bg-orange-500 text-white rounded-xl text-sm font-medium hover:bg-orange-600 transition-colors disabled:opacity-50"
           >
@@ -1377,7 +1386,7 @@ function TsoftPanel({ integration }: { integration: Integration }) {
             Simdi guncelle
           </button>
         </div>
-      </div>
+      </form>
     </div>
   );
 }
@@ -1480,9 +1489,14 @@ function EcommercePanel({ integration }: { integration: Integration }) {
     }
   };
 
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    await handleSave();
+  };
+
   return (
     <div className="space-y-5">
-      <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-4">
+      <form onSubmit={handleSubmit} className="bg-white rounded-xl border border-gray-200 p-5 space-y-4">
         <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
           <Globe className="w-4 h-4 text-orange-500" />
           Mağaza Bağlantısı
@@ -1518,14 +1532,14 @@ function EcommercePanel({ integration }: { integration: Integration }) {
           />
         </div>
         <button
-          onClick={handleSave}
+          type="submit"
           disabled={saving}
           className="flex items-center gap-2 px-4 py-2.5 bg-orange-500 text-white rounded-xl text-sm font-medium hover:bg-orange-600 transition-colors disabled:opacity-50"
         >
           {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
           Kaydet
         </button>
-      </div>
+      </form>
     </div>
   );
 }

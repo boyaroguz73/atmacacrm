@@ -59,6 +59,8 @@ interface DashboardData {
   cash: { income: number; expense: number; net: number };
 }
 
+type DashboardTier = 'primary' | 'secondary' | 'tertiary';
+
 const ORDER_STATUS_LABELS: Record<string, string> = {
   AWAITING_CHECKOUT: 'Sepet Terk',
   AWAITING_PAYMENT: 'Ödeme Bekleniyor',
@@ -199,13 +201,22 @@ export default function DashboardPage() {
     );
   }
 
-  const statCards = [
+  const statCards: Array<{
+    label: string;
+    value: number | string;
+    icon: any;
+    color: string;
+    sub?: string;
+    href?: string;
+    tier: DashboardTier;
+  }> = [
     {
       label: 'Mesajlar',
       value: data.totalMessagesToday,
       icon: MessageSquare,
-      color: 'bg-blue-500',
+      color: 'bg-slate-500',
       sub: `${data.incomingMessagesToday} gelen / ${data.outgoingMessagesToday} giden`,
+      tier: 'secondary',
     },
     {
       label: 'Aktif Görüşmeler',
@@ -213,20 +224,23 @@ export default function DashboardPage() {
       icon: BarChart3,
       color: 'bg-whatsapp',
       sub: `${data.unansweredConversations} cevaplanmamış`,
+      tier: 'primary',
     },
     {
       label: 'Kişiler',
       value: data.totalContacts,
       icon: Users,
-      color: 'bg-purple-500',
+      color: 'bg-violet-500',
       sub: data.newContactsInPeriod > 0 ? `+${data.newContactsInPeriod} yeni` : undefined,
+      tier: 'secondary',
     },
     {
       label: 'Potansiyel Müşteri',
       value: data.totalLeads,
       icon: Target,
-      color: 'bg-orange-500',
+      color: 'bg-amber-500',
       sub: `%${data.conversionRate} dönüşüm`,
+      tier: 'secondary',
     },
     {
       label: 'Siparişler',
@@ -235,6 +249,7 @@ export default function DashboardPage() {
       color: 'bg-indigo-500',
       sub: fmtTry(data.orders.sumGrandTotal),
       href: '/orders',
+      tier: 'secondary',
     },
     {
       label: 'Tahsilat bekleyen',
@@ -243,6 +258,7 @@ export default function DashboardPage() {
       color: data.orders.outstandingTotal > 0 ? 'bg-rose-500' : 'bg-emerald-500',
       sub: `Tahsil edilen: ${fmtTry(data.orders.collectedTotal)}`,
       href: '/orders',
+      tier: 'primary',
     },
     {
       label: 'Gecikmiş teslimat',
@@ -253,14 +269,16 @@ export default function DashboardPage() {
         ? 'Beklenen tarihi geçmiş ve hâlâ teslim edilmemiş'
         : 'Gecikme yok',
       href: '/orders',
+      tier: 'secondary',
     },
     {
       label: 'Teklif dönüşüm',
       value: `%${data.quotes.conversionRate}`,
       icon: FileText,
-      color: 'bg-sky-500',
+      color: 'bg-slate-500',
       sub: `${data.quotes.accepted}/${data.quotes.total} kabul edilen`,
       href: '/quotes',
+      tier: 'tertiary',
     },
     {
       label: 'Kasa',
@@ -269,17 +287,24 @@ export default function DashboardPage() {
       color: data.cash.net >= 0 ? 'bg-emerald-500' : 'bg-red-500',
       sub: `Giriş: ${fmtTry(data.cash.income)} · Çıkış: ${fmtTry(data.cash.expense)}`,
       href: '/accounting/cash',
+      tier: 'tertiary',
     },
   ];
 
   const orderStatusRows = (data.orders.byStatus || [])
     .filter((r) => r.count > 0)
     .sort((a, b) => b.count - a.count);
+  const focusSummary = `Bugün ${data.activeConversations.toLocaleString()} aktif görüşme var, ${fmtTry(
+    data.orders.outstandingTotal,
+  )} tahsilat bekleniyor.`;
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-6 space-y-7">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <h1 className="text-2xl font-bold text-gray-900">Gösterge Paneli</h1>
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Gösterge Paneli</h1>
+          <p className="mt-1 text-sm text-gray-500">{focusSummary}</p>
+        </div>
         <div className="flex items-center gap-3">
           {loading && <Loader2 className="w-4 h-4 text-gray-400 animate-spin" />}
           <DateRangePicker
@@ -345,16 +370,34 @@ export default function DashboardPage() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
         {statCards.map((card) => {
+          const normalizedColor =
+            card.tier === 'secondary'
+              ? 'bg-slate-500'
+              : card.tier === 'tertiary' && card.label !== 'Kasa'
+                ? 'bg-gray-500'
+                : card.color;
+          const tierClass =
+            card.tier === 'primary'
+              ? 'border-gray-200 shadow-md ring-1 ring-gray-100'
+              : card.tier === 'secondary'
+                ? 'border-gray-100 shadow-sm'
+                : 'border-gray-100 shadow-sm opacity-95';
+          const valueClass =
+            card.tier === 'primary'
+              ? 'text-3xl'
+              : card.tier === 'secondary'
+                ? 'text-2xl'
+                : 'text-xl';
           const inner = (
-            <div className="bg-white rounded-xl border border-gray-100 p-5 shadow-sm hover:shadow-md transition-shadow">
+            <div className={`bg-white rounded-xl border p-5 hover:shadow-md transition-all ${tierClass}`}>
               <div className="flex items-start justify-between">
                 <div className="min-w-0 flex-1">
                   <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">
                     {card.label}
                   </p>
-                  <p className="text-2xl font-bold mt-1 text-gray-900 tabular-nums">
+                  <p className={`${valueClass} font-bold mt-1 text-gray-900 tabular-nums leading-tight`}>
                     {typeof card.value === 'number' ? card.value.toLocaleString() : card.value}
                   </p>
                   {card.sub && (
@@ -362,7 +405,7 @@ export default function DashboardPage() {
                   )}
                 </div>
                 <div
-                  className={`${card.color} w-10 h-10 rounded-xl flex items-center justify-center shrink-0`}
+                  className={`${normalizedColor} w-10 h-10 rounded-xl flex items-center justify-center shrink-0`}
                 >
                   <card.icon className="w-5 h-5 text-white" />
                 </div>
@@ -376,11 +419,14 @@ export default function DashboardPage() {
         })}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-7">
         <div className="bg-white rounded-xl border border-gray-100 p-6 shadow-sm">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-semibold text-gray-900">Sipariş Durumu</h2>
-            <Link href="/orders" className="text-xs font-medium text-whatsapp hover:underline">
+            <Link
+              href="/orders"
+              className="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-semibold bg-whatsapp text-white hover:bg-green-600"
+            >
               Tüm siparişler
             </Link>
           </div>
@@ -396,20 +442,20 @@ export default function DashboardPage() {
                   row.status === 'COMPLETED'
                     ? 'bg-emerald-500'
                     : row.status === 'CANCELLED'
-                      ? 'bg-gray-400'
+                      ? 'bg-rose-500'
                       : row.status === 'PREPARING'
-                        ? 'bg-indigo-500'
+                        ? 'bg-amber-500'
                         : row.status === 'SHIPPED'
-                          ? 'bg-sky-500'
-                          : 'bg-amber-500';
+                          ? 'bg-violet-500'
+                          : 'bg-sky-500';
                 return (
-                  <div key={row.status} className="flex items-center gap-3">
+                  <div key={row.status} className="flex items-center gap-3 group" title={`${label}: ${row.count} sipariş • ${fmtTry(row.sumGrandTotal)}`}>
                     <span className="px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap bg-gray-100 text-gray-700 min-w-[72px] text-center">
                       {label}
                     </span>
                     <div className="flex-1 bg-gray-100 rounded-full h-2">
                       <div
-                        className={`${barColor} h-2 rounded-full transition-all`}
+                        className={`${barColor} h-2 rounded-full transition-all group-hover:brightness-110`}
                         style={{ width: `${Math.min(100, pct)}%` }}
                       />
                     </div>
@@ -431,7 +477,16 @@ export default function DashboardPage() {
             Potansiyel Müşteri Durumu
           </h2>
           {data.leadsByStatus.length === 0 ? (
-            <p className="text-gray-400 text-sm">Kayıt yok</p>
+            <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50/60 px-4 py-5">
+              <p className="text-sm text-gray-500">Henüz kayıt yok</p>
+              <Link
+                href="/contacts"
+                className="mt-2 inline-flex items-center gap-1.5 text-xs font-semibold text-whatsapp hover:text-green-700"
+              >
+                <UserPlus className="w-3.5 h-3.5" />
+                Yeni müşteri ekle
+              </Link>
+            </div>
           ) : (
             <div className="space-y-3">
               {data.leadsByStatus.map((item) => (
@@ -469,30 +524,36 @@ export default function DashboardPage() {
             <p className="text-gray-400 text-sm">Henüz temsilci bulunmuyor</p>
           ) : (
             <div className="space-y-3">
-              {data.agentStats.map((agent) => (
+              {data.agentStats.map((agent) => {
+                const isIdle = (agent.messagesToday || 0) === 0 && (agent.activeAssignments || 0) === 0;
+                return (
                 <div
                   key={agent.id}
-                  className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg"
+                  className={`flex items-center gap-3 p-3 rounded-lg border transition-colors ${
+                    isIdle ? 'bg-gray-50 border-gray-100 opacity-70' : 'bg-emerald-50/40 border-emerald-100'
+                  }`}
                 >
-                  <div className="w-10 h-10 bg-whatsapp/10 rounded-full flex items-center justify-center font-bold text-whatsapp shrink-0">
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold shrink-0 ${
+                    isIdle ? 'bg-gray-200 text-gray-500' : 'bg-whatsapp/10 text-whatsapp'
+                  }`}>
                     {agent.name.charAt(0)}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="font-medium text-sm text-gray-900">
+                    <p className={`font-medium text-sm ${isIdle ? 'text-gray-500' : 'text-gray-900'}`}>
                       {agent.name}
                     </p>
-                    <p className="text-xs text-gray-400">
+                    <p className={`text-xs ${isIdle ? 'text-gray-400' : 'text-gray-500'}`}>
                       {agent.activeAssignments} aktif görüşme
                     </p>
                   </div>
                   <div className="text-right">
-                    <p className="text-lg font-bold text-gray-900 tabular-nums">
+                    <p className={`text-lg font-bold tabular-nums ${isIdle ? 'text-gray-400' : 'text-gray-900'}`}>
                       {agent.messagesToday}
                     </p>
                     <p className="text-[10px] text-gray-400">mesaj</p>
                   </div>
                 </div>
-              ))}
+              )})}
             </div>
           )}
         </div>
