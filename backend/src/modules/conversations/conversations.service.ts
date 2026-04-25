@@ -369,8 +369,16 @@ export class ConversationsService {
     };
   }
 
-  /** Teklif sayfası gömülü chat: kişiye ait son görüşme (herhangi bir oturum). */
-  async findLatestByContactId(contactId: string) {
+  /** Teklif/Sipariş gömülü chat: kişiye ait en uygun görüşme. */
+  async findLatestByContactId(
+    contactId: string,
+    opts?: {
+      currentUserId?: string;
+      currentUserRole?: string;
+      organizationId?: string | null;
+      preferAssignedToCurrentAgent?: boolean;
+    },
+  ) {
     const include = {
       contact: { include: { lead: true } },
       session: { select: { id: true, name: true, phone: true, organizationId: true } },
@@ -382,11 +390,39 @@ export class ConversationsService {
       },
     } as const;
 
-    let conv = await this.prisma.conversation.findFirst({
-      where: { contactId },
-      include,
-      orderBy: { lastMessageAt: 'desc' },
-    });
+    const baseWhere: any = { contactId };
+    if (opts?.organizationId && opts.currentUserRole !== 'SUPERADMIN') {
+      baseWhere.contact = { organizationId: opts.organizationId };
+    }
+
+    const shouldPreferMine =
+      opts?.preferAssignedToCurrentAgent !== false &&
+      opts?.currentUserRole === 'AGENT' &&
+      !!opts?.currentUserId;
+
+    let conv = shouldPreferMine
+      ? await this.prisma.conversation.findFirst({
+          where: {
+            ...baseWhere,
+            assignments: {
+              some: {
+                userId: String(opts?.currentUserId),
+                unassignedAt: null,
+              },
+            },
+          },
+          include,
+          orderBy: { lastMessageAt: 'desc' },
+        })
+      : null;
+
+    if (!conv) {
+      conv = await this.prisma.conversation.findFirst({
+        where: baseWhere,
+        include,
+        orderBy: { lastMessageAt: 'desc' },
+      });
+    }
     if (
       conv &&
       !conv.isGroup &&
@@ -399,10 +435,9 @@ export class ConversationsService {
         conv.session.name,
         conv.contact.organizationId,
       );
-      conv = await this.prisma.conversation.findFirst({
-        where: { contactId },
+      conv = await this.prisma.conversation.findUnique({
+        where: { id: conv.id },
         include,
-        orderBy: { lastMessageAt: 'desc' },
       });
     }
     return conv;

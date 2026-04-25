@@ -116,8 +116,16 @@ export class ConversationsController {
 
   /** Teklif sayfası: kişiye göre son görüşme (gömülü chat) */
   @Get('for-contact/:contactId')
-  async findForContact(@Param('contactId') contactId: string) {
-    return this.conversationsService.findLatestByContactId(contactId);
+  async findForContact(
+    @Param('contactId') contactId: string,
+    @CurrentUser() user: { id: string; role: string; organizationId?: string | null },
+  ) {
+    return this.conversationsService.findLatestByContactId(contactId, {
+      currentUserId: user.id,
+      currentUserRole: user.role,
+      organizationId: user.organizationId,
+      preferAssignedToCurrentAgent: true,
+    });
   }
 
   @Get('history')

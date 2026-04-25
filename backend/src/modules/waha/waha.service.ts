@@ -659,8 +659,9 @@ export class WahaService implements OnModuleInit {
       'END:VCARD',
     ].join('\n');
 
-    const attempts: Array<{ path: string; payload: Record<string, unknown> }> = [
+    const attempts: Array<{ method: 'post' | 'put'; path: string; payload: Record<string, unknown> }> = [
       {
+        method: 'post',
         path: '/api/sendContact',
         payload: {
           session: sessionName,
@@ -669,6 +670,16 @@ export class WahaService implements OnModuleInit {
         },
       },
       {
+        method: 'put',
+        path: '/api/sendContact',
+        payload: {
+          session: sessionName,
+          chatId: normalizedChatId,
+          contactId: contactJid,
+        },
+      },
+      {
+        method: 'post',
         path: '/api/sendContact',
         payload: {
           session: sessionName,
@@ -678,6 +689,7 @@ export class WahaService implements OnModuleInit {
         },
       },
       {
+        method: 'post',
         path: '/api/sendContact',
         payload: {
           session: sessionName,
@@ -686,6 +698,16 @@ export class WahaService implements OnModuleInit {
         },
       },
       {
+        method: 'post',
+        path: '/api/sendContact',
+        payload: {
+          session: sessionName,
+          chatId: normalizedChatId,
+          contacts: [contactJid],
+        },
+      },
+      {
+        method: 'post',
         path: '/api/sendContactVcard',
         payload: {
           session: sessionName,
@@ -694,6 +716,29 @@ export class WahaService implements OnModuleInit {
         },
       },
       {
+        method: 'post',
+        path: '/api/sendContactVcard',
+        payload: {
+          session: sessionName,
+          chatId: normalizedChatId,
+          contactId: contactJid,
+          displayName: safeName,
+          vcard,
+        },
+      },
+      {
+        method: 'post',
+        path: '/api/sendVCard',
+        payload: {
+          session: sessionName,
+          chatId: normalizedChatId,
+          displayName: safeName,
+          contactId: contactJid,
+          vcard,
+        },
+      },
+      {
+        method: 'put',
         path: '/api/sendVCard',
         payload: {
           session: sessionName,
@@ -708,7 +753,11 @@ export class WahaService implements OnModuleInit {
     let lastError: any = null;
     for (const a of attempts) {
       try {
-        const response = await this.http.post(a.path, a.payload);
+        const response = await this.http.request({
+          method: a.method,
+          url: a.path,
+          data: a.payload,
+        });
         return response.data;
       } catch (err: any) {
         lastError = err;
@@ -720,32 +769,19 @@ export class WahaService implements OnModuleInit {
         if (
           status === 404 ||
           status === 400 ||
+          status === 405 ||
           body.includes('Cannot POST') ||
-          body.includes('Cannot PUT')
+          body.includes('Cannot PUT') ||
+          body.includes('Cannot GET')
         ) continue;
       }
     }
 
-    // Son çare: .vcf dosyası olarak gönder (en azından düzgün kart dosyası düşer).
-    try {
-      const response = await this.http.post('/api/sendFile', {
-        session: sessionName,
-        chatId: normalizedChatId,
-        file: {
-          mimetype: 'text/vcard',
-          data: Buffer.from(vcard, 'utf8').toString('base64'),
-          filename: `${safeName.replace(/[^\w.-]+/g, '_') || 'contact'}.vcf`,
-        },
-        caption: '',
-      });
-      return response.data;
-    } catch (fallbackErr: any) {
-      const detail = fallbackErr?.response?.data
-        ? JSON.stringify(fallbackErr.response.data)
-        : fallbackErr?.message || lastError?.message || 'Bilinmeyen hata';
-      this.logger.error(`Kişi kartı gönderilemedi: ${normalizedChatId} - ${detail}`);
-      throw fallbackErr;
-    }
+    const detail = lastError?.response?.data
+      ? JSON.stringify(lastError.response.data)
+      : lastError?.message || 'Bilinmeyen hata';
+    this.logger.error(`Kişi kartı gönderilemedi (vcf fallback kapalı): ${normalizedChatId} - ${detail}`);
+    throw lastError || new BadRequestException('Kişi kartı gönderilemedi');
   }
 
   async getProfilePicture(
