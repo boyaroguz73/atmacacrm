@@ -49,8 +49,9 @@ export class TasksController {
     @Query('to') to?: string,
     @Query('page') page?: string,
   ) {
+    const organizationId = requireOrgId(user);
     return this.tasksService.findUnassignedForOrganization({
-      organizationId: requireOrgId(user),
+      organizationId: organizationId!,
       status,
       from,
       to,

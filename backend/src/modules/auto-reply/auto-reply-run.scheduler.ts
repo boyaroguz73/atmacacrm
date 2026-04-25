@@ -11,6 +11,10 @@ export class AutoReplyRunScheduler {
   @Cron(CronExpression.EVERY_MINUTE, { name: 'auto-reply-runs' })
   async drainRuns() {
     try {
+      const queued = await this.engine.enqueueDeliveryDateBasedRuns();
+      if (queued > 0) {
+        this.logger.debug(`Teslim tarihi bazlı automation run kuyruğa alındı: ${queued}`);
+      }
       const count = await this.engine.runPendingRuns(50);
       if (count > 0) {
         this.logger.debug(`Automation run işlendi: ${count}`);

@@ -41,6 +41,7 @@ const TRIGGERS = [
   { value: 'order_status', label: 'Sipariş durumu değişti' },
   { value: 'quote_status', label: 'Teklif durumu değişti' },
   { value: 'quote_converted_to_order', label: 'Teklif siparişe dönüştü' },
+  { value: 'delivery_due', label: 'Teslim tarihine göre' },
 ];
 
 const TRIGGER_HELP: Record<string, string> = {
@@ -50,6 +51,7 @@ const TRIGGER_HELP: Record<string, string> = {
   order_status: 'Sipariş durumu seçtiğiniz aşamaya geldiğinde çalışır.',
   quote_status: 'Teklif durumu seçtiğiniz aşamaya geldiğinde çalışır.',
   quote_converted_to_order: 'Teklif siparişe dönüştürüldüğünde çalışır.',
+  delivery_due: 'Siparişin teslim tarihine X gün kala çalışır.',
 };
 
 const ORDER_STATUS_OPTIONS = [
@@ -146,6 +148,8 @@ export default function FlowEditorPage({ flowId }: { flowId?: string }) {
           conditions:
             data.trigger === 'order_status' || data.trigger === 'quote_status'
               ? (data.conditions as any) || { statuses: [] }
+              : data.trigger === 'delivery_due'
+                ? (data.conditions as any) || { daysBefore: 0 }
               : (data.conditions as any[]) || [{ field: 'message_contains', operator: 'contains', value: '' }],
           steps: (data.steps as FlowStep[]) || [newStep('send_message')],
         });
@@ -183,6 +187,10 @@ export default function FlowEditorPage({ flowId }: { flowId?: string }) {
             ? form.conditions
             : form.trigger === 'order_status' || form.trigger === 'quote_status'
               ? { statuses: Array.isArray(form.conditions?.statuses) ? form.conditions.statuses : [] }
+              : form.trigger === 'delivery_due'
+                ? {
+                    daysBefore: Math.max(0, parseInt(String((form.conditions as any)?.daysBefore || '0'), 10) || 0),
+                  }
               : undefined,
         steps: form.steps,
       };
@@ -284,6 +292,8 @@ export default function FlowEditorPage({ flowId }: { flowId?: string }) {
                   ? [{ field: 'message_contains', operator: 'contains', value: '' }]
                   : t.value === 'order_status' || t.value === 'quote_status'
                     ? { statuses: [] }
+                    : t.value === 'delivery_due'
+                      ? { daysBefore: 0 }
                     : [],
               })}
               className={`p-3 border rounded-lg text-left text-sm ${form.trigger === t.value ? 'border-whatsapp bg-green-50 text-green-700 shadow-sm' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}
@@ -313,6 +323,35 @@ export default function FlowEditorPage({ flowId }: { flowId?: string }) {
                 </label>
               );
             })}
+          </div>
+        )}
+
+        {form.trigger === 'delivery_due' && (
+          <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+            <label className="block text-xs font-medium text-gray-600 mb-1">
+              Teslim tarihine kaç gün kala çalışsın?
+            </label>
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                min={0}
+                max={365}
+                value={Math.max(0, parseInt(String((form.conditions as any)?.daysBefore || '0'), 10) || 0)}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    conditions: {
+                      daysBefore: Math.max(0, parseInt(e.target.value || '0', 10) || 0),
+                    } as any,
+                  })
+                }
+                className="w-24 px-3 py-2 border rounded-lg text-sm"
+              />
+              <span className="text-sm text-gray-600">gün</span>
+              <span className="text-xs text-gray-400">
+                (0 = teslim günü, 1 = bir gün önce)
+              </span>
+            </div>
           </div>
         )}
 

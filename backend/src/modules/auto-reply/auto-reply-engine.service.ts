@@ -106,6 +106,87 @@ export class AutoReplyEngineService {
     }
   }
 
+  async enqueueDeliveryDateBasedRuns(now = new Date()): Promise<number> {
+    const flows = await this.prisma.autoReplyFlow.findMany({
+      where: {
+        isActive: true,
+        trigger: 'delivery_due',
+        organizationId: { not: null },
+        OR: [{ activeFrom: null }, { activeFrom: { lte: now } }],
+      },
+      select: {
+        id: true,
+        organizationId: true,
+        conditions: true,
+      },
+    });
+
+    let enqueued = 0;
+    for (const flow of flows) {
+      const orgId = flow.organizationId || undefined;
+      if (!orgId) continue;
+      const cond =
+        flow.conditions && typeof flow.conditions === 'object' && !Array.isArray(flow.conditions)
+          ? (flow.conditions as Record<string, unknown>)
+          : {};
+      const daysBeforeRaw = Number(cond.daysBefore ?? 0);
+      const daysBefore =
+        Number.isFinite(daysBeforeRaw) && daysBeforeRaw >= 0
+          ? Math.min(Math.floor(daysBeforeRaw), 365)
+          : 0;
+
+      const targetDate = new Date(now);
+      targetDate.setHours(0, 0, 0, 0);
+      targetDate.setDate(targetDate.getDate() + daysBefore);
+      const nextDate = new Date(targetDate);
+      nextDate.setDate(nextDate.getDate() + 1);
+      const dayKey = `${targetDate.getFullYear()}-${String(targetDate.getMonth() + 1).padStart(2, '0')}-${String(
+        targetDate.getDate(),
+      ).padStart(2, '0')}`;
+
+      const orders = await this.prisma.salesOrder.findMany({
+        where: {
+          contact: { organizationId: orgId },
+          expectedDeliveryDate: { gte: targetDate, lt: nextDate },
+          status: { not: 'CANCELLED' },
+        },
+        select: {
+          id: true,
+          contactId: true,
+          expectedDeliveryDate: true,
+        },
+      });
+
+      for (const order of orders) {
+        const dedupeKey = `${flow.id}:DELIVERY_DUE:${order.id}:${dayKey}:d${daysBefore}`;
+        await this.prisma.automationRun.upsert({
+          where: { dedupeKey },
+          create: {
+            flowId: flow.id,
+            organizationId: orgId,
+            trigger: 'delivery_due',
+            entityType: 'ORDER',
+            entityId: order.id,
+            contactId: order.contactId,
+            dedupeKey,
+            status: 'PENDING',
+            nextRunAt: now,
+            context: ({
+              status:
+                daysBefore === 0 ? 'Teslim tarihi bugün' : `Teslim tarihine ${daysBefore} gün kaldı`,
+              expectedDeliveryDate: order.expectedDeliveryDate?.toISOString() || null,
+              daysBefore,
+            } as unknown) as Prisma.InputJsonValue,
+          },
+          update: {},
+        });
+        enqueued++;
+      }
+    }
+
+    return enqueued;
+  }
+
   async runPendingRuns(limit = 25): Promise<number> {
     const now = new Date();
     const runs = await this.prisma.automationRun.findMany({

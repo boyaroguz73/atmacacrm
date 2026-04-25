@@ -31,6 +31,7 @@ const TRIGGERS = [
   { value: 'order_status', label: 'Sipariş durumu değişti' },
   { value: 'quote_status', label: 'Teklif durumu değişti' },
   { value: 'quote_converted_to_order', label: 'Teklif siparişe dönüştü' },
+  { value: 'delivery_due', label: 'Teslim tarihine göre' },
 ];
 
 export default function AutoReplyPage() {
