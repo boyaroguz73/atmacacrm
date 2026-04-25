@@ -5,6 +5,7 @@ import {
   Param,
   Query,
   Post,
+  Delete,
   Body,
   UseGuards,
   Logger,
