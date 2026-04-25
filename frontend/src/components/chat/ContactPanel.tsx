@@ -49,18 +49,9 @@ interface ContactPanelProps {
   groupParticipantCount?: number;
 }
 
-const LEAD_FLOW_ORDER = ['NEW', 'CONTACTED', 'INTERESTED', 'OFFER_SENT', 'WON', 'LOST'] as const;
-
 function isLeadStatusTransitionAllowed(from: string, to: string): boolean {
   if (!from || !to) return false;
-  if (from === to) return false;
-  const isClosed = from === 'WON' || from === 'LOST';
-  if (isClosed) return to === 'NEW' || to === 'CONTACTED';
-  if (to === 'WON' || to === 'LOST') return true;
-  const fi = LEAD_FLOW_ORDER.indexOf(from as (typeof LEAD_FLOW_ORDER)[number]);
-  const ti = LEAD_FLOW_ORDER.indexOf(to as (typeof LEAD_FLOW_ORDER)[number]);
-  if (fi < 0 || ti < 0) return false;
-  return ti >= fi;
+  return from !== to;
 }
 
 function getMetaText(metadata: unknown, key: string): string {
@@ -231,7 +222,10 @@ export default function ContactPanel({
       lossReason = r.trim();
     }
     try {
-      await api.patch(`/leads/${lead.id}/status`, { status, lossReason });
+      const { data } = await api.patch(`/leads/${lead.id}/status`, { status, lossReason });
+      if (data?.status) {
+        setLead((prev: any) => (prev ? { ...prev, ...data } : data));
+      }
       toast.success('Durum güncellendi');
       fetchContact();
     } catch (err: any) {
@@ -304,7 +298,7 @@ export default function ContactPanel({
   const labelCls = 'text-[10px] font-semibold text-gray-500 uppercase tracking-wide';
 
   return (
-    <div className="w-80 border-l border-gray-200 bg-gray-50/50 flex flex-col h-full overflow-hidden">
+    <div className="w-80 border-l border-gray-200 bg-gray-50/40 flex flex-col h-full overflow-hidden">
       {/* Header */}
       <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between bg-white">
         <div className="flex items-center gap-2">
@@ -351,9 +345,9 @@ export default function ContactPanel({
           </button>
 
           {openSections.info && (
-            <div className="px-4 pb-4">
+            <div className="px-4 pb-5 space-y-3">
               {/* Avatar + Name + Status */}
-              <div className="flex items-start gap-3 mb-3">
+              <div className="flex items-start gap-3">
                 <ContactAvatar name={contact.name} surname={contact.surname} phone={contact.phone} avatarUrl={contact.avatarUrl} size="lg" />
                 <div className="flex-1 min-w-0">
                   {editing ? (
@@ -362,13 +356,13 @@ export default function ContactPanel({
                       <input type="text" value={editData.surname} onChange={(e) => setEditData((d) => ({ ...d, surname: e.target.value }))} placeholder="Soyad" className={inputCls} />
                     </div>
                   ) : (
-                    <p className="font-semibold text-gray-900 truncate">{getContactDisplayTitle(contact)}</p>
+                    <p className="text-base font-bold text-gray-900 truncate">{getContactDisplayTitle(contact)}</p>
                   )}
-                  {secondaryPhoneLine && <p className="text-xs text-gray-400 truncate mt-0.5">{secondaryPhoneLine}</p>}
+                  {secondaryPhoneLine && <p className="text-xs text-gray-500 truncate mt-0.5">{secondaryPhoneLine}</p>}
                   <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
                     <EcommerceCustomerBadge metadata={contact.metadata} />
                     {lead && (
-                      <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${LEAD_STATUS_COLORS[lead.status] || 'bg-gray-100 text-gray-600'}`}>
+                      <span className={`text-[11px] font-semibold px-2.5 py-1 rounded-full ${LEAD_STATUS_COLORS[lead.status] || 'bg-gray-100 text-gray-600'}`}>
                         {LEAD_STATUS_LABELS[lead.status] || lead.status}
                       </span>
                     )}
@@ -384,6 +378,32 @@ export default function ContactPanel({
                   </button>
                 )}
               </div>
+
+              {!editing && (
+                <div className="grid grid-cols-1 gap-2">
+                  <Link
+                    href={`/quotes/new?contactId=${contact.id}`}
+                    className="w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-purple-600 text-white rounded-lg text-xs font-semibold hover:bg-purple-700 transition"
+                  >
+                    <ClipboardList className="w-3.5 h-3.5" />
+                    Teklif Oluştur
+                  </Link>
+                  {lead ? (
+                    <select
+                      value={lead.status}
+                      onChange={(e) => updateLeadStatus(e.target.value)}
+                      className={`w-full px-2.5 py-2.5 border rounded-lg text-xs font-medium focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white transition ${LEAD_STATUS_COLORS[lead.status]?.replace('bg-', 'border-').split(' ')[0] || 'border-gray-200'}`}
+                    >
+                      <option value={lead.status}>
+                        {LEAD_STATUS_LABELS[lead.status] || lead.status} (Mevcut)
+                      </option>
+                      {LEAD_STATUSES.filter((s) => isLeadStatusTransitionAllowed(String(lead.status), s.value)).map((s) => (
+                        <option key={s.value} value={s.value}>{s.label}</option>
+                      ))}
+                    </select>
+                  ) : null}
+                </div>
+              )}
 
               {/* Fields */}
               <div className="space-y-2 text-sm">
@@ -500,22 +520,24 @@ export default function ContactPanel({
 
                     {/* Fatura bilgileri kompakt */}
                     {(contact.billingAddress || getMetaText(contact.metadata, 'billingEmail') || contact.taxOffice || contact.taxNumber || contact.identityNumber) && (
-                      <div className="rounded-lg border border-gray-200 bg-white px-2.5 py-2 space-y-1 mt-1">
-                        <p className="text-[10px] font-semibold text-gray-500 uppercase flex items-center gap-1">
+                      <details className="rounded-lg border border-gray-200 bg-white px-2.5 py-2 mt-1">
+                        <summary className="cursor-pointer list-none text-[10px] font-semibold text-gray-500 uppercase flex items-center gap-1">
                           <FileText className="w-3 h-3" /> Fatura / Firma
-                        </p>
-                        {contact.billingAddress && (
-                          <p className="text-xs text-gray-700 whitespace-pre-wrap">{contact.billingAddress}</p>
-                        )}
-                        {getMetaText(contact.metadata, 'billingEmail') && (
-                          <p className="text-xs text-gray-600"><span className="text-gray-400">E-posta:</span> {getMetaText(contact.metadata, 'billingEmail')}</p>
-                        )}
-                        <div className="flex flex-wrap gap-x-3 gap-y-0.5">
-                          {contact.taxOffice && <p className="text-xs text-gray-600"><span className="text-gray-400">VD:</span> {contact.taxOffice}</p>}
-                          {contact.taxNumber && <p className="text-xs text-gray-600"><span className="text-gray-400">VKN:</span> {contact.taxNumber}</p>}
-                          {contact.identityNumber && <p className="text-xs text-gray-600"><span className="text-gray-400">TC:</span> {contact.identityNumber}</p>}
+                        </summary>
+                        <div className="pt-1.5 space-y-1">
+                          {contact.billingAddress && (
+                            <p className="text-xs text-gray-700 whitespace-pre-wrap">{contact.billingAddress}</p>
+                          )}
+                          {getMetaText(contact.metadata, 'billingEmail') && (
+                            <p className="text-xs text-gray-600"><span className="text-gray-400">E-posta:</span> {getMetaText(contact.metadata, 'billingEmail')}</p>
+                          )}
+                          <div className="flex flex-wrap gap-x-3 gap-y-0.5">
+                            {contact.taxOffice && <p className="text-xs text-gray-600"><span className="text-gray-400">VD:</span> {contact.taxOffice}</p>}
+                            {contact.taxNumber && <p className="text-xs text-gray-600"><span className="text-gray-400">VKN:</span> {contact.taxNumber}</p>}
+                            {contact.identityNumber && <p className="text-xs text-gray-600"><span className="text-gray-400">TC:</span> {contact.identityNumber}</p>}
+                          </div>
                         </div>
-                      </div>
+                      </details>
                     )}
 
                     {contact.notes && (
@@ -566,7 +588,7 @@ export default function ContactPanel({
           </button>
 
           {openSections.lead && (
-            <div className="px-4 pb-4 space-y-2.5">
+            <div className="px-4 pb-5 space-y-2.5">
               {lead ? (
                 <div className="space-y-2.5">
                   {/* Dropdown durum seçici */}
@@ -602,13 +624,6 @@ export default function ContactPanel({
                 </button>
               )}
 
-              <Link
-                href={`/quotes/new?contactId=${contact.id}`}
-                className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-purple-50 text-purple-700 rounded-lg text-xs font-medium hover:bg-purple-100 transition"
-              >
-                <ClipboardList className="w-3.5 h-3.5" />
-                Teklif Oluştur
-              </Link>
             </div>
           )}
         </div>}
@@ -619,12 +634,12 @@ export default function ContactPanel({
             onClick={() => toggleSection('actions')}
             className="w-full flex items-center justify-between px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wider hover:bg-white/60 transition"
           >
-            {isGroup ? 'Temsilci Atama' : 'Görüşme İşlemleri'}
+            {isGroup ? 'Temsilci Atama' : 'Temsilci'}
             {openSections.actions ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
           </button>
 
           {openSections.actions && (
-            <div className="px-4 pb-4 space-y-3">
+            <div className="px-4 pb-5 space-y-2.5">
               {assignments?.[0] && (
                 <div className="flex items-center gap-2 p-2 bg-blue-50 rounded-lg">
                   <UserPlus className="w-3.5 h-3.5 text-blue-600" />
@@ -656,7 +671,7 @@ export default function ContactPanel({
                   <select
                     value={assignments?.[0]?.user?.id || ''}
                     onChange={(e) => { if (e.target.value) assignAgent(e.target.value); }}
-                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white"
+                    className="w-full px-2.5 py-2 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white"
                   >
                     <option value="">Temsilci Seç...</option>
                     {agents.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
@@ -683,7 +698,7 @@ export default function ContactPanel({
             </button>
 
             {openSections.notes && (
-              <div className="px-4 pb-4">
+              <div className="px-4 pb-5">
                 <div className="space-y-2 max-h-48 overflow-y-auto mb-3">
                   {notes.length === 0 ? (
                     <p className="text-xs text-gray-400 text-center py-3">Henüz dahili not yok</p>
@@ -756,16 +771,17 @@ export default function ContactPanel({
                     ))
                   )}
                 </div>
-                <form onSubmit={addNote} className="flex gap-2">
-                  <input
-                    type="text"
+                <form onSubmit={addNote} className="space-y-2">
+                  <textarea
                     value={noteText}
                     onChange={(e) => setNoteText(e.target.value)}
-                    placeholder="Dahili not yaz..."
-                    className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-yellow-400"
+                    placeholder="Bu kişiyle ilgili not ekleyin..."
+                    rows={3}
+                    className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-yellow-400 resize-y"
                   />
-                  <button type="submit" disabled={!noteText.trim()} className="p-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 disabled:opacity-50">
+                  <button type="submit" disabled={!noteText.trim()} className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2.5 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 disabled:opacity-50 text-xs font-semibold">
                     <Send className="w-3.5 h-3.5" />
+                    Notu Kaydet
                   </button>
                 </form>
               </div>

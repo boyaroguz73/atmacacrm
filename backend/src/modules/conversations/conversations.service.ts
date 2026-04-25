@@ -313,9 +313,54 @@ export class ConversationsService {
       ]);
     }
 
+    // Liste açılışında "WhatsApp Grubu" gibi zayıf başlıklar kalmasın:
+    // sınırlı sayıda zayıf grubu WAHA'dan subject ile iyileştir.
+    const weakGroups = conversations
+      .filter(
+        (c: any) =>
+          c?.isGroup &&
+          c?.waGroupId &&
+          c?.session?.name &&
+          isWeakGroupLabel(c?.groupName),
+      )
+      .slice(0, 12);
+    if (weakGroups.length > 0) {
+      await Promise.all(
+        weakGroups.map(async (c: any) => {
+          try {
+            const meta = await this.wahaService.getGroupById(c.session.name, c.waGroupId);
+            const subject =
+              (typeof meta?.subject === 'string' && meta.subject.trim()) ||
+              (typeof meta?.name === 'string' && meta.name.trim()) ||
+              '';
+            if (!subject) return;
+            c.groupName = subject;
+            await this.prisma.conversation
+              .update({
+                where: { id: c.id },
+                data: { groupName: subject },
+              })
+              .catch(() => {});
+            await this.prisma.contact
+              .update({
+                where: { id: c.contactId },
+                data: { name: subject },
+              })
+              .catch(() => {});
+          } catch {
+            // sessiz geç: listeyi bozma
+          }
+        }),
+      );
+    }
+
     return {
       conversations: conversations.map((c: any) => ({
         ...c,
+        groupName:
+          c.isGroup && isWeakGroupLabel(c.groupName)
+            ? c.contact?.name || c.groupName
+            : c.groupName,
         lastMessageDirection: c.messages?.[0]?.direction ?? null,
       })),
       total,
@@ -888,11 +933,34 @@ export class ConversationsService {
       conversation.waGroupId,
     );
 
-    const normalized = participants.map((p) => {
-      const jid = String(p.id || '');
-      const phone = extractPhoneFromIndividualJid(jid) || canonicalContactPhone(jid) || '';
-      return { jid, phone, role: p.role || 'member' };
-    });
+    const normalized = await Promise.all(
+      participants.map(async (p) => {
+        const jid = String(p.id || '');
+        let phone = extractPhoneFromIndividualJid(jid) || '';
+        if (!phone && /@lid$/i.test(jid)) {
+          const pnJid = await this.wahaService
+            .getLinkedPnFromLid(conversation.session.name, jid)
+            .catch(() => null);
+          phone = pnJid ? extractPhoneFromIndividualJid(pnJid) || '' : '';
+          if (!phone) {
+            const details = await this.wahaService
+              .getContactDetails(conversation.session.name, jid)
+              .catch(() => null);
+            const waNumber = details?.number
+              ? String(details.number).replace(/\D/g, '')
+              : '';
+            if (waNumber && !isLikelyLidPhone(waNumber)) {
+              phone = canonicalContactPhone(waNumber);
+            }
+          }
+        }
+        if (!phone) {
+          const fallback = canonicalContactPhone(jid) || '';
+          phone = isLikelyLidPhone(fallback) ? '' : fallback;
+        }
+        return { jid, phone, role: p.role || 'member' };
+      }),
+    );
 
     const allLookupKeys = Array.from(
       new Set(

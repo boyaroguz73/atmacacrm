@@ -127,7 +127,10 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
   const authUser = useAuthStore((s) => s.user);
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
-  const [showPanel, setShowPanel] = useState(true);
+  const [showPanel, setShowPanel] = useState(() => {
+    if (typeof window === 'undefined') return true;
+    return window.matchMedia('(min-width: 1024px)').matches;
+  });
   const [internalChatEnabled, setInternalChatEnabled] = useState(false);
   const [userRole, setUserRole] = useState('AGENT');
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
@@ -345,6 +348,9 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
     setEmojiPickerOpen(null);
     setGroupDetailOpen(false);
     setGroupParticipants([]);
+    if (typeof window !== 'undefined') {
+      setShowPanel(window.matchMedia('(min-width: 1024px)').matches);
+    }
   }, [activeConversation?.id]);
 
   useEffect(() => {
@@ -1064,10 +1070,14 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
                 const resolvedMime = String(
                   msg.mediaMimeType || msg.metadata?.originalMimeType || '',
                 ).toLowerCase();
+                const isPdf = resolvedMime.includes('application/pdf') || /\.pdf(\?|$)/i.test(String(mediaUrlResolved || ''));
                 const isImage =
-                  msg.mediaType === 'IMAGE' ||
-                  resolvedMime.startsWith('image/') ||
-                  mediaUrlResolved?.match(/\.(jpg|jpeg|png|gif|webp)(\?|$)/i);
+                  !isPdf &&
+                  (
+                    msg.mediaType === 'IMAGE' ||
+                    resolvedMime.startsWith('image/') ||
+                    mediaUrlResolved?.match(/\.(jpg|jpeg|png|gif|webp)(\?|$)/i)
+                  );
                 const isImageMessage = !!(mediaUrlResolved && isImage);
                 const replyPreview =
                   msg.metadata?.replyToBody?.trim() ||

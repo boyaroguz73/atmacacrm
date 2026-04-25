@@ -260,13 +260,13 @@ export default function ReportsOverviewPage() {
                   Detay <ArrowRight className="w-3 h-3" />
                 </Link>
               </div>
-              <div className="h-64">
+              <div className="h-64 min-h-[256px] min-w-0">
                 {collectionData.length === 0 ? (
                   <div className="flex items-center justify-center h-full text-gray-400 text-sm">
                     Seçili dönemde tahsilat verisi yok
                   </div>
                 ) : (
-                  <ResponsiveContainer width="100%" height="100%">
+                  <ResponsiveContainer width="100%" height="100%" minWidth={280} minHeight={220}>
                     <ComposedChart data={collectionData}>
                       <defs>
                         <linearGradient id="colGrad" x1="0" y1="0" x2="0" y2="1">
@@ -320,8 +320,8 @@ export default function ReportsOverviewPage() {
                 </div>
               ) : (
                 <>
-                  <div className="h-48">
-                    <ResponsiveContainer width="100%" height="100%">
+                  <div className="h-48 min-h-[192px] min-w-0">
+                    <ResponsiveContainer width="100%" height="100%" minWidth={240} minHeight={180}>
                       <PieChart>
                         <Pie
                           data={funnelPie}
@@ -376,13 +376,13 @@ export default function ReportsOverviewPage() {
                   Detay <ArrowRight className="w-3 h-3" />
                 </Link>
               </div>
-              <div className="h-56">
+              <div className="h-56 min-h-[224px] min-w-0">
                 {collectionData.length === 0 ? (
                   <div className="flex items-center justify-center h-full text-gray-400 text-sm">
                     Veri yok
                   </div>
                 ) : (
-                  <ResponsiveContainer width="100%" height="100%">
+                  <ResponsiveContainer width="100%" height="100%" minWidth={260} minHeight={200}>
                     <AreaChart data={collectionData}>
                       <defs>
                         <linearGradient id="ordGrad" x1="0" y1="0" x2="0" y2="1">
@@ -430,13 +430,13 @@ export default function ReportsOverviewPage() {
                   Detay <ArrowRight className="w-3 h-3" />
                 </Link>
               </div>
-              <div className="h-56">
+              <div className="h-56 min-h-[224px] min-w-0">
                 {catData.length === 0 ? (
                   <div className="flex items-center justify-center h-full text-gray-400 text-sm">
                     Veri yok
                   </div>
                 ) : (
-                  <ResponsiveContainer width="100%" height="100%">
+                  <ResponsiveContainer width="100%" height="100%" minWidth={260} minHeight={200}>
                     <BarChart data={catData} layout="vertical" margin={{ left: 10 }}>
                       <CartesianGrid
                         strokeDasharray="3 3"

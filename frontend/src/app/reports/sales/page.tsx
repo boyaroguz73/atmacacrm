@@ -273,13 +273,13 @@ export default function ReportSalesPage() {
         <h2 className="text-sm font-semibold text-gray-800 mb-4">
           Ciro ve sipariş adedi trendi ({GRAN_LABELS[granularity].toLocaleLowerCase('tr-TR')})
         </h2>
-        <div className="h-80">
+        <div className="h-80 min-h-[320px] min-w-0">
           {chartData.length === 0 ? (
             <div className="flex items-center justify-center h-full text-gray-400 text-sm">
               Seçili dönemde sipariş bulunamadı.
             </div>
           ) : (
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height="100%" minWidth={300} minHeight={240}>
               <ComposedChart data={chartData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
                 <XAxis dataKey="label" tick={{ fontSize: 10 }} />

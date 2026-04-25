@@ -202,15 +202,15 @@ function statusBadgeClass(status: string): string {
   const s = (status || '').toUpperCase();
   switch (s) {
     case 'PENDING':
-      return 'bg-amber-100 text-amber-900 border border-amber-200';
+      return 'bg-amber-100 text-amber-900 border border-amber-300';
     case 'SENT':
-      return 'bg-blue-100 text-blue-900 border border-blue-200';
+      return 'bg-blue-100 text-blue-900 border border-blue-300';
     case 'PAID':
-      return 'bg-emerald-100 text-emerald-900 border border-emerald-200';
+      return 'bg-emerald-100 text-emerald-900 border border-emerald-300';
     case 'OVERDUE':
-      return 'bg-red-100 text-red-900 border border-red-200';
+      return 'bg-red-100 text-red-900 border border-red-300';
     case 'CANCELLED':
-      return 'bg-gray-100 text-gray-600 border border-gray-200';
+      return 'bg-red-100 text-red-800 border border-red-300';
     default:
       return 'bg-gray-50 text-gray-700 border border-gray-200';
   }
@@ -652,7 +652,7 @@ function AccountingInvoicesContent() {
 
       {tab === 'invoices' ? (
         <div className="space-y-4">
-          <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
+          <div className="bg-white rounded-xl border border-gray-200 p-4">
             <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Durum</p>
             <div className="flex flex-wrap gap-2">
               {STATUS_FILTERS.map((f) => (
@@ -663,10 +663,10 @@ function AccountingInvoicesContent() {
                     setStatusFilter(f.key);
                     setPage(1);
                   }}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                  className={`px-3.5 py-2 rounded-full text-xs font-semibold transition-colors ${
                     statusFilter === f.key
-                      ? 'bg-whatsapp text-white shadow-sm'
-                      : 'bg-gray-50 text-gray-600 hover:bg-gray-100 border border-gray-100'
+                      ? 'bg-whatsapp text-white border border-whatsapp/90 shadow-sm'
+                      : 'bg-gray-50 text-gray-600 hover:bg-gray-100 border border-gray-200'
                   }`}
                 >
                   {f.label}
@@ -675,7 +675,7 @@ function AccountingInvoicesContent() {
             </div>
           </div>
 
-          <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
             {loading ? (
               <div className="flex items-center justify-center py-20 text-gray-400 gap-2">
                 <Loader2 className="w-5 h-5 animate-spin text-whatsapp" />
@@ -687,16 +687,16 @@ function AccountingInvoicesContent() {
               <div className="overflow-x-auto">
                 <table className="w-full text-sm min-w-[820px]">
                   <thead>
-                    <tr className="border-b border-gray-100 bg-gray-50/60 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                      <th className="px-5 py-3">Fatura No</th>
-                      <th className="px-5 py-3">Kişi</th>
-                      <th className="px-5 py-3">Sipariş No</th>
-                      <th className="px-5 py-3">Durum</th>
-                      <th className="px-5 py-3">Para Birimi</th>
-                      <th className="px-5 py-3">Toplam</th>
-                      <th className="px-5 py-3">Vade</th>
-                      <th className="px-5 py-3">Oluşturan</th>
-                      <th className="px-5 py-3 w-12" />
+                    <tr className="border-b border-gray-200 bg-gray-50 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                      <th className="px-5 py-3.5">Fatura No</th>
+                      <th className="px-5 py-3.5">Kişi</th>
+                      <th className="px-5 py-3.5">Sipariş No</th>
+                      <th className="px-5 py-3.5">Durum</th>
+                      <th className="px-5 py-3.5">Para Birimi</th>
+                      <th className="px-5 py-3.5">Toplam</th>
+                      <th className="px-5 py-3.5">Vade</th>
+                      <th className="px-5 py-3.5">Oluşturan</th>
+                      <th className="px-5 py-3.5 w-12" />
                     </tr>
                   </thead>
                   <tbody>
@@ -712,39 +712,39 @@ function AccountingInvoicesContent() {
                             void openInvoiceDetail(inv);
                           }
                         }}
-                        className="border-b border-gray-50 hover:bg-whatsapp/5 cursor-pointer transition-colors"
+                        className="border-b border-gray-100 odd:bg-white even:bg-gray-50/30 hover:bg-whatsapp/5 cursor-pointer transition-colors"
                       >
-                        <td className="px-5 py-3 font-mono font-medium text-gray-900">
+                        <td className="px-5 py-4 font-mono font-semibold text-gray-900">
                           <span className="inline-flex items-center flex-wrap gap-x-0">
                             {formatInvoiceNo(inv)}
                             <PanelEditedBadge at={inv.panelEditedAt} />
                           </span>
                         </td>
-                        <td className="px-5 py-3">
-                          <div className="font-medium text-gray-900">{personLabel(inv)}</div>
+                        <td className="px-5 py-4">
+                          <div className="font-semibold text-gray-900">{personLabel(inv)}</div>
                           {personPhone(inv) ? (
                             <div className="text-xs text-gray-500">{formatPhone(personPhone(inv))}</div>
                           ) : null}
                         </td>
-                        <td className="px-5 py-3 text-gray-700">{orderNoLabel(inv)}</td>
-                        <td className="px-5 py-3">
+                        <td className="px-5 py-4 text-gray-700">{orderNoLabel(inv)}</td>
+                        <td className="px-5 py-4">
                           <span
-                            className={`inline-flex items-center text-[11px] font-semibold px-2.5 py-0.5 rounded-full ${statusBadgeClass(
+                            className={`inline-flex items-center text-[11px] font-semibold px-2.5 py-1 rounded-full ${statusBadgeClass(
                               inv.status,
                             )}`}
                           >
                             {statusLabelTr(String(inv.status))}
                           </span>
                         </td>
-                        <td className="px-5 py-3 text-gray-600">{safeStr(inv.currency) || 'TRY'}</td>
-                        <td className="px-5 py-3 font-medium text-gray-900">
+                        <td className="px-5 py-4 text-gray-600">{safeStr(inv.currency) || 'TRY'}</td>
+                        <td className="px-5 py-4 text-base font-semibold text-gray-900">
                           {formatMoney(moneyAmount(inv), inv.currency)}
                         </td>
-                        <td className="px-5 py-3 text-gray-600">{formatDate(inv.dueDate)}</td>
-                        <td className="px-5 py-3 text-gray-600 text-xs max-w-[100px] truncate" title={inv.createdBy?.name || ''}>
+                        <td className="px-5 py-4 text-xs text-gray-500">{formatDate(inv.dueDate)}</td>
+                        <td className="px-5 py-4 text-gray-500 text-xs max-w-[100px] truncate" title={inv.createdBy?.name || ''}>
                           {inv.createdBy?.name || '—'}
                         </td>
-                        <td className="px-5 py-3 text-right">
+                        <td className="px-5 py-4 text-right">
                           {String(inv.status).toUpperCase() === 'PENDING' ? (
                             <button
                               type="button"
@@ -794,7 +794,7 @@ function AccountingInvoicesContent() {
           </div>
         </div>
       ) : (
-        <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
           {pendingLoading ? (
             <div className="flex items-center justify-center py-20 text-gray-400 gap-2">
               <Loader2 className="w-5 h-5 animate-spin text-whatsapp" />
@@ -806,14 +806,14 @@ function AccountingInvoicesContent() {
             <div className="overflow-x-auto">
               <table className="w-full text-sm min-w-[920px]">
                 <thead>
-                  <tr className="border-b border-gray-100 bg-gray-50/60 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                    <th className="px-5 py-3">Sipariş No</th>
-                    <th className="px-5 py-3">Kişi</th>
-                    <th className="px-5 py-3">Toplam</th>
-                    <th className="px-5 py-3">Plan. teslim</th>
-                    <th className="px-5 py-3">Tarih</th>
-                    <th className="px-5 py-3">Oluşturan</th>
-                    <th className="px-5 py-3 text-right">İşlem</th>
+                  <tr className="border-b border-gray-200 bg-gray-50 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                    <th className="px-5 py-3.5">Sipariş No</th>
+                    <th className="px-5 py-3.5">Kişi</th>
+                    <th className="px-5 py-3.5">Toplam</th>
+                    <th className="px-5 py-3.5">Plan. teslim</th>
+                    <th className="px-5 py-3.5">Tarih</th>
+                    <th className="px-5 py-3.5">Oluşturan</th>
+                    <th className="px-5 py-3.5 text-right">İşlem</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -826,25 +826,25 @@ function AccountingInvoicesContent() {
                     const dateStr =
                       row.orderDate || row.createdAt || row.date || null;
                     return (
-                      <tr key={row.orderId} className="border-b border-gray-50 hover:bg-gray-50/50">
-                        <td className="px-5 py-3 font-medium text-gray-900">{orderLabel}</td>
-                        <td className="px-5 py-3">
-                          <div className="text-gray-900">{name}</div>
+                      <tr key={row.orderId} className="border-b border-gray-100 odd:bg-white even:bg-gray-50/30 hover:bg-gray-50/80">
+                        <td className="px-5 py-4 font-semibold text-gray-900">{orderLabel}</td>
+                        <td className="px-5 py-4">
+                          <div className="font-semibold text-gray-900">{name}</div>
                           {phone ? (
                             <div className="text-xs text-gray-500">{formatPhone(phone)}</div>
                           ) : null}
                         </td>
-                        <td className="px-5 py-3 text-gray-800">
+                        <td className="px-5 py-4 text-base font-semibold text-gray-900">
                           {formatMoney(moneyAmount(row), 'TRY')}
                         </td>
-                        <td className="px-5 py-3 text-gray-600 text-xs whitespace-nowrap">
+                        <td className="px-5 py-4 text-gray-500 text-xs whitespace-nowrap">
                           {formatDate(row.expectedDeliveryDate)}
                         </td>
-                        <td className="px-5 py-3 text-gray-600">{formatDate(dateStr)}</td>
-                        <td className="px-5 py-3 text-gray-600 text-xs max-w-[90px] truncate" title={row.createdBy?.name || ''}>
+                        <td className="px-5 py-4 text-gray-500 text-xs">{formatDate(dateStr)}</td>
+                        <td className="px-5 py-4 text-gray-500 text-xs max-w-[90px] truncate" title={row.createdBy?.name || ''}>
                           {row.createdBy?.name || '—'}
                         </td>
-                        <td className="px-5 py-3 text-right">
+                        <td className="px-5 py-4 text-right">
                           <PendingInvoiceCreateButton onCreate={(due) => void createFromOrder(row.orderId, due)} />
                         </td>
                       </tr>

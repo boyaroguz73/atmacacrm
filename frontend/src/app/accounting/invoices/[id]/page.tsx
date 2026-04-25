@@ -216,15 +216,15 @@ function statusBadgeClass(status: string): string {
   const s = (status || '').toUpperCase();
   switch (s) {
     case 'PENDING':
-      return 'bg-amber-100 text-amber-900 border border-amber-200';
+      return 'bg-amber-100 text-amber-900 border border-amber-300';
     case 'SENT':
-      return 'bg-blue-100 text-blue-900 border border-blue-200';
+      return 'bg-blue-100 text-blue-900 border border-blue-300';
     case 'PAID':
-      return 'bg-emerald-100 text-emerald-900 border border-emerald-200';
+      return 'bg-emerald-100 text-emerald-900 border border-emerald-300';
     case 'OVERDUE':
-      return 'bg-red-100 text-red-900 border border-red-200';
+      return 'bg-red-100 text-red-900 border border-red-300';
     case 'CANCELLED':
-      return 'bg-gray-100 text-gray-600 border border-gray-200';
+      return 'bg-red-100 text-red-800 border border-red-300';
     default:
       return 'bg-gray-50 text-gray-700 border border-gray-200';
   }
@@ -495,7 +495,7 @@ export default function InvoiceDetailPage() {
   const pdfViewUrl = invoice?.uploadedPdfUrl || invoice?.pdfUrl;
 
   return (
-    <div className="p-4 sm:p-6 w-full max-w-none space-y-5">
+    <div className="p-4 sm:p-6 w-full max-w-none space-y-6">
       <button
         type="button"
         onClick={() => router.push('/accounting/invoices')}
@@ -511,11 +511,11 @@ export default function InvoiceDetailPage() {
           Detay yükleniyor...
         </div>
       ) : (
-        <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
           {/* Başlık */}
-          <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-gray-100 bg-gray-50/50">
+          <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-gray-200 bg-gray-50/70">
             <div>
-              <h1 className="text-lg font-bold text-gray-900 flex items-center gap-2 flex-wrap">
+              <h1 className="text-xl font-extrabold tracking-tight text-gray-900 flex items-center gap-2 flex-wrap">
                 <Receipt className="w-5 h-5 text-whatsapp" />
                 {formatInvoiceNo(invoice)}
                 <PanelEditedBadge at={invoice.panelEditedAt} />
@@ -532,13 +532,13 @@ export default function InvoiceDetailPage() {
               ) : null}
             </div>
             <span
-              className={`inline-flex items-center text-xs font-semibold px-3 py-1 rounded-full shrink-0 ${statusBadgeClass(invoice.status)}`}
+              className={`inline-flex items-center text-xs font-semibold px-3.5 py-1.5 rounded-full shrink-0 ${statusBadgeClass(invoice.status)}`}
             >
               {statusLabelTr(String(invoice.status))}
             </span>
           </div>
 
-          <div className="px-5 py-4 space-y-5">
+          <div className="px-5 py-5 space-y-6">
             {busy && (
               <p className="text-xs text-gray-400 flex items-center gap-2">
                 <Loader2 className="w-3.5 h-3.5 animate-spin text-whatsapp" />
@@ -547,13 +547,13 @@ export default function InvoiceDetailPage() {
             )}
 
             {/* Üst kartlar */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
               {/* Finansal özet */}
-              <div className="rounded-xl border border-gray-100 bg-gradient-to-br from-slate-50 to-white p-4 space-y-2">
+              <div className="rounded-lg border border-gray-200 bg-white p-4 space-y-2">
                 <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Finansal özet</h3>
                 <div className="flex justify-between text-sm pt-1 border-t border-gray-100">
                   <span className="text-gray-700 font-medium">Genel toplam</span>
-                  <span className="tabular-nums font-bold text-whatsapp">
+                  <span className="tabular-nums text-lg font-extrabold text-whatsapp">
                     {formatMoney(invoice.grandTotal ?? invoice.total ?? invoice.amount, invoice.currency)}
                   </span>
                 </div>
@@ -569,36 +569,34 @@ export default function InvoiceDetailPage() {
               </div>
 
               {/* Müşteri */}
-              <div className="rounded-xl border border-gray-100 bg-white p-4 space-y-2">
+              <div className="rounded-lg border border-gray-200 bg-white p-4 space-y-2">
                 <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Müşteri</h3>
-                {invoice.contact?.company ? (
-                  <p className="text-sm font-medium text-gray-900">{invoice.contact.company}</p>
-                ) : null}
-                <p className="text-sm text-gray-800">{personLabel(invoice)}</p>
-                {invoice.contact?.phone ? (
-                  <p className="text-xs text-gray-600">{formatPhone(invoice.contact.phone)}</p>
-                ) : null}
-                {invoice.contact?.email ? (
-                  <p className="text-xs text-gray-600">{invoice.contact.email}</p>
-                ) : null}
+                <dl className="grid grid-cols-[110px_1fr] gap-x-3 gap-y-1.5 text-xs">
+                  <dt className="text-gray-500">Firma</dt>
+                  <dd className="text-gray-900 font-medium">{invoice.contact?.company || '—'}</dd>
+                  <dt className="text-gray-500">Kişi</dt>
+                  <dd className="text-gray-900 font-medium">{personLabel(invoice)}</dd>
+                  <dt className="text-gray-500">Telefon</dt>
+                  <dd className="text-gray-700">{invoice.contact?.phone ? formatPhone(invoice.contact.phone) : '—'}</dd>
+                  <dt className="text-gray-500">E-posta</dt>
+                  <dd className="text-gray-700 break-all">{invoice.contact?.email || '—'}</dd>
+                  <dt className="text-gray-500">VD / VN</dt>
+                  <dd className="text-gray-700">
+                    {invoice.contact?.taxOffice || '—'} / {invoice.contact?.taxNumber || '—'}
+                  </dd>
+                  <dt className="text-gray-500">TC</dt>
+                  <dd className="text-gray-700">{invoice.contact?.identityNumber || '—'}</dd>
+                </dl>
                 {invoice.contact?.billingAddress ? (
-                  <div>
+                  <div className="pt-2 border-t border-gray-100">
                     <p className="text-[10px] font-semibold text-gray-400 uppercase">Fatura adresi</p>
                     <p className="text-xs text-gray-700 whitespace-pre-wrap">{invoice.contact.billingAddress}</p>
                   </div>
                 ) : null}
-                {invoice.contact?.taxOffice || invoice.contact?.taxNumber ? (
-                  <p className="text-xs text-gray-600">
-                    VD: {invoice.contact.taxOffice || '—'} · VN: {invoice.contact.taxNumber || '—'}
-                  </p>
-                ) : null}
-                {invoice.contact?.identityNumber ? (
-                  <p className="text-xs text-gray-600">TC: {invoice.contact.identityNumber}</p>
-                ) : null}
               </div>
 
               {/* Sipariş bilgisi */}
-              <div className="rounded-xl border border-indigo-100 bg-indigo-50/40 p-4 space-y-2">
+              <div className="rounded-lg border border-gray-200 bg-white p-4 space-y-2">
                 <h3 className="text-xs font-semibold text-indigo-800 uppercase tracking-wide flex items-center gap-1.5">
                   <Package className="w-3.5 h-3.5" />
                   Bağlı Sipariş
@@ -625,7 +623,7 @@ export default function InvoiceDetailPage() {
                         </span>
                       ) : null}
                     </div>
-                    <dl className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-[11px]">
+                    <dl className="grid grid-cols-[120px_1fr] gap-x-3 gap-y-1 text-[11px]">
                       {invoice.order?.createdAt ? (
                         <>
                           <dt className="text-gray-400">Sipariş tarihi</dt>
@@ -647,13 +645,13 @@ export default function InvoiceDetailPage() {
                       {invoice.order?.paidTotal != null ? (
                         <>
                           <dt className="text-gray-400">Ödenen</dt>
-                          <dd className="text-emerald-700 font-medium">{formatMoney(invoice.order.paidTotal, invoice.order.currency ?? invoice.currency)}</dd>
+                          <dd className="text-emerald-700 text-sm font-semibold">{formatMoney(invoice.order.paidTotal, invoice.order.currency ?? invoice.currency)}</dd>
                         </>
                       ) : null}
                       {invoice.order?.remainingTotal != null && invoice.order.remainingTotal > 0 ? (
                         <>
                           <dt className="text-gray-400">Kalan</dt>
-                          <dd className="text-red-700 font-medium">{formatMoney(invoice.order.remainingTotal, invoice.order.currency ?? invoice.currency)}</dd>
+                          <dd className="text-red-700 text-sm font-semibold">{formatMoney(invoice.order.remainingTotal, invoice.order.currency ?? invoice.currency)}</dd>
                         </>
                       ) : null}
                       {invoice.order?.createdBy?.name ? (
@@ -678,7 +676,7 @@ export default function InvoiceDetailPage() {
 
             {/* Sipariş adresleri */}
             {(invoice.order?.shippingAddress || invoice.order?.contact?.billingAddress || invoice.order?.contact?.shippingAddress) ? (
-              <div className="rounded-xl border border-gray-100 bg-white p-4 space-y-2">
+              <div className="rounded-lg border border-gray-200 bg-white p-4 space-y-2">
                 <h3 className="text-xs font-semibold text-gray-600 uppercase tracking-wide flex items-center gap-1.5">
                   <MapPin className="w-3.5 h-3.5" />
                   Adresler
@@ -703,7 +701,7 @@ export default function InvoiceDetailPage() {
             ) : null}
 
             {/* Vade ve notlar düzenleme */}
-            <div className="rounded-xl border border-gray-100 bg-gray-50/40 p-4 space-y-3">
+            <div className="rounded-lg border border-gray-200 bg-white p-4 space-y-3">
               <div className="flex items-center gap-2 text-sm font-semibold text-gray-800">
                 <Calendar className="w-4 h-4 text-whatsapp" />
                 Vade ve notlar
@@ -714,7 +712,7 @@ export default function InvoiceDetailPage() {
                   type="date"
                   value={dueEdit}
                   onChange={(e) => setDueEdit(e.target.value)}
-                  className="w-full max-w-xs px-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-whatsapp/25 focus:border-whatsapp"
+                  className="w-full max-w-sm px-3 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-whatsapp/25 focus:border-whatsapp"
                 />
               </div>
               <div>
@@ -723,15 +721,15 @@ export default function InvoiceDetailPage() {
                   value={notesEdit}
                   onChange={(e) => setNotesEdit(e.target.value)}
                   rows={3}
-                  placeholder="Fatura notu…"
-                  className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm resize-y focus:outline-none focus:ring-2 focus:ring-whatsapp/25 focus:border-whatsapp"
+                  placeholder="Örn: vade mutabakatı, teslimat notu, özel açıklama"
+                  className="w-full max-w-2xl px-3 py-2.5 rounded-lg border border-gray-200 text-sm resize-y focus:outline-none focus:ring-2 focus:ring-whatsapp/25 focus:border-whatsapp"
                 />
               </div>
               <button
                 type="button"
                 disabled={metaSaving || busy}
                 onClick={() => void saveInvoiceMeta()}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-gray-900 text-white text-sm disabled:opacity-50"
+                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-gray-900 text-white text-sm font-semibold disabled:opacity-50"
               >
                 {metaSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
                 Kaydet
@@ -739,7 +737,7 @@ export default function InvoiceDetailPage() {
             </div>
 
             {/* PDF bölümü */}
-            <div className="rounded-xl border border-gray-100 bg-white p-4 space-y-3">
+            <div className="rounded-lg border border-gray-200 bg-white p-4 space-y-3">
               <h3 className="text-sm font-semibold text-gray-800 flex items-center gap-2">
                 <FileText className="w-4 h-4 text-whatsapp" />
                 Fatura PDF
@@ -780,7 +778,7 @@ export default function InvoiceDetailPage() {
                   type="button"
                   disabled={busy}
                   onClick={() => pdfInputRef.current?.click()}
-                  className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold border border-gray-200 bg-white hover:bg-gray-50 shadow-sm disabled:opacity-50"
+                  className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold border border-gray-300 bg-white hover:bg-gray-50 disabled:opacity-50"
                 >
                   <Upload className="w-4 h-4" />
                   {uploadProgress !== null ? `Yükleniyor %${uploadProgress}` : 'PDF Yükle'}
@@ -789,7 +787,7 @@ export default function InvoiceDetailPage() {
                   type="button"
                   disabled={busy}
                   onClick={() => setShowSendConfirm(true)}
-                  className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-whatsapp text-white shadow-sm hover:opacity-95 disabled:opacity-50"
+                  className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold bg-whatsapp text-white hover:opacity-95 disabled:opacity-50"
                 >
                   <Send className="w-4 h-4" />
                   WhatsApp ile Gönder
@@ -798,7 +796,7 @@ export default function InvoiceDetailPage() {
             </div>
 
             {/* Durum değiştirme + ek işlemler */}
-            <div className="rounded-xl border border-gray-100 bg-white p-4 space-y-3">
+            <div className="rounded-lg border border-gray-200 bg-white p-4 space-y-3">
               <h3 className="text-sm font-semibold text-gray-800">İşlemler</h3>
               <div>
                 <label className="text-xs font-semibold text-gray-600 block mb-1.5">Durum değiştir</label>
@@ -809,7 +807,7 @@ export default function InvoiceDetailPage() {
                     const v = e.target.value as InvoiceStatus;
                     if (v !== String(invoice.status).toUpperCase()) void patchStatus(v);
                   }}
-                  className="w-full max-w-xs px-3 py-2.5 rounded-xl border border-gray-200 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-whatsapp/25 focus:border-whatsapp disabled:opacity-50"
+                  className="w-full max-w-sm px-3 py-2.5 rounded-lg border border-gray-200 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-whatsapp/25 focus:border-whatsapp disabled:opacity-50"
                 >
                   {STATUS_PATCH_OPTIONS.map((o) => (
                     <option key={o.value} value={o.value}>
@@ -823,7 +821,7 @@ export default function InvoiceDetailPage() {
                   type="button"
                   disabled={busy || String(invoice.status).toUpperCase() === 'PAID'}
                   onClick={() => void patchStatus('PAID')}
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold bg-emerald-600 text-white shadow-sm hover:bg-emerald-700 disabled:opacity-50"
+                  className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50"
                 >
                   <CheckCircle2 className="w-4 h-4" />
                   Ödendi olarak işaretle
@@ -833,7 +831,7 @@ export default function InvoiceDetailPage() {
                     type="button"
                     disabled={busy}
                     onClick={() => void deleteInvoice()}
-                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 disabled:opacity-50"
+                    className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold border border-red-300 bg-white text-red-700 hover:bg-red-50 disabled:opacity-50"
                   >
                     <Trash2 className="w-4 h-4" />
                     Sil
@@ -850,19 +848,19 @@ export default function InvoiceDetailPage() {
                   Sipariş kalemleri
                   <span className="text-[10px] text-gray-400 font-normal">({invoice.order.items.length} kalem)</span>
                 </h3>
-                <div className="rounded-xl border border-gray-100 shadow-sm overflow-x-auto">
+                <div className="rounded-lg border border-gray-200 overflow-x-auto">
                   <table className="w-full text-sm min-w-[700px]">
                     <thead>
-                      <tr className="bg-gray-50/80 text-left text-[10px] font-semibold text-gray-500 uppercase">
-                        <th className="px-2 py-2 w-12">Görsel</th>
-                        <th className="px-2 py-2 min-w-[140px]">Ürün</th>
-                        <th className="px-2 py-2 min-w-[90px]">Renk/Kumaş</th>
-                        <th className="px-2 py-2 min-w-[90px]">Ölçü</th>
-                        <th className="px-2 py-2 text-right w-16">Miktar</th>
-                        <th className="px-2 py-2 text-right min-w-[80px]">Birim</th>
-                        <th className="px-2 py-2 text-center min-w-[60px]">Fiyat tipi</th>
-                        <th className="px-2 py-2 text-right min-w-[60px]">KDV</th>
-                        <th className="px-2 py-2 text-right min-w-[80px]">Toplam</th>
+                      <tr className="bg-gray-50 text-left text-[10px] font-semibold text-gray-500 uppercase">
+                        <th className="px-3 py-3 w-12">Görsel</th>
+                        <th className="px-3 py-3 min-w-[140px]">Ürün</th>
+                        <th className="px-3 py-3 min-w-[90px]">Renk/Kumaş</th>
+                        <th className="px-3 py-3 min-w-[90px]">Ölçü</th>
+                        <th className="px-3 py-3 text-right w-16">Miktar</th>
+                        <th className="px-3 py-3 text-right min-w-[80px]">Birim</th>
+                        <th className="px-3 py-3 text-center min-w-[60px]">Fiyat tipi</th>
+                        <th className="px-3 py-3 text-right min-w-[60px]">KDV</th>
+                        <th className="px-3 py-3 text-right min-w-[80px]">Toplam</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -870,8 +868,8 @@ export default function InvoiceDetailPage() {
                         const vatAmt = lineVatAmount(item);
                         const cur = invoice.order?.currency ?? invoice.currency;
                         return (
-                          <tr key={item.id} className="border-t border-gray-50 align-top hover:bg-indigo-50/20 transition-colors">
-                            <td className="px-2 py-1.5 align-middle">
+                          <tr key={item.id} className="border-t border-gray-100 odd:bg-white even:bg-gray-50/30 align-top hover:bg-gray-50 transition-colors">
+                            <td className="px-3 py-2.5 align-middle">
                               <div className="w-9 h-9 rounded border border-gray-100 bg-gray-50 overflow-hidden">
                                 {item.product?.imageUrl ? (
                                   <img src={rewriteMediaUrlForClient(item.product.imageUrl)} alt="" className="w-full h-full object-cover" />
@@ -880,8 +878,8 @@ export default function InvoiceDetailPage() {
                                 )}
                               </div>
                             </td>
-                            <td className="px-2 py-2">
-                              <p className="font-medium text-gray-900 text-xs">{item.name}</p>
+                            <td className="px-3 py-3">
+                              <p className="font-semibold text-gray-900 text-sm">{item.name}</p>
                               {item.productVariant ? (
                                 <p className="text-[10px] text-indigo-600">
                                   Varyant: {item.productVariant.name}
@@ -892,19 +890,19 @@ export default function InvoiceDetailPage() {
                                 <p className="text-[10px] text-gray-400 font-mono">{item.product.sku}</p>
                               ) : null}
                             </td>
-                            <td className="px-2 py-2 text-xs text-gray-600">
+                            <td className="px-3 py-3 text-xs text-gray-600">
                               {item.colorFabricInfo || '—'}
                             </td>
-                            <td className="px-2 py-2 text-xs text-gray-600 whitespace-pre-wrap max-w-[180px]">
+                            <td className="px-3 py-3 text-xs text-gray-600 whitespace-pre-wrap max-w-[180px]">
                               {item.measurementInfo || '—'}
                             </td>
-                            <td className="px-2 py-2 text-right tabular-nums text-gray-800 text-xs">
+                            <td className="px-3 py-3 text-right tabular-nums text-gray-800 text-xs">
                               {item.quantity}
                             </td>
-                            <td className="px-2 py-2 text-right tabular-nums text-gray-800 text-xs">
+                            <td className="px-3 py-3 text-right tabular-nums text-gray-800 text-xs">
                               {formatMoney(item.unitPrice, cur)}
                             </td>
-                            <td className="px-2 py-2 text-center">
+                            <td className="px-3 py-3 text-center">
                               <span className={`inline-flex text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${
                                 item.priceIncludesVat !== false
                                   ? 'bg-green-50 text-green-700'
@@ -913,13 +911,13 @@ export default function InvoiceDetailPage() {
                                 {item.priceIncludesVat !== false ? 'KDV dahil' : 'KDV hariç'}
                               </span>
                             </td>
-                            <td className="px-2 py-2 text-right text-xs">
+                            <td className="px-3 py-3 text-right text-xs">
                               <span className="tabular-nums text-gray-700">%{item.vatRate}</span>
                               <span className="block text-[10px] text-gray-400 tabular-nums">
                                 {formatMoney(vatAmt, cur)}
                               </span>
                             </td>
-                            <td className="px-2 py-2 text-right tabular-nums font-medium text-gray-900 text-xs">
+                            <td className="px-3 py-3 text-right tabular-nums text-base font-semibold text-gray-900">
                               {formatMoney(item.lineTotal, cur)}
                             </td>
                           </tr>
@@ -929,24 +927,24 @@ export default function InvoiceDetailPage() {
                     <tfoot>
                       <tr className="border-t border-gray-200 bg-gray-50/60 text-xs">
                         <td colSpan={4} />
-                        <td colSpan={4} className="px-2 py-2 text-right text-gray-500">Ara toplam</td>
-                        <td className="px-2 py-2 text-right tabular-nums font-medium text-gray-700">
+                        <td colSpan={4} className="px-3 py-2.5 text-right text-gray-500">Ara toplam</td>
+                        <td className="px-3 py-2.5 text-right tabular-nums font-medium text-gray-700">
                           {formatMoney(invoice.order.subtotal ?? 0, invoice.order.currency ?? invoice.currency)}
                         </td>
                       </tr>
                       <tr className="border-t border-gray-100 bg-gray-50/60 text-xs">
                         <td colSpan={4} />
-                        <td colSpan={4} className="px-2 py-2 text-right text-gray-500">KDV toplam</td>
-                        <td className="px-2 py-2 text-right tabular-nums font-medium text-gray-700">
+                        <td colSpan={4} className="px-3 py-2.5 text-right text-gray-500">KDV toplam</td>
+                        <td className="px-3 py-2.5 text-right tabular-nums font-medium text-gray-700">
                           {formatMoney(invoice.order.vatTotal ?? 0, invoice.order.currency ?? invoice.currency)}
                         </td>
                       </tr>
                       <tr className="border-t-2 border-gray-200 bg-gray-50/80">
                         <td colSpan={4} />
-                        <td colSpan={4} className="px-2 py-2.5 text-right text-sm font-semibold text-gray-700">
+                        <td colSpan={4} className="px-3 py-3 text-right text-sm font-semibold text-gray-700">
                           Genel Toplam
                         </td>
-                        <td className="px-2 py-2.5 text-right tabular-nums font-bold text-whatsapp text-sm">
+                        <td className="px-3 py-3 text-right tabular-nums font-bold text-whatsapp text-base">
                           {formatMoney(
                             invoice.order.grandTotal ?? invoice.grandTotal ?? invoice.total,
                             invoice.order.currency ?? invoice.currency,
@@ -963,7 +961,7 @@ export default function InvoiceDetailPage() {
             {invoice.order?.payments && invoice.order.payments.length > 0 ? (
               <div>
                 <h3 className="text-sm font-semibold text-gray-800 mb-2">Tahsilat geçmişi</h3>
-                <div className="rounded-xl border border-gray-100 overflow-hidden">
+                <div className="rounded-lg border border-gray-200 overflow-hidden">
                   {invoice.order.payments.map((p) => (
                     <div
                       key={p.id}
@@ -1001,11 +999,11 @@ export default function InvoiceDetailPage() {
                   ))}
 
                   {(invoice.order.paidTotal != null || invoice.order.remainingTotal != null) && (
-                    <div className="px-4 py-3 bg-gray-50/60 border-t border-gray-100 grid grid-cols-2 gap-3 text-xs">
+                    <div className="px-4 py-3 bg-gray-50/70 border-t border-gray-200 grid grid-cols-2 gap-3 text-xs">
                       {invoice.order.paidTotal != null ? (
                         <div>
                           <p className="text-gray-500">Ödenen</p>
-                          <p className="font-bold text-emerald-700 tabular-nums">
+                          <p className="text-base font-bold text-emerald-700 tabular-nums">
                             {formatMoney(invoice.order.paidTotal, invoice.order.currency ?? invoice.currency)}
                           </p>
                         </div>
@@ -1013,7 +1011,7 @@ export default function InvoiceDetailPage() {
                       {invoice.order.remainingTotal != null ? (
                         <div>
                           <p className="text-gray-500">Kalan</p>
-                          <p className={`font-bold tabular-nums ${invoice.order.remainingTotal > 0 ? 'text-amber-700' : 'text-gray-500'}`}>
+                          <p className={`text-base font-bold tabular-nums ${invoice.order.remainingTotal > 0 ? 'text-red-700' : 'text-gray-500'}`}>
                             {formatMoney(invoice.order.remainingTotal, invoice.order.currency ?? invoice.currency)}
                           </p>
                         </div>

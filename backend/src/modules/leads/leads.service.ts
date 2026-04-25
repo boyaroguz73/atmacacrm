@@ -112,13 +112,17 @@ export class LeadsService {
         const autoFollowUpEnabled =
           (await this.settingsService.get('auto_task_lead_followup')) !== 'false';
         if (autoFollowUpEnabled) {
-          await this.tasksService.createFollowUpReminder({
-            userId: actingUserId,
-            contactId: updated.contactId,
-            contactName: updated.contact.name || updated.contact.phone,
-            trigger: params.to,
-            delayHours: 24,
-          });
+          try {
+            await this.tasksService.createFollowUpReminder({
+              userId: actingUserId,
+              contactId: updated.contactId,
+              contactName: updated.contact.name || updated.contact.phone,
+              trigger: params.to,
+              delayHours: 24,
+            });
+          } catch {
+            // Takip görevi oluşturulamadığında lead durum güncellemesini bloklamayız.
+          }
         }
       }
     }

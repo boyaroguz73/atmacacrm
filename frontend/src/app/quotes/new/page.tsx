@@ -1008,7 +1008,6 @@ export default function NewQuotePage() {
         </button>
         <div className="min-w-0">
           <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Yeni Teklif</h1>
-            <p className="text-xs text-gray-500 mt-0.5">Hedef: 30-60 saniyede teklif oluşturma</p>
         </div>
         </div>
         <div className="flex items-center gap-2">

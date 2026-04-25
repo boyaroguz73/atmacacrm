@@ -38,6 +38,17 @@ interface TaskStats {
   completedToday: number;
 }
 
+function actionTitleForTask(task: Task): string {
+  const name = task.contact?.name?.trim() || '';
+  const raw = (task.title || '').trim();
+  if (!name) return raw;
+  const lower = raw.toLocaleLowerCase('tr-TR');
+  if (lower.includes('dönüş')) return `${name} ile iletisime gec`;
+  if (lower.includes('ara') || lower.includes('arama')) return `${name} ile iletisime gec`;
+  if (lower.includes('takip')) return `${name} takibini yap`;
+  return raw;
+}
+
 export default function TasksPage() {
   const searchParams = useSearchParams();
   const { user } = useAuthStore();
@@ -177,6 +188,15 @@ export default function TasksPage() {
   };
 
   const isOverdue = (dueAt: string) => new Date(dueAt) < new Date();
+  const urgencyClass = (task: Task) => {
+    if (task.status !== 'PENDING') return 'text-gray-500';
+    const diff = new Date(task.dueAt).getTime() - Date.now();
+    if (diff < 0) return 'text-red-700 font-semibold';
+    const hours = diff / (1000 * 60 * 60);
+    if (hours < 24) return 'text-red-700 font-semibold';
+    if (hours <= 48) return 'text-amber-700 font-semibold';
+    return 'text-gray-500';
+  };
 
   const formatDue = (dueAt: string) => {
     const d = new Date(dueAt);
@@ -231,26 +251,26 @@ export default function TasksPage() {
 
       {/* Stats */}
       <div className="grid grid-cols-3 gap-4">
-        <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm">
+        <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
           <div className="flex items-center gap-2 mb-1">
             <Clock className="w-4 h-4 text-yellow-500" />
             <span className="text-xs text-gray-500 font-medium">Bekleyen</span>
           </div>
-          <p className="text-2xl font-bold text-gray-900">{stats.pending}</p>
+          <p className="text-3xl font-extrabold text-gray-900">{stats.pending}</p>
         </div>
-        <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm">
+        <div className="bg-white rounded-xl border border-red-200 p-4 shadow-sm">
           <div className="flex items-center gap-2 mb-1">
             <AlertTriangle className="w-4 h-4 text-red-500" />
             <span className="text-xs text-gray-500 font-medium">Gecikmiş</span>
           </div>
-          <p className="text-2xl font-bold text-red-600">{stats.overdue}</p>
+          <p className="text-3xl font-extrabold text-red-600">{stats.overdue}</p>
         </div>
-        <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm">
+        <div className="bg-white rounded-xl border border-emerald-200 p-4 shadow-sm">
           <div className="flex items-center gap-2 mb-1">
             <CheckCircle2 className="w-4 h-4 text-green-500" />
             <span className="text-xs text-gray-500 font-medium">Bugün Tamamlanan</span>
           </div>
-          <p className="text-2xl font-bold text-green-600">{stats.completedToday}</p>
+          <p className="text-3xl font-extrabold text-green-600">{stats.completedToday}</p>
         </div>
       </div>
 
@@ -352,7 +372,7 @@ export default function TasksPage() {
       )}
 
       {/* Filters */}
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2.5">
         {[
           { key: 'PENDING', label: 'Bekleyen' },
           { key: 'COMPLETED', label: 'Tamamlanan' },
@@ -362,10 +382,10 @@ export default function TasksPage() {
           <button
             key={f.key}
             onClick={() => setFilter(f.key)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+            className={`px-4 py-2 rounded-full text-xs font-semibold border transition-colors ${
               filter === f.key
-                ? 'bg-whatsapp text-white'
-                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                ? 'bg-whatsapp text-white border-whatsapp shadow-sm'
+                : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
             }`}
           >
             {f.label}
@@ -374,7 +394,7 @@ export default function TasksPage() {
       </div>
 
       {/* Tasks List */}
-      <div className="space-y-2">
+      <div className="space-y-3">
         {tasks.length === 0 ? (
           <div className="bg-white rounded-xl border border-gray-100 p-12 text-center">
             <CalendarClock className="w-10 h-10 text-gray-200 mx-auto mb-3" />
@@ -386,27 +406,27 @@ export default function TasksPage() {
             return (
               <div
                 key={task.id}
-                className={`bg-white rounded-xl border p-4 shadow-sm flex items-start gap-4 ${
+                className={`bg-white rounded-xl border p-5 shadow-sm hover:shadow-md transition-all flex items-start gap-4 ${
                   overdue
                     ? 'border-red-200 bg-red-50/30'
                     : task.status === 'COMPLETED'
                       ? 'border-green-200 bg-green-50/30'
-                      : 'border-gray-100'
+                      : 'border-gray-200'
                 }`}
               >
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
-                    <h3 className={`font-semibold text-sm ${task.status === 'COMPLETED' ? 'line-through text-gray-400' : 'text-gray-900'}`}>
-                      {task.title}
+                    <h3 className={`font-bold text-base ${task.status === 'COMPLETED' ? 'line-through text-gray-400' : 'text-gray-900'}`}>
+                      {actionTitleForTask(task)}
                     </h3>
                     {task.trigger && (
-                      <span className="text-[10px] bg-purple-50 text-purple-600 px-1.5 py-0.5 rounded">
+                      <span className="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded">
                         {task.trigger}
                       </span>
                     )}
                   </div>
                   {task.description && (
-                    <p className="text-xs text-gray-500 mt-0.5">{task.description}</p>
+                    <p className="text-xs text-gray-500 mt-1">{task.description}</p>
                   )}
                   <div className="flex items-center gap-3 mt-2">
                     {task.contact && (
@@ -421,7 +441,7 @@ export default function TasksPage() {
                         {task.user.name}
                       </span>
                     )}
-                    <span className={`flex items-center gap-1 text-xs ${overdue ? 'text-red-600 font-medium' : 'text-gray-400'}`}>
+                    <span className={`flex items-center gap-1 text-xs ${urgencyClass(task)}`}>
                       <Clock className="w-3 h-3" />
                       {formatDue(task.dueAt)}
                     </span>
@@ -432,12 +452,22 @@ export default function TasksPage() {
                 </div>
 
                 {task.status === 'PENDING' && (
-                  <div className="flex items-center gap-1">
-                    <button onClick={() => completeTask(task.id)} className="p-1.5 text-green-500 hover:bg-green-50 rounded-lg" title="Tamamla">
-                      <CheckCircle2 className="w-5 h-5" />
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => completeTask(task.id)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 text-xs font-semibold"
+                      title="Tamamla"
+                    >
+                      <CheckCircle2 className="w-4 h-4" />
+                      Tamamla
                     </button>
-                    <button onClick={() => cancelTask(task.id)} className="p-1.5 text-gray-400 hover:bg-gray-100 rounded-lg" title="İptal">
-                      <X className="w-5 h-5" />
+                    <button
+                      onClick={() => cancelTask(task.id)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 text-xs font-medium"
+                      title="İptal"
+                    >
+                      <X className="w-4 h-4" />
+                      Kapat
                     </button>
                   </div>
                 )}

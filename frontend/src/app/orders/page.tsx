@@ -15,7 +15,6 @@ import {
   ChevronRight,
   ChevronsLeft,
   ChevronsRight,
-  RefreshCw,
   Search,
   Trash2,
   Plus,
@@ -157,17 +156,17 @@ function formatMoney(amount: number, currency: string) {
 function statusBadgeClass(status: OrderStatus) {
   switch (status) {
     case 'AWAITING_CHECKOUT':
-      return 'bg-orange-100 text-orange-800 border border-orange-200/80';
+      return 'bg-orange-100 text-orange-900 border border-orange-300';
     case 'AWAITING_PAYMENT':
-      return 'bg-amber-100 text-amber-800 border border-amber-200/80';
+      return 'bg-amber-100 text-amber-900 border border-amber-300';
     case 'PREPARING':
-      return 'bg-blue-100 text-blue-800 border border-blue-200/80';
+      return 'bg-blue-100 text-blue-900 border border-blue-300';
     case 'SHIPPED':
-      return 'bg-purple-100 text-purple-800 border border-purple-200/80';
+      return 'bg-purple-100 text-purple-900 border border-purple-300';
     case 'COMPLETED':
-      return 'bg-emerald-100 text-emerald-800 border border-emerald-200/80';
+      return 'bg-emerald-100 text-emerald-900 border border-emerald-300';
     case 'CANCELLED':
-      return 'bg-red-100 text-red-800 border border-red-200/80';
+      return 'bg-red-100 text-red-900 border border-red-300';
     default:
       return 'bg-gray-100 text-gray-700 border border-gray-200';
   }
@@ -185,7 +184,6 @@ export default function OrdersPage() {
   const showTsoftTools = user?.role === 'ADMIN';
   const [ecomProvider, setEcomProvider] = useState<string | null>(null);
   const [ecomVisible, setEcomVisible] = useState(false);
-  const [syncingTsoft, setSyncingTsoft] = useState(false);
   const canRegenerateOrderPdf =
     user?.role === 'ADMIN' || user?.role === 'SUPERADMIN' || user?.role === 'ACCOUNTANT';
   const canDeleteOrder =
@@ -271,26 +269,6 @@ export default function OrdersPage() {
     };
   }, []);
 
-  const syncFromTsoft = async () => {
-    if (syncingTsoft) return;
-    setSyncingTsoft(true);
-    try {
-      const { data } = await api.post(
-        '/ecommerce/tsoft/sync-orders',
-        { from: dateFrom || undefined, to: dateTo || undefined },
-        { timeout: 120_000 },
-      );
-      toast.success(
-        `T-Soft: ${data.imported} yeni, ${data.skippedExisting} kayıtlı, ${data.errors || 0} hata`,
-      );
-      void fetchOrders(true);
-    } catch (err) {
-      toast.error(getApiErrorMessage(err, 'T-Soft senkronu başarısız'));
-    } finally {
-      setSyncingTsoft(false);
-    }
-  };
-
   const removeOrder = async (order: SalesOrder, e?: React.MouseEvent) => {
     e?.stopPropagation();
     if (!canDeleteOrder) return;
@@ -317,17 +295,6 @@ export default function OrdersPage() {
           <p className="text-sm text-gray-500 mt-1">Satış siparişlerini görüntüleyin, durum güncelleyin ve fatura oluşturun.</p>
         </div>
         <div className="flex items-center gap-2">
-          {showTsoftTools && ecomVisible && ecomProvider === 'tsoft' ? (
-            <button
-              type="button"
-              onClick={() => void syncFromTsoft()}
-              disabled={syncingTsoft}
-              className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-amber-200 bg-amber-50 text-sm font-medium text-amber-900 shadow-sm hover:bg-amber-100 transition-colors disabled:opacity-50"
-            >
-              <Store className={`w-4 h-4 ${syncingTsoft ? 'animate-pulse' : ''}`} />
-              {syncingTsoft ? 'Çekiliyor…' : `${providerLabel(ecomProvider)}’tan çek`}
-            </button>
-          ) : null}
           <Link
             href="/orders/new"
             className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-whatsapp text-white text-sm font-medium shadow-sm hover:bg-green-600 transition-colors"
@@ -335,20 +302,11 @@ export default function OrdersPage() {
             <Plus className="w-4 h-4" />
             Manuel Sipariş
           </Link>
-          <button
-            type="button"
-            onClick={() => void fetchOrders()}
-            disabled={loading}
-            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-gray-200 bg-white text-sm font-medium text-gray-700 shadow-sm hover:border-whatsapp/40 hover:text-whatsapp transition-colors disabled:opacity-50"
-          >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-            Yenile
-          </button>
         </div>
       </div>
 
       <div className="flex flex-col xl:flex-row xl:items-center gap-4">
-        <div className="flex flex-wrap gap-2 items-center">
+        <div className="flex flex-wrap gap-2.5 items-center">
           {STATUS_FILTERS.map((f) => (
             <button
               key={f.value || 'all'}
@@ -357,9 +315,9 @@ export default function OrdersPage() {
                 setStatusFilter(f.value);
                 setPage(1);
               }}
-              className={`px-3.5 py-1.5 rounded-xl text-sm font-medium border shadow-sm transition-colors ${
+              className={`px-4 py-2 rounded-full text-sm font-semibold border transition-colors ${
                 statusFilter === f.value
-                  ? 'bg-whatsapp text-white border-whatsapp'
+                  ? 'bg-whatsapp text-white border-whatsapp shadow-sm'
                   : 'bg-white text-gray-600 border-gray-200 hover:border-whatsapp/30 hover:text-gray-900'
               }`}
             >
@@ -373,7 +331,7 @@ export default function OrdersPage() {
                 setSiteOrdersOnly((v) => !v);
                 setPage(1);
               }}
-              className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-sm font-medium border shadow-sm transition-colors ${
+              className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-semibold border transition-colors ${
                 siteOrdersOnly
                   ? 'bg-amber-100 text-amber-900 border-amber-300'
                   : 'bg-white text-gray-600 border-gray-200 hover:border-amber-300/50 hover:text-gray-900'
@@ -402,34 +360,34 @@ export default function OrdersPage() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
             <input
               type="text"
-              placeholder="Kişi adı veya telefon..."
+              placeholder="Sipariş no, müşteri adı veya telefon ara…"
               value={searchQuery}
               onChange={(e) => {
                 setSearchQuery(e.target.value);
                 setPage(1);
               }}
-              className="pl-9 pr-3 py-2 w-full bg-white border border-gray-200 rounded-xl text-sm text-gray-700 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-whatsapp/25 focus:border-whatsapp"
+              className="pl-10 pr-3 py-2.5 w-full bg-white border border-gray-200 rounded-xl text-sm text-gray-700 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-whatsapp/25 focus:border-whatsapp"
             />
           </div>
         </div>
       </div>
 
-      <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[1280px] text-sm">
             <thead>
-              <tr className="border-b border-gray-100 bg-gray-50/60 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                <th className="px-3 py-3 w-10" />
-                <th className="px-4 py-3">Sipariş No</th>
-                <th className="px-4 py-3">Üye Adı</th>
-                <th className="px-4 py-3">Tarih</th>
-                <th className="px-4 py-3">Şehir</th>
-                <th className="px-4 py-3 text-right">Tutar</th>
-                <th className="px-4 py-3">Ödeme Tipi</th>
-                <th className="px-4 py-3">Kargo Firması</th>
-                <th className="px-4 py-3">Paketleme Durumu</th>
-                <th className="px-4 py-3">Sipariş Süreci</th>
-                {canDeleteOrder ? <th className="px-3 py-3 w-12" /> : null}
+              <tr className="border-b border-gray-200 bg-gray-50 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                <th className="px-3 py-3.5 w-10" />
+                <th className="px-4 py-3.5">Sipariş No</th>
+                <th className="px-4 py-3.5">Üye Adı</th>
+                <th className="px-4 py-3.5">Tarih</th>
+                <th className="px-4 py-3.5">Şehir</th>
+                <th className="px-4 py-3.5 text-right">Tutar</th>
+                <th className="px-4 py-3.5">Ödeme Tipi</th>
+                <th className="px-4 py-3.5">Kargo Firması</th>
+                <th className="px-4 py-3.5">Paketleme Durumu</th>
+                <th className="px-4 py-3.5">Sipariş Süreci</th>
+                {canDeleteOrder ? <th className="px-3 py-3.5 w-12" /> : null}
               </tr>
             </thead>
             <tbody>
@@ -461,9 +419,9 @@ export default function OrdersPage() {
                         router.push(`/orders/${order.id}`);
                       }
                     }}
-                    className="border-b border-gray-50 hover:bg-green-50/30 transition-colors cursor-pointer"
+                    className="border-b border-gray-100 odd:bg-white even:bg-gray-50/30 hover:bg-green-50/40 transition-colors cursor-pointer"
                   >
-                    <td className="px-3 py-3">
+                    <td className="px-3 py-4">
                       {ecomVisible && isTsoftOrder(order) ? (
                         <img
                           src={TSOFT_LOGO_URL}
@@ -474,15 +432,15 @@ export default function OrdersPage() {
                         />
                       ) : null}
                     </td>
-                    <td className="px-4 py-3 font-mono text-xs font-semibold text-gray-900 whitespace-nowrap">
+                    <td className="px-4 py-4 font-mono text-xs font-semibold text-gray-900 whitespace-nowrap">
                       {formatOrderNo(order.orderNumber)}
                       <PanelEditedBadge at={order.panelEditedAt} />
                     </td>
-                    <td className="px-4 py-3">
-                      <div className="font-medium text-gray-900">{contactDisplayName(order.contact)}</div>
-                      <div className="text-xs text-gray-400">{formatPhone(order.contact.phone)}</div>
+                    <td className="px-4 py-4">
+                      <div className="text-[15px] font-semibold text-gray-900">{contactDisplayName(order.contact)}</div>
+                      <div className="text-xs text-gray-400 mt-0.5">{formatPhone(order.contact.phone)}</div>
                     </td>
-                    <td className="px-4 py-3 text-xs text-gray-600 whitespace-nowrap">
+                    <td className="px-4 py-4 text-xs text-gray-500 whitespace-nowrap">
                       {new Date(order.createdAt).toLocaleString('tr-TR', {
                         day: '2-digit',
                         month: '2-digit',
@@ -491,25 +449,25 @@ export default function OrdersPage() {
                         minute: '2-digit',
                       })}
                     </td>
-                    <td className="px-4 py-3 text-sm text-gray-700 whitespace-nowrap">
+                    <td className="px-4 py-4 text-sm text-gray-500 whitespace-nowrap">
                       {cityFor(order) || <span className="text-gray-300">—</span>}
                     </td>
-                    <td className="px-4 py-3 text-right font-semibold text-gray-900 tabular-nums whitespace-nowrap">
+                    <td className="px-4 py-4 text-right text-base font-bold text-gray-900 tabular-nums whitespace-nowrap">
                       {formatMoney(order.grandTotal, order.currency)}
                     </td>
-                    <td className="px-4 py-3 text-sm text-gray-700 whitespace-nowrap">
+                    <td className="px-4 py-4 text-sm text-gray-700 whitespace-nowrap">
                       {paymentTypeFor(order)}
                     </td>
-                    <td className="px-4 py-3 text-sm text-gray-700 whitespace-nowrap">
+                    <td className="px-4 py-4 text-sm text-gray-700 whitespace-nowrap">
                       {cargoFor(order)}
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-4">
                       <span className="inline-flex text-[11px] font-medium px-2.5 py-1 rounded-md bg-gray-100 text-gray-700 whitespace-nowrap">
                         {packagingFor(order)}
                       </span>
                     </td>
-                    <td className="px-4 py-3">
-                      <span className={`inline-flex text-[10px] font-semibold px-2.5 py-1 rounded-full whitespace-nowrap ${statusBadgeClass(order.status)}`}>
+                    <td className="px-4 py-4">
+                      <span className={`inline-flex text-[11px] font-semibold px-3 py-1.5 rounded-full whitespace-nowrap ${statusBadgeClass(order.status)}`}>
                         {STATUS_LABELS[order.status]}
                       </span>
                       {ecomVisible && order.pushToTsoft && order.tsoftLastError && !order.tsoftSiteOrderId ? (
@@ -522,12 +480,12 @@ export default function OrdersPage() {
                       ) : null}
                     </td>
                     {canDeleteOrder ? (
-                      <td className="px-5 py-3 text-right">
+                      <td className="px-5 py-4 text-right">
                         {(order.status === 'AWAITING_PAYMENT' || order.status === 'AWAITING_CHECKOUT') && !order.invoice ? (
                           <button
                             type="button"
                             onClick={(e) => void removeOrder(order, e)}
-                            className="p-2 rounded-lg text-red-600 hover:bg-red-50"
+                            className="p-2 rounded-lg text-red-500 opacity-70 hover:opacity-100 hover:bg-red-50"
                             aria-label="Sil"
                           >
                             <Trash2 className="w-4 h-4" />

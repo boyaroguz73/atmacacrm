@@ -38,6 +38,21 @@ function isSameDay(d1: Date, d2: Date) {
     d1.getDate() === d2.getDate();
 }
 
+function dueRemainingText(dueAt: string) {
+  const due = new Date(dueAt);
+  const diff = due.getTime() - Date.now();
+  const absHours = Math.floor(Math.abs(diff) / (1000 * 60 * 60));
+  const absMinutes = Math.floor((Math.abs(diff) % (1000 * 60 * 60)) / (1000 * 60));
+  if (diff < 0) {
+    if (absHours >= 24) return `${Math.floor(absHours / 24)} gun gecikmis`;
+    if (absHours > 0) return `${absHours} saat gecikmis`;
+    return `${absMinutes} dk gecikmis`;
+  }
+  if (absHours >= 24) return `${Math.floor(absHours / 24)} gun kaldi`;
+  if (absHours > 0) return `${absHours} saat kaldi`;
+  return `${absMinutes} dk kaldi`;
+}
+
 function getCalendarDays(year: number, month: number) {
   const first = new Date(year, month, 1);
   const last = new Date(year, month + 1, 0);
@@ -111,6 +126,7 @@ export default function CalendarPage() {
     tasks.filter((t) => isSameDay(new Date(t.dueAt), date));
 
   const selectedTasks = selectedDate ? getTasksForDay(selectedDate) : [];
+  const todayTasks = getTasksForDay(today);
 
   const overduePending = tasks.filter(
     (t) => t.status === 'PENDING' && new Date(t.dueAt) < today,
@@ -165,6 +181,12 @@ export default function CalendarPage() {
         </div>
       </div>
 
+      <div className="rounded-xl border border-whatsapp/20 bg-whatsapp/5 px-4 py-2.5">
+        <p className="text-sm font-medium text-gray-800">
+          Bugun: <span className="font-bold text-whatsapp">{todayTasks.length} gorev var</span>
+        </p>
+      </div>
+
       {/* Stats */}
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4">
         {[
@@ -173,16 +195,16 @@ export default function CalendarPage() {
           { label: 'Tamamlanan', value: stats.completed, color: 'text-green-600', bg: 'bg-green-50' },
           { label: 'Geciken', value: stats.overdue, color: 'text-red-600', bg: 'bg-red-50' },
         ].map((s) => (
-          <div key={s.label} className={`${s.bg} rounded-xl p-4 border border-gray-100`}>
+          <div key={s.label} className={`${s.bg} rounded-xl p-4 border border-gray-200 min-h-[92px]`}>
             <p className="text-xs text-gray-500 font-medium">{s.label}</p>
-            <p className={`text-2xl font-bold mt-1 ${s.color}`}>{s.value}</p>
+            <p className={`text-3xl font-extrabold mt-1 ${s.color}`}>{s.value}</p>
           </div>
         ))}
       </div>
 
       <div className="flex flex-col xl:flex-row gap-4 xl:gap-6">
         {/* Calendar Grid */}
-        <div className="min-w-0 flex-1 bg-white rounded-xl border border-gray-100 shadow-sm">
+        <div className="min-w-0 flex-1 bg-white rounded-xl border border-gray-200 shadow-sm">
           {/* Month Navigator */}
           <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
             <button onClick={prevMonth} className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors">
@@ -231,8 +253,8 @@ export default function CalendarPage() {
                   <button
                     key={day.toISOString()}
                     onClick={() => setSelectedDate(day)}
-                    className={`min-h-[110px] lg:min-h-[130px] border-b border-r border-gray-50 p-2 text-left transition-colors hover:bg-blue-50/50 ${
-                      isSelected ? 'bg-blue-50 ring-2 ring-blue-300 ring-inset' : ''
+                    className={`min-h-[110px] lg:min-h-[130px] border-b border-r border-gray-100 p-2 text-left transition-colors hover:bg-blue-50/50 ${
+                      isSelected ? 'bg-blue-100/70 ring-2 ring-blue-400 ring-inset' : isToday ? 'bg-whatsapp/5 ring-1 ring-whatsapp/20 ring-inset' : ''
                     }`}
                   >
                     <div className="flex items-center justify-between mb-1">
@@ -249,22 +271,23 @@ export default function CalendarPage() {
                         <AlertTriangle className="w-3.5 h-3.5 text-red-500" />
                       )}
                     </div>
-                    <div className="space-y-0.5 max-h-[70px] lg:max-h-[88px] overflow-y-auto pr-1">
-                      {dayTasks.slice(0, 6).map((t) => {
+                    <div className="space-y-1 max-h-[70px] lg:max-h-[88px] overflow-y-auto pr-1">
+                      {dayTasks.slice(0, 4).map((t) => {
                         const sc = statusConfig[t.status];
                         return (
                           <div
                             key={t.id}
-                            className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-gray-50"
+                            title={t.title}
+                            className="flex items-center gap-1 px-1.5 py-1 rounded text-[10px] font-medium bg-gray-50"
                           >
                             <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${sc.dot}`} />
                             <span className="truncate text-gray-700 leading-tight">{t.title}</span>
                           </div>
                         );
                       })}
-                      {dayTasks.length > 6 && (
+                      {dayTasks.length > 4 && (
                         <span className="text-[10px] text-gray-400 pl-1">
-                          +{dayTasks.length - 6} daha
+                          +{dayTasks.length - 4} gorev
                         </span>
                       )}
                     </div>
@@ -276,7 +299,7 @@ export default function CalendarPage() {
         </div>
 
         {/* Selected Day Detail */}
-        <div className="w-full xl:w-96 shrink-0 bg-white rounded-xl border border-gray-100 shadow-sm flex flex-col min-h-[360px] xl:min-h-0">
+        <div className="w-full xl:w-96 shrink-0 bg-white rounded-xl border border-gray-200 shadow-sm flex flex-col min-h-[360px] xl:min-h-0">
           <div className="p-4 border-b border-gray-100">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -304,7 +327,7 @@ export default function CalendarPage() {
             )}
           </div>
 
-          <div className="flex-1 overflow-y-auto p-3 space-y-2">
+          <div className="flex-1 overflow-y-auto p-3 space-y-3">
             {!selectedDate ? (
               <div className="text-center py-12 text-gray-300">
                 <CalendarDays className="w-10 h-10 mx-auto mb-2" />
@@ -331,13 +354,13 @@ export default function CalendarPage() {
                 return (
                   <div
                     key={task.id}
-                    className={`p-3 rounded-xl border ${sc.bg} transition-all`}
+                    className={`p-4 rounded-xl border shadow-sm hover:shadow-md transition-all ${sc.bg}`}
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex items-start gap-2 min-w-0">
                         <Icon className={`w-4 h-4 mt-0.5 flex-shrink-0 ${sc.color}`} />
                         <div className="min-w-0">
-                          <p className="text-sm font-medium text-gray-900 leading-tight">
+                          <p className="text-base font-semibold text-gray-900 leading-tight">
                             {task.title}
                           </p>
                           {task.description && (
@@ -366,6 +389,9 @@ export default function CalendarPage() {
                               {task.user.name}
                             </p>
                           )}
+                          <p className={`text-[11px] mt-1 ${isOverdue ? 'text-red-700 font-semibold' : 'text-gray-500'}`}>
+                            {dueRemainingText(task.dueAt)}
+                          </p>
                         </div>
                       </div>
                       {isOverdue && (
@@ -377,7 +403,7 @@ export default function CalendarPage() {
                     {task.status === 'PENDING' && (
                       <button
                         onClick={() => handleComplete(task.id)}
-                        className="mt-2 w-full py-1.5 text-xs font-medium bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                        className="mt-3 w-full py-2 text-sm font-semibold bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
                       >
                         Tamamla
                       </button>

@@ -43,6 +43,14 @@ const TRIGGERS = [
   { value: 'quote_status', label: 'Teklif durumu değişti' },
 ];
 
+const TRIGGER_HELP: Record<string, string> = {
+  new_message: 'Gelen her mesajda çalışır.',
+  keyword: 'Belirlediğiniz kelimeler geçtiğinde çalışır.',
+  first_message: 'Yeni bir kişi ilk kez mesaj attığında çalışır.',
+  order_status: 'Sipariş durumu seçtiğiniz aşamaya geldiğinde çalışır.',
+  quote_status: 'Teklif durumu seçtiğiniz aşamaya geldiğinde çalışır.',
+};
+
 const ORDER_STATUS_OPTIONS = [
   { value: 'AWAITING_CHECKOUT', label: 'Sepet Terk (Henüz Tamamlanmadı)' },
   { value: 'AWAITING_PAYMENT', label: 'Ödeme Bekleniyor' },
@@ -146,7 +154,7 @@ export default function FlowEditorPage({ flowId }: { flowId?: string }) {
       .finally(() => setLoading(false));
   }, [flowId]);
 
-  const title = useMemo(() => isEdit ? 'Akışı Düzenle' : 'Yeni Akış Oluştur', [isEdit]);
+  const title = useMemo(() => isEdit ? 'Akışı Düzenle' : 'Yeni Otomasyon Oluştur', [isEdit]);
 
   const addStep = (type: FlowStep['type']) => setForm((p) => ({ ...p, steps: [...p.steps, newStep(type)] }));
   const removeStep = (idx: number) => setForm((p) => ({ ...p, steps: p.steps.filter((_, i) => i !== idx) }));
@@ -195,13 +203,20 @@ export default function FlowEditorPage({ flowId }: { flowId?: string }) {
   }
 
   return (
-    <div className="p-6 max-w-5xl mx-auto space-y-5">
+    <div className="p-6 max-w-5xl mx-auto space-y-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <button onClick={() => router.push('/admin/auto-reply')} className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50">
             <ArrowLeft className="w-4 h-4" />
           </button>
-          <h1 className="text-2xl font-bold text-gray-900">{title}</h1>
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">{title}</h1>
+            {!isEdit ? (
+              <p className="text-sm text-gray-500 mt-0.5">
+                Belirli bir olaya göre otomatik mesaj ve islemler olusturun.
+              </p>
+            ) : null}
+          </div>
         </div>
         <button
           onClick={handleSave}
@@ -212,22 +227,38 @@ export default function FlowEditorPage({ flowId }: { flowId?: string }) {
         </button>
       </div>
 
-      <div className="bg-white border rounded-xl p-4 space-y-4">
+      <div className="bg-white border border-gray-200 rounded-xl p-5 space-y-4">
+        <div>
+          <h2 className="text-sm font-semibold text-gray-900">1) Akış Bilgileri</h2>
+          <p className="text-xs text-gray-500 mt-0.5">
+            Akisin adini ve ne zaman aktif olacagini belirleyin.
+          </p>
+        </div>
         <div className="grid grid-cols-2 gap-3">
           <div className="col-span-2">
             <label className="block text-sm font-medium mb-1">Akış Adı *</label>
-            <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="w-full px-3 py-2 border rounded-lg text-sm" />
+            <input
+              value={form.name}
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
+              className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm"
+              placeholder="Orn: Yeni musteri karsilama mesaji"
+            />
           </div>
           <div className="col-span-2">
             <label className="block text-sm font-medium mb-1">Açıklama</label>
-            <input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} className="w-full px-3 py-2 border rounded-lg text-sm" />
+            <input
+              value={form.description}
+              onChange={(e) => setForm({ ...form, description: e.target.value })}
+              className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm"
+              placeholder="Bu akis ne zaman ve neden calisir?"
+            />
           </div>
           <div>
             <label className="block text-sm font-medium mb-1">Başlangıç zamanı</label>
-            <input type="datetime-local" value={form.activeFrom} onChange={(e) => setForm({ ...form, activeFrom: e.target.value })} className="w-full px-3 py-2 border rounded-lg text-sm" />
+            <input type="datetime-local" value={form.activeFrom} onChange={(e) => setForm({ ...form, activeFrom: e.target.value })} className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm" />
           </div>
           <div className="flex items-end">
-            <label className="inline-flex items-center gap-2 text-sm">
+            <label className="inline-flex items-center gap-2 text-sm px-3 py-2.5 rounded-lg border border-gray-200 bg-gray-50/60">
               <input type="checkbox" checked={form.isActive} onChange={(e) => setForm({ ...form, isActive: e.target.checked })} />
               Akış aktif
             </label>
@@ -235,8 +266,13 @@ export default function FlowEditorPage({ flowId }: { flowId?: string }) {
         </div>
       </div>
 
-      <div className="bg-white border rounded-xl p-4 space-y-4">
-        <label className="block text-sm font-medium">Tetikleyici</label>
+      <div className="bg-white border border-gray-200 rounded-xl p-5 space-y-4">
+        <div>
+          <h2 className="text-sm font-semibold text-gray-900">2) Ne zaman başlasın (Tetikleyici)</h2>
+          <p className="text-xs text-gray-500 mt-0.5">
+            Akisin hangi olayla tetiklenecegini secin.
+          </p>
+        </div>
         <div className="grid grid-cols-1 md:grid-cols-5 gap-2">
           {TRIGGERS.map((t) => (
             <button
@@ -251,9 +287,10 @@ export default function FlowEditorPage({ flowId }: { flowId?: string }) {
                     ? { statuses: [] }
                     : [],
               })}
-              className={`p-3 border rounded-lg text-sm ${form.trigger === t.value ? 'border-whatsapp bg-green-50 text-green-700' : 'border-gray-200 text-gray-600'}`}
+              className={`p-3 border rounded-lg text-left text-sm ${form.trigger === t.value ? 'border-whatsapp bg-green-50 text-green-700 shadow-sm' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}
             >
-              {t.label}
+              <p className="font-medium">{t.label}</p>
+              <p className="text-[11px] mt-1 opacity-80">{TRIGGER_HELP[t.value]}</p>
             </button>
           ))}
         </div>
@@ -282,6 +319,7 @@ export default function FlowEditorPage({ flowId }: { flowId?: string }) {
 
         {form.trigger === 'keyword' && (
           <div className="space-y-2">
+            <label className="block text-xs font-medium text-gray-600">Mesaj su kelimeleri iceriyorsa</label>
             {(form.conditions as any[]).map((cond, idx) => (
               <div key={idx} className="flex gap-2">
                 <select
@@ -305,7 +343,8 @@ export default function FlowEditorPage({ flowId }: { flowId?: string }) {
                     next[idx] = { ...cond, value: e.target.value };
                     setForm({ ...form, conditions: next });
                   }}
-                  className="flex-1 px-3 py-2 border rounded-lg text-sm"
+                  className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm"
+                  placeholder="Orn: fiyat, kampanya, teslimat"
                 />
                 {(form.conditions as any[]).length > 1 && (
                   <button type="button" onClick={() => setForm({ ...form, conditions: (form.conditions as any[]).filter((_, i) => i !== idx) })} className="p-2 text-red-500">
@@ -321,15 +360,21 @@ export default function FlowEditorPage({ flowId }: { flowId?: string }) {
         )}
       </div>
 
-      <div className="bg-white border rounded-xl p-4 space-y-3">
-        <label className="block text-sm font-medium">Akış Adımları</label>
+      <div className="bg-white border border-gray-200 rounded-xl p-5 space-y-4">
+        <div>
+          <h2 className="text-sm font-semibold text-gray-900">3) Ne yapsın (Akış Adımları)</h2>
+          <p className="text-xs text-gray-500 mt-0.5">
+            Adim adim ne olacagini belirleyin: Mesaj gonder, bekle, etiket ekle...
+          </p>
+        </div>
         {form.steps.map((step, idx) => {
           const st = STEP_TYPES.find((x) => x.value === step.type) || STEP_TYPES[0];
           const Icon = st.icon;
           return (
-            <div key={step.id} className="border rounded-lg p-3 bg-gray-50">
+            <div key={step.id} className="border border-gray-200 rounded-lg p-4 bg-gray-50/60 shadow-sm">
               <div className="flex items-center gap-2 mb-2">
                 <GripVertical className="w-4 h-4 text-gray-300" />
+                <span className="text-xs font-semibold text-gray-500">Adım {idx + 1}</span>
                 <span className={`flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${st.color}`}>
                   <Icon className="w-3 h-3" />
                   {st.label}
@@ -341,7 +386,13 @@ export default function FlowEditorPage({ flowId }: { flowId?: string }) {
               </div>
 
               {step.type === 'send_message' && (
-                <textarea value={step.data?.message || ''} onChange={(e) => updateStepData(idx, { message: e.target.value })} rows={4} className="w-full px-3 py-2 border rounded-lg text-sm" />
+                <textarea
+                  value={step.data?.message || ''}
+                  onChange={(e) => updateStepData(idx, { message: e.target.value })}
+                  rows={5}
+                  className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm"
+                  placeholder="Gonderilecek mesaji yazin..."
+                />
               )}
               {step.type === 'wait' && (
                 <div className="flex items-center gap-2">
@@ -379,7 +430,7 @@ export default function FlowEditorPage({ flowId }: { flowId?: string }) {
                 </div>
               )}
               {step.type === 'add_tag' && (
-                <input value={step.data?.tag || ''} onChange={(e) => updateStepData(idx, { tag: e.target.value })} className="w-full px-3 py-2 border rounded-lg text-sm" />
+                <input value={step.data?.tag || ''} onChange={(e) => updateStepData(idx, { tag: e.target.value })} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" placeholder="Eklenecek etiket" />
               )}
               {step.type === 'set_lead_status' && (
                 <select value={step.data?.status || 'CONTACTED'} onChange={(e) => updateStepData(idx, { status: e.target.value })} className="w-full px-3 py-2 border rounded-lg text-sm">
@@ -396,13 +447,41 @@ export default function FlowEditorPage({ flowId }: { flowId?: string }) {
           );
         })}
 
-        <div className="flex flex-wrap gap-2 mt-2">
-          {STEP_TYPES.map((st) => (
-            <button key={st.value} type="button" onClick={() => addStep(st.value as FlowStep['type'])} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border ${st.color}`}>
-              <st.icon className="w-3.5 h-3.5" />
-              {st.label}
-            </button>
-          ))}
+        <div className="mt-1 space-y-3">
+          <p className="text-xs font-semibold text-gray-600">+ Adım ekle</p>
+          <div className="space-y-2">
+            <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Mesaj islemleri</p>
+            <div className="flex flex-wrap gap-2">
+              {STEP_TYPES.filter((s) => s.value === 'send_message').map((st) => (
+                <button key={st.value} type="button" onClick={() => addStep(st.value as FlowStep['type'])} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border ${st.color}`}>
+                  <st.icon className="w-3.5 h-3.5" />
+                  {st.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="space-y-2">
+            <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Zaman islemleri</p>
+            <div className="flex flex-wrap gap-2">
+              {STEP_TYPES.filter((s) => s.value === 'wait' || s.value === 'condition').map((st) => (
+                <button key={st.value} type="button" onClick={() => addStep(st.value as FlowStep['type'])} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border ${st.color}`}>
+                  <st.icon className="w-3.5 h-3.5" />
+                  {st.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="space-y-2">
+            <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Musteri islemleri</p>
+            <div className="flex flex-wrap gap-2">
+              {STEP_TYPES.filter((s) => s.value === 'add_tag' || s.value === 'set_lead_status' || s.value === 'assign_agent').map((st) => (
+                <button key={st.value} type="button" onClick={() => addStep(st.value as FlowStep['type'])} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border ${st.color}`}>
+                  <st.icon className="w-3.5 h-3.5" />
+                  {st.label}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
     </div>

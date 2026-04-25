@@ -91,8 +91,8 @@ export default function ReportCategoriesPage() {
         <Loader2 className="w-8 h-8 animate-spin text-whatsapp mx-auto" />
       ) : (
         <>
-          <div className="h-80 bg-white rounded-xl border p-4">
-            <ResponsiveContainer width="100%" height="100%">
+          <div className="h-80 min-h-[320px] min-w-0 bg-white rounded-xl border p-4">
+            <ResponsiveContainer width="100%" height="100%" minWidth={300} minHeight={240}>
               <BarChart data={chartData} margin={{ bottom: 48 }}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="name" tick={{ fontSize: 9 }} angle={-30} textAnchor="end" height={70} />

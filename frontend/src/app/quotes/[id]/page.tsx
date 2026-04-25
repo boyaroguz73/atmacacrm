@@ -7,6 +7,7 @@ import { formatPhone, backendPublicUrl, rewriteMediaUrlForClient } from '@/lib/u
 import {
   ArrowLeft,
   FileText,
+  Eye,
   Send,
   ShoppingCart,
   Plus,
@@ -286,6 +287,7 @@ export default function QuoteDetailPage() {
   // WhatsApp gönderim onay modalı
   const [showSendConfirm, setShowSendConfirm] = useState(false);
   const [showConvertModal, setShowConvertModal] = useState(false);
+  const [descriptionPreview, setDescriptionPreview] = useState<{ title: string; html: string } | null>(null);
   const [convertManual, setConvertManual] = useState(false);
   const [convertItemSources, setConvertItemSources] = useState<ConvertItemSource[]>([]);
   const [convertPaymentMode, setConvertPaymentMode] = useState<OrderPaymentModeUI>('FULL');
@@ -1419,6 +1421,32 @@ export default function QuoteDetailPage() {
           </div>
         </div>
       )}
+      {descriptionPreview && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/45">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col">
+            <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+              <div>
+                <h3 className="text-base font-bold text-gray-900">Ürün açıklaması</h3>
+                <p className="text-xs text-gray-500 mt-0.5 line-clamp-1">{descriptionPreview.title}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDescriptionPreview(null)}
+                className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500"
+                aria-label="Kapat"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-5 overflow-y-auto">
+              <div
+                className="prose prose-sm max-w-none text-gray-700 prose-p:my-2 prose-ul:my-2 prose-ol:my-2"
+                dangerouslySetInnerHTML={{ __html: descriptionPreview.html }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="flex flex-col sm:flex-row sm:items-center gap-4 rounded-2xl border border-gray-100 bg-white shadow-sm p-4 md:p-5">
         <button
@@ -1498,6 +1526,21 @@ export default function QuoteDetailPage() {
                       <td className="px-4 py-2.5 text-gray-400">{i + 1}</td>
                       <td className="px-4 py-2.5">
                         <p className="font-medium text-gray-900">{item.name}</p>
+                        {item.description ? (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setDescriptionPreview({
+                                title: String(item.name || 'Ürün'),
+                                html: String(item.description),
+                              })
+                            }
+                            className="mt-1 inline-flex items-center gap-1 text-[11px] font-medium text-whatsapp hover:text-green-700"
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                            Açıklamayı gör
+                          </button>
+                        ) : null}
                       </td>
                       <td className="px-4 py-2.5 text-gray-700 text-sm">
                         {item.colorFabricInfo || '—'}

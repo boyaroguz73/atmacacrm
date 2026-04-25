@@ -486,77 +486,87 @@ export default function SettingsPage() {
 
       {/* PDF Şablon Ayarları */}
         {(currentUser?.role === 'ADMIN' || currentUser?.role === 'SUPERADMIN') && (
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 space-y-5">
+          <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 space-y-6">
             <div>
               <h2 className="text-lg font-semibold text-gray-900">PDF Şablon Ayarları</h2>
-              <p className="text-xs text-gray-400 mt-1">Teklif ve fatura PDF belgelerinde kullanılacak firma bilgileri</p>
+              <p className="text-sm text-gray-500 mt-1">Fatura ve teklif PDF’lerinde görünecek bilgileri düzenleyin.</p>
             </div>
 
             {/* Firma Bilgileri */}
-            <div>
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Firma Bilgileri</p>
+            <div className="rounded-xl border border-gray-200 bg-white p-4 space-y-4">
+              <div>
+                <p className="text-sm font-semibold text-gray-900">Firma Bilgileri</p>
+                <p className="text-xs text-gray-500 mt-0.5">PDF üst bilgisinde ve firma bloğunda görünen temel bilgiler.</p>
+              </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {[
-                  { key: 'pdf_company_name', label: 'Firma Adı *', type: 'text' },
-                  { key: 'pdf_company_phone', label: 'Telefon', type: 'text' },
-                  { key: 'pdf_company_email', label: 'E-posta', type: 'text' },
-                  { key: 'pdf_company_website', label: 'Web Sitesi', type: 'text' },
-                  { key: 'pdf_company_tax_office', label: 'Vergi Dairesi', type: 'text' },
-                  { key: 'pdf_company_tax_number', label: 'Vergi No', type: 'text' },
-                  { key: 'pdf_company_mersis_no', label: 'Mersis No', type: 'text' },
+                  { key: 'pdf_company_name', label: 'Firma Adı *', placeholder: 'Firma adı' },
+                  { key: 'pdf_company_phone', label: 'Telefon', placeholder: 'Telefon numarası' },
+                  { key: 'pdf_company_email', label: 'E-posta', placeholder: 'ornek@firma.com' },
+                  { key: 'pdf_company_website', label: 'Web Sitesi', placeholder: 'https://firma.com' },
+                  { key: 'pdf_company_tax_office', label: 'Vergi Dairesi', placeholder: 'Vergi dairesi' },
+                  { key: 'pdf_company_tax_number', label: 'Vergi No', placeholder: 'Vergi numarası' },
+                  { key: 'pdf_company_mersis_no', label: 'Mersis No', placeholder: 'Mersis numarası' },
                 ].map((field) => (
                   <div key={field.key}>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">{field.label}</label>
+                    <label className="block text-xs font-medium text-gray-600 mb-1.5">{field.label}</label>
                     <input
                       type="text"
                       defaultValue={settings.find((s) => s.key === field.key)?.value || ''}
+                      placeholder={field.placeholder}
                       onBlur={async (e) => {
                         try {
                           await api.patch('/system-settings', { key: field.key, value: e.target.value });
                           toast.success(`${field.label} güncellendi`);
                         } catch { toast.error('Güncellenemedi'); }
                       }}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-whatsapp"
+                      className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-whatsapp"
                     />
                   </div>
                 ))}
                 <div className="md:col-span-2">
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Firma Adresi</label>
+                  <label className="block text-xs font-medium text-gray-600 mb-1.5">Firma Adresi</label>
                   <textarea
                     defaultValue={settings.find((s) => s.key === 'pdf_company_address')?.value || ''}
+                    placeholder="Firma adresi"
                     onBlur={async (e) => {
                       try {
                         await api.patch('/system-settings', { key: 'pdf_company_address', value: e.target.value });
                         toast.success('Adres güncellendi');
                       } catch { toast.error('Güncellenemedi'); }
                     }}
-                    rows={2}
-                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-whatsapp resize-y"
+                    rows={3}
+                    className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-whatsapp resize-y"
                   />
                 </div>
               </div>
             </div>
 
             {/* Logo */}
-            <div>
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Logo</p>
-              <div className="space-y-4">
-                <label className="block text-xs font-medium text-gray-600 mb-1">Logo URL (https://... veya /uploads/...)</label>
-                <input
-                  type="text"
-                  defaultValue={settings.find((s) => s.key === 'pdf_logo_url')?.value || ''}
-                  onBlur={async (e) => {
-                    try {
-                      await api.patch('/system-settings', { key: 'pdf_logo_url', value: e.target.value });
-                      toast.success('Logo URL güncellendi');
-                    } catch { toast.error('Güncellenemedi'); }
-                  }}
-                  placeholder="https://example.com/logo.png"
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-whatsapp"
-                />
-                <p className="text-xs text-gray-400 mt-1">Logo PNG/JPG formatında olmalı. Tarayıcıdan erişilebilir bir URL girin.</p>
+            <div className="rounded-xl border border-gray-200 bg-white p-4 space-y-4">
+              <div>
+                <p className="text-sm font-semibold text-gray-900">Logo Ayarları</p>
+                <p className="text-xs text-gray-500 mt-0.5">PDF üst kısmında kullanılacak logo görseli ve boyutu.</p>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-[1fr_220px] gap-4 items-start">
                 <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Logo Yüksekliği (px)</label>
+                  <label className="block text-xs font-medium text-gray-600 mb-1.5">Logo URL (https://... veya /uploads/...)</label>
+                  <input
+                    type="text"
+                    defaultValue={settings.find((s) => s.key === 'pdf_logo_url')?.value || ''}
+                    onBlur={async (e) => {
+                      try {
+                        await api.patch('/system-settings', { key: 'pdf_logo_url', value: e.target.value });
+                        toast.success('Logo URL güncellendi');
+                      } catch { toast.error('Güncellenemedi'); }
+                    }}
+                    placeholder="https://example.com/logo.png"
+                    className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-whatsapp"
+                  />
+                  <p className="text-xs text-gray-400 mt-1.5">Logo PNG/JPG formatında olmalı. Tarayıcıdan erişilebilir bir URL girin.</p>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1.5">Yükseklik (px)</label>
                   <input
                     type="number"
                     min={20}
@@ -574,17 +584,18 @@ export default function SettingsPage() {
                         toast.error('Güncellenemedi');
                       }
                     }}
-                    className="w-full md:w-48 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-whatsapp"
+                    className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-whatsapp"
                   />
-                  <p className="text-xs text-gray-400 mt-1">20 - 120 px arası değer girin. Varsayılan: 44.</p>
+                  <p className="text-xs text-gray-400 mt-1.5">20 - 120 px arası. Varsayılan: 44.</p>
                 </div>
               </div>
               {settings.find((s) => s.key === 'pdf_logo_url')?.value && (
-                <div className="mt-2">
+                <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+                  <p className="text-xs text-gray-500 mb-2">Logo önizleme</p>
                   <img
                     src={settings.find((s) => s.key === 'pdf_logo_url')?.value}
                     alt="Logo önizleme"
-                    className="h-12 object-contain border border-gray-100 rounded-lg p-1"
+                    className="h-14 object-contain border border-gray-200 rounded-lg bg-white p-1"
                     onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
                   />
                 </div>
@@ -592,15 +603,18 @@ export default function SettingsPage() {
             </div>
 
             {/* Banka Bilgileri */}
-            <div>
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Banka Bilgileri</p>
+            <div className="rounded-xl border border-gray-200 bg-white p-4 space-y-4">
+              <div>
+                <p className="text-sm font-semibold text-gray-900">Banka Bilgileri</p>
+                <p className="text-xs text-gray-500 mt-0.5">IBAN ve hesap bilgileri PDF’de ödeme alanında gösterilir.</p>
+              </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {[
                   { key: 'pdf_bank_info', label: 'Banka 1 (IBAN, Hesap No vb.)' },
                   { key: 'pdf_bank2_info', label: 'Banka 2 (opsiyonel)' },
                 ].map((field) => (
                   <div key={field.key}>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">{field.label}</label>
+                    <label className="block text-xs font-medium text-gray-600 mb-1.5">{field.label}</label>
                     <textarea
                       defaultValue={settings.find((s) => s.key === field.key)?.value || ''}
                       onBlur={async (e) => {
@@ -609,13 +623,13 @@ export default function SettingsPage() {
                           toast.success('Banka bilgisi güncellendi');
                         } catch { toast.error('Güncellenemedi'); }
                       }}
-                      rows={3}
+                      rows={4}
                       placeholder="Banka Adı: ...\nIBAN: TR..."
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-whatsapp resize-y font-mono"
+                      className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-whatsapp resize-y font-mono leading-6"
                     />
                   </div>
                 ))}
-                <div className="md:col-span-2 rounded-xl border border-gray-100 bg-gray-50/80 p-4">
+                <div className="md:col-span-2 rounded-xl border border-gray-200 bg-gray-50/80 p-4">
                 <label className="block text-xs font-medium text-gray-600 mb-2">Banka QR (FAST / EFT — PDF sağ alt)</label>
                 <p className="text-xs text-gray-500 mb-3">
                   Teklif ve sipariş PDF’lerinde banka metinleriyle aynı blokta, sağ altta basılır. PNG veya JPG yükleyin.
@@ -688,15 +702,18 @@ export default function SettingsPage() {
             </div>
 
             {/* Koşullar & Notlar */}
-            <div>
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Koşullar & Notlar</p>
+            <div className="rounded-xl border border-gray-200 bg-white p-4 space-y-4">
+              <div>
+                <p className="text-sm font-semibold text-gray-900">PDF Metinleri (Koşullar & Notlar)</p>
+                <p className="text-xs text-gray-500 mt-0.5">PDF’de görünecek metinler</p>
+              </div>
               <div className="space-y-4">
                 {[
                   { key: 'pdf_terms', label: 'Ödeme Koşulları', minHeight: '110px' },
                   { key: 'pdf_footer_note', label: 'Alt Not (PDF footer)', minHeight: '80px' },
                 ].map((field) => (
                   <div key={field.key}>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">{field.label}</label>
+                    <label className="block text-xs font-medium text-gray-600 mb-1.5">{field.label}</label>
                     <HtmlEditor
                       value={settings.find((s) => s.key === field.key)?.value || ''}
                       onChange={() => {}}
@@ -707,7 +724,7 @@ export default function SettingsPage() {
                         } catch { toast.error('Güncellenemedi'); }
                       }}
                       placeholder={`${field.label} girin…`}
-                      minHeight={field.minHeight}
+                      minHeight={field.key === 'pdf_terms' ? '150px' : field.minHeight}
                     />
                   </div>
                 ))}
@@ -715,11 +732,14 @@ export default function SettingsPage() {
             </div>
 
             {/* Görünüm */}
-            <div>
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Görünüm</p>
+            <div className="rounded-xl border border-gray-200 bg-white p-4 space-y-4">
+              <div>
+                <p className="text-sm font-semibold text-gray-900">Görünüm Ayarları</p>
+                <p className="text-xs text-gray-500 mt-0.5">Renk, para birimi konumu ve görünüm tercihleri.</p>
+              </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Ana Renk (HEX)</label>
+                  <label className="block text-xs font-medium text-gray-600 mb-1.5">Ana Renk (HEX)</label>
                   <div className="flex gap-2 items-center">
                     <input
                       type="color"
@@ -730,7 +750,7 @@ export default function SettingsPage() {
                           toast.success('Renk güncellendi');
                         } catch { toast.error('Güncellenemedi'); }
                       }}
-                      className="h-9 w-16 rounded border border-gray-200 cursor-pointer"
+                      className="h-10 w-14 rounded border border-gray-200 cursor-pointer"
                     />
                     <input
                       type="text"
@@ -742,12 +762,12 @@ export default function SettingsPage() {
                         } catch { toast.error('Güncellenemedi'); }
                       }}
                       placeholder="#1a7a4a"
-                      className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-whatsapp"
+                      className="flex-1 px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-whatsapp"
                     />
                   </div>
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Para Birimi Konumu</label>
+                  <label className="block text-xs font-medium text-gray-600 mb-1.5">Para Birimi Konumu</label>
                   <select
                     defaultValue={settings.find((s) => s.key === 'pdf_currency_position')?.value || 'after'}
                     onChange={async (e) => {
@@ -756,14 +776,14 @@ export default function SettingsPage() {
                         toast.success('Güncellendi');
                       } catch { toast.error('Güncellenemedi'); }
                     }}
-                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-whatsapp"
+                    className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-whatsapp"
                   >
                     <option value="after">Sonra (1.000,00 TL)</option>
                     <option value="before">Önce (TL 1.000,00)</option>
                   </select>
                 </div>
-                <div className="flex items-center gap-3">
-                  <label className="text-xs font-medium text-gray-600">İmza Alanı Göster</label>
+                <div className="flex items-center justify-between gap-3 rounded-lg border border-gray-200 bg-gray-50/60 px-3 py-2.5">
+                  <label className="text-xs font-medium text-gray-700">İmza Alanı Göster</label>
                   <button
                     onClick={async () => {
                       const current = settings.find((s) => s.key === 'pdf_show_signature')?.value !== 'false';

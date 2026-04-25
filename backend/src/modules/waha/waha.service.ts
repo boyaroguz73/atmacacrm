@@ -650,6 +650,7 @@ export class WahaService implements OnModuleInit {
     if (!digits) throw new BadRequestException('Geçerli kişi telefonu gerekli');
     const safeName = (contactName || '').trim() || digits;
     const normalizedChatId = chatId.includes('@') ? chatId : `${chatId}@c.us`;
+    const contactJid = `${digits}@c.us`;
     const vcard = [
       'BEGIN:VCARD',
       'VERSION:3.0',
@@ -664,7 +665,24 @@ export class WahaService implements OnModuleInit {
         payload: {
           session: sessionName,
           chatId: normalizedChatId,
+          contactId: contactJid,
+        },
+      },
+      {
+        path: '/api/sendContact',
+        payload: {
+          session: sessionName,
+          chatId: normalizedChatId,
+          contactId: contactJid,
           contact: { fullName: safeName, phone: digits, phoneNumber: digits },
+        },
+      },
+      {
+        path: '/api/sendContact',
+        payload: {
+          session: sessionName,
+          chatId: normalizedChatId,
+          contacts: [{ fullName: safeName, phone: digits, contactId: contactJid }],
         },
       },
       {
@@ -672,7 +690,7 @@ export class WahaService implements OnModuleInit {
         payload: {
           session: sessionName,
           chatId: normalizedChatId,
-          contact: { fullName: safeName, phone: digits, vcard },
+          contact: { fullName: safeName, phone: digits, contactId: contactJid, vcard },
         },
       },
       {
@@ -681,6 +699,7 @@ export class WahaService implements OnModuleInit {
           session: sessionName,
           chatId: normalizedChatId,
           displayName: safeName,
+          contactId: contactJid,
           vcard,
         },
       },
@@ -698,7 +717,12 @@ export class WahaService implements OnModuleInit {
           typeof err?.response?.data === 'string'
             ? err.response.data
             : JSON.stringify(err?.response?.data || '');
-        if (status === 404 || body.includes('Cannot POST')) continue;
+        if (
+          status === 404 ||
+          status === 400 ||
+          body.includes('Cannot POST') ||
+          body.includes('Cannot PUT')
+        ) continue;
       }
     }
 
@@ -1073,28 +1097,34 @@ export class WahaService implements OnModuleInit {
     messageId: string,
     emoji: string,
   ): Promise<any> {
+    const encodedSession = encodeURIComponent(sessionName);
     const encodedChatId = encodeURIComponent(chatId);
     const encodedMsgId = encodeURIComponent(messageId);
     const attempts: Array<{ method: 'put' | 'post'; path: string; payload: Record<string, unknown> }> = [
       {
         method: 'put',
-        path: `/api/${sessionName}/chats/${encodedChatId}/messages/${encodedMsgId}/reaction`,
-        payload: { reaction: emoji },
+        path: `/api/${encodedSession}/chats/${encodedChatId}/messages/${encodedMsgId}/reaction`,
+        payload: { reaction: emoji, emoji, text: emoji },
       },
       {
         method: 'post',
-        path: `/api/${sessionName}/chats/${encodedChatId}/messages/${encodedMsgId}/reaction`,
-        payload: { reaction: emoji },
+        path: `/api/${encodedSession}/chats/${encodedChatId}/messages/${encodedMsgId}/reaction`,
+        payload: { reaction: emoji, emoji, text: emoji },
       },
       {
         method: 'post',
         path: '/api/sendReaction',
-        payload: { session: sessionName, chatId, messageId, reaction: emoji },
+        payload: { session: sessionName, chatId, messageId, reaction: emoji, emoji, text: emoji },
+      },
+      {
+        method: 'post',
+        path: '/api/sendReactionByMessage',
+        payload: { session: sessionName, chatId, messageId, reaction: emoji, emoji, text: emoji },
       },
       {
         method: 'post',
         path: '/api/reaction',
-        payload: { session: sessionName, chatId, messageId, reaction: emoji },
+        payload: { session: sessionName, chatId, messageId, reaction: emoji, emoji, text: emoji },
       },
     ];
 

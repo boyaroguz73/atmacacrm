@@ -81,8 +81,8 @@ export default function ReportCashPage() {
       {loading ? (
         <Loader2 className="w-8 h-8 animate-spin text-whatsapp mx-auto" />
       ) : (
-        <div className="h-96 bg-white rounded-xl border p-4">
-          <ResponsiveContainer width="100%" height="100%">
+        <div className="h-96 min-h-[384px] min-w-0 bg-white rounded-xl border p-4">
+          <ResponsiveContainer width="100%" height="100%" minWidth={320} minHeight={260}>
             <BarChart data={data}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="day" tick={{ fontSize: 10 }} />

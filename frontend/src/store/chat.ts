@@ -261,9 +261,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set((state) => ({
       ...(state.activeConversation?.id === conv.id ? {} : { messages: [] }),
       activeConversation: updated,
-      conversations: state.conversations.map((c) =>
-        c.id === conv.id ? { ...c, unreadCount: 0 } : c,
-      ),
+      conversations:
+        state.conversations.some((c) => c.id === conv.id && (c.unreadCount || 0) > 0)
+          ? state.conversations.map((c) =>
+              c.id === conv.id ? { ...c, unreadCount: 0 } : c,
+            )
+          : state.conversations,
     }));
     api.patch(`/conversations/${conv.id}/read`).catch(() => {});
   },

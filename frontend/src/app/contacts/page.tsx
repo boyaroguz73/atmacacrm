@@ -10,7 +10,6 @@ import {
   ChevronLeft,
   ChevronsLeft,
   ChevronsRight,
-  RefreshCw,
   UserPlus,
   MessageSquare,
   Loader2,
@@ -51,7 +50,6 @@ export default function ContactsPage() {
   const [perPage, setPerPage] = useState(50);
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
-  const [refreshingAvatars, setRefreshingAvatars] = useState(false);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [createSubmitting, setCreateSubmitting] = useState(false);
@@ -249,26 +247,6 @@ export default function ContactsPage() {
             <UserPlus className="w-4 h-4" />
             Yeni kişi
           </button>
-          <button
-            onClick={async () => {
-              setRefreshingAvatars(true);
-              try {
-                const { data } = await api.post('/contacts/refresh-all-avatars');
-                toast.success(`${data.updated} kişinin fotoğrafı güncellendi`);
-                fetchContacts(search);
-              } catch {
-                toast.error('Fotoğraflar güncellenemedi');
-              } finally {
-                setRefreshingAvatars(false);
-              }
-            }}
-            disabled={refreshingAvatars}
-            className="flex items-center gap-2 px-3 py-2 bg-white border border-gray-200 rounded-xl text-sm text-gray-600 hover:bg-gray-50 disabled:opacity-50"
-            title="Profil fotoğraflarını güncelle"
-          >
-            <RefreshCw className={`w-4 h-4 ${refreshingAvatars ? 'animate-spin' : ''}`} />
-            {refreshingAvatars ? 'Güncelleniyor...' : 'Fotoğrafları Güncelle'}
-          </button>
           <DateRangePicker
             from={dateFrom}
             to={dateTo}
@@ -306,7 +284,7 @@ export default function ContactsPage() {
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <div className="p-5 space-y-3">
+            <div className="p-5 space-y-4">
               {userRole === 'SUPERADMIN' && (
                 <label className="block text-sm">
                   <span className="text-gray-600 font-medium">Organizasyon ID</span>
@@ -318,45 +296,53 @@ export default function ContactsPage() {
                   />
                 </label>
               )}
+              <div className="pt-1">
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Kişi Bilgileri</p>
+              </div>
               <label className="block text-sm">
-                <span className="text-gray-600 font-medium">Telefon *</span>
+                <span className="text-gray-700 font-semibold">Telefon *</span>
                 <input
-                  className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl text-sm"
+                  className="mt-1.5 w-full px-3 py-3 border border-gray-300 rounded-xl text-sm font-medium focus:outline-none focus:border-whatsapp"
                   value={form.phone}
                   onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
                   placeholder="Örn. 0555 123 45 67"
                 />
+                <p className="text-[11px] text-gray-400 mt-1">Hızlı kayıt için en kritik alan.</p>
               </label>
               <div className="grid grid-cols-2 gap-2">
                 <label className="block text-sm">
-                  <span className="text-gray-600 font-medium">Ad</span>
+                  <span className="text-gray-700 font-semibold">Ad</span>
                   <input
-                    className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl text-sm"
+                    className="mt-1.5 w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm"
                     value={form.name}
                     onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
                   />
                 </label>
                 <label className="block text-sm">
-                  <span className="text-gray-600 font-medium">Soyad</span>
+                  <span className="text-gray-700 font-semibold">Soyad</span>
                   <input
-                    className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl text-sm"
+                    className="mt-1.5 w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm"
                     value={form.surname}
                     onChange={(e) => setForm((f) => ({ ...f, surname: e.target.value }))}
                   />
                 </label>
               </div>
+              <div className="pt-1">
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">İletişim</p>
+              </div>
               <label className="block text-sm">
-                <span className="text-gray-600 font-medium">E-posta</span>
+                <span className="text-gray-500 font-medium">E-posta</span>
                 <input
                   type="email"
                   className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl text-sm"
                   value={form.email}
                   onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+                  placeholder="ornek@eposta.com"
                 />
               </label>
               <div className="grid grid-cols-2 gap-2">
                 <label className="block text-sm">
-                  <span className="text-gray-600 font-medium">İl</span>
+                  <span className="text-gray-500 font-medium">İl</span>
                   <input
                     className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl text-sm"
                     value={form.city}
@@ -364,7 +350,7 @@ export default function ContactsPage() {
                   />
                 </label>
                 <label className="block text-sm">
-                  <span className="text-gray-600 font-medium">İlçe</span>
+                  <span className="text-gray-500 font-medium">İlçe</span>
                   <input
                     className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl text-sm"
                     value={form.district}
@@ -373,7 +359,7 @@ export default function ContactsPage() {
                 </label>
               </div>
               <label className="block text-sm">
-                <span className="text-gray-600 font-medium">Açık adres</span>
+                <span className="text-gray-500 font-medium">Açık adres</span>
                 <textarea
                   rows={2}
                   className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl text-sm resize-y"
@@ -381,8 +367,11 @@ export default function ContactsPage() {
                   onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))}
                 />
               </label>
+              <div className="pt-1">
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Fatura Bilgileri</p>
+              </div>
               <label className="block text-sm">
-                <span className="text-gray-600 font-medium">Fatura e-posta</span>
+                <span className="text-gray-500 font-medium">Fatura e-posta</span>
                 <input
                   type="email"
                   className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl text-sm"
@@ -392,7 +381,7 @@ export default function ContactsPage() {
                 />
               </label>
               <label className="block text-sm">
-                <span className="text-gray-600 font-medium">Fatura adresi</span>
+                <span className="text-gray-500 font-medium">Fatura adresi</span>
                 <textarea
                   rows={2}
                   className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl text-sm resize-y"
@@ -401,8 +390,11 @@ export default function ContactsPage() {
                   placeholder="Boşsa açık adres kullanılır"
                 />
               </label>
+              <div className="pt-1">
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Diğer</p>
+              </div>
               <label className="block text-sm">
-                <span className="text-gray-600 font-medium">Kaynak</span>
+                <span className="text-gray-500 font-medium">Kaynak</span>
                 <select
                   className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl text-sm bg-white"
                   value={form.source}
@@ -417,7 +409,7 @@ export default function ContactsPage() {
                 </select>
               </label>
               <label className="block text-sm">
-                <span className="text-gray-600 font-medium">Not</span>
+                <span className="text-gray-500 font-medium">Not</span>
                 <textarea
                   rows={2}
                   className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl text-sm resize-y"
@@ -425,7 +417,7 @@ export default function ContactsPage() {
                   onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
                 />
               </label>
-              <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+              <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
                 <input
                   type="checkbox"
                   checked={showLeadFields}
@@ -484,7 +476,7 @@ export default function ContactsPage() {
               )}
               {sessions.length > 0 && (
                 <label className="block text-sm">
-                  <span className="text-gray-600 font-medium">WhatsApp oturumu (sohbet için)</span>
+                  <span className="text-gray-500 font-medium">WhatsApp oturumu (sohbet için)</span>
                   <select
                     className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl text-sm bg-white"
                     value={form.sessionId}
@@ -519,7 +511,7 @@ export default function ContactsPage() {
                 type="button"
                 disabled={createSubmitting}
                 onClick={closeCreateModal}
-                className="min-w-[100px] px-4 py-2.5 rounded-xl border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-100 disabled:opacity-50"
+                className="min-w-[100px] px-4 py-2.5 rounded-xl border border-gray-200 text-sm font-medium text-gray-500 hover:bg-gray-100 disabled:opacity-50"
               >
                 İptal
               </button>
@@ -527,7 +519,7 @@ export default function ContactsPage() {
                 type="button"
                 disabled={createSubmitting}
                 onClick={() => submitCreate()}
-                className="flex-1 min-w-[120px] flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-gray-200 text-gray-800 text-sm font-medium hover:bg-gray-300 disabled:opacity-50"
+                className="flex-1 min-w-[120px] flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-gray-200 bg-white text-gray-700 text-sm font-medium hover:bg-gray-50 disabled:opacity-50"
               >
                 {createSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
                 Kaydet
@@ -536,7 +528,7 @@ export default function ContactsPage() {
                 type="button"
                 disabled={createSubmitting || sessions.length === 0}
                 onClick={() => submitCreate({ forceOpenChat: true })}
-                className="flex-1 min-w-[140px] flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-whatsapp text-white text-sm font-medium hover:opacity-95 disabled:opacity-50"
+                className="flex-1 min-w-[140px] flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-whatsapp text-white text-sm font-semibold hover:opacity-95 disabled:opacity-50"
               >
                 <MessageSquare className="w-4 h-4" />
                 Kaydet ve mesaj gönder
@@ -550,23 +542,23 @@ export default function ContactsPage() {
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
         <input
           type="text"
-          placeholder="İsim, telefon veya e-posta ara..."
+          placeholder="İsim, telefon veya e-posta ile ara…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-whatsapp focus:ring-1 focus:ring-whatsapp/20"
+          className="w-full pl-10 pr-4 py-3 bg-white border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-whatsapp focus:ring-1 focus:ring-whatsapp/20"
         />
       </div>
 
-      <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
         <table className="w-full">
           <thead>
-            <tr className="border-b border-gray-100 bg-gray-50/50">
-              <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase">Kişi</th>
-              <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase">Telefon</th>
-              <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase">Kaynak</th>
-              <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase">Not</th>
-              <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase">Durum</th>
-              <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase">Tarih</th>
+            <tr className="border-b border-gray-200 bg-gray-50/60">
+              <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase">Kişi</th>
+              <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase">Telefon</th>
+              <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase">Kaynak</th>
+              <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase">Not</th>
+              <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase">Durum</th>
+              <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase">Tarih</th>
               <th className="w-10" />
             </tr>
           </thead>
@@ -596,9 +588,9 @@ export default function ContactsPage() {
                       router.push(`/contacts/${contact.id}`);
                     }
                   }}
-                  className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors cursor-pointer"
+                  className="border-b border-gray-100 odd:bg-white even:bg-gray-50/20 hover:bg-gray-50/70 transition-colors cursor-pointer"
                 >
-                  <td className="px-5 py-3">
+                  <td className="px-5 py-4">
                     <div className="flex items-center gap-3">
                       <ContactAvatar
                         name={contact.name}
@@ -609,7 +601,7 @@ export default function ContactsPage() {
                       />
                       <div className="min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <p className="font-medium text-sm text-gray-900">
+                          <p className="font-semibold text-sm text-gray-900">
                             {[contact.name, contact.surname].filter(Boolean).join(' ') || 'İsimsiz'}
                           </p>
                           <EcommerceCustomerBadge metadata={contact.metadata} />
@@ -620,44 +612,44 @@ export default function ContactsPage() {
                       </div>
                     </div>
                   </td>
-                  <td className="px-5 py-3 text-sm text-gray-600">
+                  <td className="px-5 py-4 text-xs text-gray-500">
                     {formatPhone(contact.phone)}
                   </td>
-                  <td className="px-5 py-3">
+                  <td className="px-5 py-4">
                     {contact.source ? (
                       <span className="text-[10px] bg-purple-50 text-purple-600 px-2 py-0.5 rounded-full font-medium">
                         {contact.source}
                       </span>
                     ) : (
-                      <span className="text-xs text-gray-300">—</span>
+                      <span className="text-xs text-gray-200">—</span>
                     )}
                   </td>
-                  <td className="px-5 py-3">
+                  <td className="px-5 py-4">
                     {contact.notes ? (
                       <span className="text-xs text-gray-600 line-clamp-2" title={contact.notes}>
                         {contact.notes}
                       </span>
                     ) : (
-                      <span className="text-xs text-gray-300">—</span>
+                      <span className="text-xs text-gray-200">—</span>
                     )}
                   </td>
-                  <td className="px-5 py-3">
+                  <td className="px-5 py-4">
                     {contact.lead ? (
                       <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${LEAD_STATUS_COLORS[contact.lead.status] || 'bg-gray-100 text-gray-600'}`}>
                         {LEAD_STATUS_LABELS[contact.lead.status] || contact.lead.status}
                       </span>
                     ) : (
-                      <span className="text-xs text-gray-300">—</span>
+                      <span className="text-xs text-gray-200">—</span>
                     )}
                   </td>
-                  <td className="px-5 py-3 text-xs text-gray-400">
+                  <td className="px-5 py-4 text-[11px] text-gray-400">
                     {new Date(contact.createdAt).toLocaleDateString('tr-TR', {
                       day: '2-digit',
                       month: '2-digit',
                       year: '2-digit',
                     })}
                   </td>
-                  <td className="px-3 py-3">
+                  <td className="px-3 py-4">
                     <ChevronRight className="w-4 h-4 text-gray-300" />
                   </td>
                 </tr>

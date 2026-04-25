@@ -1083,7 +1083,7 @@ function formatRelative(iso: string | null): string {
 function TsoftPanel({ integration }: { integration: Integration }) {
   const ic = integration.config || {};
   const [baseUrl, setBaseUrl] = useState(String(ic.baseUrl || ic.storeUrl || ''));
-  const [apiEmail, setApiEmail] = useState(String(ic.apiEmail || ''));
+  const [apiEmail, setApiEmail] = useState(String(ic.apiEmail || ic.username || ''));
   const [apiPassword, setApiPassword] = useState('');
   const [orderWsEnabled, setOrderWsEnabled] = useState(ic.orderWsEnabled === true);
   const [orderWsUrl, setOrderWsUrl] = useState(String(ic.orderWsUrl || ''));
@@ -1108,6 +1108,7 @@ function TsoftPanel({ integration }: { integration: Integration }) {
   const [diagnoseOut, setDiagnoseOut] = useState<string | null>(null);
   const [status, setStatus] = useState<TsoftSyncStatus | null>(null);
   const [statusLoading, setStatusLoading] = useState(false);
+  const [syncingNow, setSyncingNow] = useState(false);
 
   const fetchStatus = useCallback(async () => {
     setStatusLoading(true);
@@ -1131,7 +1132,7 @@ function TsoftPanel({ integration }: { integration: Integration }) {
   useEffect(() => {
     const c = integration.config || {};
     setBaseUrl(String(c.baseUrl || c.storeUrl || ''));
-    setApiEmail(String(c.apiEmail || ''));
+    setApiEmail(String(c.apiEmail || c.username || ''));
     setApiPassword('');
     setOrderWsEnabled(c.orderWsEnabled === true);
     setOrderWsUrl(String(c.orderWsUrl || ''));
@@ -1246,112 +1247,117 @@ function TsoftPanel({ integration }: { integration: Integration }) {
     setFlags((prev) => ({ ...prev, [key]: !prev[key] }));
   };
 
+  const handleSyncNow = async () => {
+    setSyncingNow(true);
+    try {
+      if (flags.products) {
+        await api.post('/ecommerce/tsoft/sync-products', { period: productSyncPeriod }, { timeout: 300_000 });
+      }
+      if (flags.orders) {
+        await api.post('/ecommerce/tsoft/sync-orders', {}, { timeout: 180_000 });
+      }
+      if (flags.customers) {
+        await api.post('/ecommerce/tsoft/sync-customers');
+      }
+      await fetchStatus();
+      toast.success('Guncelleme baslatildi');
+    } catch (err: any) {
+      toast.error(getApiErrorMessage(err, 'Guncelleme basarisiz'));
+    } finally {
+      setSyncingNow(false);
+    }
+  };
+
   return (
     <div className="space-y-5">
-      <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-4">
-        <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
-          <Globe className="w-4 h-4 text-orange-500" />
-          T-Soft Admin API
-        </h3>
+      <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-5">
         <div>
-          <label className="block text-xs font-medium text-gray-500 mb-1">Mağaza kök adresi (https://…)</label>
-          <input
-            type="url"
-            value={baseUrl}
-            onChange={(e) => setBaseUrl(e.target.value)}
-            placeholder="https://magazam.com"
-            className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-orange-500"
-          />
-          <label className="mt-3 flex items-start gap-2 cursor-pointer text-xs text-gray-600">
-            <input
-              type="checkbox"
-              checked={usePanelApi}
-              onChange={(e) => setUsePanelApi(e.target.checked)}
-              className="mt-0.5 rounded border-gray-300"
-            />
-            <span>
-              API yolu <code className="text-gray-500">/panel</code> altında
-            </span>
-          </label>
+          <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+            <Globe className="w-5 h-5 text-orange-500" />
+            T-Soft Entegrasyonu
+          </h3>
+          <p className="text-sm text-gray-500 mt-1">
+            Siparis, urun ve musteri verileriniz otomatik olarak guncellenir.
+          </p>
         </div>
-        <div>
-          <label className="block text-xs font-medium text-gray-500 mb-1">API kullanıcı e-postası</label>
-          <input
-            type="email"
-            value={apiEmail}
-            onChange={(e) => setApiEmail(e.target.value)}
-            placeholder="api@magazam.com"
-            className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-orange-500"
-          />
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-gray-500 mb-1">API şifresi</label>
-          <input
-            type="password"
-            value={apiPassword}
-            onChange={(e) => setApiPassword(e.target.value)}
-            placeholder="Boş bırakılırsa mevcut şifre korunur"
-            className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-orange-500"
-          />
-        </div>
-        <div className="rounded-xl border border-orange-100 bg-orange-50/40 p-3 space-y-3">
-          <label className="flex items-center gap-2 text-xs font-medium text-orange-700 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={orderWsEnabled}
-              onChange={(e) => setOrderWsEnabled(e.target.checked)}
-              className="rounded border-orange-300"
-            />
-            Yeni siparişleri WebSocket ile dinle
-          </label>
+
+        <div className="rounded-xl border border-gray-200 bg-gray-50/60 p-4 space-y-4">
           <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">WebSocket URL (wss://...)</label>
-            <input
-              type="url"
-              value={orderWsUrl}
-              onChange={(e) => setOrderWsUrl(e.target.value)}
-              placeholder="wss://.../orders"
-              className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-orange-500"
-            />
+            <p className="text-sm font-semibold text-gray-900">Baglanti Bilgileri</p>
+            <p className="text-xs text-gray-500 mt-0.5">Bu bilgiler sadece baglanti kurmak icin kullanilir.</p>
           </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">
-              WebSocket token (opsiyonel)
-            </label>
-            <input
-              type="password"
-              value={orderWsToken}
-              onChange={(e) => setOrderWsToken(e.target.value)}
-              placeholder="Boş bırakılırsa mevcut token korunur"
-              className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-orange-500"
-            />
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">Reconnect (sn)</label>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="md:col-span-2">
+              <label className="block text-xs font-medium text-gray-600 mb-1.5">Site adresi (domain)</label>
               <input
-                type="number"
-                min={5}
-                value={orderWsReconnectSeconds}
-                onChange={(e) => setOrderWsReconnectSeconds(Number(e.target.value || 15))}
+                type="url"
+                value={baseUrl}
+                onChange={(e) => setBaseUrl(e.target.value)}
+                placeholder="https://magazam.com"
+                className="w-full md:max-w-2xl px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-orange-500"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1.5">Kullanici adi</label>
+              <input
+                type="text"
+                value={apiEmail}
+                onChange={(e) => setApiEmail(e.target.value)}
+                placeholder="kullaniciadi"
                 className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-orange-500"
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">
-                Event sonrası lookback (dk)
-              </label>
+              <label className="block text-xs font-medium text-gray-600 mb-1.5">Sifre</label>
               <input
-                type="number"
-                min={5}
-                value={orderWsLookbackMinutes}
-                onChange={(e) => setOrderWsLookbackMinutes(Number(e.target.value || 90))}
+                type="password"
+                value={apiPassword}
+                onChange={(e) => setApiPassword(e.target.value)}
+                placeholder="Sifreniz"
                 className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-orange-500"
               />
             </div>
           </div>
         </div>
-        <div className="flex flex-wrap gap-2">
+
+        <div className="rounded-xl border border-gray-200 bg-white p-4">
+          <p className="text-sm font-semibold text-gray-900">
+            {statusLoading ? 'Baglanti kontrol ediliyor' : integration.isEnabled ? 'Bagli' : 'Baglanti kuruluyor'}
+          </p>
+          <p className="text-xs text-gray-600 mt-1">
+            Son guncelleme: {formatRelative(status?.orders.lastSyncedAt ?? status?.products.lastPulledAt ?? null)}
+          </p>
+          <p className="text-xs text-gray-500 mt-1.5">Verileriniz otomatik olarak guncellenir.</p>
+        </div>
+
+        <div className="rounded-xl border border-gray-200 bg-white p-4 space-y-3">
+          <p className="text-sm font-semibold text-gray-900">Senkron Kapsami</p>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+            <FlagToggle
+              label="Siparisler"
+              description="Siparis bilgilerini gunceller"
+              checked={flags.orders}
+              onToggle={() => toggleFlag('orders')}
+            />
+            <FlagToggle
+              label="Urunler"
+              description="Urun bilgilerini gunceller"
+              checked={flags.products}
+              onToggle={() => toggleFlag('products')}
+            />
+            <FlagToggle
+              label="Musteriler"
+              description="Musteri bilgilerini gunceller"
+              checked={flags.customers}
+              onToggle={() => toggleFlag('customers')}
+            />
+          </div>
+          <p className="text-xs text-gray-500">
+            Hangi verilerin guncellenecegini secebilirsiniz.
+          </p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 pt-1">
           <button
             type="button"
             onClick={handleSave}
@@ -1359,211 +1365,17 @@ function TsoftPanel({ integration }: { integration: Integration }) {
             className="flex items-center gap-2 px-4 py-2.5 bg-orange-500 text-white rounded-xl text-sm font-medium hover:bg-orange-600 transition-colors disabled:opacity-50"
           >
             {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-            Kaydet
+            Kaydet ve Baglan
           </button>
           <button
             type="button"
-            onClick={handleTest}
-            disabled={testing}
+            onClick={handleSyncNow}
+            disabled={syncingNow}
             className="flex items-center gap-2 px-4 py-2.5 border border-orange-200 text-orange-700 rounded-xl text-sm font-medium hover:bg-orange-50 disabled:opacity-50"
           >
-            {testing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wifi className="w-4 h-4" />}
-            Bağlantıyı test et
+            {syncingNow ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+            Simdi guncelle
           </button>
-          <button
-            type="button"
-            onClick={handleDiagnose}
-            disabled={diagnosing}
-            className="flex items-center gap-2 px-4 py-2.5 border border-gray-300 text-gray-600 rounded-xl text-sm font-medium hover:bg-gray-50 disabled:opacity-50"
-          >
-            {diagnosing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Bug className="w-4 h-4" />}
-            Teşhis raporu
-          </button>
-        </div>
-        {diagnoseOut ? (
-          <div className="mt-4">
-            <pre className="text-[11px] bg-slate-900 text-slate-100 p-3 rounded-xl overflow-auto max-h-56 whitespace-pre-wrap break-all">
-              {diagnoseOut}
-            </pre>
-          </div>
-        ) : null}
-      </div>
-
-      {/* Sync durum kartları */}
-      <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-4">
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
-            <RotateCcw className="w-4 h-4 text-orange-500" />
-            Senkronizasyon Durumu
-          </h3>
-          <button
-            type="button"
-            onClick={fetchStatus}
-            disabled={statusLoading}
-            className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-800 disabled:opacity-50"
-          >
-            {statusLoading ? (
-              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-            ) : (
-              <RefreshCw className="w-3.5 h-3.5" />
-            )}
-            Yenile
-          </button>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <StatusCard
-            title="Ürünler (T-Soft → CRM)"
-            accent="orange"
-            primary={`${status?.products.active ?? 0} aktif / ${status?.products.total ?? 0} toplam`}
-            secondary={`Varyant: ${status?.variants.active ?? 0}/${status?.variants.total ?? 0}`}
-            footer={`Son çekim: ${formatRelative(status?.products.lastPulledAt ?? null)}`}
-            action={
-              <div className="flex items-center gap-1">
-                <select
-                  value={productSyncPeriod}
-                  onChange={(e) => setProductSyncPeriod(e.target.value)}
-                  disabled={syncingProducts}
-                  className="text-[10px] font-medium text-orange-700 bg-transparent border-none focus:ring-0 p-0 pr-3 cursor-pointer disabled:opacity-50"
-                >
-                  <option value="all">Tümü</option>
-                  <option value="7d">7 gün</option>
-                  <option value="30d">30 gün</option>
-                  <option value="90d">90 gün</option>
-                  <option value="1y">1 yıl</option>
-                </select>
-                <button
-                  type="button"
-                  onClick={handleSyncProducts}
-                  disabled={syncingProducts}
-                  className="text-[11px] font-medium text-orange-700 hover:text-orange-800 disabled:opacity-50 flex items-center gap-1"
-                >
-                  {syncingProducts ? (
-                    <Loader2 className="w-3 h-3 animate-spin" />
-                  ) : (
-                    <RefreshCw className="w-3 h-3" />
-                  )}
-                  Çek
-                </button>
-              </div>
-            }
-          />
-          <StatusCard
-            title="Siparişler (T-Soft → CRM)"
-            accent="blue"
-            primary={`${status?.orders.tsoftLinked ?? 0} bağlı sipariş`}
-            secondary={`Son senkron: ${formatRelative(status?.orders.lastSyncedAt ?? null)}`}
-            action={
-              <button
-                type="button"
-                onClick={handleSyncOrders}
-                disabled={syncingOrders}
-                className="text-[11px] font-medium text-blue-700 hover:text-blue-800 disabled:opacity-50 flex items-center gap-1"
-              >
-                {syncingOrders ? (
-                  <Loader2 className="w-3 h-3 animate-spin" />
-                ) : (
-                  <RefreshCw className="w-3 h-3" />
-                )}
-                Şimdi çek
-              </button>
-            }
-          />
-          <StatusCard
-            title="Müşteriler"
-            accent="violet"
-            primary={`${status?.customers.matched ?? 0} eşleşen kişi`}
-            secondary="T-Soft CustomerId ile CRM kişisi"
-            action={
-              <button
-                type="button"
-                onClick={handleSyncCustomers}
-                disabled={syncingCustomers}
-                className="text-[11px] font-medium text-violet-700 hover:text-violet-800 disabled:opacity-50 flex items-center gap-1"
-              >
-                {syncingCustomers ? (
-                  <Loader2 className="w-3 h-3 animate-spin" />
-                ) : (
-                  <RefreshCw className="w-3 h-3" />
-                )}
-                Şimdi eşleştir
-              </button>
-            }
-          />
-          <StatusCard
-            title="Push Kuyruğu (CRM → T-Soft)"
-            accent={
-              (status?.pushQueue.failed ?? 0) > 0
-                ? 'red'
-                : (status?.pushQueue.pending ?? 0) > 0
-                ? 'amber'
-                : 'green'
-            }
-            primary={`${status?.pushQueue.pending ?? 0} bekliyor · ${status?.pushQueue.running ?? 0} çalışıyor`}
-            secondary={`Başarısız: ${status?.pushQueue.failed ?? 0} · Son 24s tamamlanan: ${status?.pushQueue.done24h ?? 0}`}
-            footer={
-              status?.pushQueue.lastError
-                ? `Son hata: ${status.pushQueue.lastError.slice(0, 120)}${
-                    status.pushQueue.lastError.length > 120 ? '…' : ''
-                  }`
-                : undefined
-            }
-          />
-        </div>
-      </div>
-
-      {/* Sync kapsamı */}
-      <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-4">
-        <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
-          <Settings className="w-4 h-4 text-orange-500" />
-          Senkronizasyon Kapsamı
-        </h3>
-        <p className="text-xs text-gray-500 -mt-2">
-          Hangi veri türlerinin otomatik senkronize edileceğini belirleyin. Değişiklik
-          <span className="font-medium"> Kaydet</span> butonu ile uygulanır.
-        </p>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-          <FlagToggle
-            label="Ürünler (pull)"
-            description="Her 30 dk ürün & varyant senkronizasyonu"
-            checked={flags.products}
-            onToggle={() => toggleFlag('products')}
-          />
-          <FlagToggle
-            label="Varyantlar"
-            description="Ürünlerin varyant verilerini getir"
-            checked={flags.variants}
-            onToggle={() => toggleFlag('variants')}
-          />
-          <FlagToggle
-            label="Görseller"
-            description="Ana ürün/varyant görsellerini indir"
-            checked={flags.images}
-            onToggle={() => toggleFlag('images')}
-          />
-          <FlagToggle
-            label="Siparişler (pull)"
-            description="Her 15 dk T-Soft siparişlerini çek"
-            checked={flags.orders}
-            onToggle={() => toggleFlag('orders')}
-          />
-          <FlagToggle
-            label="Müşteriler"
-            description="Her 60 dk telefona göre kişi eşleştir"
-            checked={flags.customers}
-            onToggle={() => toggleFlag('customers')}
-          />
-          <FlagToggle
-            label="Push kuyruğu"
-            description="CRM → T-Soft yazma işlerini işle"
-            checked={flags.push}
-            onToggle={() => toggleFlag('push')}
-          />
-          <FlagToggle
-            label="Sepet terk görevleri"
-            description="AWAITING_CHECKOUT siparişlerde otomatik görev oluştur"
-            checked={flags.cartAbandonTasks}
-            onToggle={() => toggleFlag('cartAbandonTasks')}
-          />
         </div>
       </div>
     </div>
@@ -1621,33 +1433,23 @@ function StatusCard({
   action?: React.ReactNode;
   accent: 'orange' | 'blue' | 'violet' | 'red' | 'amber' | 'green';
 }) {
-  const accentBg: Record<string, string> = {
-    orange: 'bg-orange-50 border-orange-100',
-    blue: 'bg-blue-50 border-blue-100',
-    violet: 'bg-violet-50 border-violet-100',
-    red: 'bg-red-50 border-red-100',
-    amber: 'bg-amber-50 border-amber-100',
-    green: 'bg-emerald-50 border-emerald-100',
-  };
-  const accentText: Record<string, string> = {
-    orange: 'text-orange-700',
-    blue: 'text-blue-700',
-    violet: 'text-violet-700',
-    red: 'text-red-700',
-    amber: 'text-amber-700',
-    green: 'text-emerald-700',
+  const accentBadge: Record<string, string> = {
+    orange: 'bg-orange-50 text-orange-700 border-orange-200',
+    blue: 'bg-blue-50 text-blue-700 border-blue-200',
+    violet: 'bg-violet-50 text-violet-700 border-violet-200',
+    red: 'bg-red-50 text-red-700 border-red-200',
+    amber: 'bg-amber-50 text-amber-700 border-amber-200',
+    green: 'bg-emerald-50 text-emerald-700 border-emerald-200',
   };
   return (
-    <div className={`rounded-xl border p-3 ${accentBg[accent]}`}>
+    <div className="rounded-xl border border-gray-200 bg-gray-50/70 p-3">
       <div className="flex items-start justify-between gap-2">
-        <p className={`text-[11px] font-semibold uppercase tracking-wider ${accentText[accent]}`}>
-          {title}
-        </p>
+        <div className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${accentBadge[accent]}`}>{title}</div>
         {action}
       </div>
-      <p className="mt-1 text-sm font-semibold text-gray-900">{primary}</p>
-      {secondary ? <p className="text-[11px] text-gray-600 mt-0.5">{secondary}</p> : null}
-      {footer ? <p className="text-[11px] text-gray-500 mt-1">{footer}</p> : null}
+      <p className="mt-2 text-sm font-semibold text-gray-900">{primary}</p>
+      {secondary ? <p className="text-[11px] text-gray-600 mt-1">{secondary}</p> : null}
+      {footer ? <p className="text-[11px] text-gray-500 mt-1.5">{footer}</p> : null}
     </div>
   );
 }

@@ -84,6 +84,16 @@ function inferMediaTypeFromHints(msg: any, mediaMimeType?: string): string | und
   return undefined;
 }
 
+function forceMediaTypeByMime(mediaMimeType?: string, fallback?: string): string | undefined {
+  const mime = String(mediaMimeType || '').toLowerCase().split(';')[0].trim();
+  if (!mime) return fallback;
+  if (mime === 'application/pdf') return 'DOCUMENT';
+  if (mime.startsWith('image/')) return 'IMAGE';
+  if (mime.startsWith('video/')) return 'VIDEO';
+  if (mime.startsWith('audio/')) return 'AUDIO';
+  return fallback || 'DOCUMENT';
+}
+
 function detectMimeFromBuffer(buf?: Buffer): string | undefined {
   if (!buf || buf.length < 12) return undefined;
   if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return 'image/jpeg';
@@ -390,7 +400,12 @@ export class WahaWebhookHandler {
 
         // 1) Öncelik: WAHA'nın verdiği indirilebilir media URL (orijinal dosya varsayımı).
         if (wahaStoredUrl) {
-          mediaUrl = await this.downloadAndSaveMedia(String(wahaStoredUrl), mediaMimeType);
+          const downloaded = await this.downloadAndSaveMedia(String(wahaStoredUrl), mediaMimeType);
+          mediaUrl = downloaded?.url;
+          if (downloaded?.effectiveMime) {
+            mediaMimeType = downloaded.effectiveMime;
+          }
+          mediaType = forceMediaTypeByMime(mediaMimeType, mediaType);
           if (mediaUrl) {
             mediaMeta.source = 'waha_media_url';
             mediaMeta.originalMediaUrl = mediaUrl;
@@ -427,7 +442,10 @@ export class WahaWebhookHandler {
                 writeFileSync(filePath, byId.data);
                 mediaUrl = `/uploads/${filename}`;
                 mediaMimeType = effectiveMime;
-                mediaType = mediaType || inferMediaTypeFromHints(msg, mediaMimeType);
+                mediaType = forceMediaTypeByMime(
+                  mediaMimeType,
+                  mediaType || inferMediaTypeFromHints(msg, mediaMimeType),
+                );
                 mediaMeta.source = 'waha_file_by_message_id';
                 mediaMeta.originalMediaUrl = mediaUrl;
                 mediaMeta.originalMimeType = mediaMimeType || null;
@@ -689,18 +707,41 @@ export class WahaWebhookHandler {
       const reaction = payload.payload;
       if (!reaction) return;
 
-      const reactionMsgId = reaction.reaction?.messageId?._serialized
-        || reaction.reaction?.messageId
-        || reaction.msgId?._serialized
-        || reaction.msgId;
+      const reactionMsgId = String(
+        reaction.reaction?.messageId?._serialized ||
+          reaction.reaction?.messageId?.id ||
+          reaction.reaction?.messageId ||
+          reaction.msgId?._serialized ||
+          reaction.msgId?.id ||
+          reaction.msgId ||
+          reaction.key?.id ||
+          reaction.id?._serialized ||
+          reaction.id ||
+          '',
+      ).trim();
 
       if (!reactionMsgId) {
         this.logger.debug('Reaction: messageId bulunamadı');
         return;
       }
 
-      const emoji = reaction.reaction?.text || reaction.text || '';
-      const sender = reaction.from || reaction.participant || '';
+      const emoji = String(
+        reaction.reaction?.text ||
+          reaction.reaction?.emoji ||
+          reaction.reaction?.reaction ||
+          reaction.reaction ||
+          reaction.text ||
+          reaction.emoji ||
+          '',
+      ).trim();
+      const sender = String(
+        reaction.from ||
+          reaction.participant ||
+          reaction.sender?.id ||
+          reaction.sender ||
+          reaction.author ||
+          '',
+      ).trim();
       const senderName = reaction.pushName || reaction._data?.notifyName || sender;
 
       const message = await this.prisma.message.findFirst({
@@ -712,7 +753,7 @@ export class WahaWebhookHandler {
         return;
       }
 
-      const reactions = (message.reactions as any[]) || [];
+      const reactions = Array.isArray(message.reactions) ? (message.reactions as any[]) : [];
       const existingIdx = reactions.findIndex((r: any) => r.sender === sender);
 
       if (!emoji) {
@@ -895,7 +936,7 @@ export class WahaWebhookHandler {
   private async downloadAndSaveMedia(
     url: string,
     mimetype?: string,
-  ): Promise<string | undefined> {
+  ): Promise<{ url: string; effectiveMime?: string } | undefined> {
     try {
       // WAHA kendi medya URL'lerini bazen localhost:3000 olarak gönderir; Docker ağ içinden
       // bu URL bize gelir, WAHA'ya değil. Önce WAHA host'una yeniden yazıyoruz.
@@ -926,7 +967,10 @@ export class WahaWebhookHandler {
       const filePath = join(dir, filename);
       writeFileSync(filePath, buf);
       this.logger.debug(`Downloaded media: ${filename} from ${rewritten}`);
-      return `/uploads/${filename}`;
+      return {
+        url: `/uploads/${filename}`,
+        effectiveMime,
+      };
     } catch (err: any) {
       this.logger.error(`Failed to download media from ${url}: ${err.message}`);
       return undefined;

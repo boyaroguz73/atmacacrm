@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { TaskStatus } from '@prisma/client';
 
@@ -14,7 +14,8 @@ export class TasksService {
     dueAt: Date;
     trigger?: string;
   }) {
-    // Aynı gün aynı kişi için görev kontrolü
+    // Aynı gün aynı kişi için görev kontrolü:
+    // duplicate'te hata fırlatmak yerine mevcut kaydı döndür (idempotent davranış).
     if (data.contactId) {
       const startOfDay = new Date(data.dueAt);
       startOfDay.setHours(0, 0, 0, 0);
@@ -27,9 +28,13 @@ export class TasksService {
           dueAt: { gte: startOfDay, lte: endOfDay },
           status: { not: TaskStatus.CANCELLED },
         },
+        include: {
+          contact: { select: { id: true, name: true, phone: true } },
+          user: { select: { id: true, name: true } },
+        },
       });
       if (existing) {
-        throw new BadRequestException('Bu kişi için bu günde zaten bir görev var');
+        return existing;
       }
     }
 

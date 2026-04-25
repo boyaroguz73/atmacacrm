@@ -122,6 +122,46 @@ export class MessagesService implements OnModuleInit {
     return base ? `${base}/${value.replace(/^\/+/, '')}` : value;
   }
 
+  private extractUrlCandidatesFromRecord(input: unknown): string[] {
+    if (!input || typeof input !== 'object' || Array.isArray(input)) return [];
+    const out: string[] = [];
+    const visited = new Set<unknown>();
+    const urlLikeKey = /(?:^|_)(?:url|link|permalink)(?:$|_)/i;
+
+    const walk = (value: unknown) => {
+      if (!value) return;
+      if (typeof value === 'string') {
+        const v = value.trim();
+        if (v) out.push(v);
+        return;
+      }
+      if (typeof value !== 'object') return;
+      if (visited.has(value)) return;
+      visited.add(value);
+
+      if (Array.isArray(value)) {
+        for (const item of value) walk(item);
+        return;
+      }
+
+      const record = value as Record<string, unknown>;
+      for (const [key, val] of Object.entries(record)) {
+        if (typeof val === 'string' && urlLikeKey.test(key)) {
+          const candidate = val.trim();
+          if (candidate) out.push(candidate);
+        }
+        if (typeof val === 'string' && /^https?:\/\//i.test(val.trim())) {
+          out.push(val.trim());
+        } else if (val && typeof val === 'object') {
+          walk(val);
+        }
+      }
+    };
+
+    walk(input);
+    return out;
+  }
+
   private async resolveStoreBaseUrl(organizationId?: string | null): Promise<string> {
     if (!organizationId) return '';
     const integ = await this.prisma.orgIntegration.findUnique({
@@ -543,6 +583,11 @@ export class MessagesService implements OnModuleInit {
       : `Fiyat${vatLabel}: ${fmtPrice(displayPrice)}${vatSuffix}`;
     // Subproduct/varyant paylaşımında da ana ürün linkini kullanırız.
     // Ürün linki boşsa, varyant metadata'sındaki "main/parent" alanlarından fallback deneriz.
+    const rawProductMeta = (product as any)?.metadata;
+    const productMeta =
+      rawProductMeta && typeof rawProductMeta === 'object' && !Array.isArray(rawProductMeta)
+        ? (rawProductMeta as Record<string, unknown>)
+        : null;
     const variantMeta =
       variant?.metadata && typeof variant.metadata === 'object' && !Array.isArray(variant.metadata)
         ? (variant.metadata as Record<string, unknown>)
@@ -558,10 +603,39 @@ export class MessagesService implements OnModuleInit {
       : '';
     const orgIdForStoreBase = conv.contact.organizationId || conv.session.organizationId || null;
     const storeBase = await this.resolveStoreBaseUrl(orgIdForStoreBase);
-    const siteLinkRaw =
-      ((product.productUrl || '').trim() ||
-        fallbackMainLink ||
-        String(variantMeta?.ProductUrl ?? variantMeta?.productUrl ?? '').trim());
+    const metadataUrlCandidates = [
+      ...this.extractUrlCandidatesFromRecord(productMeta),
+      ...this.extractUrlCandidatesFromRecord(variantMeta),
+    ].map((x) => String(x || '').trim());
+
+    const directVariantUrl = String(
+      variantMeta?.ProductUrl ??
+        variantMeta?.productUrl ??
+        variantMeta?.Url ??
+        variantMeta?.url ??
+        variantMeta?.Link ??
+        variantMeta?.link ??
+        '',
+    ).trim();
+    const directProductUrl = String(
+      productMeta?.ProductUrl ??
+        productMeta?.productUrl ??
+        productMeta?.Url ??
+        productMeta?.url ??
+        productMeta?.Link ??
+        productMeta?.link ??
+        '',
+    ).trim();
+
+    const siteLinkRawCandidates = [
+      (product.productUrl || '').trim(),
+      fallbackMainLink,
+      directVariantUrl,
+      directProductUrl,
+      ...metadataUrlCandidates,
+    ].filter(Boolean);
+
+    const siteLinkRaw = siteLinkRawCandidates.find(Boolean) || '';
     const siteLink = this.ensureAbsoluteHttpUrl(siteLinkRaw, storeBase);
     const caption = [
       effName,
@@ -804,11 +878,6 @@ export class MessagesService implements OnModuleInit {
       if (errMsg.includes('Plus version') || errMsg.includes('not support')) {
         throw new BadRequestException('Tepki gönderme WAHA Plus gerektirir.');
       }
-      if (String(errMsg).includes('Cannot POST /api/reaction')) {
-        throw new BadRequestException(
-          'WAHA reaction endpoint bu sürümde bulunamadı. Backend güncellendi; container yeniden build/restart sonrası tekrar deneyin.',
-        );
-      }
       throw new BadRequestException(errMsg || 'Tepki gönderilemedi');
     }
 
@@ -921,7 +990,6 @@ export class MessagesService implements OnModuleInit {
       body: '👤 Kişi kartı',
       status: MessageStatus.SENT,
       sentById,
-      mediaType: 'DOCUMENT',
       metadata: {
         kind: 'vcard',
         contactName: safeName,
