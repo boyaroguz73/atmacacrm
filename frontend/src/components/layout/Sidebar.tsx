@@ -221,6 +221,15 @@ function writeMenuCache(payload: MenuCachePayload) {
   }
 }
 
+function writeMenuCacheMerged(partial: Partial<MenuCachePayload>) {
+  if (typeof window === 'undefined') return;
+  const prev = readMenuCache() || {};
+  writeMenuCache({
+    ...prev,
+    ...partial,
+  });
+}
+
 export default function Sidebar({
   mobileOpen = false,
   onClose,
@@ -264,43 +273,42 @@ export default function Sidebar({
       .then(({ data }) => {
         if (Array.isArray(data?.allowedKeys)) {
           setAllowedMenuKeys(new Set(data.allowedKeys));
-          setOrderedMenuKeys(data.allowedKeys);
-          writeMenuCache({
-            allowedKeys: data.allowedKeys,
-            orderedKeys: data.allowedKeys,
-            submenuOrder,
-            submenuHidden,
+          setOrderedMenuKeys((prev) => {
+            if (prev?.length) return prev;
+            const cachedOrder = readMenuCache()?.orderedKeys;
+            return cachedOrder?.length ? cachedOrder : data.allowedKeys;
           });
+          writeMenuCacheMerged({ allowedKeys: data.allowedKeys });
         }
       })
-      .catch(() => setAllowedMenuKeys(null));
+      .catch(() => {
+        // Ağ hatasında cache'ten gelen mevcut menü düzenini bozma
+      });
     api
       .get<{ suborder?: Record<string, string[]> }>('/organizations/my/menu-suborder')
       .then(({ data }) => {
         const next = data?.suborder || {};
         setSubmenuOrder(next);
-        writeMenuCache({
-          allowedKeys: orderedMenuKeys || undefined,
-          orderedKeys: orderedMenuKeys || undefined,
+        writeMenuCacheMerged({
           submenuOrder: next,
-          submenuHidden,
         });
       })
-      .catch(() => setSubmenuOrder({}));
+      .catch(() => {
+        // Ağ hatasında cache'ten gelen mevcut menü düzenini bozma
+      });
     api
       .get<{ subHidden?: Record<string, string[]> }>('/organizations/my/menu-sub-hidden')
       .then(({ data }) => {
         const next = data?.subHidden || {};
         setSubmenuHidden(next);
-        writeMenuCache({
-          allowedKeys: orderedMenuKeys || undefined,
-          orderedKeys: orderedMenuKeys || undefined,
-          submenuOrder,
+        writeMenuCacheMerged({
           submenuHidden: next,
         });
       })
-      .catch(() => setSubmenuHidden({}));
-  }, [isSuperAdmin, orderedMenuKeys, submenuOrder, submenuHidden]);
+      .catch(() => {
+        // Ağ hatasında cache'ten gelen mevcut menü düzenini bozma
+      });
+  }, [isSuperAdmin]);
 
   useEffect(() => {
     refreshMenuVisibility();

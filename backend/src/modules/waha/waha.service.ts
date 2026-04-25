@@ -635,6 +635,95 @@ export class WahaService implements OnModuleInit {
     }
   }
 
+  /**
+   * Kişi kartı (vCard) gönderimi.
+   * Motor/sürüm farkları için birden fazla endpoint denenir; hepsi başarısızsa
+   * .vcf dosyası olarak gönderilir (düz metin düşmesini engeller).
+   */
+  async sendContactCard(
+    sessionName: string,
+    chatId: string,
+    contactName: string,
+    contactPhone: string,
+  ): Promise<any> {
+    const digits = String(contactPhone || '').replace(/\D/g, '');
+    if (!digits) throw new BadRequestException('Geçerli kişi telefonu gerekli');
+    const safeName = (contactName || '').trim() || digits;
+    const normalizedChatId = chatId.includes('@') ? chatId : `${chatId}@c.us`;
+    const vcard = [
+      'BEGIN:VCARD',
+      'VERSION:3.0',
+      `FN:${safeName}`,
+      `TEL;TYPE=CELL:${digits}`,
+      'END:VCARD',
+    ].join('\n');
+
+    const attempts: Array<{ path: string; payload: Record<string, unknown> }> = [
+      {
+        path: '/api/sendContact',
+        payload: {
+          session: sessionName,
+          chatId: normalizedChatId,
+          contact: { fullName: safeName, phone: digits, phoneNumber: digits },
+        },
+      },
+      {
+        path: '/api/sendContactVcard',
+        payload: {
+          session: sessionName,
+          chatId: normalizedChatId,
+          contact: { fullName: safeName, phone: digits, vcard },
+        },
+      },
+      {
+        path: '/api/sendVCard',
+        payload: {
+          session: sessionName,
+          chatId: normalizedChatId,
+          displayName: safeName,
+          vcard,
+        },
+      },
+    ];
+
+    let lastError: any = null;
+    for (const a of attempts) {
+      try {
+        const response = await this.http.post(a.path, a.payload);
+        return response.data;
+      } catch (err: any) {
+        lastError = err;
+        const status = Number(err?.response?.status || 0);
+        const body =
+          typeof err?.response?.data === 'string'
+            ? err.response.data
+            : JSON.stringify(err?.response?.data || '');
+        if (status === 404 || body.includes('Cannot POST')) continue;
+      }
+    }
+
+    // Son çare: .vcf dosyası olarak gönder (en azından düzgün kart dosyası düşer).
+    try {
+      const response = await this.http.post('/api/sendFile', {
+        session: sessionName,
+        chatId: normalizedChatId,
+        file: {
+          mimetype: 'text/vcard',
+          data: Buffer.from(vcard, 'utf8').toString('base64'),
+          filename: `${safeName.replace(/[^\w.-]+/g, '_') || 'contact'}.vcf`,
+        },
+        caption: '',
+      });
+      return response.data;
+    } catch (fallbackErr: any) {
+      const detail = fallbackErr?.response?.data
+        ? JSON.stringify(fallbackErr.response.data)
+        : fallbackErr?.message || lastError?.message || 'Bilinmeyen hata';
+      this.logger.error(`Kişi kartı gönderilemedi: ${normalizedChatId} - ${detail}`);
+      throw fallbackErr;
+    }
+  }
+
   async getProfilePicture(
     sessionName: string,
     contactId: string,

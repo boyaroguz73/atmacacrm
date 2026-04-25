@@ -556,7 +556,8 @@ export class MessagesService implements OnModuleInit {
             '',
         ).trim()
       : '';
-    const storeBase = await this.resolveStoreBaseUrl(conv.contact.organizationId);
+    const orgIdForStoreBase = conv.contact.organizationId || conv.session.organizationId || null;
+    const storeBase = await this.resolveStoreBaseUrl(orgIdForStoreBase);
     const siteLinkRaw =
       ((product.productUrl || '').trim() ||
         fallbackMainLink ||
@@ -905,15 +906,12 @@ export class MessagesService implements OnModuleInit {
     const normalizedPhone = String(contactPhone || '').replace(/\D/g, '');
     if (!normalizedPhone) throw new BadRequestException('Geçerli kişi telefonu gerekli');
     const safeName = (contactName || '').trim() || normalizedPhone;
-    const vcard = [
-      'BEGIN:VCARD',
-      'VERSION:3.0',
-      `FN:${safeName}`,
-      `TEL;TYPE=CELL:${normalizedPhone}`,
-      'END:VCARD',
-    ].join('\n');
-
-    const waResponse = await this.callWahaSendText(sessionName, normalizeWhatsappChatId(chatId), vcard);
+    const waResponse = await this.wahaService.sendContactCard(
+      sessionName,
+      normalizeWhatsappChatId(chatId),
+      safeName,
+      normalizedPhone,
+    );
     const waMessageId = this.extractWaMessageId(waResponse);
     const message = await this.persistMessage({
       conversationId,
@@ -928,7 +926,13 @@ export class MessagesService implements OnModuleInit {
         kind: 'vcard',
         contactName: safeName,
         contactPhone: normalizedPhone,
-        vcard,
+        vcard: [
+          'BEGIN:VCARD',
+          'VERSION:3.0',
+          `FN:${safeName}`,
+          `TEL;TYPE=CELL:${normalizedPhone}`,
+          'END:VCARD',
+        ].join('\n'),
       },
     });
 

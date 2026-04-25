@@ -559,7 +559,33 @@ export class WahaWebhookHandler {
       // OTOMATİK YANITLAR (sadece bireysel için, gruplar için değil)
       // ─────────────────────────────────────────────────────────────
       if (!isFromMe && !isGroup) {
-        if (!fullConversation.assignments?.length) {
+        const activeAssignments = Array.isArray(fullConversation.assignments)
+          ? fullConversation.assignments
+          : [];
+        const currentAssigneeId =
+          activeAssignments.length > 0
+            ? String(activeAssignments[0]?.userId || activeAssignments[0]?.user?.id || '')
+            : '';
+
+        // T-Soft sipariş/sepetten gelen kişi için sahip temsilciyi koru (assignment migrate).
+        const latestTsoftOwner = await this.prisma.salesOrder.findFirst({
+          where: {
+            contactId: contact.id,
+            source: 'TSOFT',
+            createdBy: {
+              role: 'AGENT',
+              isActive: true,
+              ...(waSession.organizationId ? { organizationId: waSession.organizationId } : {}),
+            },
+          },
+          orderBy: { createdAt: 'desc' },
+          select: { createdById: true },
+        });
+        const preferredAssigneeId = String(latestTsoftOwner?.createdById || '').trim();
+
+        if (preferredAssigneeId && preferredAssigneeId !== currentAssigneeId) {
+          await this.conversationsService.assign(conversation.id, preferredAssigneeId);
+        } else if (!currentAssigneeId) {
           // Çoklu organizasyon: yalnızca konuşmanın bağlı olduğu organizasyonun
           // aktif AGENT'ları arasından round-robin atama yap.
           await this.conversationsService.autoAssignRoundRobin(

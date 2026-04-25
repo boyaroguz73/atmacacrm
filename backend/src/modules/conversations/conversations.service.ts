@@ -691,6 +691,29 @@ export class ConversationsService {
    * organizasyonun aktif AGENT'ları havuzuna bakılır.
    */
   async autoAssignRoundRobin(conversationId: string, organizationId?: string) {
+    // Öncelik: kişiyle ilişkili son T-Soft siparişinin temsilcisi varsa
+    // konuşma atamasını ona migrate et. Böylece site siparişi/sepeti kime
+    // düştüyse müşteri mesajı da aynı temsilciye gider.
+    const tsoftOwnerOrder = await this.prisma.salesOrder.findFirst({
+      where: {
+        source: 'TSOFT',
+        contact: {
+          conversations: { some: { id: conversationId } },
+          ...(organizationId ? { organizationId } : {}),
+        },
+        createdBy: {
+          role: 'AGENT',
+          isActive: true,
+          ...(organizationId ? { organizationId } : {}),
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+      select: { createdById: true },
+    });
+    if (tsoftOwnerOrder?.createdById) {
+      return this.assign(conversationId, tsoftOwnerOrder.createdById);
+    }
+
     const agentWhere: any = { role: 'AGENT', isActive: true };
     if (organizationId) agentWhere.organizationId = organizationId;
 

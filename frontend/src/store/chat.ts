@@ -369,7 +369,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set((state) => ({ messages: [...state.messages, optimisticMsg] }));
 
     try {
-      const { data } = await api.post('/messages/send-media', params);
+      const { mediaTypeHint: _mediaTypeHint, ...apiPayload } = params;
+      const { data } = await api.post('/messages/send-media', apiPayload);
       set((state) => ({
         messages: state.messages.map((m) =>
           m.id === tempId ? { ...data } : m,
