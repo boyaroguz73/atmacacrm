@@ -729,250 +729,218 @@ export default function OrderDetailPage() {
                   <p className="text-[11px] text-gray-500">Bu durumda kalem düzenlenemez.</p>
                 ) : null}
               </div>
-              <div className="overflow-x-auto rounded-lg border border-gray-100">
-                <table className="w-full text-xs min-w-[920px]">
-                  <thead>
-                    <tr className="bg-gray-50/80 text-left text-[10px] font-semibold text-gray-500 uppercase">
-                      <th className="px-2 py-1.5 w-14">Görsel</th>
-                      <th className="px-2 py-1.5 min-w-[110px]">Ürün</th>
-                      <th className="px-2 py-1.5 min-w-[88px]">Renk/Kumaş</th>
-                      <th className="px-2 py-1.5 min-w-[88px]">Ölçü</th>
-                      <th className="px-2 py-1.5 text-right w-[4.5rem]">Miktar</th>
-                      <th className="px-2 py-1.5 text-right min-w-[78px]">Birim</th>
-                      <th className="px-2 py-1.5 text-center min-w-[80px]">Fiyat tipi</th>
-                      <th className="px-2 py-1.5 text-right min-w-[56px]">KDV</th>
-                      <th className="px-2 py-1.5 text-left">Kaynak</th>
-                      <th className="px-2 py-1.5 text-left">Tedarikçi</th>
-                      <th className="px-2 py-1.5 text-left">Sip. no</th>
-                      <th className="px-2 py-1.5 text-right min-w-[78px]">Toplam</th>
-                      {canEditOrderLines ? <th className="px-2 py-1.5 w-[4.5rem]">İşlem</th> : null}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {order.items?.length ? (
-                      order.items.map((item) => {
-                        const vatAmt = lineVatAmount(item);
-                        const d = lineDrafts[item.id];
-                        const editable = canEditOrderLines && d;
-                        const draftVat = editable ? draftLineVatAmount(d) : vatAmt;
-                        const draftLineTotal = editable ? draftLineGross(d) : item.lineTotal;
-                        return (
-                          <tr key={item.id} className="border-t border-gray-50 align-top odd:bg-gray-50/30 hover:bg-indigo-50/20 transition-colors">
-                            <td className="px-1.5 py-1 align-middle w-10">
-                              <div className="w-9 h-9 rounded border border-gray-100 bg-gray-50 overflow-hidden">
-                                {item.product?.imageUrl ? (
-                                  <img src={rewriteMediaUrlForClient(item.product.imageUrl)} alt="" className="w-full h-full object-cover" />
-                                ) : (
-                                  <span className="flex w-full h-full items-center justify-center text-[10px] text-gray-300">—</span>
-                                )}
-                              </div>
-                            </td>
-                            <td className="px-2 py-1.5">
-                              <div className="space-y-1">
-                                {editable ? (
-                                  <input
-                                    value={d.name}
-                                    onChange={(e) => updateLineDraft(item.id, { name: e.target.value })}
-                                    className="w-full px-2 py-1.5 rounded border border-gray-200 text-sm"
-                                  />
-                                ) : (
-                                  <span className="font-medium text-gray-900">{item.name}</span>
-                                )}
-                                {item.productVariant ? (
-                                  <p className="text-[10px] text-indigo-700">
-                                    Varyant: {item.productVariant.name}
-                                    {item.productVariant.sku ? ` · ${item.productVariant.sku}` : ''}
-                                  </p>
-                                ) : null}
-                                {item.product ? (
-                                  <p className="text-[10px] text-gray-400 font-mono">Ürün SKU: {item.product.sku}</p>
-                                ) : null}
-                              </div>
-                            </td>
-                            <td className="px-2 py-1.5">
-                              {editable ? (
-                                <textarea
-                                  value={d.colorFabricInfo}
-                                  onChange={(e) => updateLineDraft(item.id, { colorFabricInfo: e.target.value })}
-                                  rows={2}
-                                  className="w-full px-2 py-1.5 rounded border border-gray-200 text-xs"
-                                  placeholder="Renk/kumaş"
-                                />
+              <div className="space-y-2">
+                {order.items?.length ? (
+                  order.items.map((item) => {
+                    const vatAmt = lineVatAmount(item);
+                    const d = lineDrafts[item.id];
+                    const editable = canEditOrderLines && d;
+                    const draftVat = editable ? draftLineVatAmount(d) : vatAmt;
+                    const draftLineTotal = editable ? draftLineGross(d) : item.lineTotal;
+                    const saving = itemSavingId === item.id;
+                    return (
+                      <div
+                        key={item.id}
+                        className="rounded-lg border border-gray-100 bg-white hover:border-indigo-100 hover:shadow-sm transition-all overflow-hidden"
+                      >
+                        {/* Üst: görsel + isim + renk + ölçü + toplam */}
+                        <div className="grid grid-cols-12 gap-2 p-2 items-start">
+                          <div className="col-span-1 flex justify-center">
+                            <div className="w-12 h-12 rounded-md border border-gray-100 bg-gray-50 overflow-hidden shrink-0">
+                              {item.product?.imageUrl ? (
+                                <img src={rewriteMediaUrlForClient(item.product.imageUrl)} alt="" className="w-full h-full object-cover" />
                               ) : (
-                                <span className="text-sm text-gray-700">{item.colorFabricInfo?.trim() || '—'}</span>
+                                <span className="flex w-full h-full items-center justify-center text-[10px] text-gray-300">—</span>
                               )}
-                            </td>
-                            <td className="px-2 py-1.5">
-                              {editable ? (
-                                <textarea
-                                  value={d.measurementInfo}
-                                  onChange={(e) => updateLineDraft(item.id, { measurementInfo: e.target.value })}
-                                  rows={2}
-                                  className="w-full px-2 py-1.5 rounded border border-gray-200 text-xs"
-                                  placeholder="Ölçü"
-                                />
-                              ) : (
-                                <span className="text-sm text-gray-700 whitespace-pre-wrap max-w-[200px]">{item.measurementInfo?.trim() || '—'}</span>
-                              )}
-                            </td>
-                            <td className="px-2 py-1.5 text-right">
-                              {editable ? (
-                                <input
-                                  type="number"
-                                  min={0.01}
-                                  step={0.01}
-                                  value={d.quantity}
-                                  onChange={(e) =>
-                                    updateLineDraft(item.id, { quantity: parseFloat(e.target.value) || 0 })
-                                  }
-                                  className="w-full min-w-[4.5rem] px-2 py-1.5 rounded border border-gray-200 text-sm text-right tabular-nums"
-                                />
-                              ) : (
-                                item.quantity
-                              )}
-                            </td>
-                            <td className="px-2 py-1.5 text-right">
-                              {editable ? (
-                                <input
-                                  type="number"
-                                  min={0}
-                                  step={0.01}
-                                  value={d.unitPrice}
-                                  onChange={(e) =>
-                                    updateLineDraft(item.id, { unitPrice: parseFloat(e.target.value) || 0 })
-                                  }
-                                  className="w-full min-w-[5.5rem] px-2 py-1.5 rounded border border-gray-200 text-sm text-right tabular-nums"
-                                />
-                              ) : (
-                                <div>
-                                  <div>{formatMoney(item.unitPrice, order.currency)}</div>
-                                  <div className="text-[10px] text-gray-400">
-                                    {item.priceIncludesVat !== false ? 'KDV dahil' : 'KDV hariç'}
-                                  </div>
-                                </div>
-                              )}
-                            </td>
-                            <td className="px-2 py-1.5 text-center">
-                              {editable ? (
-                                <select
-                                  value={d.priceIncludesVat ? 'incl' : 'excl'}
-                                  onChange={(e) =>
-                                    updateLineDraft(item.id, {
-                                      priceIncludesVat: e.target.value === 'incl',
-                                    })
-                                  }
-                                  className="px-2 py-1.5 rounded border border-gray-200 text-xs"
-                                >
-                                  <option value="incl">KDV dahil</option>
-                                  <option value="excl">KDV hariç</option>
-                                </select>
-                              ) : (
-                                <span
-                                  className={`inline-flex text-[10px] font-semibold px-2 py-0.5 rounded-full ${
-                                    item.priceIncludesVat !== false
-                                      ? 'bg-green-50 text-green-700'
-                                      : 'bg-blue-50 text-blue-700'
-                                  }`}
-                                >
-                                  {item.priceIncludesVat !== false ? 'KDV dahil' : 'KDV hariç'}
+                            </div>
+                          </div>
+                          <div className="col-span-5 min-w-0">
+                            <label className="text-[9px] font-semibold text-gray-400 uppercase tracking-wide block mb-0.5">Ürün</label>
+                            {editable ? (
+                              <input
+                                value={d.name}
+                                onChange={(e) => updateLineDraft(item.id, { name: e.target.value })}
+                                className="w-full px-2 py-1 rounded border border-gray-200 text-xs font-medium"
+                              />
+                            ) : (
+                              <p className="text-xs font-semibold text-gray-900 truncate">{item.name}</p>
+                            )}
+                            <div className="flex flex-wrap gap-x-2 gap-y-0.5 mt-0.5">
+                              {item.productVariant ? (
+                                <span className="text-[10px] text-indigo-700 truncate">
+                                  {item.productVariant.name}{item.productVariant.sku ? ` · ${item.productVariant.sku}` : ''}
                                 </span>
-                              )}
-                            </td>
-                            <td className="px-2 py-1.5 text-right">
-                              {editable ? (
-                                <input
-                                  type="number"
-                                  min={0}
-                                  step={1}
-                                  value={d.vatRate}
-                                  onChange={(e) =>
-                                    updateLineDraft(item.id, { vatRate: parseFloat(e.target.value) || 0 })
-                                  }
-                                  className="w-14 px-2 py-1.5 rounded border border-gray-200 text-sm text-right"
-                                />
-                              ) : (
-                                <span className="block">{item.vatRate}%</span>
-                              )}
-                              <span className="text-gray-400 text-xs block">
-                                ({formatMoney(draftVat, order.currency)})
-                              </span>
-                            </td>
-                            <td className="px-2 py-1.5">
-                              <label className="inline-flex items-center gap-2 text-xs">
-                                <input
-                                  type="checkbox"
-                                  checked={!!item.isFromStock}
-                                  disabled={!canEditOrderLines || itemSavingId === item.id}
-                                  onChange={(e) =>
-                                    void updateItemSource(item.id, {
-                                      isFromStock: e.target.checked,
-                                      ...(e.target.checked
-                                        ? { supplierId: null, supplierOrderNo: null }
-                                        : {}),
-                                    })
-                                  }
-                                />
-                                Stoktan
-                              </label>
-                            </td>
-                            <td className="px-2 py-1.5">
+                              ) : null}
+                              {item.product ? (
+                                <span className="text-[10px] text-gray-400 font-mono">SKU: {item.product.sku}</span>
+                              ) : null}
+                            </div>
+                          </div>
+                          <div className="col-span-3 min-w-0">
+                            <label className="text-[9px] font-semibold text-gray-400 uppercase tracking-wide block mb-0.5">Renk / Kumaş</label>
+                            {editable ? (
+                              <textarea
+                                value={d.colorFabricInfo}
+                                onChange={(e) => updateLineDraft(item.id, { colorFabricInfo: e.target.value })}
+                                rows={2}
+                                className="w-full px-2 py-1 rounded border border-gray-200 text-[11px] resize-none"
+                                placeholder="—"
+                              />
+                            ) : (
+                              <p className="text-[11px] text-gray-700 whitespace-pre-wrap leading-snug">{item.colorFabricInfo?.trim() || '—'}</p>
+                            )}
+                          </div>
+                          <div className="col-span-3 min-w-0">
+                            <label className="text-[9px] font-semibold text-gray-400 uppercase tracking-wide block mb-0.5">Ölçü</label>
+                            {editable ? (
+                              <textarea
+                                value={d.measurementInfo}
+                                onChange={(e) => updateLineDraft(item.id, { measurementInfo: e.target.value })}
+                                rows={2}
+                                className="w-full px-2 py-1 rounded border border-gray-200 text-[11px] resize-none"
+                                placeholder="—"
+                              />
+                            ) : (
+                              <p className="text-[11px] text-gray-700 whitespace-pre-wrap leading-snug">{item.measurementInfo?.trim() || '—'}</p>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Orta: miktar / birim / fiyat tipi / KDV / toplam / kaydet */}
+                        <div className="grid grid-cols-12 gap-2 px-2 pb-2 items-end border-t border-gray-50 pt-2">
+                          <div className="col-span-1">
+                            <label className="text-[9px] font-semibold text-gray-400 uppercase block mb-0.5">Miktar</label>
+                            {editable ? (
+                              <input
+                                type="number"
+                                min={0.01}
+                                step={0.01}
+                                value={d.quantity}
+                                onChange={(e) => updateLineDraft(item.id, { quantity: parseFloat(e.target.value) || 0 })}
+                                className="w-full px-1.5 py-1 rounded border border-gray-200 text-xs text-right tabular-nums"
+                              />
+                            ) : (
+                              <p className="text-xs font-medium text-gray-900 text-right tabular-nums">{item.quantity}</p>
+                            )}
+                          </div>
+                          <div className="col-span-2">
+                            <label className="text-[9px] font-semibold text-gray-400 uppercase block mb-0.5">Birim</label>
+                            {editable ? (
+                              <input
+                                type="number"
+                                min={0}
+                                step={0.01}
+                                value={d.unitPrice}
+                                onChange={(e) => updateLineDraft(item.id, { unitPrice: parseFloat(e.target.value) || 0 })}
+                                className="w-full px-1.5 py-1 rounded border border-gray-200 text-xs text-right tabular-nums"
+                              />
+                            ) : (
+                              <p className="text-xs font-medium text-gray-900 text-right tabular-nums">{formatMoney(item.unitPrice, order.currency)}</p>
+                            )}
+                          </div>
+                          <div className="col-span-2">
+                            <label className="text-[9px] font-semibold text-gray-400 uppercase block mb-0.5">Tip</label>
+                            {editable ? (
                               <select
-                                value={item.supplierId || ''}
-                                disabled={!!item.isFromStock || itemSavingId === item.id || !canEditOrderLines}
+                                value={d.priceIncludesVat ? 'incl' : 'excl'}
+                                onChange={(e) => updateLineDraft(item.id, { priceIncludesVat: e.target.value === 'incl' })}
+                                className="w-full px-1.5 py-1 rounded border border-gray-200 text-[11px]"
+                              >
+                                <option value="incl">KDV dahil</option>
+                                <option value="excl">KDV hariç</option>
+                              </select>
+                            ) : (
+                              <span className={`inline-flex text-[10px] font-semibold px-2 py-0.5 rounded-full ${item.priceIncludesVat !== false ? 'bg-green-50 text-green-700' : 'bg-blue-50 text-blue-700'}`}>
+                                {item.priceIncludesVat !== false ? 'KDV dahil' : 'KDV hariç'}
+                              </span>
+                            )}
+                          </div>
+                          <div className="col-span-2">
+                            <label className="text-[9px] font-semibold text-gray-400 uppercase block mb-0.5">KDV %</label>
+                            {editable ? (
+                              <input
+                                type="number"
+                                min={0}
+                                step={1}
+                                value={d.vatRate}
+                                onChange={(e) => updateLineDraft(item.id, { vatRate: parseFloat(e.target.value) || 0 })}
+                                className="w-full px-1.5 py-1 rounded border border-gray-200 text-xs text-right tabular-nums"
+                              />
+                            ) : (
+                              <p className="text-xs font-medium text-gray-900 text-right tabular-nums">{item.vatRate}%</p>
+                            )}
+                            <p className="text-[9px] text-gray-400 text-right tabular-nums mt-0.5">{formatMoney(draftVat, order.currency)}</p>
+                          </div>
+                          <div className="col-span-3">
+                            <label className="text-[9px] font-semibold text-gray-400 uppercase block mb-0.5">Toplam</label>
+                            <p className="text-sm font-bold text-whatsapp text-right tabular-nums">{formatMoney(editable ? draftLineTotal : item.lineTotal, order.currency)}</p>
+                          </div>
+                          <div className="col-span-2 flex justify-end">
+                            {canEditOrderLines ? (
+                              <button
+                                type="button"
+                                disabled={saving || !d}
+                                onClick={() => void saveOrderLine(item.id)}
+                                className="w-full px-2 py-1.5 rounded-md bg-whatsapp text-white text-xs font-semibold hover:bg-green-600 disabled:opacity-50 inline-flex items-center justify-center gap-1"
+                              >
+                                {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Kaydet'}
+                              </button>
+                            ) : null}
+                          </div>
+                        </div>
+
+                        {/* Alt: kaynak / tedarikçi / sip no */}
+                        <div className="grid grid-cols-12 gap-2 px-2 pb-2 items-center border-t border-gray-50 pt-2 bg-gray-50/40">
+                          <div className="col-span-2">
+                            <label className="inline-flex items-center gap-1.5 text-[11px] font-medium text-gray-700">
+                              <input
+                                type="checkbox"
+                                checked={!!item.isFromStock}
+                                disabled={!canEditOrderLines || saving}
                                 onChange={(e) =>
                                   void updateItemSource(item.id, {
-                                    supplierId: e.target.value || null,
+                                    isFromStock: e.target.checked,
+                                    ...(e.target.checked ? { supplierId: null, supplierOrderNo: null } : {}),
                                   })
                                 }
-                                className="px-2 py-1.5 rounded border border-gray-200 text-xs min-w-[150px] disabled:bg-gray-100"
-                              >
-                                <option value="">Tedarikçi seç</option>
-                                {suppliers.map((s) => (
-                                  <option key={s.id} value={s.id}>{s.name}</option>
-                                ))}
-                              </select>
-                            </td>
-                            <td className="px-2 py-1.5">
-                              <input
-                                key={item.supplierOrderNo ?? 'empty'}
-                                defaultValue={item.supplierOrderNo || ''}
-                                disabled={!!item.isFromStock || itemSavingId === item.id || !canEditOrderLines}
-                                onBlur={(e) =>
-                                  void updateItemSource(item.id, {
-                                    supplierOrderNo: e.target.value || null,
-                                  })
-                                }
-                                placeholder="Sipariş no"
-                                className="px-2 py-1.5 rounded border border-gray-200 text-xs min-w-[140px] disabled:bg-gray-100"
+                                className="accent-whatsapp"
                               />
-                            </td>
-                            <td className="px-2 py-1.5 text-right font-medium tabular-nums">
-                              {formatMoney(editable ? draftLineTotal : item.lineTotal, order.currency)}
-                            </td>
-                            {canEditOrderLines ? (
-                              <td className="px-2 py-1.5">
-                                <button
-                                  type="button"
-                                  disabled={itemSavingId === item.id || !d}
-                                  onClick={() => void saveOrderLine(item.id)}
-                                  className="px-2.5 py-1.5 rounded-lg bg-whatsapp text-white text-xs font-medium hover:bg-green-600 disabled:opacity-50"
-                                >
-                                  {itemSavingId === item.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Kaydet'}
-                                </button>
-                              </td>
-                            ) : null}
-                          </tr>
-                        );
-                      })
-                    ) : (
-                      <tr>
-                        <td colSpan={canEditOrderLines ? 13 : 12} className="px-3 py-8 text-center text-gray-400 text-sm">
-                          Kalem yok
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
+                              <Store className="w-3 h-3 text-gray-400" />
+                              Stoktan
+                            </label>
+                          </div>
+                          <div className="col-span-5">
+                            <select
+                              value={item.supplierId || ''}
+                              disabled={!!item.isFromStock || saving || !canEditOrderLines}
+                              onChange={(e) => void updateItemSource(item.id, { supplierId: e.target.value || null })}
+                              className="w-full px-2 py-1 rounded border border-gray-200 text-[11px] disabled:bg-gray-100 disabled:text-gray-400"
+                            >
+                              <option value="">Tedarikçi seç</option>
+                              {suppliers.map((s) => (
+                                <option key={s.id} value={s.id}>{s.name}</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="col-span-5">
+                            <input
+                              key={item.supplierOrderNo ?? 'empty'}
+                              defaultValue={item.supplierOrderNo || ''}
+                              disabled={!!item.isFromStock || saving || !canEditOrderLines}
+                              onBlur={(e) => void updateItemSource(item.id, { supplierOrderNo: e.target.value || null })}
+                              placeholder="Tedarikçi sipariş no"
+                              className="w-full px-2 py-1 rounded border border-gray-200 text-[11px] disabled:bg-gray-100"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <div className="rounded-lg border border-gray-100 px-3 py-8 text-center text-gray-400 text-sm">
+                    Kalem yok
+                  </div>
+                )}
               </div>
             </div>
 
