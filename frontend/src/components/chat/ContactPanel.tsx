@@ -22,8 +22,8 @@ import {
   Pencil,
   MessageSquare,
   Send,
-  Store,
-  Loader2,
+  Check,
+  Trash2,
   ClipboardList,
   History,
   FileText,
@@ -35,7 +35,6 @@ import { LEAD_STATUSES, LEAD_STATUS_LABELS, LEAD_STATUS_COLORS, SOURCES } from '
 import { TURKEY_CITIES, CITY_DISTRICTS } from '@/lib/turkish-locations';
 import ContactAvatar from '@/components/ui/ContactAvatar';
 import EcommerceCustomerBadge from '@/components/ui/EcommerceCustomerBadge';
-import { getEcommerceCustomerLabel } from '@/lib/ecommerceBadge';
 import type { Contact } from '@/store/chat';
 
 interface ContactPanelProps {
@@ -48,6 +47,20 @@ interface ContactPanelProps {
   isGroup?: boolean;
   groupName?: string;
   groupParticipantCount?: number;
+}
+
+const LEAD_FLOW_ORDER = ['NEW', 'CONTACTED', 'INTERESTED', 'OFFER_SENT', 'WON', 'LOST'] as const;
+
+function isLeadStatusTransitionAllowed(from: string, to: string): boolean {
+  if (!from || !to) return false;
+  if (from === to) return true;
+  const isClosed = from === 'WON' || from === 'LOST';
+  if (isClosed) return to === 'NEW' || to === 'CONTACTED';
+  if (to === 'WON' || to === 'LOST') return true;
+  const fi = LEAD_FLOW_ORDER.indexOf(from as (typeof LEAD_FLOW_ORDER)[number]);
+  const ti = LEAD_FLOW_ORDER.indexOf(to as (typeof LEAD_FLOW_ORDER)[number]);
+  if (fi < 0 || ti < 0) return false;
+  return ti >= fi;
 }
 
 function getMetaText(metadata: unknown, key: string): string {
@@ -94,29 +107,15 @@ export default function ContactPanel({
   const [notes, setNotes] = useState<any[]>([]);
   const [noteText, setNoteText] = useState('');
   const [assignmentHistory, setAssignmentHistory] = useState<any[]>([]);
+  const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
+  const [editingNoteText, setEditingNoteText] = useState('');
+  const [noteActionBusyId, setNoteActionBusyId] = useState<string | null>(null);
 
   const [openSections, setOpenSections] = useState({
     info: true,
     lead: true,
     actions: true,
     notes: true,
-  });
-
-  const [ecommerceStatus, setEcommerceStatus] = useState<{
-    canPushCustomer?: boolean;
-  } | null>(null);
-  const [tsoftOpen, setTsoftOpen] = useState(false);
-  const [tsoftSubmitting, setTsoftSubmitting] = useState(false);
-  const [tsoftForm, setTsoftForm] = useState({
-    name: '',
-    surname: '',
-    email: '',
-    password: '',
-    address: '',
-    countryCode: 'TR',
-    cityCode: '',
-    districtCode: '',
-    company: '',
   });
 
   const toggleSection = (key: keyof typeof openSections) => {
@@ -164,62 +163,10 @@ export default function ContactPanel({
     setContact((prev: Contact) => ({ ...prev, ...initialContact }));
   }, [initialContact.id, initialContact.phone, initialContact.name, initialContact.surname, initialContact.avatarUrl]);
 
-  useEffect(() => {
-    api.get('/ecommerce/status').then(({ data }) => setEcommerceStatus(data)).catch(() => setEcommerceStatus(null));
-  }, []);
-
   const availableDistricts = useMemo(() => {
     return CITY_DISTRICTS[editData.city] || [];
   }, [editData.city]);
-
-  const openTsoftModal = () => {
-    setTsoftForm({
-      name: contact.name || '',
-      surname: contact.surname || '',
-      email: contact.email || '',
-      password: '',
-      address: '',
-      countryCode: 'TR',
-      cityCode: contact.city || '',
-      districtCode: '',
-      company: contact.company || '',
-    });
-    setTsoftOpen(true);
-  };
-
-  const submitTsoftCustomer = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!tsoftForm.email.trim() || tsoftForm.password.length < 8) {
-      toast.error('E-posta ve en az 8 karakter şifre gerekli');
-      return;
-    }
-    setTsoftSubmitting(true);
-    try {
-      await api.post(`/ecommerce/tsoft/contacts/${contact.id}/customer`, {
-        email: tsoftForm.email.trim(),
-        password: tsoftForm.password,
-        name: tsoftForm.name.trim() || 'Müşteri',
-        surname: tsoftForm.surname.trim() || '—',
-        address: tsoftForm.address.trim() || undefined,
-        countryCode: tsoftForm.countryCode.trim() || 'TR',
-        cityCode: tsoftForm.cityCode.trim() || undefined,
-        districtCode: tsoftForm.districtCode.trim() || undefined,
-        company: tsoftForm.company.trim() || undefined,
-      });
-      toast.success('Site müşterisi oluşturuldu');
-      setTsoftOpen(false);
-      fetchContact();
-    } catch (err: any) {
-      toast.error(err.response?.data?.message || 'İşlem başarısız');
-    } finally {
-      setTsoftSubmitting(false);
-    }
-  };
-
-  const ecommerceLinked = !!getEcommerceCustomerLabel(contact.metadata);
   const secondaryPhoneLine = getContactSecondaryPhoneLine(contact);
-  const canTsoftCreate =
-    ecommerceStatus?.canPushCustomer && !ecommerceLinked && (userRole === 'ADMIN' || userRole === 'AGENT');
 
   const startEdit = () => {
     setEditData({
@@ -271,6 +218,10 @@ export default function ContactPanel({
 
   const updateLeadStatus = async (status: string) => {
     if (!lead) return;
+    if (!isLeadStatusTransitionAllowed(String(lead.status), status)) {
+      toast.error('Bu durum geçişine izin verilmiyor');
+      return;
+    }
     let lossReason: string | undefined;
     if (status === 'LOST') {
       const r = window.prompt('Kayıp nedeni (zorunlu, en az 2 karakter):');
@@ -300,6 +251,49 @@ export default function ContactPanel({
       setNoteText('');
       fetchNotes();
     } catch { toast.error('Not eklenemedi'); }
+  };
+
+  const startEditNote = (note: any) => {
+    setEditingNoteId(note.id);
+    setEditingNoteText(String(note.body || ''));
+  };
+
+  const saveEditNote = async (noteId: string) => {
+    const nextBody = editingNoteText.trim();
+    if (!nextBody) {
+      toast.error('Not boş olamaz');
+      return;
+    }
+    setNoteActionBusyId(noteId);
+    try {
+      await api.patch(`/conversations/${conversationId}/notes/${noteId}`, { body: nextBody });
+      toast.success('Not güncellendi');
+      setEditingNoteId(null);
+      setEditingNoteText('');
+      fetchNotes();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'Not güncellenemedi');
+    } finally {
+      setNoteActionBusyId(null);
+    }
+  };
+
+  const deleteNote = async (noteId: string) => {
+    if (!window.confirm('Bu dahili not silinsin mi?')) return;
+    setNoteActionBusyId(noteId);
+    try {
+      await api.delete(`/conversations/${conversationId}/notes/${noteId}`);
+      toast.success('Not silindi');
+      if (editingNoteId === noteId) {
+        setEditingNoteId(null);
+        setEditingNoteText('');
+      }
+      fetchNotes();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'Not silinemedi');
+    } finally {
+      setNoteActionBusyId(null);
+    }
   };
 
   const inputCls = 'w-full px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 focus:border-blue-400 bg-white transition';
@@ -553,17 +547,6 @@ export default function ContactPanel({
                   </div>
                 )}
 
-                {/* Site müşteri oluştur */}
-                {canTsoftCreate && (
-                  <button
-                    type="button"
-                    onClick={openTsoftModal}
-                    className="inline-flex items-center gap-1.5 px-2.5 py-1.5 mt-1 bg-gray-100 text-gray-700 rounded-lg text-[11px] font-medium border border-gray-200 hover:bg-gray-200 transition"
-                  >
-                    <Store className="w-3 h-3" />
-                    Siteye müşteri oluştur
-                  </button>
-                )}
               </div>
             </div>
           )}
@@ -591,7 +574,7 @@ export default function ContactPanel({
                       onChange={(e) => updateLeadStatus(e.target.value)}
                       className={`w-full px-2.5 py-2 border rounded-lg text-xs font-medium focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white transition ${LEAD_STATUS_COLORS[lead.status]?.replace('bg-', 'border-').split(' ')[0] || 'border-gray-200'}`}
                     >
-                      {LEAD_STATUSES.map((s) => (
+                      {LEAD_STATUSES.filter((s) => isLeadStatusTransitionAllowed(String(lead.status), s.value)).map((s) => (
                         <option key={s.value} value={s.value}>{s.label}</option>
                       ))}
                     </select>
@@ -708,7 +691,61 @@ export default function ContactPanel({
                             {new Date(note.createdAt).toLocaleString('tr-TR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
                           </span>
                         </div>
-                        <p className="text-xs text-gray-700">{note.body}</p>
+                        {editingNoteId === note.id ? (
+                          <div className="space-y-2">
+                            <textarea
+                              value={editingNoteText}
+                              onChange={(e) => setEditingNoteText(e.target.value)}
+                              rows={2}
+                              className="w-full px-2 py-1.5 border border-yellow-200 rounded text-xs focus:outline-none focus:ring-1 focus:ring-yellow-400 resize-none"
+                            />
+                            <div className="flex items-center justify-end gap-1">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingNoteId(null);
+                                  setEditingNoteText('');
+                                }}
+                                className="p-1 text-gray-500 hover:text-gray-700 rounded"
+                                title="Vazgeç"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                disabled={noteActionBusyId === note.id}
+                                onClick={() => void saveEditNote(note.id)}
+                                className="p-1 text-green-600 hover:text-green-700 rounded disabled:opacity-50"
+                                title="Kaydet"
+                              >
+                                <Check className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <>
+                            <p className="text-xs text-gray-700">{note.body}</p>
+                            <div className="mt-1.5 flex items-center justify-end gap-1">
+                              <button
+                                type="button"
+                                onClick={() => startEditNote(note)}
+                                className="p-1 text-yellow-700 hover:text-yellow-900 rounded"
+                                title="Düzenle"
+                              >
+                                <Pencil className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                disabled={noteActionBusyId === note.id}
+                                onClick={() => void deleteNote(note.id)}
+                                className="p-1 text-red-600 hover:text-red-700 rounded disabled:opacity-50"
+                                title="Sil"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </>
+                        )}
                       </div>
                     ))
                   )}
@@ -731,44 +768,6 @@ export default function ContactPanel({
         )}
       </div>
 
-      {/* T-Soft Modal */}
-      {tsoftOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50">
-          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto p-5 space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-bold text-gray-900">Site müşterisi oluştur</h3>
-              <button type="button" onClick={() => setTsoftOpen(false)} className="p-1 text-gray-400 hover:text-gray-600 rounded-lg">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            <p className="text-xs text-gray-500">
-              Cep numarası WhatsApp kaydından alınır. E-posta ve şifre zorunludur.
-            </p>
-            <form onSubmit={submitTsoftCustomer} className="space-y-3">
-              <div className="grid grid-cols-2 gap-2">
-                <input required placeholder="Ad" value={tsoftForm.name} onChange={(e) => setTsoftForm((f) => ({ ...f, name: e.target.value }))} className="px-3 py-2 border border-gray-200 rounded-lg text-sm" />
-                <input required placeholder="Soyad" value={tsoftForm.surname} onChange={(e) => setTsoftForm((f) => ({ ...f, surname: e.target.value }))} className="px-3 py-2 border border-gray-200 rounded-lg text-sm" />
-              </div>
-              <input type="email" required placeholder="E-posta" value={tsoftForm.email} onChange={(e) => setTsoftForm((f) => ({ ...f, email: e.target.value }))} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
-              <input type="password" required minLength={8} placeholder="Şifre (min. 8 karakter)" value={tsoftForm.password} onChange={(e) => setTsoftForm((f) => ({ ...f, password: e.target.value }))} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
-              <textarea placeholder="Adres" value={tsoftForm.address} onChange={(e) => setTsoftForm((f) => ({ ...f, address: e.target.value }))} rows={2} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm resize-none" />
-              <div className="grid grid-cols-3 gap-2">
-                <input placeholder="Ülke (TR)" value={tsoftForm.countryCode} onChange={(e) => setTsoftForm((f) => ({ ...f, countryCode: e.target.value }))} className="px-3 py-2 border border-gray-200 rounded-lg text-sm" />
-                <input placeholder="İl plaka" value={tsoftForm.cityCode} onChange={(e) => setTsoftForm((f) => ({ ...f, cityCode: e.target.value }))} className="px-3 py-2 border border-gray-200 rounded-lg text-sm" />
-                <input placeholder="İlçe kodu" value={tsoftForm.districtCode} onChange={(e) => setTsoftForm((f) => ({ ...f, districtCode: e.target.value }))} className="px-3 py-2 border border-gray-200 rounded-lg text-sm" />
-              </div>
-              <input placeholder="Şirket (opsiyonel)" value={tsoftForm.company} onChange={(e) => setTsoftForm((f) => ({ ...f, company: e.target.value }))} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
-              <div className="flex gap-2 pt-2">
-                <button type="button" onClick={() => setTsoftOpen(false)} className="flex-1 py-2.5 text-sm font-medium text-gray-600 border border-gray-200 rounded-xl hover:bg-gray-50">Vazgeç</button>
-                <button type="submit" disabled={tsoftSubmitting} className="flex-1 py-2.5 text-sm font-medium text-white bg-gray-900 rounded-xl hover:bg-gray-800 disabled:opacity-50 flex items-center justify-center gap-2">
-                  {tsoftSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
-                  Oluştur
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

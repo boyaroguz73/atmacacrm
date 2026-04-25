@@ -10,6 +10,7 @@ import {
   Logger,
   Req,
   ForbiddenException,
+  NotFoundException,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import {
@@ -281,14 +282,33 @@ export class ConversationsController {
     if (!hasMedia) return {};
 
     const mediaMimeType = msg.mimetype || msg._data?.mimetype;
+    const lowerMime = String(mediaMimeType || '').toLowerCase();
+    const typeHints = [
+      msg.type,
+      msg._data?.type,
+      msg.media?.type,
+      msg._data?.mediaType,
+    ]
+      .map((v) => String(v || '').toLowerCase())
+      .filter(Boolean);
+    const fileLike = [
+      msg.body,
+      msg._data?.filename,
+      msg.media?.filename,
+      msg.mediaUrl,
+      msg._data?.mediaUrl,
+      mediaMimeType,
+    ]
+      .map((v) => String(v || '').toLowerCase())
+      .join(' ');
     let mediaType: string | undefined;
 
-    if (mediaMimeType?.startsWith('image/')) mediaType = 'IMAGE';
-    else if (mediaMimeType?.startsWith('video/')) mediaType = 'VIDEO';
-    else if (mediaMimeType?.startsWith('audio/')) mediaType = 'AUDIO';
-    else if (msg.type === 'image' || msg.type === 'sticker') mediaType = 'IMAGE';
-    else if (msg.type === 'video') mediaType = 'VIDEO';
-    else if (msg.type === 'audio' || msg.type === 'ptt') mediaType = 'AUDIO';
+    if (lowerMime.startsWith('image/') || typeHints.some((t) => t.includes('image') || t.includes('sticker'))) mediaType = 'IMAGE';
+    else if (lowerMime.startsWith('video/') || typeHints.some((t) => t.includes('video'))) mediaType = 'VIDEO';
+    else if (lowerMime.startsWith('audio/') || typeHints.some((t) => t.includes('audio') || t.includes('ptt') || t.includes('voice'))) mediaType = 'AUDIO';
+    else if (/\.(jpe?g|png|gif|webp|bmp|heic|heif)\b/.test(fileLike)) mediaType = 'IMAGE';
+    else if (/\.(mp4|mov|m4v|webm|3gp)\b/.test(fileLike)) mediaType = 'VIDEO';
+    else if (/\.(ogg|opus|mp3|m4a|aac|wav)\b/.test(fileLike)) mediaType = 'AUDIO';
     else mediaType = 'DOCUMENT';
 
     return { mediaType, mediaMimeType };
@@ -966,5 +986,47 @@ export class ConversationsController {
     const conversation = await this.conversationsService.findById(id);
     assertConversationBelongsToOrg(conversation, user);
     return this.conversationsService.getInternalNotes(id);
+  }
+
+  @Patch(':id/notes/:noteId')
+  async updateNote(
+    @Param('id') id: string,
+    @Param('noteId') noteId: string,
+    @Body('body') body: string,
+    @CurrentUser()
+    user: { id: string; role: string; organizationId?: string | null },
+  ) {
+    const conversation = await this.conversationsService.findById(id);
+    assertConversationBelongsToOrg(conversation, user);
+    const note = await this.prisma.internalNote.findUnique({
+      where: { id: noteId },
+      select: { id: true, conversationId: true, userId: true },
+    });
+    if (!note || note.conversationId !== id) throw new NotFoundException('Not bulunamadı');
+    const canManage =
+      note.userId === user.id || user.role === 'ADMIN' || user.role === 'SUPERADMIN';
+    if (!canManage) throw new ForbiddenException('Bu notu düzenleme yetkiniz yok');
+    return this.conversationsService.updateInternalNote(noteId, String(body || ''));
+  }
+
+  @Delete(':id/notes/:noteId')
+  async deleteNote(
+    @Param('id') id: string,
+    @Param('noteId') noteId: string,
+    @CurrentUser()
+    user: { id: string; role: string; organizationId?: string | null },
+  ) {
+    const conversation = await this.conversationsService.findById(id);
+    assertConversationBelongsToOrg(conversation, user);
+    const note = await this.prisma.internalNote.findUnique({
+      where: { id: noteId },
+      select: { id: true, conversationId: true, userId: true },
+    });
+    if (!note || note.conversationId !== id) throw new NotFoundException('Not bulunamadı');
+    const canManage =
+      note.userId === user.id || user.role === 'ADMIN' || user.role === 'SUPERADMIN';
+    if (!canManage) throw new ForbiddenException('Bu notu silme yetkiniz yok');
+    await this.conversationsService.deleteInternalNote(noteId);
+    return { deleted: true };
   }
 }

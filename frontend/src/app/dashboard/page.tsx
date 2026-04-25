@@ -76,6 +76,22 @@ interface AccWidgetState {
   invoices: { id: string; invoiceNumber: number; dueDate?: string | null; status: string; grandTotal: number }[];
 }
 
+function toDateInputValue(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+
+function getDefaultLast7DaysRange() {
+  const to = new Date();
+  const from = new Date(to);
+  from.setDate(to.getDate() - 6);
+  return {
+    from: toDateInputValue(from),
+    to: toDateInputValue(to),
+  };
+}
+
+const DASHBOARD_DEFAULT_RANGE = getDefaultLast7DaysRange();
+
 function fmtTry(n: number | undefined | null) {
   if (n == null || Number.isNaN(n)) return '—';
   return new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY', maximumFractionDigits: 0 }).format(n);
@@ -87,8 +103,8 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [accWidgets, setAccWidgets] = useState<AccWidgetState | null>(null);
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
+  const [dateFrom, setDateFrom] = useState(DASHBOARD_DEFAULT_RANGE.from);
+  const [dateTo, setDateTo] = useState(DASHBOARD_DEFAULT_RANGE.to);
 
   const fetchData = useCallback(async (from: string, to: string) => {
     setLoading(true);

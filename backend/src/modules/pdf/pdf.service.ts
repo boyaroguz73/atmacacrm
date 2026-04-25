@@ -16,6 +16,7 @@ interface PdfSettings {
   companyTaxNumber: string;
   companyMersisNo: string;
   logoUrl: string;
+  logoHeight: number;
   /** Banka QR (FAST/EFT); PDF’te banka metinleriyle hizalı sağ alt */
   bankQrUrl: string;
   bankInfo: string;
@@ -271,6 +272,10 @@ export class PdfService {
   private async getSettings(): Promise<PdfSettings> {
     const rows = await this.prisma.systemSetting.findMany({ where: { key: { startsWith: 'pdf_' } } });
     const m = new Map(rows.map((r) => [r.key, r.value]));
+    const rawLogoHeight = Number(m.get('pdf_logo_height'));
+    const logoHeight = Number.isFinite(rawLogoHeight)
+      ? Math.max(20, Math.min(120, rawLogoHeight))
+      : 44;
     return {
       companyName: m.get('pdf_company_name') || 'Firma',
       companyAddress: m.get('pdf_company_address') || '',
@@ -281,6 +286,7 @@ export class PdfService {
       companyTaxNumber: m.get('pdf_company_tax_number') || '',
       companyMersisNo: m.get('pdf_company_mersis_no') || '',
       logoUrl: m.get('pdf_logo_url') || '',
+      logoHeight,
       bankQrUrl: m.get('pdf_bank_qr_url') || '',
       bankInfo: m.get('pdf_bank_info') || '',
       bank2Info: m.get('pdf_bank2_info') || '',
@@ -484,8 +490,11 @@ export class PdfService {
         let logoBottom = logoY;
         if (logoBuffer) {
           try {
-            doc.image(logoBuffer, logoX, logoY, { fit: [150, 44] });
-            logoBottom = logoY + 44;
+            const logoHeight = settings.logoHeight || 44;
+            const maxLogoWidth = Math.max(80, titleBoxX - ML - 20);
+            const logoWidth = Math.min(maxLogoWidth, Math.round((logoHeight * 150) / 44));
+            doc.image(logoBuffer, logoX, logoY, { fit: [logoWidth, logoHeight] });
+            logoBottom = logoY + logoHeight;
           } catch { /* skip */ }
         }
 
@@ -740,7 +749,7 @@ export class PdfService {
 
         rowY += sumRow(this.t('Ara Tutar (KDV haric):'), fmtMoney(hasGeneralDiscount ? subBeforeDiscount : subEx), rowY);
         if (hasGeneralDiscount) {
-          rowY += sumRow(this.t('Iskontolu Ara Tutar (KDV haric):'), fmtMoney(subEx), rowY);
+          rowY += sumRow(this.t('Iskontolu Ara Tutar (KDV haric):'), fmtMoney(subEx), rowY, true, primary);
         }
         rowY += sumRow(this.t('KDV Tutari:'), fmtMoney(vatAmt), rowY);
 

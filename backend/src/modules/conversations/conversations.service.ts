@@ -860,6 +860,20 @@ export class ConversationsService {
     });
   }
 
+  async updateInternalNote(noteId: string, body: string) {
+    return this.prisma.internalNote.update({
+      where: { id: noteId },
+      data: { body },
+      include: { user: { select: { id: true, name: true } } },
+    });
+  }
+
+  async deleteInternalNote(noteId: string) {
+    return this.prisma.internalNote.delete({
+      where: { id: noteId },
+    });
+  }
+
   async getGroupParticipants(conversationId: string) {
     const conversation = await this.findById(conversationId, { skipContactEnrichment: true });
     if (!conversation.isGroup || !conversation.waGroupId) {

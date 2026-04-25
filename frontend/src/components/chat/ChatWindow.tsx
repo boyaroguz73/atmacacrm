@@ -836,6 +836,25 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
 
     const mime =
       String(msg.mediaMimeType || msg.metadata?.originalMimeType || '').toLowerCase().trim();
+    const extFromMime = (() => {
+      const clean = mime.split(';')[0].trim();
+      const map: Record<string, string> = {
+        'application/pdf': '.pdf',
+        'application/msword': '.doc',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx',
+        'application/vnd.ms-excel': '.xls',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': '.xlsx',
+        'application/vnd.ms-powerpoint': '.ppt',
+        'application/vnd.openxmlformats-officedocument.presentationml.presentation': '.pptx',
+        'text/plain': '.txt',
+        'text/csv': '.csv',
+        'application/zip': '.zip',
+        'application/x-rar-compressed': '.rar',
+        'application/x-7z-compressed': '.7z',
+        'application/json': '.json',
+      };
+      return map[clean] || '';
+    })();
     const looksPdf =
       mime.includes('pdf') || /\.pdf(\?|$)/i.test(url.split('?')[0] || '');
     if (looksPdf) {
@@ -855,7 +874,11 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
     if (mime.startsWith('image/')) return `gorsel-${msg.id}.jpg`;
 
     const tail = url.split('/').pop() || '';
+    if (tail.toLowerCase().endsWith('.bin') && extFromMime) {
+      return tail.replace(/\.bin$/i, extFromMime);
+    }
     if (tail && /\.[a-z0-9]{2,8}$/i.test(tail)) return tail;
+    if (extFromMime) return `dosya-${msg.id}${extFromMime}`;
     return `dosya-${msg.id}`;
   };
 
@@ -1246,9 +1269,13 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
                       )}
                       {mediaUrlResolved && !isImage && msg.mediaType && msg.mediaType !== 'AUDIO' && msg.mediaType !== 'VIDEO' && (
                         <button
-                          onClick={() =>
-                            handleDownload(mediaUrlResolved, inferDownloadFilename(msg, mediaUrlResolved))
-                          }
+                          onClick={() => {
+                            const opened = window.open(mediaUrlResolved, '_blank', 'noopener,noreferrer');
+                            if (!opened) {
+                              // Popup engellenirse mevcut davranışa geri düş.
+                              handleDownload(mediaUrlResolved, inferDownloadFilename(msg, mediaUrlResolved));
+                            }
+                          }}
                           className="flex items-center gap-2 p-2.5 bg-gray-50 rounded-lg mb-1 hover:bg-gray-100 transition-colors border border-gray-100 w-full text-left"
                         >
                           <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 bg-blue-100">
@@ -1258,7 +1285,17 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
                             <span className="text-xs font-medium text-gray-700 block truncate">
                               {msg.body && msg.body.match(/\.\w+$/) ? msg.body : '📄 Belge'}
                             </span>
-                            <span className="text-[10px] text-gray-400">İndirmek için tıklayın</span>
+                            <span className="text-[10px] text-gray-400">Önizlemek için tıklayın</span>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDownload(mediaUrlResolved, inferDownloadFilename(msg, mediaUrlResolved));
+                              }}
+                              className="ml-2 text-[10px] text-blue-600 hover:text-blue-700 underline"
+                            >
+                              İndir
+                            </button>
                           </div>
                         </button>
                       )}

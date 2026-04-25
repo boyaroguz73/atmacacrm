@@ -142,6 +142,12 @@ function pickVatRate(...candidates: unknown[]): number | null {
   return null;
 }
 
+function parseDefaultVatRate(raw: unknown): number {
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return 20;
+  return Math.max(0, Math.min(100, Math.round(n)));
+}
+
 /** Backend `QuotesService` ile aynı: satır indirimi sonrası KDV hariç tutar (genel iskonto öncesi). */
 function lineExAfterLineDiscount(item: LocalLineItem): number {
   const q = Math.max(0, Number(item.quantity) || 0);
@@ -215,7 +221,7 @@ function genKey(): string {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
 }
 
-function emptyLine(): LocalLineItem {
+function emptyLine(defaultVatRate = 20): LocalLineItem {
   return {
     key: genKey(),
     name: '',
@@ -223,7 +229,7 @@ function emptyLine(): LocalLineItem {
     measurementInfo: '',
     quantity: 1,
     unitPrice: 0,
-    vatRate: 20,
+    vatRate: defaultVatRate,
     priceIncludesVat: true,
     applyDiscount: false,
     discountType: 'PERCENT',
@@ -302,7 +308,8 @@ export default function NewQuotePage() {
   const productSearchSeqRef = useRef(0);
   const [uploadingLineKey, setUploadingLineKey] = useState<string | null>(null);
 
-  const [lines, setLines] = useState<LocalLineItem[]>([emptyLine()]);
+  const [defaultVatRate, setDefaultVatRate] = useState(20);
+  const [lines, setLines] = useState<LocalLineItem[]>([emptyLine(20)]);
   const [discountType, setDiscountType] = useState<DiscountType>('PERCENT');
   const [discountValue, setDiscountValue] = useState(0);
   const [currency, setCurrency] = useState('TRY');
@@ -624,7 +631,7 @@ export default function NewQuotePage() {
   };
 
   const removeLine = (key: string) => {
-    setLines((prev) => (prev.length <= 1 ? [emptyLine()] : prev.filter((l) => l.key !== key)));
+    setLines((prev) => (prev.length <= 1 ? [emptyLine(defaultVatRate)] : prev.filter((l) => l.key !== key)));
   };
 
   useEffect(() => {
@@ -632,6 +639,20 @@ export default function NewQuotePage() {
       try {
         const { data } = await api.get('/system-settings', { params: { _ts: Date.now() } });
         const all = Array.isArray(data) ? data : [];
+        const defaultVat = parseDefaultVatRate(
+          all.find((s: any) => s?.key === 'quote_default_vat_rate')?.value,
+        );
+        setDefaultVatRate(defaultVat);
+        setLines((prev) =>
+          prev.map((l) =>
+            !l.productId &&
+            !String(l.name || '').trim() &&
+            Number(l.quantity) === 1 &&
+            Number(l.unitPrice) === 0
+              ? { ...l, vatRate: defaultVat }
+              : l,
+          ),
+        );
         const terms = all.find((s: any) => s?.key === 'pdf_terms')?.value || '';
         const footer = all.find((s: any) => s?.key === 'pdf_footer_note')?.value || '';
         if (!termsTouched) setTermsOverride(String(terms));
@@ -1230,7 +1251,7 @@ export default function NewQuotePage() {
               <h2 className="text-sm font-semibold text-gray-900">Kalemler</h2>
               <button
                 type="button"
-                onClick={() => setLines((p) => [...p, emptyLine()])}
+                onClick={() => setLines((p) => [...p, emptyLine(defaultVatRate)])}
                 className="text-xs font-semibold text-whatsapp hover:text-green-700"
               >
                 + Boş satır
@@ -1247,7 +1268,7 @@ export default function NewQuotePage() {
                     <th className="text-left px-2 py-2 w-[12%]">Ölçü</th>
                     <th className="text-left px-2 py-2 w-14">Miktar</th>
                     <th className="text-left px-2 py-2 w-28">Birim fiyat</th>
-                    <th className="text-right px-3 py-2 w-28">Satır (KDV dahil)</th>
+                    <th className="text-right px-3 py-2 w-28">Toplam</th>
                     <th className="w-10" />
                   </tr>
                 </thead>

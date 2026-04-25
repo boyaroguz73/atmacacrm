@@ -451,6 +451,36 @@ export default function SettingsPage() {
               );
             })}
           </div>
+          <div className="p-4 bg-gray-50 rounded-xl space-y-2">
+            <p className="font-medium text-sm text-gray-900">Teklif Varsayılan KDV Oranı</p>
+            <p className="text-xs text-gray-400">
+              Teklifte “Boş satır” eklendiğinde otomatik gelecek KDV yüzdesi.
+            </p>
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                min={0}
+                max={100}
+                defaultValue={settings.find((s) => s.key === 'quote_default_vat_rate')?.value || '20'}
+                onBlur={async (e) => {
+                  const next = String(Math.max(0, Math.min(100, Number(e.target.value) || 20)));
+                  e.target.value = next;
+                  try {
+                    await api.patch('/system-settings', { key: 'quote_default_vat_rate', value: next });
+                    setSettings((prev) => [
+                      ...prev.filter((s) => s.key !== 'quote_default_vat_rate'),
+                      { key: 'quote_default_vat_rate', value: next },
+                    ]);
+                    toast.success('Varsayılan KDV oranı güncellendi');
+                  } catch {
+                    toast.error('Ayar güncellenemedi');
+                  }
+                }}
+                className="w-28 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-whatsapp"
+              />
+              <span className="text-sm text-gray-500">%</span>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -510,7 +540,7 @@ export default function SettingsPage() {
             {/* Logo */}
             <div>
               <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Logo</p>
-              <div>
+              <div className="space-y-4">
                 <label className="block text-xs font-medium text-gray-600 mb-1">Logo URL (https://... veya /uploads/...)</label>
                 <input
                   type="text"
@@ -525,6 +555,29 @@ export default function SettingsPage() {
                   className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-whatsapp"
                 />
                 <p className="text-xs text-gray-400 mt-1">Logo PNG/JPG formatında olmalı. Tarayıcıdan erişilebilir bir URL girin.</p>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Logo Yüksekliği (px)</label>
+                  <input
+                    type="number"
+                    min={20}
+                    max={120}
+                    defaultValue={settings.find((s) => s.key === 'pdf_logo_height')?.value || '44'}
+                    onBlur={async (e) => {
+                      const nextValue = String(
+                        Math.max(20, Math.min(120, Number(e.target.value) || 44)),
+                      );
+                      e.target.value = nextValue;
+                      try {
+                        await api.patch('/system-settings', { key: 'pdf_logo_height', value: nextValue });
+                        toast.success('Logo boyutu güncellendi');
+                      } catch {
+                        toast.error('Güncellenemedi');
+                      }
+                    }}
+                    className="w-full md:w-48 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-whatsapp"
+                  />
+                  <p className="text-xs text-gray-400 mt-1">20 - 120 px arası değer girin. Varsayılan: 44.</p>
+                </div>
               </div>
               {settings.find((s) => s.key === 'pdf_logo_url')?.value && (
                 <div className="mt-2">

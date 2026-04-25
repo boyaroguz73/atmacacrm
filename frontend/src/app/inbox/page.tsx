@@ -14,6 +14,7 @@ export default function InboxPage() {
   const pathname = usePathname();
   const filter = searchParams.get('filter') || undefined;
   const contactId = searchParams.get('contactId') || undefined;
+  const isGroupsRoute = pathname === '/inbox/groups';
   const [mobileShowChat, setMobileShowChat] = useState(false);
 
   // Temsilci (AGENT) varsayılan filtresi: sadece kendine atananlar
@@ -118,7 +119,9 @@ export default function InboxPage() {
   }, []);
 
   useEffect(() => {
-    setListFilter(filter);
+    // Grup sekmesinde atama bazlı varsayılan filtreler yerine tüm konuşmaları çek.
+    const effectiveFilter = isGroupsRoute ? 'all' : filter;
+    setListFilter(effectiveFilter);
     const silent = inboxLoadedOnce.current;
     inboxLoadedOnce.current = true;
     autoSelectedRef.current = false;
@@ -160,7 +163,7 @@ export default function InboxPage() {
       socket.off('message:deleted');
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filter, updateMessageDeleted]);
+  }, [filter, isGroupsRoute, updateMessageDeleted]);
 
   return (
     <div className="flex h-full min-h-0">

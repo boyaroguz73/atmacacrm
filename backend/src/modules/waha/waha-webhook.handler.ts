@@ -52,6 +52,38 @@ function parseVcardPayload(raw: string): { contactName: string | null; contactPh
   return { contactName, contactPhone };
 }
 
+function inferMediaTypeFromHints(msg: any, mediaMimeType?: string): string | undefined {
+  const mime = String(mediaMimeType || '').toLowerCase();
+  const typeHints = [
+    msg?.type,
+    msg?._data?.type,
+    msg?.media?.type,
+    msg?._data?.mediaType,
+  ]
+    .map((v) => String(v || '').toLowerCase())
+    .filter(Boolean);
+  const fileLike = [
+    msg?.body,
+    msg?._data?.filename,
+    msg?.media?.filename,
+    msg?.mimetype,
+    msg?._data?.mimetype,
+    msg?.mediaUrl,
+    msg?._data?.mediaUrl,
+  ]
+    .map((v) => String(v || '').toLowerCase())
+    .join(' ');
+
+  if (mime.startsWith('image/') || typeHints.some((t) => t.includes('image') || t.includes('sticker'))) return 'IMAGE';
+  if (mime.startsWith('video/') || typeHints.some((t) => t.includes('video'))) return 'VIDEO';
+  if (mime.startsWith('audio/') || typeHints.some((t) => t.includes('audio') || t.includes('ptt') || t.includes('voice'))) return 'AUDIO';
+
+  if (/\.(jpe?g|png|gif|webp|bmp|heic|heif)\b/.test(fileLike)) return 'IMAGE';
+  if (/\.(mp4|mov|m4v|webm|3gp)\b/.test(fileLike)) return 'VIDEO';
+  if (/\.(ogg|opus|mp3|m4a|aac|wav)\b/.test(fileLike)) return 'AUDIO';
+  return undefined;
+}
+
 function looksLikeBase64Blob(value: unknown): boolean {
   if (typeof value !== 'string') return false;
   const s = value.trim();
@@ -307,13 +339,10 @@ export class WahaWebhookHandler {
       if (hasMediaFlag || isMediaType) {
         mediaMimeType = msg.mimetype || msg._data?.mimetype;
 
-        if (mediaMimeType?.startsWith('image/')) mediaType = 'IMAGE';
-        else if (mediaMimeType?.startsWith('video/')) mediaType = 'VIDEO';
-        else if (mediaMimeType?.startsWith('audio/')) mediaType = 'AUDIO';
-        else if (msg.type === 'image' || msg.type === 'sticker') mediaType = 'IMAGE';
-        else if (msg.type === 'video') mediaType = 'VIDEO';
-        else if (msg.type === 'audio' || msg.type === 'ptt') mediaType = 'AUDIO';
-        else if (msg.hasMedia || msg.type === 'document') mediaType = 'DOCUMENT';
+        mediaType = inferMediaTypeFromHints(msg, mediaMimeType);
+        if (!mediaType && (msg.hasMedia || msg.type === 'document' || msg._data?.type === 'document')) {
+          mediaType = 'DOCUMENT';
+        }
 
         const wahaStoredUrl = msg.media?.url || msg.mediaUrl || msg._data?.mediaUrl;
         const waMessageIdCandidate =

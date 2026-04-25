@@ -495,7 +495,7 @@ export default function NewOrderPage() {
         </div>
 
         <div className="border border-gray-100 rounded-xl overflow-x-auto">
-          <table className="w-full text-sm min-w-[1100px]">
+          <table className="w-full text-sm min-w-[980px]">
             <thead className="bg-gray-50 text-gray-500 text-xs uppercase">
               <tr>
                 <th className="px-3 py-2 text-left w-20 sm:w-24">Görsel</th>
@@ -504,8 +504,6 @@ export default function NewOrderPage() {
                 <th className="px-3 py-2 text-left min-w-[140px]">Ölçü</th>
                 <th className="px-3 py-2 text-right w-20">Adet</th>
                 <th className="px-3 py-2 text-right w-32">Birim fiyat</th>
-                <th className="px-3 py-2 text-center w-28">Fiyat tipi</th>
-                <th className="px-3 py-2 text-right w-20">KDV %</th>
                 <th className="px-3 py-2 text-left w-44">Kaynak</th>
                 <th className="px-3 py-2 text-left w-48">Tedarikçi</th>
                 <th className="px-3 py-2 text-left w-44">Sipariş No / Referans</th>
@@ -560,29 +558,6 @@ export default function NewOrderPage() {
                       min={0}
                       value={line.unitPrice}
                       onChange={(e) => updateLine(line.key, { unitPrice: Math.max(0, parseFloat(e.target.value) || 0) })}
-                      className="w-full px-2 py-1.5 rounded border border-gray-200 text-right"
-                    />
-                  </td>
-                  <td className="px-3 py-2">
-                    <select
-                      value={line.priceIncludesVat ? 'incl' : 'excl'}
-                      onChange={(e) =>
-                        updateLine(line.key, { priceIncludesVat: e.target.value === 'incl' })
-                      }
-                      className="w-full px-2 py-1.5 rounded border border-gray-200 text-xs"
-                      title="Birim fiyat KDV dahil mi hariç mi?"
-                    >
-                      <option value="incl">KDV dahil</option>
-                      <option value="excl">KDV hariç</option>
-                    </select>
-                  </td>
-                  <td className="px-3 py-2">
-                    <input
-                      type="number"
-                      step="1"
-                      min={0}
-                      value={line.vatRate}
-                      onChange={(e) => updateLine(line.key, { vatRate: Math.max(0, parseFloat(e.target.value) || 0) })}
                       className="w-full px-2 py-1.5 rounded border border-gray-200 text-right"
                     />
                   </td>

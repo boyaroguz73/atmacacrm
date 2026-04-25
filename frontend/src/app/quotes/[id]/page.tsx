@@ -122,6 +122,12 @@ function pickVatRate(...candidates: unknown[]): number | null {
   return null;
 }
 
+function parseDefaultVatRate(raw: unknown): number {
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return 20;
+  return Math.max(0, Math.min(100, Math.round(n)));
+}
+
 function lineExAfterLineDiscount(item: LocalLineItem): number {
   const q = Math.max(0, Number(item.quantity) || 0);
   const u = Number(item.unitPrice) || 0;
@@ -189,7 +195,7 @@ function genKey(): string {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
 }
 
-function emptyLine(): LocalLineItem {
+function emptyLine(defaultVatRate = 20): LocalLineItem {
   return {
     key: genKey(),
     name: '',
@@ -197,7 +203,7 @@ function emptyLine(): LocalLineItem {
     measurementInfo: '',
     quantity: 1,
     unitPrice: 0,
-    vatRate: 20,
+    vatRate: defaultVatRate,
     priceIncludesVat: true,
     applyDiscount: false,
     discountType: 'PERCENT',
@@ -206,6 +212,7 @@ function emptyLine(): LocalLineItem {
 }
 
 export default function QuoteDetailPage() {
+  const [defaultVatRate, setDefaultVatRate] = useState(20);
   const { user } = useAuthStore();
   const canConvertToOrder =
     user?.role === 'ADMIN' || user?.role === 'SUPERADMIN' || user?.role === 'ACCOUNTANT';
@@ -237,6 +244,24 @@ export default function QuoteDetailPage() {
   const productDebounceRef = useRef<ReturnType<typeof setTimeout>>();
   const productSearchSeqRef = useRef(0);
   const [uploadingLineKey, setUploadingLineKey] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .get('/system-settings')
+      .then(({ data }) => {
+        if (cancelled) return;
+        const all = Array.isArray(data) ? data : [];
+        const nextVat = parseDefaultVatRate(
+          all.find((s: any) => s?.key === 'quote_default_vat_rate')?.value,
+        );
+        setDefaultVatRate(nextVat);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const [variantPick, setVariantPick] = useState<{
     product: ProductHit;
@@ -489,7 +514,7 @@ export default function QuoteDetailPage() {
   };
 
   const removeLine = (key: string) => {
-    setLines((prev) => (prev.length <= 1 ? [emptyLine()] : prev.filter((l) => l.key !== key)));
+    setLines((prev) => (prev.length <= 1 ? [emptyLine(defaultVatRate)] : prev.filter((l) => l.key !== key)));
   };
 
   const handleSave = async () => {
@@ -786,7 +811,7 @@ export default function QuoteDetailPage() {
                 <h2 className="text-sm font-semibold text-gray-900">Kalemler</h2>
                 <button
                   type="button"
-                  onClick={() => setLines((p) => [...p, emptyLine()])}
+                  onClick={() => setLines((p) => [...p, emptyLine(defaultVatRate)])}
                   className="text-xs font-semibold text-whatsapp hover:text-green-700"
                 >
                   + Boş satır
