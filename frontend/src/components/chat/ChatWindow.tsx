@@ -1268,15 +1268,25 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
                         </div>
                       )}
                       {mediaUrlResolved && !isImage && msg.mediaType && msg.mediaType !== 'AUDIO' && msg.mediaType !== 'VIDEO' && (
-                        <button
+                        <div
+                          role="button"
+                          tabIndex={0}
                           onClick={() => {
                             const opened = window.open(mediaUrlResolved, '_blank', 'noopener,noreferrer');
                             if (!opened) {
-                              // Popup engellenirse mevcut davranışa geri düş.
                               handleDownload(mediaUrlResolved, inferDownloadFilename(msg, mediaUrlResolved));
                             }
                           }}
-                          className="flex items-center gap-2 p-2.5 bg-gray-50 rounded-lg mb-1 hover:bg-gray-100 transition-colors border border-gray-100 w-full text-left"
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              const opened = window.open(mediaUrlResolved, '_blank', 'noopener,noreferrer');
+                              if (!opened) {
+                                handleDownload(mediaUrlResolved, inferDownloadFilename(msg, mediaUrlResolved));
+                              }
+                            }
+                          }}
+                          className="flex items-center gap-2 p-2.5 bg-gray-50 rounded-lg mb-1 hover:bg-gray-100 transition-colors border border-gray-100 w-full text-left cursor-pointer"
                         >
                           <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 bg-blue-100">
                             <FileText className="w-5 h-5 text-blue-600" />
@@ -1297,7 +1307,7 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
                               İndir
                             </button>
                           </div>
-                        </button>
+                        </div>
                       )}
                       {replyPreview ? (
                         <div className="mb-2 border-l-2 border-green-400 bg-green-50/70 rounded-r-md px-2 py-1">
