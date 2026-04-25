@@ -78,6 +78,7 @@ export default function CalendarPage() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [userRole, setUserRole] = useState('AGENT');
+  const [showUnassigned, setShowUnassigned] = useState(false);
 
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
@@ -96,7 +97,7 @@ export default function CalendarPage() {
 
   useEffect(() => {
     fetchTasks();
-  }, [currentDate, userRole]);
+  }, [currentDate, userRole, showUnassigned]);
 
   const fetchTasks = async () => {
     setLoading(true);
@@ -104,9 +105,23 @@ export default function CalendarPage() {
       const from = new Date(year, month, 1).toISOString().split('T')[0] + 'T00:00:00';
       const to = new Date(year, month + 1, 0).toISOString().split('T')[0] + 'T23:59:59';
       const isAdmin = userRole === 'ADMIN' || userRole === 'SUPERADMIN';
-      const endpoint = isAdmin ? '/tasks/all' : '/tasks/my';
-      const { data } = await api.get(endpoint, { params: { from, to } });
-      setTasks(data.tasks || data || []);
+      if (isAdmin) {
+        const { data } = await api.get('/tasks/all', { params: { from, to } });
+        setTasks(data.tasks || data || []);
+      } else {
+        const [mineRes, unassignedRes] = await Promise.all([
+          api.get('/tasks/my', { params: { from, to } }),
+          showUnassigned ? api.get('/tasks/my-unassigned', { params: { from, to } }) : Promise.resolve(null),
+        ]);
+        const mineTasks = mineRes.data?.tasks || mineRes.data || [];
+        const unassignedTasks = unassignedRes?.data?.tasks || [];
+        const merged = [...mineTasks, ...unassignedTasks];
+        const deduped = merged.filter(
+          (task: Task, index: number, arr: Task[]) =>
+            arr.findIndex((t) => t.id === task.id) === index,
+        );
+        setTasks(deduped);
+      }
     } catch {
       setTasks([]);
       toast.error('Görevler yüklenemedi');
@@ -165,6 +180,17 @@ export default function CalendarPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {userRole === 'AGENT' && (
+            <label className="inline-flex items-center gap-2 px-3 py-1.5 text-xs font-medium bg-white border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={showUnassigned}
+                onChange={(e) => setShowUnassigned(e.target.checked)}
+                className="rounded border-gray-300 text-whatsapp focus:ring-whatsapp"
+              />
+              Atanmayanları da göster
+            </label>
+          )}
           <button
             onClick={goToday}
             className="px-3 py-1.5 text-xs font-medium bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"

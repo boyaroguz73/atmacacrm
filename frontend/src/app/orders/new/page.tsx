@@ -3,9 +3,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import api, { getApiErrorMessage } from '@/lib/api';
-import { formatPhone, rewriteMediaUrlForClient } from '@/lib/utils';
+import { cn, formatPhone, rewriteMediaUrlForClient } from '@/lib/utils';
 import toast from 'react-hot-toast';
-import { ArrowLeft, Loader2, MessageSquare, Package, Search, Trash2 } from 'lucide-react';
+import { ArrowLeft, Loader2, Package, Search, Trash2, PanelRightClose, PanelRightOpen, X } from 'lucide-react';
 import { ColorFabricLineCell } from '@/components/quotes/ColorFabricLineCell';
 import { VariantPickerOption } from '@/components/quotes/VariantPickerOption';
 import { QuoteEmbeddedChat } from '@/components/quotes/QuoteEmbeddedChat';
@@ -465,27 +465,6 @@ export default function NewOrderPage() {
           </div>
         </div>
 
-        {selectedContact && (
-          <div className="rounded-xl border border-gray-200 bg-gray-50/60 p-3 space-y-2">
-            <div className="flex items-center justify-between">
-              <p className="text-xs font-semibold text-gray-700">
-                WhatsApp Sohbeti
-              </p>
-              <button
-                type="button"
-                onClick={() => setChatOpen((v) => !v)}
-                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
-              >
-                <MessageSquare className="w-3.5 h-3.5" />
-                {chatOpen ? 'Gizle' : 'Göster'}
-              </button>
-            </div>
-            {chatOpen ? (
-              <QuoteEmbeddedChat contactId={selectedContact.id} contactPhone={selectedContact.phone} />
-            ) : null}
-          </div>
-        )}
-
         <div className="relative">
           <label className="text-xs text-gray-500 font-medium">Ürün ekle</label>
           <div className="relative mt-1">
@@ -703,6 +682,40 @@ export default function NewOrderPage() {
           </button>
         </div>
       </div>
+      <div className="fixed bottom-6 right-6 z-40">
+        <button
+          type="button"
+          onClick={() => selectedContact && setChatOpen((v) => !v)}
+          disabled={!selectedContact}
+          className={cn(
+            'inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm shadow-lg border',
+            selectedContact
+              ? 'bg-white border-whatsapp/30 text-gray-800 hover:bg-green-50'
+              : 'bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed',
+          )}
+        >
+          {chatOpen ? <PanelRightClose className="w-4 h-4" /> : <PanelRightOpen className="w-4 h-4" />}
+          WhatsApp
+        </button>
+      </div>
+      {selectedContact && chatOpen && (
+        <>
+          <div className="fixed inset-0 bg-black/20 z-40" onClick={() => setChatOpen(false)} />
+          <aside className="fixed top-0 right-0 h-full w-full sm:w-[420px] bg-white z-50 shadow-2xl border-l border-gray-200 p-3">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-sm font-semibold text-gray-900">WhatsApp Sohbet</h3>
+              <button
+                type="button"
+                onClick={() => setChatOpen(false)}
+                className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <QuoteEmbeddedChat contactId={selectedContact.id} contactPhone={selectedContact.phone} />
+          </aside>
+        </>
+      )}
     </div>
   );
 }

@@ -233,10 +233,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
             );
           })()
         : incomingSorted;
-      const hasMore = incomingSorted.length >= CONVERSATIONS_PAGE_LIMIT;
+      const apiPage = Number(data?.page || targetPage);
+      const apiTotalPages = Number(data?.totalPages || 0);
+      const hasMore =
+        Number.isFinite(apiTotalPages) && apiTotalPages > 0
+          ? apiPage < apiTotalPages
+          : incomingSorted.length >= CONVERSATIONS_PAGE_LIMIT;
       set({
         conversations: merged,
-        conversationsPage: targetPage,
+        conversationsPage: apiPage,
         hasMoreConversations: hasMore,
         isLoadingConversations: false,
         isLoadingMoreConversations: false,

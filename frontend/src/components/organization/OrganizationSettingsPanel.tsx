@@ -909,7 +909,7 @@ export default function OrganizationSettingsPanel({
         <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 space-y-6">
           <div>
             <h2 className="text-lg font-semibold text-gray-900">PDF Şablon Ayarları</h2>
-            <p className="text-sm text-gray-500 mt-1">Fatura ve teklif PDF'lerinde görünecek bilgileri düzenleyin.</p>
+            <p className="text-sm text-gray-500 mt-1">Fatura ve teklif PDF&apos;lerinde görünecek bilgileri düzenleyin.</p>
           </div>
 
           <div className="rounded-xl border border-gray-200 bg-white p-4 space-y-4">
@@ -1033,7 +1033,7 @@ export default function OrganizationSettingsPanel({
           <div className="rounded-xl border border-gray-200 bg-white p-4 space-y-4">
             <div>
               <p className="text-sm font-semibold text-gray-900">Banka Bilgileri</p>
-              <p className="text-xs text-gray-500 mt-0.5">IBAN ve hesap bilgileri PDF'de ödeme alanında gösterilir.</p>
+              <p className="text-xs text-gray-500 mt-0.5">IBAN ve hesap bilgileri PDF&apos;de ödeme alanında gösterilir.</p>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {[
@@ -1062,7 +1062,7 @@ export default function OrganizationSettingsPanel({
               <div className="md:col-span-2 rounded-xl border border-gray-200 bg-gray-50/80 p-4">
                 <label className="block text-xs font-medium text-gray-600 mb-2">Banka QR (FAST / EFT - PDF sağ alt)</label>
                 <p className="text-xs text-gray-500 mb-3">
-                  Teklif ve sipariş PDF'lerinde banka metinleriyle aynı blokta, sağ altta basılır. PNG veya JPG yükleyin.
+                  Teklif ve sipariş PDF&apos;lerinde banka metinleriyle aynı blokta, sağ altta basılır. PNG veya JPG yükleyin.
                 </p>
                 <div className="flex flex-wrap items-center gap-3">
                   <label className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 cursor-pointer transition-colors">
@@ -1131,7 +1131,7 @@ export default function OrganizationSettingsPanel({
           <div className="rounded-xl border border-gray-200 bg-white p-4 space-y-4">
             <div>
               <p className="text-sm font-semibold text-gray-900">PDF Metinleri (Koşullar & Notlar)</p>
-              <p className="text-xs text-gray-500 mt-0.5">PDF'de görünecek metinler</p>
+              <p className="text-xs text-gray-500 mt-0.5">PDF&apos;de görünecek metinler</p>
             </div>
             <div className="space-y-4">
               {[

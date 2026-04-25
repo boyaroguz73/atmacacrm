@@ -68,6 +68,44 @@ export class AutoReplyEngineService {
     }
   }
 
+  async processQuoteConvertedToOrderEvent(params: {
+    quoteId: string;
+    orderId: string;
+    contactId: string;
+    organizationId: string;
+  }) {
+    try {
+      const flows = await this.autoReplyService.findActiveFlows(params.organizationId);
+      const matched = flows.filter((f) => f.trigger === 'quote_converted_to_order');
+      if (!matched.length) return;
+
+      for (const flow of matched) {
+        const dedupeKey = `${flow.id}:QUOTE_TO_ORDER:${params.quoteId}:${params.orderId}`;
+        await this.prisma.automationRun.upsert({
+          where: { dedupeKey },
+          create: {
+            flowId: flow.id,
+            organizationId: params.organizationId,
+            trigger: 'quote_converted_to_order',
+            entityType: 'ORDER',
+            entityId: params.orderId,
+            contactId: params.contactId,
+            dedupeKey,
+            status: 'PENDING',
+            nextRunAt: new Date(),
+            context: ({
+              status: 'Teklif siparişe dönüştü',
+              quoteId: params.quoteId,
+            } as unknown) as Prisma.InputJsonValue,
+          },
+          update: {},
+        });
+      }
+    } catch (err: any) {
+      this.logger.error(`Teklif->sipariş otomasyonu hatası: ${err?.message || err}`);
+    }
+  }
+
   async runPendingRuns(limit = 25): Promise<number> {
     const now = new Date();
     const runs = await this.prisma.automationRun.findMany({
@@ -264,41 +302,85 @@ export class AutoReplyEngineService {
     });
     if (!contact) return null;
 
-    const session = await this.pickWorkingSession(organizationId);
-    if (!session) return null;
     const phoneDigits = String(contact.phone || '').replace(/\D/g, '');
     if (!phoneDigits) return null;
     const chatId = normalizeWhatsappChatId(`${phoneDigits}@c.us`);
 
-    const convo = conversationId
-      ? await this.prisma.conversation.findUnique({
-          where: { id: conversationId },
-          include: { assignments: { where: { unassignedAt: null } } },
-        })
-      : null;
+    const conversations = await this.prisma.conversation.findMany({
+      where: { contactId: contact.id },
+      include: {
+        session: {
+          select: { id: true, name: true, status: true, organizationId: true, createdAt: true },
+        },
+        assignments: {
+          where: { unassignedAt: null },
+          include: { user: { select: { name: true } } },
+          orderBy: { assignedAt: 'desc' },
+        },
+        messages: {
+          where: { direction: MessageDirection.OUTGOING, sentById: { not: null } },
+          orderBy: { timestamp: 'desc' },
+          take: 1,
+          include: { sentBy: { select: { name: true } } },
+        },
+      },
+      orderBy: { lastMessageAt: 'desc' },
+      take: 20,
+    });
 
-    const conversation = convo
-      ? convo
-      : await this.prisma.conversation.upsert({
-          where: { contactId_sessionId: { contactId: contact.id, sessionId: session.id } },
-          update: {},
-          create: { contactId: contact.id, sessionId: session.id },
-          include: { assignments: { where: { unassignedAt: null } } },
-        });
+    const preferredConversationById = conversationId
+      ? conversations.find((c) => c.id === conversationId)
+      : null;
+    const hasWorkingSession = (c: (typeof conversations)[number]) =>
+      c.session?.status === 'WORKING' &&
+      (c.session.organizationId === organizationId || c.session.organizationId === null);
+    const latestWorkingConversation =
+      conversations.find((c) => hasWorkingSession(c)) || null;
+
+    let conversation = preferredConversationById;
+    if (!conversation || !hasWorkingSession(conversation)) {
+      conversation = latestWorkingConversation;
+    }
+
+    if (!conversation) {
+      const session = await this.pickWorkingSession(organizationId);
+      if (!session) return null;
+      conversation = await this.prisma.conversation.upsert({
+        where: { contactId_sessionId: { contactId: contact.id, sessionId: session.id } },
+        update: {},
+        create: { contactId: contact.id, sessionId: session.id },
+        include: {
+          session: { select: { id: true, name: true, status: true, organizationId: true, createdAt: true } },
+          assignments: {
+            where: { unassignedAt: null },
+            include: { user: { select: { name: true } } },
+            orderBy: { assignedAt: 'desc' },
+          },
+          messages: {
+            where: { direction: MessageDirection.OUTGOING, sentById: { not: null } },
+            orderBy: { timestamp: 'desc' },
+            take: 1,
+            include: { sentBy: { select: { name: true } } },
+          },
+        },
+      });
+    }
 
     if (!conversation.assignments.length) {
       await this.conversationsService.autoAssignRoundRobin(conversation.id, organizationId);
     }
-    const currentAssignment = await this.prisma.assignment.findFirst({
-      where: { conversationId: conversation.id, unassignedAt: null },
-      include: { user: { select: { name: true } } },
-      orderBy: { assignedAt: 'desc' },
-    });
-    const agentName = currentAssignment?.user?.name?.trim() || 'Temsilci';
+    const latestOutgoingUserName = String(
+      conversation.messages?.[0]?.sentBy?.name || '',
+    ).trim();
+    const latestAssignedUserName = String(
+      conversation.assignments?.[0]?.user?.name || '',
+    ).trim();
+    const agentName = latestOutgoingUserName || latestAssignedUserName || 'Temsilci';
+
     return {
       conversationId: conversation.id,
-      sessionId: session.id,
-      sessionName: session.name,
+      sessionId: conversation.session.id,
+      sessionName: conversation.session.name,
       chatId,
       agentName,
     };
@@ -463,8 +545,7 @@ export class AutoReplyEngineService {
       const curr = (it.currency || 'TRY').toUpperCase() === 'TRY' ? 'TL' : (it.currency || 'TRY').toUpperCase();
       const price = `${it.unitPrice.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ${curr}`;
       const vat = it.priceIncludesVat ? '(KDV Dahil)' : '+KDV';
-      const suffix = it.property2 ? `, ${it.property2}` : '';
-      return `${it.name}${suffix}, ${price} ${vat}`;
+      return `${it.name}, ${price} ${vat}`;
     });
     return template
       .replace(/\{Temsilci Adı\}/g, data.agentName)
@@ -490,8 +571,7 @@ export class AutoReplyEngineService {
       const curr = (it.currency || 'TRY').toUpperCase() === 'TRY' ? 'TL' : (it.currency || 'TRY').toUpperCase();
       const price = `${it.unitPrice.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ${curr}`;
       const vat = it.priceIncludesVat ? '(KDV Dahil)' : '+KDV';
-      const suffix = it.property2 ? `, ${it.property2}` : '';
-      return `${it.name}${suffix}, ${price} ${vat}`;
+      return `${it.name}, ${price} ${vat}`;
     });
     return template
       .replace(/\{Temsilci Adı\}/g, data.agentName)
@@ -573,9 +653,6 @@ export class AutoReplyEngineService {
       case 'wait':
         await this.executeWait(step);
         break;
-      case 'add_tag':
-        await this.executeAddTag(step, params);
-        break;
       case 'set_lead_status':
         await this.executeSetLeadStatus(step, params);
         break;
@@ -637,30 +714,8 @@ export class AutoReplyEngineService {
   }
 
   private async executeWait(step: FlowStep) {
-    const seconds = step.data?.seconds || 1;
-    const capped = Math.min(seconds, 30);
-    await new Promise((resolve) => setTimeout(resolve, capped * 1000));
-  }
-
-  private async executeAddTag(
-    step: FlowStep,
-    params: { contactId: string },
-  ) {
-    const tag = step.data?.tag;
-    if (!tag) return;
-
-    const contact = await this.prisma.contact.findUnique({
-      where: { id: params.contactId },
-    });
-    if (!contact) return;
-
-    const tags = contact.tags || [];
-    if (!tags.includes(tag)) {
-      await this.prisma.contact.update({
-        where: { id: params.contactId },
-        data: { tags: [...tags, tag] },
-      });
-    }
+    const waitSec = this.readWaitSeconds(step.data);
+    await new Promise((resolve) => setTimeout(resolve, waitSec * 1000));
   }
 
   private async executeSetLeadStatus(
@@ -687,8 +742,20 @@ export class AutoReplyEngineService {
     step: FlowStep,
     params: { conversationId: string },
   ) {
+    const mode = String(step.data?.mode || '').toLowerCase();
     const agentId = step.data?.agentId;
-    if (!agentId) return;
+
+    if (mode === 'round_robin' || !agentId) {
+      const conversation = await this.prisma.conversation.findUnique({
+        where: { id: params.conversationId },
+        select: { contact: { select: { organizationId: true } } },
+      });
+      await this.conversationsService.autoAssignRoundRobin(
+        params.conversationId,
+        conversation?.contact?.organizationId || undefined,
+      );
+      return;
+    }
 
     const existing = await this.prisma.assignment.findFirst({
       where: { conversationId: params.conversationId, unassignedAt: null },

@@ -659,12 +659,24 @@ export class QuotesService {
       items: quote.items.map((i) => {
         const cf = i.colorFabricInfo != null ? String(i.colorFabricInfo).trim() : '';
         const ms = i.measurementInfo != null ? String(i.measurementInfo).trim() : '';
+        let displayName = String(i.name || '').trim();
+        if (ms && displayName) {
+          // Ölçü bilgisi zaten ayrı satırda gösteriliyor; isim içinde tekrar etmesin.
+          const escaped = ms.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          displayName = displayName
+            .replace(new RegExp(`\\s*[\\-/,|]+\\s*${escaped}`, 'gi'), '')
+            .replace(new RegExp(`\\(\\s*${escaped}\\s*\\)`, 'gi'), '')
+            .replace(new RegExp(`\\b${escaped}\\b`, 'gi'), '')
+            .replace(/\s{2,}/g, ' ')
+            .replace(/\s*[-/,|]\s*$/g, '')
+            .trim();
+        }
         const lineParts: string[] = [];
         if (cf) lineParts.push(`Renk/Kumaş: ${cf}`);
         if (ms) lineParts.push(`Ölçü: ${ms}`);
         const lineDetail = lineParts.length ? lineParts.join('\n') : undefined;
         return {
-          name: i.name,
+          name: displayName || i.name,
           lineDetail,
           quantity: i.quantity,
           unitPrice: i.unitPrice,
@@ -875,6 +887,20 @@ export class QuotesService {
         quote: { select: { id: true, quoteNumber: true } },
       },
     });
+
+    try {
+      const orgId = (quote as any)?.contact?.organizationId as string | undefined;
+      if (orgId) {
+        await this.autoReplyEngine.processQuoteConvertedToOrderEvent({
+          quoteId: quote.id,
+          orderId: order.id,
+          contactId: quote.contactId,
+          organizationId: orgId,
+        });
+      }
+    } catch (err: any) {
+      this.logger.warn(`Teklif->sipariş otomasyon kuyruğu eklenemedi: ${err?.message || err}`);
+    }
 
     const orderFull = await this.prisma.salesOrder.findUnique({
       where: { id: order.id },

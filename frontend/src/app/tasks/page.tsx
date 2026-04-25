@@ -60,6 +60,7 @@ export default function TasksPage() {
   const [newTask, setNewTask] = useState({ title: '', description: '', dueAt: '', contactId: '' });
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+  const [showUnassigned, setShowUnassigned] = useState(false);
 
   const [contactQuery, setContactQuery] = useState('');
   const [contactResults, setContactResults] = useState<{ id: string; name: string | null; phone: string }[]>([]);
@@ -101,22 +102,31 @@ export default function TasksPage() {
   };
 
   const isAdmin = user?.role === 'ADMIN' || user?.role === 'SUPERADMIN';
+  const isAgent = user?.role === 'AGENT';
 
   const fetchTasks = async () => {
     try {
-      const endpoint = isAdmin ? '/tasks/all' : '/tasks/my';
       const statsEndpoint = isAdmin ? '/tasks/all/stats' : '/tasks/my/stats';
       const params: any = {};
       if (filter) params.status = filter;
       if (dateFrom) params.from = dateFrom + 'T00:00:00';
       if (dateTo) params.to = dateTo + 'T23:59:59';
 
-      const [tasksRes, statsRes] = await Promise.all([
-        api.get(endpoint, { params }),
+      const [mineRes, unassignedRes, statsRes] = await Promise.all([
+        api.get(isAdmin ? '/tasks/all' : '/tasks/my', { params }),
+        !isAdmin && showUnassigned ? api.get('/tasks/my-unassigned', { params }) : Promise.resolve(null),
         api.get(statsEndpoint),
       ]);
 
-      setTasks(tasksRes.data.tasks || []);
+      const mineTasks: Task[] = mineRes.data.tasks || [];
+      const unassignedTasks: Task[] = unassignedRes?.data?.tasks || [];
+      const merged =
+        !isAdmin && showUnassigned
+          ? [...mineTasks, ...unassignedTasks].filter(
+              (task, index, arr) => arr.findIndex((t) => t.id === task.id) === index,
+            )
+          : mineTasks;
+      setTasks(merged);
       setStats(statsRes.data);
     } catch (error) {
       console.error(error);
@@ -128,7 +138,7 @@ export default function TasksPage() {
 
   useEffect(() => {
     if (user) fetchTasks();
-  }, [filter, dateFrom, dateTo, user?.role]);
+  }, [filter, dateFrom, dateTo, user?.role, showUnassigned]);
 
   useEffect(() => {
     const shouldOpen = searchParams.get('new') === '1';
@@ -372,7 +382,7 @@ export default function TasksPage() {
       )}
 
       {/* Filters */}
-      <div className="flex flex-wrap gap-2.5">
+      <div className="flex flex-wrap items-center gap-2.5">
         {[
           { key: 'PENDING', label: 'Bekleyen' },
           { key: 'COMPLETED', label: 'Tamamlanan' },
@@ -391,6 +401,17 @@ export default function TasksPage() {
             {f.label}
           </button>
         ))}
+        {isAgent && (
+          <label className="inline-flex items-center gap-2 px-3 py-2 text-xs font-medium bg-white border border-gray-200 text-gray-700 rounded-full hover:bg-gray-50 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={showUnassigned}
+              onChange={(e) => setShowUnassigned(e.target.checked)}
+              className="rounded border-gray-300 text-whatsapp focus:ring-whatsapp"
+            />
+            Atanmayanları da göster
+          </label>
+        )}
       </div>
 
       {/* Tasks List */}

@@ -11,7 +11,6 @@ import {
   GripVertical,
   MessageSquare,
   Plus,
-  Tag,
   Target,
   UserPlus,
   X,
@@ -19,7 +18,7 @@ import {
 
 export interface FlowStep {
   id: string;
-  type: 'send_message' | 'wait' | 'condition' | 'add_tag' | 'set_lead_status' | 'assign_agent';
+  type: 'send_message' | 'wait' | 'condition' | 'set_lead_status' | 'assign_agent';
   data: Record<string, any>;
   nextStepId?: string | null;
 }
@@ -41,6 +40,7 @@ const TRIGGERS = [
   { value: 'first_message', label: 'İlk mesaj (yeni kişi)' },
   { value: 'order_status', label: 'Sipariş durumu değişti' },
   { value: 'quote_status', label: 'Teklif durumu değişti' },
+  { value: 'quote_converted_to_order', label: 'Teklif siparişe dönüştü' },
 ];
 
 const TRIGGER_HELP: Record<string, string> = {
@@ -49,6 +49,7 @@ const TRIGGER_HELP: Record<string, string> = {
   first_message: 'Yeni bir kişi ilk kez mesaj attığında çalışır.',
   order_status: 'Sipariş durumu seçtiğiniz aşamaya geldiğinde çalışır.',
   quote_status: 'Teklif durumu seçtiğiniz aşamaya geldiğinde çalışır.',
+  quote_converted_to_order: 'Teklif siparişe dönüştürüldüğünde çalışır.',
 };
 
 const ORDER_STATUS_OPTIONS = [
@@ -72,7 +73,6 @@ const STEP_TYPES = [
   { value: 'send_message', label: 'Mesaj Gönder', icon: MessageSquare, color: 'bg-green-50 text-green-700' },
   { value: 'wait', label: 'Bekle', icon: Clock, color: 'bg-yellow-50 text-yellow-700' },
   { value: 'condition', label: 'Koşul Kontrolü', icon: Target, color: 'bg-amber-50 text-amber-700' },
-  { value: 'add_tag', label: 'Etiket Ekle', icon: Tag, color: 'bg-blue-50 text-blue-700' },
   { value: 'set_lead_status', label: 'Müşteri Durumu Ayarla', icon: Target, color: 'bg-purple-50 text-purple-700' },
   { value: 'assign_agent', label: 'Temsilci Ata', icon: UserPlus, color: 'bg-orange-50 text-orange-700' },
 ];
@@ -91,11 +91,10 @@ function newStep(type: FlowStep['type']): FlowStep {
   const id = `step_${Date.now()}_${stepCounter++}`;
   const defaults: Record<string, Record<string, any>> = {
     send_message: { message: '' },
-    wait: { seconds: 3 },
+    wait: { hours: 1 },
     condition: { field: 'conversation_last_message_older_than', days: 2, hours: 0, minutes: 0, seconds: 0 },
-    add_tag: { tag: '' },
     set_lead_status: { status: 'CONTACTED' },
-    assign_agent: { agentId: '' },
+    assign_agent: { mode: 'round_robin', agentId: '' },
   };
   return { id, type, data: defaults[type] || {} };
 }
@@ -364,7 +363,7 @@ export default function FlowEditorPage({ flowId }: { flowId?: string }) {
         <div>
           <h2 className="text-sm font-semibold text-gray-900">3) Ne yapsın (Akış Adımları)</h2>
           <p className="text-xs text-gray-500 mt-0.5">
-            Adim adim ne olacagini belirleyin: Mesaj gonder, bekle, etiket ekle...
+            Adim adim ne olacagini belirleyin: Mesaj gonder, bekle, durum/temsilci ata...
           </p>
         </div>
         {form.steps.map((step, idx) => {
@@ -396,8 +395,32 @@ export default function FlowEditorPage({ flowId }: { flowId?: string }) {
               )}
               {step.type === 'wait' && (
                 <div className="flex items-center gap-2">
-                  <input type="number" min={1} max={30} value={step.data?.seconds || 0} onChange={(e) => updateStepData(idx, { seconds: parseInt(e.target.value || '0', 10) || 0 })} className="w-24 px-3 py-2 border rounded-lg text-sm" />
-                  <span className="text-sm text-gray-500">saniye (maks. 30)</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={720}
+                    value={
+                      Math.max(
+                        1,
+                        Math.ceil(
+                          (Number(step.data?.days || 0) * 24) +
+                            Number(step.data?.hours || 0) +
+                            Number(step.data?.minutes || 0) / 60 +
+                            Number(step.data?.seconds || 0) / 3600,
+                        ),
+                      )
+                    }
+                    onChange={(e) =>
+                      updateStepData(idx, {
+                        days: 0,
+                        hours: parseInt(e.target.value || '1', 10) || 1,
+                        minutes: 0,
+                        seconds: 0,
+                      })
+                    }
+                    className="w-24 px-3 py-2 border rounded-lg text-sm"
+                  />
+                  <span className="text-sm text-gray-500">saat (maks. 720)</span>
                 </div>
               )}
               {step.type === 'condition' && (
@@ -429,17 +452,28 @@ export default function FlowEditorPage({ flowId }: { flowId?: string }) {
                   </div>
                 </div>
               )}
-              {step.type === 'add_tag' && (
-                <input value={step.data?.tag || ''} onChange={(e) => updateStepData(idx, { tag: e.target.value })} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" placeholder="Eklenecek etiket" />
-              )}
               {step.type === 'set_lead_status' && (
                 <select value={step.data?.status || 'CONTACTED'} onChange={(e) => updateStepData(idx, { status: e.target.value })} className="w-full px-3 py-2 border rounded-lg text-sm">
                   {LEAD_STATUSES.map((ls) => <option key={ls.value} value={ls.value}>{ls.label}</option>)}
                 </select>
               )}
               {step.type === 'assign_agent' && (
-                <select value={step.data?.agentId || ''} onChange={(e) => updateStepData(idx, { agentId: e.target.value })} className="w-full px-3 py-2 border rounded-lg text-sm">
-                  <option value="">Temsilci seçin</option>
+                <select
+                  value={
+                    step.data?.mode === 'round_robin'
+                      ? '__round_robin__'
+                      : (step.data?.agentId || '')
+                  }
+                  onChange={(e) => {
+                    if (e.target.value === '__round_robin__') {
+                      updateStepData(idx, { mode: 'round_robin', agentId: '' });
+                      return;
+                    }
+                    updateStepData(idx, { mode: 'specific', agentId: e.target.value });
+                  }}
+                  className="w-full px-3 py-2 border rounded-lg text-sm"
+                >
+                  <option value="__round_robin__">Sıradaki temsilci (round robin)</option>
                   {agents.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
                 </select>
               )}
@@ -474,7 +508,7 @@ export default function FlowEditorPage({ flowId }: { flowId?: string }) {
           <div className="space-y-2">
             <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Musteri islemleri</p>
             <div className="flex flex-wrap gap-2">
-              {STEP_TYPES.filter((s) => s.value === 'add_tag' || s.value === 'set_lead_status' || s.value === 'assign_agent').map((st) => (
+              {STEP_TYPES.filter((s) => s.value === 'set_lead_status' || s.value === 'assign_agent').map((st) => (
                 <button key={st.value} type="button" onClick={() => addStep(st.value as FlowStep['type'])} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border ${st.color}`}>
                   <st.icon className="w-3.5 h-3.5" />
                   {st.label}

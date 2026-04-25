@@ -4,7 +4,7 @@ import { AuditLogService } from '../audit-log/audit-log.service';
 
 export interface FlowStep {
   id: string;
-  type: 'send_message' | 'wait' | 'condition' | 'assign_agent' | 'add_tag' | 'set_lead_status';
+  type: 'send_message' | 'wait' | 'condition' | 'assign_agent' | 'set_lead_status';
   data: Record<string, any>;
   nextStepId?: string | null;
 }

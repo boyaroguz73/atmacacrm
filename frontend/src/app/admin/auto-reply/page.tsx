@@ -30,6 +30,7 @@ const TRIGGERS = [
   { value: 'first_message', label: 'İlk mesaj (yeni kişi)' },
   { value: 'order_status', label: 'Sipariş durumu değişti' },
   { value: 'quote_status', label: 'Teklif durumu değişti' },
+  { value: 'quote_converted_to_order', label: 'Teklif siparişe dönüştü' },
 ];
 
 export default function AutoReplyPage() {

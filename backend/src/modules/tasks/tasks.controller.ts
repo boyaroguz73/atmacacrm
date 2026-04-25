@@ -41,6 +41,23 @@ export class TasksController {
     });
   }
 
+  @Get('my-unassigned')
+  getMyUnassignedTasks(
+    @CurrentUser() user: { id: string; role: string; organizationId?: string },
+    @Query('status') status?: TaskStatus,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('page') page?: string,
+  ) {
+    return this.tasksService.findUnassignedForOrganization({
+      organizationId: requireOrgId(user),
+      status,
+      from,
+      to,
+      page: page ? parseInt(page) : 1,
+    });
+  }
+
   @Get('my/stats')
   getMyStats(@CurrentUser('id') userId: string) {
     return this.tasksService.getStats(userId);

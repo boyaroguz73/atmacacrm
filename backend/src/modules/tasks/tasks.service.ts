@@ -142,6 +142,57 @@ export class TasksService {
     return { tasks, total, page, totalPages: Math.ceil(total / limit) };
   }
 
+  async findUnassignedForOrganization(params: {
+    organizationId: string;
+    status?: TaskStatus;
+    from?: string;
+    to?: string;
+    page?: number;
+    limit?: number;
+  }) {
+    const { organizationId, status, from, to, page = 1, limit = 50 } = params;
+    const where: any = {
+      OR: [
+        { contactId: null },
+        {
+          contact: {
+            organizationId,
+            conversations: {
+              none: {
+                assignments: {
+                  some: { unassignedAt: null },
+                },
+              },
+            },
+          },
+        },
+      ],
+    };
+
+    if (status) where.status = status;
+    if (from || to) {
+      where.dueAt = {};
+      if (from) where.dueAt.gte = new Date(from);
+      if (to) where.dueAt.lte = new Date(to);
+    }
+
+    const [tasks, total] = await Promise.all([
+      this.prisma.task.findMany({
+        where,
+        include: {
+          contact: { select: { id: true, name: true, phone: true } },
+          user: { select: { id: true, name: true } },
+        },
+        orderBy: [{ status: 'asc' }, { dueAt: 'asc' }],
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      this.prisma.task.count({ where }),
+    ]);
+
+    return { tasks, total, page, totalPages: Math.ceil(total / limit) };
+  }
+
   async getDueTasks(organizationId?: string) {
     return this.prisma.task.findMany({
       where: {

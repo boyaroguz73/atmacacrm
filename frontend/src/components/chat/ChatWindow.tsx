@@ -30,7 +30,6 @@ import {
   Loader2,
   BookTemplate,
   Pencil,
-  ListFilter,
   ListTodo,
   Package,
   Search,
@@ -50,24 +49,6 @@ import toast from 'react-hot-toast';
 import ContactAvatar from '@/components/ui/ContactAvatar';
 import EcommerceCustomerBadge from '@/components/ui/EcommerceCustomerBadge';
 import type { Message } from '@/store/chat';
-
-function filterMessagesByAuthor(
-  msgs: Message[],
-  filter: 'all' | 'me' | string,
-  myUserId: string | null,
-): Message[] {
-  if (filter === 'all') return msgs;
-  const targetId = filter === 'me' ? myUserId : filter;
-  if (!targetId) return msgs;
-  return msgs.filter((m) => {
-    if (m.direction === 'INCOMING') return true;
-    if (m.direction === 'OUTGOING') {
-      if (!m.sentBy?.id) return false;
-      return m.sentBy.id === targetId;
-    }
-    return true;
-  });
-}
 
 function groupReactions(reactions: { emoji: string; senderName?: string }[]) {
   const map = new Map<string, string[]>();
@@ -134,8 +115,6 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
   const [internalChatEnabled, setInternalChatEnabled] = useState(false);
   const [userRole, setUserRole] = useState('AGENT');
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
-  const [messageAuthorFilter, setMessageAuthorFilter] = useState<'all' | string>('all');
-  const [inboxPeers, setInboxPeers] = useState<{ id: string; name: string; email: string }[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const prevConversationId = useRef<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -331,7 +310,6 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
   }, []);
 
   useEffect(() => {
-    setMessageAuthorFilter('all');
     setText('');
     setShowTemplates(false);
     setTemplateSearch('');
@@ -369,22 +347,6 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [contextMenuMsg]);
 
-  useEffect(() => {
-    if (!activeConversation) return;
-    let cancelled = false;
-    api
-      .get('/users/inbox-peers')
-      .then(({ data }) => {
-        if (!cancelled) setInboxPeers(Array.isArray(data) ? data : []);
-      })
-      .catch(() => {
-        if (!cancelled) setInboxPeers([]);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [activeConversation?.id]);
-
   const activeConvId = activeConversation?.id;
   useEffect(() => {
     if (!activeConvId) return;
@@ -411,10 +373,7 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  const displayMessages = useMemo(
-    () => filterMessagesByAuthor(messages, messageAuthorFilter, currentUserId),
-    [messages, messageAuthorFilter, currentUserId],
-  );
+  const displayMessages = messages;
 
   const timelineItems = useMemo(() => {
     const out: Array<{ type: 'day'; key: string; label: string } | { type: 'msg'; message: Message }> = [];
@@ -962,25 +921,6 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
                 </span>
               )}
             </div>
-            <label className="hidden sm:flex items-center gap-1.5 text-xs text-gray-600 shrink-0">
-              <ListFilter className="w-3.5 h-3.5 text-gray-400" aria-hidden />
-              <select
-                value={messageAuthorFilter}
-                onChange={(e) => setMessageAuthorFilter(e.target.value)}
-                className="max-w-[200px] sm:max-w-[240px] border border-gray-200 rounded-lg px-2 py-1 bg-white text-gray-800 focus:outline-none focus:ring-1 focus:ring-whatsapp/40"
-                title="Mesajları kime göre süz"
-              >
-                <option value="all">Tüm mesajlar</option>
-                <option value="me">Müşteri + benim yanıtlarım</option>
-                {inboxPeers
-                  .filter((p) => p.id !== currentUserId)
-                  .map((p) => (
-                    <option key={p.id} value={p.id}>
-                      Müşteri + {(p.name || p.email || 'Temsilci').slice(0, 28)} yanıtları
-                    </option>
-                  ))}
-              </select>
-            </label>
             {(contact as any).source && (
               <span className="hidden md:inline-flex text-[10px] bg-purple-50 text-purple-600 px-2 py-0.5 rounded-full font-medium">
                 {(contact as any).source}
@@ -1038,13 +978,6 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
             </button>
           </div>
         </div>
-
-        {messageAuthorFilter !== 'all' && messages.length > 0 && (
-          <div className="bg-amber-50/90 border-b border-amber-100 px-4 py-1.5 text-center text-[11px] text-amber-900">
-            {displayMessages.length} / {messages.length} mesaj gösteriliyor (gelen müşteri mesajları her zaman
-            dahil)
-          </div>
-        )}
 
         {/* Messages */}
         <div className="flex-1 overflow-y-auto p-4 space-y-2 scrollbar-thin">

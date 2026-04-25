@@ -191,7 +191,7 @@ export default function SettingsSystemPage() {
 
           <div className="p-4 bg-gray-50 rounded-xl space-y-2">
             <p className="font-medium text-sm text-gray-900">Teklif Varsayılan KDV Oranı</p>
-            <p className="text-xs text-gray-400">Teklifte "Boş satır" eklendiğinde otomatik gelecek KDV yüzdesi.</p>
+            <p className="text-xs text-gray-400">Teklifte &quot;Boş satır&quot; eklendiğinde otomatik gelecek KDV yüzdesi.</p>
             <div className="flex items-center gap-2">
               <input
                 type="number"
