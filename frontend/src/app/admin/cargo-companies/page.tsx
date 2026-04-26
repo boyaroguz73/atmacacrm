@@ -38,7 +38,7 @@ export default function AdminCargoCompaniesPage() {
   return <CargoCompaniesManager />;
 }
 
-export function CargoCompaniesManager({ embedded = false }: { embedded?: boolean }) {
+function CargoCompaniesManager({ embedded = false }: { embedded?: boolean }) {
   const [rows, setRows] = useState<CargoCompanyRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');

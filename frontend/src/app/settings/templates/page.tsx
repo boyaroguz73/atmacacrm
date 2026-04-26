@@ -59,7 +59,7 @@ function renderPreview(templateBody: string): string {
   return out;
 }
 
-export function TemplatesManager({ embedded = false }: { embedded?: boolean }) {
+function TemplatesManager({ embedded = false }: { embedded?: boolean }) {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');

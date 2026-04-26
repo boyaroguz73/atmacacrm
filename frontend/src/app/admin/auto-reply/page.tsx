@@ -38,7 +38,7 @@ export default function AutoReplyPage() {
   return <AutoReplyManager />;
 }
 
-export function AutoReplyManager({ embedded = false }: { embedded?: boolean }) {
+function AutoReplyManager({ embedded = false }: { embedded?: boolean }) {
   const router = useRouter();
   const [flows, setFlows] = useState<Flow[]>([]);
   const [loading, setLoading] = useState(true);

@@ -35,12 +35,12 @@ import {
   MessageSquareMore,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { KartelasManager } from '@/app/settings/kartelas/page';
-import { TemplatesManager } from '@/app/settings/templates/page';
-import { SuppliersManager } from '@/app/admin/suppliers/page';
-import { CargoCompaniesManager } from '@/app/admin/cargo-companies/page';
-import { AutoReplyManager } from '@/app/admin/auto-reply/page';
-import { QuotesManager } from '@/app/quotes/page';
+import KartelasPage from '@/app/settings/kartelas/page';
+import TemplatesPage from '@/app/settings/templates/page';
+import SuppliersPage from '@/app/admin/suppliers/page';
+import CargoCompaniesPage from '@/app/admin/cargo-companies/page';
+import AutoReplyPage from '@/app/admin/auto-reply/page';
+import QuotesPage from '@/app/quotes/page';
 
 /** JWT’de organizationId yoksa (çoğunlukla SUPERADMIN) seçili org’u query ile gönder */
 function integrationOrgParams(): Record<string, string> {
@@ -490,17 +490,17 @@ function ModuleDetailPanel({
 
       <div className="flex-1 overflow-y-auto p-6">
         {moduleKey === 'kartelas' ? (
-          <KartelasManager embedded />
+          <KartelasPage />
         ) : moduleKey === 'templates' ? (
-          <TemplatesManager embedded />
+          <TemplatesPage />
         ) : moduleKey === 'suppliers' ? (
-          <SuppliersManager embedded />
+          <SuppliersPage />
         ) : moduleKey === 'cargoCompanies' ? (
-          <CargoCompaniesManager embedded />
+          <CargoCompaniesPage />
         ) : moduleKey === 'automation' ? (
-          <AutoReplyManager embedded />
+          <AutoReplyPage />
         ) : moduleKey === 'quotes' ? (
-          <QuotesManager embedded />
+          <QuotesPage />
         ) : (
           <div className="text-sm text-gray-500">Bu modül için detay ekranı henüz eklenmedi.</div>
         )}

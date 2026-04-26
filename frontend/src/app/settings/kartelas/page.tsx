@@ -17,7 +17,7 @@ type Kartela = {
   createdAt: string;
 };
 
-export function KartelasManager({ embedded = false }: { embedded?: boolean }) {
+function KartelasManager({ embedded = false }: { embedded?: boolean }) {
   const [items, setItems] = useState<Kartela[]>([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);

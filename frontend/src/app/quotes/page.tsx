@@ -109,7 +109,7 @@ export default function QuotesPage() {
   return <QuotesManager />;
 }
 
-export function QuotesManager({ embedded = false }: { embedded?: boolean }) {
+function QuotesManager({ embedded = false }: { embedded?: boolean }) {
   const router = useRouter();
   const { user } = useAuthStore();
   const canDeleteQuote = user?.role === 'ADMIN' || user?.role === 'SUPERADMIN';

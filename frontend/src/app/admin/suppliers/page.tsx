@@ -38,7 +38,7 @@ export default function AdminSuppliersPage() {
   return <SuppliersManager />;
 }
 
-export function SuppliersManager({ embedded = false }: { embedded?: boolean }) {
+function SuppliersManager({ embedded = false }: { embedded?: boolean }) {
   const [rows, setRows] = useState<SupplierRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
