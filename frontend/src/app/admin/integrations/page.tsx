@@ -262,11 +262,13 @@ export default function IntegrationsPage() {
                     const isSaving = savingKey === key;
                     const color = INTEGRATION_COLORS[key];
 
+                    const hasDetail = key !== 'quotes';
+
                     return (
                       <div
                         key={key}
-                        onClick={() => router.push(meta.detailPath)}
-                        className="group flex items-center gap-4 p-4 rounded-2xl border border-gray-100 bg-white hover:border-gray-200 hover:shadow-sm transition-all cursor-pointer active:scale-[0.995]"
+                        onClick={hasDetail ? () => router.push(meta.detailPath) : undefined}
+                        className={`group flex items-center gap-4 p-4 rounded-2xl border border-gray-100 bg-white transition-all ${hasDetail ? 'hover:border-gray-200 hover:shadow-sm cursor-pointer active:scale-[0.995]' : ''}`}
                       >
                         {/* Icon */}
                         {key === 'whatsapp' || key === 'tsoft' ? (
@@ -308,7 +310,7 @@ export default function IntegrationsPage() {
                               }
                             }}
                           />
-                          <ChevronRight className="w-4 h-4 text-gray-300 group-hover:text-gray-400 transition-colors" />
+                          {hasDetail && <ChevronRight className="w-4 h-4 text-gray-300 group-hover:text-gray-400 transition-colors" />}
                         </div>
                       </div>
                     );

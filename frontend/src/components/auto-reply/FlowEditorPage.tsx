@@ -196,7 +196,7 @@ export default function FlowEditorPage({ flowId }: { flowId?: string }) {
       };
       if (isEdit) await api.patch(`/auto-reply/${flowId}`, payload);
       else await api.post('/auto-reply', payload);
-      router.push('/admin/auto-reply');
+      router.back();
       router.refresh();
     } catch (err: any) {
       alert(err?.response?.data?.message || 'Kayıt başarısız');
@@ -213,7 +213,7 @@ export default function FlowEditorPage({ flowId }: { flowId?: string }) {
     <div className="p-6 max-w-5xl mx-auto space-y-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <button onClick={() => router.push('/admin/auto-reply')} className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50">
+          <button onClick={() => router.back()} className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50">
             <ArrowLeft className="w-4 h-4" />
           </button>
           <div>
