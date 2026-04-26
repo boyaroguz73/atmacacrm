@@ -379,11 +379,15 @@ export default function Sidebar({
       return true;
     });
     if (!isSuperAdmin && allowedMenuKeys) {
-      filtered = filtered.filter((item) => allowedMenuKeys.has(item.menuKey));
+      filtered = filtered.filter((item) => {
+        // quotes görünürlüğü yalnızca moduleToggles ile yönetilir, allowedMenuKeys'ten bağımsız
+        if (item.menuKey === 'quotes') return true;
+        return allowedMenuKeys.has(item.menuKey);
+      });
     }
     if (moduleToggles) {
       filtered = filtered.filter((item) => {
-        if (item.href === '/quotes' && moduleToggles.quotes === false) return false;
+        if (item.menuKey === 'quotes') return moduleToggles.quotes !== false;
         return true;
       });
     }

@@ -587,11 +587,6 @@ function TsoftDetail({ integration }: { integration: Integration }) {
   );
 }
 
-/* ─── Module wrapper (inline render with back button) ─── */
-function ModuleWrapper({ children }: { children: React.ReactNode }) {
-  return <div className="flex-1 overflow-y-auto">{children}</div>;
-}
-
 /* ─── Page ─── */
 export default function IntegrationDetailPage() {
   const params = useParams();
@@ -621,34 +616,29 @@ export default function IntegrationDetailPage() {
     );
   }
 
-  /* Modüller (kartelas, templates, suppliers, vb.) — inline render, geniş container */
-  const isModulePage = !['whatsapp', 'tsoft'].includes(key);
-
   return (
     <div className="min-h-screen bg-gray-50/50">
-      <div className={isModulePage ? 'px-4 py-6' : 'max-w-2xl mx-auto px-4 py-8'}>
+      <div className="max-w-2xl mx-auto px-4 py-8">
 
         {/* Geri butonu + başlık */}
-        <div className={isModulePage ? 'mb-4' : 'mb-8'}>
+        <div className="mb-8">
           <button
             onClick={() => router.push('/admin/integrations')}
-            className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 mb-4 transition-colors"
+            className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 mb-5 transition-colors"
           >
             <ArrowLeft className="w-4 h-4" /> Modüller
           </button>
 
-          {!isModulePage && (
-            <div className="flex items-center gap-4">
-              {meta.hasLogo ? (
-                <img src={`/module-logos/${key}.png`} alt={meta.label}
-                  className="w-12 h-12 rounded-2xl border border-gray-100 object-contain p-1.5 bg-white" />
-              ) : null}
-              <div>
-                <h1 className="text-xl font-semibold text-gray-900">{meta.label}</h1>
-                <p className="text-sm text-gray-400 mt-0.5">{meta.description}</p>
-              </div>
+          <div className="flex items-center gap-4">
+            {meta.hasLogo ? (
+              <img src={`/module-logos/${key}.png`} alt={meta.label}
+                className="w-12 h-12 rounded-2xl border border-gray-100 object-contain p-1.5 bg-white" />
+            ) : null}
+            <div>
+              <h1 className="text-xl font-semibold text-gray-900">{meta.label}</h1>
+              <p className="text-sm text-gray-400 mt-0.5">{meta.description}</p>
             </div>
-          )}
+          </div>
         </div>
 
         {/* İçerik */}
@@ -661,17 +651,17 @@ export default function IntegrationDetailPage() {
         ) : key === 'tsoft' ? (
           <TsoftDetail integration={integration || { key, name: 'T-Soft', description: '', category: 'ecommerce', isEnabled: false, available: true, addonPrice: 0, comingSoon: false, config: {} }} />
         ) : key === 'kartelas' ? (
-          <ModuleWrapper><KartelasPage /></ModuleWrapper>
+          <KartelasPage />
         ) : key === 'templates' ? (
-          <ModuleWrapper><TemplatesPage /></ModuleWrapper>
+          <TemplatesPage />
         ) : key === 'suppliers' ? (
-          <ModuleWrapper><SuppliersPage /></ModuleWrapper>
+          <SuppliersPage />
         ) : key === 'cargoCompanies' ? (
-          <ModuleWrapper><CargoCompaniesPage /></ModuleWrapper>
+          <CargoCompaniesPage />
         ) : key === 'automation' ? (
-          <ModuleWrapper><AutoReplyPage /></ModuleWrapper>
+          <AutoReplyPage />
         ) : key === 'quotes' ? (
-          <ModuleWrapper><QuotesPage /></ModuleWrapper>
+          <QuotesPage />
         ) : (
           <div className="bg-white rounded-2xl border border-gray-100 p-6">
             <p className="text-sm text-gray-500">Bu sayfa için içerik henüz hazırlanmadı.</p>

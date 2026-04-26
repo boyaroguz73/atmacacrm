@@ -276,9 +276,15 @@ export default function IntegrationsPage() {
                             className="w-10 h-10 shrink-0 rounded-xl object-contain border border-gray-100 p-1.5 bg-white"
                           />
                         ) : (
-                          <div className={`w-10 h-10 shrink-0 rounded-xl flex items-center justify-center ${
-                            enabled ? 'bg-green-50 text-green-600' : 'bg-gray-100 text-gray-400'
-                          }`}>
+                          <div
+                            className="w-10 h-10 shrink-0 rounded-xl flex items-center justify-center"
+                            style={{
+                              backgroundColor: enabled
+                                ? 'color-mix(in srgb, var(--color-primary, #25D366) 12%, white)'
+                                : '#f3f4f6',
+                              color: enabled ? 'var(--color-primary, #25D366)' : '#9ca3af',
+                            }}
+                          >
                             <Icon className="w-5 h-5" />
                           </div>
                         )}
