@@ -144,12 +144,6 @@ const MODULE_SEGMENTS: Array<{
 
 const AVATAR_REFRESH_FORCE_KEY = 'crm_settings_avatar_refresh_force';
 
-const CATEGORY_ICONS: Record<string, any> = {
-  messaging: MessageSquare,
-  ai: Bot,
-  ecommerce: ShoppingCart,
-};
-
 const INTEGRATION_COLORS: Record<string, string> = {
   whatsapp: 'from-green-500 to-green-600',
   instagram: 'from-pink-500 to-purple-500',
@@ -409,52 +403,53 @@ export default function IntegrationsPage() {
                   {segment.items.map((m) => {
                     const Icon = MODULE_ICON_MAP[m.key] || Settings;
                     const enabled = moduleToggles[m.key];
+                    const isActiveCard =
+                      selectedModuleKey === m.key || (selectedKey === m.key && (m.key === 'whatsapp' || m.key === 'tsoft'));
                     return (
                       <div
                         key={m.key}
-                        className={`rounded-xl border p-3 transition ${
-                          enabled
-                            ? 'border-green-200 bg-gradient-to-br from-green-50 to-white'
-                            : 'border-gray-100 bg-white hover:border-gray-200'
+                        onClick={() => {
+                          if (m.key === 'whatsapp' || m.key === 'tsoft') {
+                            setSelectedModuleKey(null);
+                            setSelectedKey(selectedKey === m.key ? null : m.key);
+                            return;
+                          }
+                          setSelectedKey(null);
+                          setSelectedModuleKey(selectedModuleKey === m.key ? null : m.key);
+                        }}
+                        className={`flex items-center gap-3 px-3 py-2.5 rounded-xl border transition-all cursor-pointer ${
+                          isActiveCard
+                            ? 'border-green-400 bg-green-50/50 ring-1 ring-green-200'
+                            : 'border-gray-100 bg-white hover:border-gray-200 hover:shadow-sm'
                         }`}
                       >
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="flex items-center gap-2 min-w-0">
-                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
-                              enabled ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
-                            }`}>
-                              <Icon className="w-4 h-4" />
-                            </div>
-                            <div>
-                              <p className="text-sm font-medium text-gray-900">{m.label}</p>
-                              <p className="text-[11px] text-gray-500 mt-0.5 line-clamp-2">{m.description}</p>
-                            </div>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => handleToggleModule(m.key)}
-                            className="shrink-0"
-                            title={enabled ? 'Kapat' : 'Aç'}
-                          >
-                            {enabled ? (
-                              <ToggleRight className="w-5 h-5 text-green-600" />
-                            ) : (
-                              <ToggleLeft className="w-5 h-5 text-gray-400" />
-                            )}
-                          </button>
+                        <div className={`w-8 h-8 shrink-0 rounded-lg flex items-center justify-center ${enabled ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                          <Icon className="w-4 h-4" />
                         </div>
-                        {!['whatsapp', 'tsoft'].includes(m.key) ? (
-                          <button
-                            type="button"
-                            className="mt-2 inline-flex items-center text-[11px] font-medium text-whatsapp hover:underline"
-                            onClick={() => {
-                              setSelectedKey(null);
-                              setSelectedModuleKey(m.key);
-                            }}
-                          >
-                            Ayarlar / Detay
-                          </button>
-                        ) : null}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-gray-900 truncate">{m.label}</p>
+                          <p className="text-[11px] text-gray-500 truncate">{m.description}</p>
+                          {!['whatsapp', 'tsoft'].includes(m.key) ? (
+                            <span className="inline-flex items-center text-[11px] font-medium text-whatsapp hover:underline mt-1">
+                              Ayarlar / Detay
+                            </span>
+                          ) : null}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleToggleModule(m.key);
+                          }}
+                          className="shrink-0"
+                          title={enabled ? 'Kapat' : 'Aç'}
+                        >
+                          {enabled ? (
+                            <ToggleRight className="w-5 h-5 text-green-600" />
+                          ) : (
+                            <ToggleLeft className="w-5 h-5 text-gray-400" />
+                          )}
+                        </button>
                       </div>
                     );
                   })}
@@ -463,29 +458,6 @@ export default function IntegrationsPage() {
             ))}
           </div>
         )}
-
-        {visibleCategories.map((category) => {
-          const CatIcon = CATEGORY_ICONS[category.key] || ShoppingBag;
-          const items = Array.isArray(category?.integrations) ? category.integrations : [];
-          return (
-            <div key={category.key}>
-              <div className="flex items-center gap-2 mb-2">
-                <CatIcon className="w-4 h-4 text-gray-400" />
-                <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">{category.label}</h2>
-              </div>
-              <div className={`grid gap-2 ${selected ? 'grid-cols-1 xl:grid-cols-2' : 'grid-cols-2 md:grid-cols-3 xl:grid-cols-4'}`}>
-                {items.map((integration) => (
-                  <IntegrationCard
-                    key={integration.key}
-                    integration={integration}
-                    isSelected={selectedKey === integration.key}
-                    onSelect={() => setSelectedKey(selectedKey === integration.key ? null : integration.key)}
-                  />
-                ))}
-              </div>
-            </div>
-          );
-        })}
 
       </div>
 
