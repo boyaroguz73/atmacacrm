@@ -109,8 +109,6 @@ const MODULE_TOGGLE_META: Array<{ key: ModuleToggleKey; label: string; descripti
   { key: 'quotes', label: 'Teklif Modülü', description: 'Teklif menüsü, sayfaları ve chat teklif aksiyonları' },
 ];
 
-const PRIMARY_MODULE_KEYS: ModuleToggleKey[] = ['whatsapp', 'tsoft'];
-
 const MODULE_ICON_MAP: Record<ModuleToggleKey, any> = {
   whatsapp: MessageSquareMore,
   tsoft: ShoppingCart,
@@ -121,6 +119,28 @@ const MODULE_ICON_MAP: Record<ModuleToggleKey, any> = {
   automation: Bot,
   quotes: FileText,
 };
+
+const MODULE_SEGMENTS: Array<{
+  key: string;
+  label: string;
+  moduleKeys: ModuleToggleKey[];
+}> = [
+  {
+    key: 'messaging-modules',
+    label: 'Mesajlaşma Modülleri',
+    moduleKeys: ['whatsapp', 'templates', 'automation', 'kartelas'],
+  },
+  {
+    key: 'ecommerce-modules',
+    label: 'E-Ticaret Entegrasyonları',
+    moduleKeys: ['tsoft'],
+  },
+  {
+    key: 'extra-modules',
+    label: 'Ek Modüller',
+    moduleKeys: ['suppliers', 'cargoCompanies', 'quotes'],
+  },
+];
 
 const AVATAR_REFRESH_FORCE_KEY = 'crm_settings_avatar_refresh_force';
 
@@ -324,9 +344,13 @@ export default function IntegrationsPage() {
     () => Object.fromEntries(MODULE_TOGGLE_META.map((m) => [m.key, m])) as Record<ModuleToggleKey, (typeof MODULE_TOGGLE_META)[number]>,
     [],
   );
-  const secondaryModules = useMemo(
-    () => MODULE_TOGGLE_META.filter((m) => !PRIMARY_MODULE_KEYS.includes(m.key)),
-    [],
+  const segmentedModules = useMemo(
+    () =>
+      MODULE_SEGMENTS.map((segment) => ({
+        ...segment,
+        items: segment.moduleKeys.map((k) => moduleMetaByKey[k]).filter(Boolean),
+      })),
+    [moduleMetaByKey],
   );
 
   if (loading) {
@@ -352,82 +376,59 @@ export default function IntegrationsPage() {
               Modül aç/kapat ve entegrasyon yönetimini buradan yapın
             </p>
           </div>
-          <div className="flex items-center gap-2 px-4 py-2 bg-gray-100 rounded-xl">
-            <Crown className="w-4 h-4 text-yellow-500" />
-            <span className="text-sm font-medium text-gray-700">
-              {PLAN_LABELS[plan] || plan} Paket
-            </span>
-          </div>
-        </div>
-
-        {moduleToggles && (
-          <div className="bg-white border border-gray-200 rounded-xl p-4">
-            <div className="flex items-center justify-between mb-3">
-              <h2 className="text-sm font-semibold text-gray-900">Modül Yönetimi</h2>
+          <div className="flex items-center gap-2">
+            {moduleToggles && (
               <button
                 type="button"
                 onClick={handleSaveModules}
                 disabled={savingModules}
-                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gray-900 text-white text-xs font-medium hover:bg-gray-800 disabled:opacity-50"
+                className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-gray-900 text-white text-xs font-medium hover:bg-gray-800 disabled:opacity-50"
               >
                 {savingModules ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-                Kaydet
+                Modül Degisikliklerini Kaydet
               </button>
+            )}
+            <div className="flex items-center gap-2 px-4 py-2 bg-gray-100 rounded-xl">
+              <Crown className="w-4 h-4 text-yellow-500" />
+              <span className="text-sm font-medium text-gray-700">
+                {PLAN_LABELS[plan] || plan} Paket
+              </span>
             </div>
-            <div className="space-y-4">
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-                {PRIMARY_MODULE_KEYS.map((key) => {
-                  const m = moduleMetaByKey[key];
-                  const Icon = MODULE_ICON_MAP[key] || Settings;
-                  const enabled = moduleToggles[key];
-                  return (
-                    <div
-                      key={m.key}
-                      className={`rounded-xl border p-4 transition ${
-                        enabled ? 'border-green-200 bg-gradient-to-br from-green-50 to-white' : 'border-gray-200 bg-gray-50'
-                      }`}
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex items-center gap-2">
-                          <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${enabled ? 'bg-green-100 text-green-700' : 'bg-white text-gray-500'}`}>
-                            <Icon className="w-4 h-4" />
-                          </div>
-                          <div>
-                            <p className="text-sm font-semibold text-gray-900">{m.label}</p>
-                            <p className="text-[11px] text-gray-500 mt-0.5">{m.description}</p>
-                          </div>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => handleToggleModule(m.key)}
-                          className="shrink-0"
-                          title={enabled ? 'Kapat' : 'Aç'}
-                        >
-                          {enabled ? <ToggleRight className="w-6 h-6 text-green-600" /> : <ToggleLeft className="w-6 h-6 text-gray-400" />}
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+          </div>
+        </div>
 
-              <div>
-                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Operasyon Modulleri</p>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
-                  {secondaryModules.map((m) => {
+        {moduleToggles && (
+          <div className="space-y-5">
+            {segmentedModules.map((segment) => (
+              <div key={segment.key}>
+                <div className="flex items-center gap-2 mb-2">
+                  <Settings className="w-4 h-4 text-gray-400" />
+                  <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">{segment.label}</h2>
+                </div>
+                <div className={`grid gap-2 ${selected || selectedModule ? 'grid-cols-1 xl:grid-cols-2' : 'grid-cols-2 md:grid-cols-3 xl:grid-cols-4'}`}>
+                  {segment.items.map((m) => {
                     const Icon = MODULE_ICON_MAP[m.key] || Settings;
                     const enabled = moduleToggles[m.key];
                     return (
                       <div
                         key={m.key}
-                        className={`text-left rounded-lg border p-3 transition ${
-                          enabled ? 'border-green-200 bg-green-50' : 'border-gray-200 bg-gray-50'
+                        className={`rounded-xl border p-3 transition ${
+                          enabled
+                            ? 'border-green-200 bg-gradient-to-br from-green-50 to-white'
+                            : 'border-gray-100 bg-white hover:border-gray-200'
                         }`}
                       >
                         <div className="flex items-start justify-between gap-2">
                           <div className="flex items-center gap-2 min-w-0">
-                            <Icon className={`w-4 h-4 shrink-0 ${enabled ? 'text-green-700' : 'text-gray-500'}`} />
-                            <p className="text-sm font-medium text-gray-900">{m.label}</p>
+                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
+                              enabled ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
+                            }`}>
+                              <Icon className="w-4 h-4" />
+                            </div>
+                            <div>
+                              <p className="text-sm font-medium text-gray-900">{m.label}</p>
+                              <p className="text-[11px] text-gray-500 mt-0.5 line-clamp-2">{m.description}</p>
+                            </div>
                           </div>
                           <button
                             type="button"
@@ -435,14 +436,17 @@ export default function IntegrationsPage() {
                             className="shrink-0"
                             title={enabled ? 'Kapat' : 'Aç'}
                           >
-                            {enabled ? <ToggleRight className="w-5 h-5 text-green-600" /> : <ToggleLeft className="w-5 h-5 text-gray-400" />}
+                            {enabled ? (
+                              <ToggleRight className="w-5 h-5 text-green-600" />
+                            ) : (
+                              <ToggleLeft className="w-5 h-5 text-gray-400" />
+                            )}
                           </button>
                         </div>
-                        <p className="text-[11px] text-gray-500 mt-1">{m.description}</p>
-                        <div className="mt-2">
+                        {!['whatsapp', 'tsoft'].includes(m.key) ? (
                           <button
                             type="button"
-                            className="inline-flex items-center text-[11px] font-medium text-whatsapp hover:underline"
+                            className="mt-2 inline-flex items-center text-[11px] font-medium text-whatsapp hover:underline"
                             onClick={() => {
                               setSelectedKey(null);
                               setSelectedModuleKey(m.key);
@@ -450,13 +454,13 @@ export default function IntegrationsPage() {
                           >
                             Ayarlar / Detay
                           </button>
-                        </div>
+                        ) : null}
                       </div>
                     );
                   })}
                 </div>
               </div>
-            </div>
+            ))}
           </div>
         )}
 
