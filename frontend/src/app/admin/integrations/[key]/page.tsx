@@ -7,16 +7,27 @@ import {
   ArrowLeft,
   Wifi, WifiOff, Plus, RefreshCw, RotateCcw, QrCode,
   Play, Square, Trash2, X, Loader2, ImageIcon,
-  MessageSquareMore, Globe, Save, ToggleLeft, ToggleRight,
-  Key, ExternalLink, Bug, Settings,
+  MessageSquareMore, Globe, Save, Bug,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import KartelasPage from '@/app/settings/kartelas/page';
+import TemplatesPage from '@/app/settings/templates/page';
+import SuppliersPage from '@/app/admin/suppliers/page';
+import CargoCompaniesPage from '@/app/admin/cargo-companies/page';
+import AutoReplyPage from '@/app/admin/auto-reply/page';
+import QuotesPage from '@/app/quotes/page';
 
 const AVATAR_REFRESH_FORCE_KEY = 'crm_settings_avatar_refresh_force';
 
-const PAGE_META: Record<string, { label: string; description: string }> = {
-  whatsapp: { label: 'WhatsApp', description: 'Oturum ve mesaj akışı yönetimi' },
-  tsoft:    { label: 'T-Soft',   description: 'Sipariş, ürün ve müşteri senkronizasyonu' },
+const PAGE_META: Record<string, { label: string; description: string; hasLogo?: boolean }> = {
+  whatsapp:       { label: 'WhatsApp',         description: 'Oturum ve mesaj akışı yönetimi',          hasLogo: true },
+  tsoft:          { label: 'T-Soft',           description: 'Sipariş, ürün ve müşteri senkronizasyonu', hasLogo: true },
+  kartelas:       { label: 'Kartela',          description: 'Kartela yükleme ve sohbetten gönderim' },
+  templates:      { label: 'Mesaj Şablonları', description: 'Hazır mesaj şablon yönetimi' },
+  suppliers:      { label: 'Tedarikçiler',     description: 'Tedarikçi kayıtları ve ayarları' },
+  cargoCompanies: { label: 'Kargo Firmaları',  description: 'Kargo firma tanımları' },
+  automation:     { label: 'Otomasyon',        description: 'Otomatik yanıt kuralları' },
+  quotes:         { label: 'Teklifler',        description: 'Teklif menüsü ve sohbet aksiyonları' },
 };
 
 interface Integration {
@@ -576,6 +587,11 @@ function TsoftDetail({ integration }: { integration: Integration }) {
   );
 }
 
+/* ─── Module wrapper (inline render with back button) ─── */
+function ModuleWrapper({ children }: { children: React.ReactNode }) {
+  return <div className="flex-1 overflow-y-auto">{children}</div>;
+}
+
 /* ─── Page ─── */
 export default function IntegrationDetailPage() {
   const params = useParams();
@@ -584,15 +600,14 @@ export default function IntegrationDetailPage() {
   const meta = PAGE_META[key];
 
   const [integration, setIntegration] = useState<Integration | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(key === 'whatsapp' || key === 'tsoft');
 
   useEffect(() => {
-    if (!key) return;
+    if (key !== 'whatsapp' && key !== 'tsoft') return;
     api.get('/integrations', { params: integrationOrgParams() })
       .then(({ data }) => {
         const all: Integration[] = (data?.categories || []).flatMap((c: any) => c.integrations || []);
-        const found = all.find((i: Integration) => i.key === key) ?? null;
-        setIntegration(found);
+        setIntegration(all.find((i: Integration) => i.key === key) ?? null);
       })
       .catch(() => {})
       .finally(() => setLoading(false));
@@ -606,40 +621,61 @@ export default function IntegrationDetailPage() {
     );
   }
 
+  /* Modüller (kartelas, templates, suppliers, vb.) — inline render, geniş container */
+  const isModulePage = !['whatsapp', 'tsoft'].includes(key);
+
   return (
     <div className="min-h-screen bg-gray-50/50">
-      <div className="max-w-2xl mx-auto px-4 py-8">
+      <div className={isModulePage ? 'px-4 py-6' : 'max-w-2xl mx-auto px-4 py-8'}>
 
-        {/* Header */}
-        <div className="mb-8">
-          <button onClick={() => router.back()}
-            className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 mb-5 transition-colors">
-            <ArrowLeft className="w-4 h-4" /> Geri
+        {/* Geri butonu + başlık */}
+        <div className={isModulePage ? 'mb-4' : 'mb-8'}>
+          <button
+            onClick={() => router.push('/admin/integrations')}
+            className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 mb-4 transition-colors"
+          >
+            <ArrowLeft className="w-4 h-4" /> Modüller
           </button>
-          <div className="flex items-center gap-4">
-            <img src={`/module-logos/${key}.png`} alt={meta.label}
-              className="w-12 h-12 rounded-2xl border border-gray-100 object-contain p-1.5 bg-white" />
-            <div>
-              <h1 className="text-xl font-semibold text-gray-900">{meta.label}</h1>
-              <p className="text-sm text-gray-400 mt-0.5">{meta.description}</p>
+
+          {!isModulePage && (
+            <div className="flex items-center gap-4">
+              {meta.hasLogo ? (
+                <img src={`/module-logos/${key}.png`} alt={meta.label}
+                  className="w-12 h-12 rounded-2xl border border-gray-100 object-contain p-1.5 bg-white" />
+              ) : null}
+              <div>
+                <h1 className="text-xl font-semibold text-gray-900">{meta.label}</h1>
+                <p className="text-sm text-gray-400 mt-0.5">{meta.description}</p>
+              </div>
             </div>
-          </div>
+          )}
         </div>
 
+        {/* İçerik */}
         {loading ? (
           <div className="flex items-center justify-center py-24">
             <Loader2 className="w-6 h-6 animate-spin text-gray-300" />
           </div>
+        ) : key === 'whatsapp' ? (
+          <WhatsAppDetail integration={integration || { key, name: 'WhatsApp', description: '', category: 'messaging', isEnabled: false, available: true, addonPrice: 0, comingSoon: false, config: {} }} />
+        ) : key === 'tsoft' ? (
+          <TsoftDetail integration={integration || { key, name: 'T-Soft', description: '', category: 'ecommerce', isEnabled: false, available: true, addonPrice: 0, comingSoon: false, config: {} }} />
+        ) : key === 'kartelas' ? (
+          <ModuleWrapper><KartelasPage /></ModuleWrapper>
+        ) : key === 'templates' ? (
+          <ModuleWrapper><TemplatesPage /></ModuleWrapper>
+        ) : key === 'suppliers' ? (
+          <ModuleWrapper><SuppliersPage /></ModuleWrapper>
+        ) : key === 'cargoCompanies' ? (
+          <ModuleWrapper><CargoCompaniesPage /></ModuleWrapper>
+        ) : key === 'automation' ? (
+          <ModuleWrapper><AutoReplyPage /></ModuleWrapper>
+        ) : key === 'quotes' ? (
+          <ModuleWrapper><QuotesPage /></ModuleWrapper>
         ) : (
-          key === 'whatsapp' ? (
-            <WhatsAppDetail integration={integration || { key, name: 'WhatsApp', description: '', category: 'messaging', isEnabled: false, available: true, addonPrice: 0, comingSoon: false, config: {} }} />
-          ) : key === 'tsoft' ? (
-            <TsoftDetail integration={integration || { key, name: 'T-Soft', description: '', category: 'ecommerce', isEnabled: false, available: true, addonPrice: 0, comingSoon: false, config: {} }} />
-          ) : (
-            <div className="bg-white rounded-2xl border border-gray-100 p-6">
-              <p className="text-sm text-gray-500">Bu sayfa için içerik henüz hazırlanmadı.</p>
-            </div>
-          )
+          <div className="bg-white rounded-2xl border border-gray-100 p-6">
+            <p className="text-sm text-gray-500">Bu sayfa için içerik henüz hazırlanmadı.</p>
+          </div>
         )}
       </div>
     </div>

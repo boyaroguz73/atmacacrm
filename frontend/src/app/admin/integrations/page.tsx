@@ -62,14 +62,14 @@ const MODULE_META: Array<{
   icon: any;
   detailPath: string;
 }> = [
-  { key: 'whatsapp',      label: 'WhatsApp',         description: 'Oturum ve mesaj akışı yönetimi',         icon: MessageSquareMore, detailPath: '/admin/integrations/whatsapp' },
-  { key: 'tsoft',         label: 'T-Soft',            description: 'Sipariş, ürün ve müşteri senkronizasyonu', icon: ShoppingCart,      detailPath: '/admin/integrations/tsoft' },
-  { key: 'kartelas',      label: 'Kartela',           description: 'Kartela yükleme ve sohbetten gönderim',   icon: ImageIcon,         detailPath: '/settings/kartelas' },
-  { key: 'templates',     label: 'Mesaj Şablonları',  description: 'Hazır mesaj şablon yönetimi',             icon: MessageSquare,     detailPath: '/settings/templates' },
-  { key: 'suppliers',     label: 'Tedarikçiler',      description: 'Tedarikçi kayıtları ve ayarları',         icon: Boxes,             detailPath: '/admin/suppliers' },
-  { key: 'cargoCompanies',label: 'Kargo Firmaları',   description: 'Kargo firma tanımları',                   icon: Truck,             detailPath: '/admin/cargo-companies' },
-  { key: 'automation',    label: 'Otomasyon',         description: 'Otomatik yanıt kuralları',                icon: Bot,               detailPath: '/admin/auto-reply' },
-  { key: 'quotes',        label: 'Teklifler',         description: 'Teklif menüsü ve sohbet aksiyonları',     icon: FileText,          detailPath: '/quotes' },
+  { key: 'whatsapp',       label: 'WhatsApp',         description: 'Oturum ve mesaj akışı yönetimi',          icon: MessageSquareMore, detailPath: '/admin/integrations/whatsapp' },
+  { key: 'tsoft',          label: 'T-Soft',            description: 'Sipariş, ürün ve müşteri senkronizasyonu', icon: ShoppingCart,      detailPath: '/admin/integrations/tsoft' },
+  { key: 'kartelas',       label: 'Kartela',           description: 'Kartela yükleme ve sohbetten gönderim',   icon: ImageIcon,         detailPath: '/admin/integrations/kartelas' },
+  { key: 'templates',      label: 'Mesaj Şablonları',  description: 'Hazır mesaj şablon yönetimi',             icon: MessageSquare,     detailPath: '/admin/integrations/templates' },
+  { key: 'suppliers',      label: 'Tedarikçiler',      description: 'Tedarikçi kayıtları ve ayarları',         icon: Boxes,             detailPath: '/admin/integrations/suppliers' },
+  { key: 'cargoCompanies', label: 'Kargo Firmaları',   description: 'Kargo firma tanımları',                   icon: Truck,             detailPath: '/admin/integrations/cargoCompanies' },
+  { key: 'automation',     label: 'Otomasyon',         description: 'Otomatik yanıt kuralları',                icon: Bot,               detailPath: '/admin/integrations/automation' },
+  { key: 'quotes',         label: 'Teklifler',         description: 'Teklif menüsü ve sohbet aksiyonları',     icon: FileText,          detailPath: '/admin/integrations/quotes' },
 ];
 
 const MODULE_GROUPS: Array<{ label: string; keys: ModuleToggleKey[] }> = [
@@ -152,14 +152,17 @@ export default function IntegrationsPage() {
 
   const persistToggles = useCallback(async (next: Record<ModuleToggleKey, boolean>) => {
     await api.patch('/organizations/my/module-toggles', next);
-    if (next.quotes === false) {
+    if (next.quotes === false || next.quotes === true) {
       const { data } = await api.get<{ preview?: Record<string, string[]> }>('/organizations/my/menu-visibility');
       const preview = data?.preview || {};
-      const strip = (arr?: string[]) => (arr || []).filter((k) => k !== 'quotes');
+      const update = (arr?: string[]) => {
+        const base = (arr || []).filter((k) => k !== 'quotes');
+        return next.quotes ? [...base, 'quotes'] : base;
+      };
       await api.patch('/organizations/my/menu-visibility', {
-        AGENT: strip(preview.AGENT),
-        ACCOUNTANT: strip(preview.ACCOUNTANT),
-        ADMIN: strip(preview.ADMIN),
+        AGENT: update(preview.AGENT),
+        ACCOUNTANT: update(preview.ACCOUNTANT),
+        ADMIN: update(preview.ADMIN),
       });
     }
     window.dispatchEvent(new Event('crm-menu-visibility-changed'));
