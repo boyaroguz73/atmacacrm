@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useMemo, useState, useCallback } from 'react';
-import Link from 'next/link';
 import api, { getApiErrorMessage } from '@/lib/api';
 import { PLAN_LABELS } from '@/lib/constants';
 import {
@@ -33,6 +32,9 @@ import {
   Bug,
   ImageIcon,
   MessageSquareMore,
+  Truck,
+  FileText,
+  Boxes,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import KartelasPage from '@/app/settings/kartelas/page';
@@ -107,13 +109,17 @@ const MODULE_TOGGLE_META: Array<{ key: ModuleToggleKey; label: string; descripti
   { key: 'quotes', label: 'Teklif Modülü', description: 'Teklif menüsü, sayfaları ve chat teklif aksiyonları' },
 ];
 
-const MODULE_DETAIL_ROUTE: Partial<Record<ModuleToggleKey, string>> = {
-  kartelas: '/settings/kartelas',
-  templates: '/settings/templates',
-  suppliers: '/settings/suppliers',
-  cargoCompanies: '/settings/cargo-companies',
-  automation: '/admin/auto-reply',
-  quotes: '/quotes',
+const PRIMARY_MODULE_KEYS: ModuleToggleKey[] = ['whatsapp', 'tsoft'];
+
+const MODULE_ICON_MAP: Record<ModuleToggleKey, any> = {
+  whatsapp: MessageSquareMore,
+  tsoft: ShoppingCart,
+  kartelas: ImageIcon,
+  templates: MessageSquare,
+  suppliers: Boxes,
+  cargoCompanies: Truck,
+  automation: Bot,
+  quotes: FileText,
 };
 
 const AVATAR_REFRESH_FORCE_KEY = 'crm_settings_avatar_refresh_force';
@@ -314,6 +320,14 @@ export default function IntegrationsPage() {
     () => (selectedModuleKey ? MODULE_TOGGLE_META.find((m) => m.key === selectedModuleKey) || null : null),
     [selectedModuleKey],
   );
+  const moduleMetaByKey = useMemo(
+    () => Object.fromEntries(MODULE_TOGGLE_META.map((m) => [m.key, m])) as Record<ModuleToggleKey, (typeof MODULE_TOGGLE_META)[number]>,
+    [],
+  );
+  const secondaryModules = useMemo(
+    () => MODULE_TOGGLE_META.filter((m) => !PRIMARY_MODULE_KEYS.includes(m.key)),
+    [],
+  );
 
   if (loading) {
     return (
@@ -360,54 +374,88 @@ export default function IntegrationsPage() {
                 Kaydet
               </button>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
-              {MODULE_TOGGLE_META.map((m) => (
-                <button
-                  key={m.key}
-                  type="button"
-                  onClick={() => handleToggleModule(m.key)}
-                  className={`text-left rounded-lg border p-3 transition ${
-                    moduleToggles[m.key] ? 'border-green-200 bg-green-50' : 'border-gray-200 bg-gray-50'
-                  }`}
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="text-sm font-medium text-gray-900">{m.label}</p>
-                    {moduleToggles[m.key] ? (
-                      <ToggleRight className="w-5 h-5 text-green-600" />
-                    ) : (
-                      <ToggleLeft className="w-5 h-5 text-gray-400" />
-                    )}
-                  </div>
-                  <p className="text-[11px] text-gray-500 mt-1">{m.description}</p>
-                  {(
-                    ['kartelas', 'templates', 'suppliers', 'cargoCompanies', 'automation', 'quotes'] as string[]
-                  ).includes(m.key) ? (
-                    <div className="mt-2">
-                      <button
-                        type="button"
-                        className="inline-flex items-center text-[11px] font-medium text-whatsapp hover:underline"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSelectedKey(null);
-                          setSelectedModuleKey(m.key);
-                        }}
-                      >
-                        Ayarlar / Detay
-                      </button>
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                {PRIMARY_MODULE_KEYS.map((key) => {
+                  const m = moduleMetaByKey[key];
+                  const Icon = MODULE_ICON_MAP[key] || Settings;
+                  const enabled = moduleToggles[key];
+                  return (
+                    <div
+                      key={m.key}
+                      className={`rounded-xl border p-4 transition ${
+                        enabled ? 'border-green-200 bg-gradient-to-br from-green-50 to-white' : 'border-gray-200 bg-gray-50'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex items-center gap-2">
+                          <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${enabled ? 'bg-green-100 text-green-700' : 'bg-white text-gray-500'}`}>
+                            <Icon className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <p className="text-sm font-semibold text-gray-900">{m.label}</p>
+                            <p className="text-[11px] text-gray-500 mt-0.5">{m.description}</p>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleToggleModule(m.key)}
+                          className="shrink-0"
+                          title={enabled ? 'Kapat' : 'Aç'}
+                        >
+                          {enabled ? <ToggleRight className="w-6 h-6 text-green-600" /> : <ToggleLeft className="w-6 h-6 text-gray-400" />}
+                        </button>
+                      </div>
                     </div>
-                  ) : MODULE_DETAIL_ROUTE[m.key] ? (
-                    <div className="mt-2">
-                      <Link
-                        href={MODULE_DETAIL_ROUTE[m.key] as string}
-                        className="inline-flex items-center text-[11px] font-medium text-whatsapp hover:underline"
-                        onClick={(e) => e.stopPropagation()}
+                  );
+                })}
+              </div>
+
+              <div>
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Operasyon Modulleri</p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                  {secondaryModules.map((m) => {
+                    const Icon = MODULE_ICON_MAP[m.key] || Settings;
+                    const enabled = moduleToggles[m.key];
+                    return (
+                      <div
+                        key={m.key}
+                        className={`text-left rounded-lg border p-3 transition ${
+                          enabled ? 'border-green-200 bg-green-50' : 'border-gray-200 bg-gray-50'
+                        }`}
                       >
-                        Detay sayfasına git
-                      </Link>
-                    </div>
-                  ) : null}
-                </button>
-              ))}
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <Icon className={`w-4 h-4 shrink-0 ${enabled ? 'text-green-700' : 'text-gray-500'}`} />
+                            <p className="text-sm font-medium text-gray-900">{m.label}</p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleToggleModule(m.key)}
+                            className="shrink-0"
+                            title={enabled ? 'Kapat' : 'Aç'}
+                          >
+                            {enabled ? <ToggleRight className="w-5 h-5 text-green-600" /> : <ToggleLeft className="w-5 h-5 text-gray-400" />}
+                          </button>
+                        </div>
+                        <p className="text-[11px] text-gray-500 mt-1">{m.description}</p>
+                        <div className="mt-2">
+                          <button
+                            type="button"
+                            className="inline-flex items-center text-[11px] font-medium text-whatsapp hover:underline"
+                            onClick={() => {
+                              setSelectedKey(null);
+                              setSelectedModuleKey(m.key);
+                            }}
+                          >
+                            Ayarlar / Detay
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
           </div>
         )}
