@@ -160,6 +160,33 @@ export class OrganizationsController {
     return this.orgService.patchDefaultLocationSettings(orgId, body);
   }
 
+  @Get('my/module-toggles')
+  @Roles('AGENT', 'ADMIN', 'SUPERADMIN', 'ACCOUNTANT')
+  async getMyModuleToggles(@Req() req: any) {
+    const orgId = await this.resolveMyOrgId(req);
+    return this.orgService.getModuleToggles(orgId);
+  }
+
+  @Patch('my/module-toggles')
+  @Roles('ADMIN')
+  async patchMyModuleToggles(
+    @Req() req: any,
+    @Body()
+    body: {
+      whatsapp?: boolean;
+      tsoft?: boolean;
+      kartelas?: boolean;
+      templates?: boolean;
+      suppliers?: boolean;
+      cargoCompanies?: boolean;
+      automation?: boolean;
+      quotes?: boolean;
+    },
+  ) {
+    const orgId = await this.resolveMyOrgId(req);
+    return this.orgService.patchModuleToggles(orgId, body);
+  }
+
   // ===== SUPERADMIN endpoints (tüm organizasyonlar) =====
 
   @Get()

@@ -3,6 +3,7 @@ export const MENU_KEYS = [
   'dashboard',
   'inbox',
   'contacts',
+  'kartelas',
   'leads',
   'products',
   'quotes',
@@ -35,6 +36,7 @@ export function defaultAllowedMenuKeys(role: string | undefined): Set<string> {
     return new Set([
       'inbox',
       'contacts',
+      'kartelas',
       'leads',
       'quotes',
       'orders',
@@ -43,7 +45,7 @@ export function defaultAllowedMenuKeys(role: string | undefined): Set<string> {
       'calendar',
     ]);
   }
-  return new Set(['inbox', 'contacts', 'leads', 'quotes', 'orders', 'tasks', 'calendar']);
+  return new Set(['inbox', 'contacts', 'kartelas', 'leads', 'quotes', 'orders', 'tasks', 'calendar']);
 }
 
 export function sanitizeMenuKeys(input: string[] | undefined): string[] {

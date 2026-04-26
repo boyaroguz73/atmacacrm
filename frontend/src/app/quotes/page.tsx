@@ -106,6 +106,10 @@ function formatMoney(amount: number, currency: string): string {
 }
 
 export default function QuotesPage() {
+  return <QuotesManager />;
+}
+
+export function QuotesManager({ embedded = false }: { embedded?: boolean }) {
   const router = useRouter();
   const { user } = useAuthStore();
   const canDeleteQuote = user?.role === 'ADMIN' || user?.role === 'SUPERADMIN';
@@ -174,7 +178,7 @@ export default function QuotesPage() {
   }
 
   return (
-    <div className="p-4 sm:p-6 space-y-6 w-full max-w-none">
+    <div className={embedded ? 'space-y-6 w-full max-w-none p-0' : 'p-4 sm:p-6 space-y-6 w-full max-w-none'}>
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">

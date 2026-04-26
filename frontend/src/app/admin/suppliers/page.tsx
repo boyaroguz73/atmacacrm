@@ -35,6 +35,10 @@ const emptyForm = () => ({
 });
 
 export default function AdminSuppliersPage() {
+  return <SuppliersManager />;
+}
+
+export function SuppliersManager({ embedded = false }: { embedded?: boolean }) {
   const [rows, setRows] = useState<SupplierRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -150,7 +154,7 @@ export default function AdminSuppliersPage() {
   };
 
   return (
-    <div className="max-w-5xl mx-auto space-y-6 p-4 md:p-6">
+    <div className={embedded ? 'space-y-6 p-0' : 'max-w-5xl mx-auto space-y-6 p-4 md:p-6'}>
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">

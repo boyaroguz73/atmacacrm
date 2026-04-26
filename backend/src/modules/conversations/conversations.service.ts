@@ -15,6 +15,7 @@ import {
   isLikelyLidPhone,
   isValidPhoneNumber,
 } from '../../common/contact-phone';
+import { Prisma } from '@prisma/client';
 
 function isWeakGroupLabel(name: string | null | undefined): boolean {
   const t = (name ?? '').trim();
@@ -77,11 +78,22 @@ export class ConversationsService {
   ) {}
 
   async findOrCreate(contactId: string, sessionId: string) {
-    return this.prisma.conversation.upsert({
-      where: { contactId_sessionId: { contactId, sessionId } },
-      update: {},
-      create: { contactId, sessionId },
-    });
+    try {
+      return await this.prisma.conversation.create({
+        data: { contactId, sessionId },
+      });
+    } catch (e: any) {
+      if (
+        e instanceof Prisma.PrismaClientKnownRequestError &&
+        e.code === 'P2002'
+      ) {
+        const existing = await this.prisma.conversation.findUnique({
+          where: { contactId_sessionId: { contactId, sessionId } },
+        });
+        if (existing) return existing;
+      }
+      throw e;
+    }
   }
 
   /**
@@ -146,15 +158,28 @@ export class ConversationsService {
     const initialName = fromPayload || fromContact || 'WhatsApp Grubu';
 
     // Yeni grup conversation oluştur
-    return this.prisma.conversation.create({
-      data: {
-        contactId,
-        sessionId,
-        isGroup: true,
-        waGroupId: waGroupId.toLowerCase(),
-        groupName: initialName,
-      },
-    });
+    try {
+      return await this.prisma.conversation.create({
+        data: {
+          contactId,
+          sessionId,
+          isGroup: true,
+          waGroupId: waGroupId.toLowerCase(),
+          groupName: initialName,
+        },
+      });
+    } catch (e: any) {
+      if (
+        e instanceof Prisma.PrismaClientKnownRequestError &&
+        e.code === 'P2002'
+      ) {
+        const existingByComposite = await this.prisma.conversation.findUnique({
+          where: { contactId_sessionId: { contactId, sessionId } },
+        });
+        if (existingByComposite) return existingByComposite;
+      }
+      throw e;
+    }
   }
 
   async findAll(

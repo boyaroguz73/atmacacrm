@@ -35,6 +35,10 @@ const TRIGGERS = [
 ];
 
 export default function AutoReplyPage() {
+  return <AutoReplyManager />;
+}
+
+export function AutoReplyManager({ embedded = false }: { embedded?: boolean }) {
   const router = useRouter();
   const [flows, setFlows] = useState<Flow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -65,7 +69,7 @@ export default function AutoReplyPage() {
   };
 
   return (
-    <div className="p-6 max-w-6xl mx-auto">
+    <div className={embedded ? 'p-0' : 'p-6 max-w-6xl mx-auto'}>
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Otomasyon</h1>

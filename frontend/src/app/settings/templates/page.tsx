@@ -59,7 +59,7 @@ function renderPreview(templateBody: string): string {
   return out;
 }
 
-export default function SettingsTemplatesPage() {
+export function TemplatesManager({ embedded = false }: { embedded?: boolean }) {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -177,15 +177,17 @@ export default function SettingsTemplatesPage() {
 
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-5">
-      <div className="flex items-center gap-3">
-        <Link
-          href="/settings"
-          className="inline-flex items-center gap-1.5 text-sm text-gray-600 hover:text-gray-900"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          Ayarlar
-        </Link>
-      </div>
+      {!embedded ? (
+        <div className="flex items-center gap-3">
+          <Link
+            href="/settings"
+            className="inline-flex items-center gap-1.5 text-sm text-gray-600 hover:text-gray-900"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            Ayarlar
+          </Link>
+        </div>
+      ) : null}
 
       <div className="flex items-center justify-between gap-4">
         <div>
@@ -441,5 +443,9 @@ export default function SettingsTemplatesPage() {
       )}
     </div>
   );
+}
+
+export default function SettingsTemplatesPage() {
+  return <TemplatesManager />;
 }
 

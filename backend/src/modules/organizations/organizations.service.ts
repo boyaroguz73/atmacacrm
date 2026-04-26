@@ -12,6 +12,17 @@ import {
 export class OrganizationsService {
   constructor(private prisma: PrismaService) {}
 
+  private readonly moduleToggleKeys = [
+    'whatsapp',
+    'tsoft',
+    'kartelas',
+    'templates',
+    'suppliers',
+    'cargoCompanies',
+    'automation',
+    'quotes',
+  ] as const;
+
   /** Tek firma: kullanıcıda organizationId yoksa branding/entegrasyon için ilk kayıt */
   async getFirstOrganizationId(): Promise<string | null> {
     const row = await this.prisma.organization.findFirst({
@@ -157,6 +168,60 @@ export class OrganizationsService {
       return settings as Record<string, unknown>;
     }
     return {};
+  }
+
+  getModuleTogglesFromOrg(settings: Prisma.JsonValue | null): Record<string, boolean> {
+    const s = this.parseSettings(settings);
+    const raw = s.moduleToggles;
+    const defaults: Record<string, boolean> = {};
+    for (const key of this.moduleToggleKeys) defaults[key] = true;
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return defaults;
+    const src = raw as Record<string, unknown>;
+    for (const key of this.moduleToggleKeys) {
+      if (typeof src[key] === 'boolean') defaults[key] = src[key] as boolean;
+    }
+    return defaults;
+  }
+
+  async getModuleToggles(organizationId: string) {
+    const org = await this.prisma.organization.findUnique({
+      where: { id: organizationId },
+      select: { settings: true },
+    });
+    if (!org) throw new NotFoundException('Organizasyon bulunamadı');
+    return { toggles: this.getModuleTogglesFromOrg(org.settings) };
+  }
+
+  async patchModuleToggles(organizationId: string, body: Record<string, boolean | undefined>) {
+    const org = await this.prisma.organization.findUnique({
+      where: { id: organizationId },
+      select: { settings: true },
+    });
+    if (!org) throw new NotFoundException('Organizasyon bulunamadı');
+
+    const prev = this.parseSettings(org.settings);
+    const nextToggles = this.getModuleTogglesFromOrg(org.settings);
+    for (const key of this.moduleToggleKeys) {
+      if (typeof body[key] === 'boolean') nextToggles[key] = !!body[key];
+    }
+
+    const nextSettings = { ...prev, moduleToggles: nextToggles };
+    await this.prisma.organization.update({
+      where: { id: organizationId },
+      data: { settings: nextSettings as Prisma.InputJsonValue },
+    });
+
+    if (nextToggles.tsoft === false) {
+      await this.prisma.orgIntegration.updateMany({
+        where: {
+          organizationId,
+          integrationKey: { in: ['tsoft'] },
+        },
+        data: { isEnabled: false },
+      });
+    }
+
+    return { toggles: nextToggles };
   }
 
   getMenuOverridesFromOrg(settings: Prisma.JsonValue | null): MenuVisibilityOverrides | null {

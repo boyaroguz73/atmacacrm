@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useMemo, useState, useCallback } from 'react';
+import Link from 'next/link';
 import api, { getApiErrorMessage } from '@/lib/api';
 import { PLAN_LABELS } from '@/lib/constants';
 import {
@@ -34,6 +35,12 @@ import {
   MessageSquareMore,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { KartelasManager } from '@/app/settings/kartelas/page';
+import { TemplatesManager } from '@/app/settings/templates/page';
+import { SuppliersManager } from '@/app/admin/suppliers/page';
+import { CargoCompaniesManager } from '@/app/admin/cargo-companies/page';
+import { AutoReplyManager } from '@/app/admin/auto-reply/page';
+import { QuotesManager } from '@/app/quotes/page';
 
 /** JWT’de organizationId yoksa (çoğunlukla SUPERADMIN) seçili org’u query ile gönder */
 function integrationOrgParams(): Record<string, string> {
@@ -78,6 +85,36 @@ interface Session {
   status: string;
   wahaStatus: string | null;
 }
+
+type ModuleToggleKey =
+  | 'whatsapp'
+  | 'tsoft'
+  | 'kartelas'
+  | 'templates'
+  | 'suppliers'
+  | 'cargoCompanies'
+  | 'automation'
+  | 'quotes';
+
+const MODULE_TOGGLE_META: Array<{ key: ModuleToggleKey; label: string; description: string }> = [
+  { key: 'whatsapp', label: 'WhatsApp Modülü', description: 'WhatsApp oturum ve mesaj akışları' },
+  { key: 'tsoft', label: 'T-Soft Modülü', description: 'T-Soft API/senkron işlemleri' },
+  { key: 'kartelas', label: 'Kartela Modülü', description: 'Kartela yükleme ve chatten gönderim' },
+  { key: 'templates', label: 'Mesaj Şablonu Modülü', description: 'Hazır mesaj şablon yönetimi' },
+  { key: 'suppliers', label: 'Tedarikçi Modülü', description: 'Tedarikçi ayarları ve listeleri' },
+  { key: 'cargoCompanies', label: 'Kargo Firmaları Modülü', description: 'Kargo firma yönetimi' },
+  { key: 'automation', label: 'Otomasyon Modülü', description: 'Otomasyon ekranı ve akışları' },
+  { key: 'quotes', label: 'Teklif Modülü', description: 'Teklif menüsü, sayfaları ve chat teklif aksiyonları' },
+];
+
+const MODULE_DETAIL_ROUTE: Partial<Record<ModuleToggleKey, string>> = {
+  kartelas: '/settings/kartelas',
+  templates: '/settings/templates',
+  suppliers: '/settings/suppliers',
+  cargoCompanies: '/settings/cargo-companies',
+  automation: '/admin/auto-reply',
+  quotes: '/quotes',
+};
 
 const AVATAR_REFRESH_FORCE_KEY = 'crm_settings_avatar_refresh_force';
 
@@ -166,6 +203,9 @@ export default function IntegrationsPage() {
   const [toggling, setToggling] = useState<string | null>(null);
   const [purchasing, setPurchasing] = useState<string | null>(null);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  const [selectedModuleKey, setSelectedModuleKey] = useState<ModuleToggleKey | null>(null);
+  const [moduleToggles, setModuleToggles] = useState<Record<ModuleToggleKey, boolean> | null>(null);
+  const [savingModules, setSavingModules] = useState(false);
 
   const fetchCatalog = useCallback(async () => {
     try {
@@ -186,6 +226,48 @@ export default function IntegrationsPage() {
   useEffect(() => {
     fetchCatalog();
   }, [fetchCatalog]);
+
+  useEffect(() => {
+    api
+      .get<{ toggles?: Record<ModuleToggleKey, boolean> }>('/organizations/my/module-toggles')
+      .then(({ data }) => {
+        if (data?.toggles) setModuleToggles(data.toggles);
+      })
+      .catch(() => {});
+  }, []);
+
+  const handleToggleModule = (key: ModuleToggleKey) => {
+    setModuleToggles((prev) => {
+      if (!prev) return prev;
+      return { ...prev, [key]: !prev[key] };
+    });
+  };
+
+  const handleSaveModules = async () => {
+    if (!moduleToggles) return;
+    setSavingModules(true);
+    try {
+      await api.patch('/organizations/my/module-toggles', moduleToggles);
+      if (moduleToggles.quotes === false) {
+        const { data } = await api.get<{ preview?: Record<string, string[]> }>('/organizations/my/menu-visibility');
+        const preview = data?.preview || {};
+        const stripQuotes = (arr: string[] | undefined) =>
+          (Array.isArray(arr) ? arr : []).filter((k) => k !== 'quotes');
+        await api.patch('/organizations/my/menu-visibility', {
+          AGENT: stripQuotes(preview.AGENT),
+          ACCOUNTANT: stripQuotes(preview.ACCOUNTANT),
+          ADMIN: stripQuotes(preview.ADMIN),
+        });
+      }
+      window.dispatchEvent(new Event('crm-menu-visibility-changed'));
+      toast.success('Modül ayarları kaydedildi');
+      await fetchCatalog();
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, 'Modül ayarları kaydedilemedi'));
+    } finally {
+      setSavingModules(false);
+    }
+  };
 
   const handleToggle = async (key: string, enable: boolean) => {
     setToggling(key);
@@ -228,6 +310,10 @@ export default function IntegrationsPage() {
     .filter((c) => c.integrations.length > 0);
   const visibleIntegrations = visibleCategories.flatMap((c) => c.integrations);
   const selected = visibleIntegrations.find((i) => i.key === selectedKey) || null;
+  const selectedModule = useMemo(
+    () => (selectedModuleKey ? MODULE_TOGGLE_META.find((m) => m.key === selectedModuleKey) || null : null),
+    [selectedModuleKey],
+  );
 
   if (loading) {
     return (
@@ -240,12 +326,16 @@ export default function IntegrationsPage() {
   return (
     <div className="flex h-[calc(100vh-4rem)]">
       {/* Left: Card Grid */}
-      <div className={`flex-1 overflow-y-auto p-6 space-y-6 transition-all ${selected ? 'max-w-[50%]' : ''}`}>
+      <div
+        className={`flex-1 overflow-y-auto p-6 space-y-6 transition-all ${
+          selected || selectedModule ? 'max-w-[50%]' : ''
+        }`}
+      >
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Entegrasyonlar</h1>
+            <h1 className="text-2xl font-bold text-gray-900">Modüller</h1>
             <p className="text-gray-500 mt-1">
-              Mesajlaşma kanalları, e-ticaret ve yapay zeka entegrasyonlarınızı yönetin
+              Modül aç/kapat ve entegrasyon yönetimini buradan yapın
             </p>
           </div>
           <div className="flex items-center gap-2 px-4 py-2 bg-gray-100 rounded-xl">
@@ -255,6 +345,72 @@ export default function IntegrationsPage() {
             </span>
           </div>
         </div>
+
+        {moduleToggles && (
+          <div className="bg-white border border-gray-200 rounded-xl p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-sm font-semibold text-gray-900">Modül Yönetimi</h2>
+              <button
+                type="button"
+                onClick={handleSaveModules}
+                disabled={savingModules}
+                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gray-900 text-white text-xs font-medium hover:bg-gray-800 disabled:opacity-50"
+              >
+                {savingModules ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                Kaydet
+              </button>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+              {MODULE_TOGGLE_META.map((m) => (
+                <button
+                  key={m.key}
+                  type="button"
+                  onClick={() => handleToggleModule(m.key)}
+                  className={`text-left rounded-lg border p-3 transition ${
+                    moduleToggles[m.key] ? 'border-green-200 bg-green-50' : 'border-gray-200 bg-gray-50'
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-sm font-medium text-gray-900">{m.label}</p>
+                    {moduleToggles[m.key] ? (
+                      <ToggleRight className="w-5 h-5 text-green-600" />
+                    ) : (
+                      <ToggleLeft className="w-5 h-5 text-gray-400" />
+                    )}
+                  </div>
+                  <p className="text-[11px] text-gray-500 mt-1">{m.description}</p>
+                  {(
+                    ['kartelas', 'templates', 'suppliers', 'cargoCompanies', 'automation', 'quotes'] as string[]
+                  ).includes(m.key) ? (
+                    <div className="mt-2">
+                      <button
+                        type="button"
+                        className="inline-flex items-center text-[11px] font-medium text-whatsapp hover:underline"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedKey(null);
+                          setSelectedModuleKey(m.key);
+                        }}
+                      >
+                        Ayarlar / Detay
+                      </button>
+                    </div>
+                  ) : MODULE_DETAIL_ROUTE[m.key] ? (
+                    <div className="mt-2">
+                      <Link
+                        href={MODULE_DETAIL_ROUTE[m.key] as string}
+                        className="inline-flex items-center text-[11px] font-medium text-whatsapp hover:underline"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        Detay sayfasına git
+                      </Link>
+                    </div>
+                  ) : null}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {visibleCategories.map((category) => {
           const CatIcon = CATEGORY_ICONS[category.key] || ShoppingBag;
@@ -282,19 +438,73 @@ export default function IntegrationsPage() {
       </div>
 
       {/* Right: Detail Panel */}
-      {selected && (
+      {(selected || selectedModule) && (
         <div className="w-[50%] border-l border-gray-200 bg-gray-50 overflow-y-auto flex flex-col">
-          <DetailPanel
-            integration={selected}
-            onClose={() => setSelectedKey(null)}
-            onToggle={handleToggle}
-            onPurchase={handlePurchase}
-            toggling={toggling === selected.key}
-            purchasing={purchasing === selected.key}
-            onRefreshCatalog={fetchCatalog}
-          />
+          {selectedModule ? (
+            <ModuleDetailPanel
+              moduleKey={selectedModule.key}
+              moduleLabel={selectedModule.label}
+              onClose={() => setSelectedModuleKey(null)}
+            />
+          ) : selected ? (
+            <DetailPanel
+              integration={selected}
+              onClose={() => setSelectedKey(null)}
+              onToggle={handleToggle}
+              onPurchase={handlePurchase}
+              toggling={toggling === selected.key}
+              purchasing={purchasing === selected.key}
+              onRefreshCatalog={fetchCatalog}
+            />
+          ) : null}
         </div>
       )}
+    </div>
+  );
+}
+
+function ModuleDetailPanel({
+  moduleKey,
+  moduleLabel,
+  onClose,
+}: {
+  moduleKey: ModuleToggleKey;
+  moduleLabel: string;
+  onClose: () => void;
+}) {
+  return (
+    <div className="flex flex-col h-full">
+      <div className="p-5 bg-white border-b border-gray-200">
+        <div className="flex items-center justify-between mb-3">
+          <button onClick={onClose} className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700">
+            <ArrowLeft className="w-4 h-4" />
+            Geri
+          </button>
+          <button onClick={onClose} className="p-1 text-gray-400 hover:text-gray-600">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        <h2 className="text-lg font-bold text-gray-900">{moduleLabel}</h2>
+        <p className="text-xs text-gray-500 mt-0.5">Bu modülün tüm ayarları bu sayfa içindedir.</p>
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-6">
+        {moduleKey === 'kartelas' ? (
+          <KartelasManager embedded />
+        ) : moduleKey === 'templates' ? (
+          <TemplatesManager embedded />
+        ) : moduleKey === 'suppliers' ? (
+          <SuppliersManager embedded />
+        ) : moduleKey === 'cargoCompanies' ? (
+          <CargoCompaniesManager embedded />
+        ) : moduleKey === 'automation' ? (
+          <AutoReplyManager embedded />
+        ) : moduleKey === 'quotes' ? (
+          <QuotesManager embedded />
+        ) : (
+          <div className="text-sm text-gray-500">Bu modül için detay ekranı henüz eklenmedi.</div>
+        )}
+      </div>
     </div>
   );
 }

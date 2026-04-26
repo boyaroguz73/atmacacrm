@@ -5,9 +5,6 @@ import {
   Users,
   SlidersHorizontal,
   Building2,
-  FileText,
-  Warehouse,
-  Truck,
   ChevronRight,
 } from 'lucide-react';
 
@@ -57,41 +54,6 @@ export default function SettingsPage() {
         <ChevronRight className="w-5 h-5 text-gray-400 group-hover:text-whatsapp shrink-0" />
       </Link>
 
-      <Link
-        href="/settings/templates"
-        className="flex items-center justify-between gap-4 p-4 rounded-xl border border-gray-100 bg-white shadow-sm hover:border-whatsapp/30 hover:bg-whatsapp/5 transition-colors group"
-      >
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center text-blue-600">
-            <FileText className="w-5 h-5" />
-          </div>
-          <div>
-            <p className="font-semibold text-gray-900">Mesaj Şablonları</p>
-            <p className="text-xs text-gray-500 mt-0.5">
-              Hazır mesaj metinlerini yönetin, değişkenleri tek yerden görün.
-            </p>
-          </div>
-        </div>
-        <ChevronRight className="w-5 h-5 text-gray-400 group-hover:text-whatsapp shrink-0" />
-      </Link>
-
-      <Link
-        href="/settings/suppliers"
-        className="flex items-center justify-between gap-4 p-4 rounded-xl border border-gray-100 bg-white shadow-sm hover:border-whatsapp/30 hover:bg-whatsapp/5 transition-colors group"
-      >
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-orange-50 flex items-center justify-center text-orange-600">
-            <Warehouse className="w-5 h-5" />
-          </div>
-          <div>
-            <p className="font-semibold text-gray-900">Tedarikçiler</p>
-            <p className="text-xs text-gray-500 mt-0.5">
-              Tedarikçi kayıtlarını yönetin, sipariş ve tekliflerde hızlı kullanın.
-            </p>
-          </div>
-        </div>
-        <ChevronRight className="w-5 h-5 text-gray-400 group-hover:text-whatsapp shrink-0" />
-      </Link>
 
       <Link
         href="/settings/system"
@@ -111,23 +73,6 @@ export default function SettingsPage() {
         <ChevronRight className="w-5 h-5 text-gray-400 group-hover:text-whatsapp shrink-0" />
       </Link>
 
-      <Link
-        href="/settings/cargo-companies"
-        className="flex items-center justify-between gap-4 p-4 rounded-xl border border-gray-100 bg-white shadow-sm hover:border-whatsapp/30 hover:bg-whatsapp/5 transition-colors group"
-      >
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600">
-            <Truck className="w-5 h-5" />
-          </div>
-          <div>
-            <p className="font-semibold text-gray-900">Kargo Firmaları</p>
-            <p className="text-xs text-gray-500 mt-0.5">
-              Kargo ve ambar firmalarını yönetin, sipariş akışında hızlıca kullanın.
-            </p>
-          </div>
-        </div>
-        <ChevronRight className="w-5 h-5 text-gray-400 group-hover:text-whatsapp shrink-0" />
-      </Link>
     </div>
   );
 }

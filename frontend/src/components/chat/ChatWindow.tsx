@@ -176,6 +176,12 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
     { id: string; name: string | null; surname?: string | null; phone: string }[]
   >([]);
   const [contactSearchLoading, setContactSearchLoading] = useState(false);
+  const [kartelaPickerOpen, setKartelaPickerOpen] = useState(false);
+  const [kartelaSearch, setKartelaSearch] = useState('');
+  const [kartelaItems, setKartelaItems] = useState<
+    { id: string; name: string; fileUrl: string; fileName: string; mimeType: string }[]
+  >([]);
+  const [kartelaLoading, setKartelaLoading] = useState(false);
 
   const [actionTrayOpen, setActionTrayOpen] = useState(false);
   const actionTrayRef = useRef<HTMLDivElement>(null);
@@ -197,6 +203,7 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
     title?: string;
     address?: string;
   } | null>(null);
+  const [moduleToggles, setModuleToggles] = useState<Record<string, boolean> | null>(null);
 
   useEffect(() => {
     setMounted(true);
@@ -205,6 +212,43 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
       .then(({ data }) => setTemplates(data))
       .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (!kartelaPickerOpen) return;
+    let cancelled = false;
+    const t = setTimeout(() => {
+      void (async () => {
+        setKartelaLoading(true);
+        try {
+          const { data } = await api.get('/kartelas', {
+            params: { search: kartelaSearch.trim() || undefined },
+          });
+          if (!cancelled) setKartelaItems(Array.isArray(data) ? data : []);
+        } catch {
+          if (!cancelled) setKartelaItems([]);
+        } finally {
+          setKartelaLoading(false);
+        }
+      })();
+    }, 220);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [kartelaPickerOpen, kartelaSearch]);
+
+  useEffect(() => {
+    if (moduleToggles?.quotes === false) {
+      setProductPickerOpen(false);
+      setVariantPickerFor(null);
+    }
+    if (moduleToggles?.kartelas === false) {
+      setKartelaPickerOpen(false);
+    }
+    if (moduleToggles?.templates === false) {
+      setShowTemplates(false);
+    }
+  }, [moduleToggles]);
 
   useEffect(() => {
     if (!productPickerOpen) return;
@@ -280,6 +324,13 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
 
   useEffect(() => {
     api
+      .get('/organizations/my/module-toggles')
+      .then(({ data }) => {
+        setModuleToggles(data?.toggles || null);
+      })
+      .catch(() => setModuleToggles(null));
+
+    api
       .get('/system-settings')
       .then(({ data }) => {
         const ic = data.find((s: any) => s.key === 'internal_chat_enabled');
@@ -309,6 +360,8 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
       .catch(() => setDefaultLocation(null));
   }, []);
 
+  const moduleEnabled = (key: string) => moduleToggles?.[key] !== false;
+
   useEffect(() => {
     setText('');
     setShowTemplates(false);
@@ -320,6 +373,9 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
     setContactPickerOpen(false);
     setContactSearch('');
     setContactHits([]);
+    setKartelaPickerOpen(false);
+    setKartelaSearch('');
+    setKartelaItems([]);
     setActionTrayOpen(false);
     setReplyingTo(null);
     setContextMenuMsg(null);
@@ -1528,6 +1584,7 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
                   setShowTemplates(false);
                   setProductPickerOpen(false);
                   setContactPickerOpen(false);
+                  setKartelaPickerOpen(false);
                 }}
                 className={cn(
                   'p-2 rounded-lg transition-all duration-200',
@@ -1563,6 +1620,22 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
                       </div>
                       <span className="text-xs text-gray-600 font-medium">Görsel</span>
                     </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setKartelaPickerOpen(true);
+                        setContactPickerOpen(false);
+                        setProductPickerOpen(false);
+                        setActionTrayOpen(false);
+                      }}
+                      className="flex flex-col items-center gap-1.5 p-3 rounded-xl hover:bg-fuchsia-50 transition-colors group"
+                    >
+                      <div className="w-10 h-10 rounded-full bg-fuchsia-100 flex items-center justify-center group-hover:bg-fuchsia-200 transition-colors">
+                        <ImageIcon className="w-5 h-5 text-fuchsia-600" />
+                      </div>
+                      <span className="text-xs text-gray-600 font-medium">Kartela</span>
+                    </button>
                     
                     <button
                       type="button"
@@ -1587,11 +1660,15 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
                     <button
                       type="button"
                       onClick={() => {
+                        if (!moduleEnabled('quotes')) return;
                         setProductPickerOpen(true);
                         setContactPickerOpen(false);
+                        setKartelaPickerOpen(false);
                         setActionTrayOpen(false);
                       }}
-                      className="flex flex-col items-center gap-1.5 p-3 rounded-xl hover:bg-orange-50 transition-colors group"
+                      className={`flex flex-col items-center gap-1.5 p-3 rounded-xl transition-colors group ${
+                        moduleEnabled('quotes') ? 'hover:bg-orange-50' : 'opacity-40 cursor-not-allowed'
+                      }`}
                     >
                       <div className="w-10 h-10 rounded-full bg-orange-100 flex items-center justify-center group-hover:bg-orange-200 transition-colors">
                         <Package className="w-5 h-5 text-orange-600" />
@@ -1599,11 +1676,12 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
                       <span className="text-xs text-gray-600 font-medium">Ürün</span>
                     </button>
                     
-                    <button
+                    {moduleEnabled('kartelas') && <button
                       type="button"
                       onClick={() => {
                         setContactPickerOpen(true);
                         setProductPickerOpen(false);
+                        setKartelaPickerOpen(false);
                         setActionTrayOpen(false);
                       }}
                       className="flex flex-col items-center gap-1.5 p-3 rounded-xl hover:bg-cyan-50 transition-colors group"
@@ -1612,9 +1690,9 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
                         <User className="w-5 h-5 text-cyan-600" />
                       </div>
                       <span className="text-xs text-gray-600 font-medium">Kişi</span>
-                    </button>
+                    </button>}
                     
-                    <button
+                    {moduleEnabled('templates') && <button
                       type="button"
                       onClick={() => {
                         void handleSendLocation();
@@ -1626,12 +1704,13 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
                         <MapPin className="w-5 h-5 text-green-600" />
                       </div>
                       <span className="text-xs text-gray-600 font-medium">Konum</span>
-                    </button>
+                    </button>}
                     
                     <button
                       type="button"
                       onClick={() => {
                         setShowTemplates(true);
+                        setKartelaPickerOpen(false);
                         setActionTrayOpen(false);
                       }}
                       className="flex flex-col items-center gap-1.5 p-3 rounded-xl hover:bg-amber-50 transition-colors group"
@@ -1934,6 +2013,78 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
                           </button>
                         );
                       })
+                    )}
+                  </div>
+                </div>
+              )}
+              {kartelaPickerOpen && (
+                <div className="absolute bottom-full mb-2 left-0 right-0 bg-white border border-gray-200 rounded-xl shadow-lg z-20 overflow-hidden flex flex-col max-h-[28rem]">
+                  <div className="p-2 border-b border-gray-100 flex items-center gap-2">
+                    <Search className="w-4 h-4 text-gray-400 shrink-0" />
+                    <input
+                      type="search"
+                      autoComplete="off"
+                      placeholder="Kartela ara..."
+                      value={kartelaSearch}
+                      onChange={(e) => setKartelaSearch(e.target.value)}
+                      className="flex-1 min-w-0 text-sm py-1.5 px-1 border-0 focus:ring-0 focus:outline-none bg-transparent"
+                    />
+                  </div>
+                  <div className="overflow-y-auto flex-1 p-2">
+                    {kartelaLoading ? (
+                      <div className="flex justify-center py-10">
+                        <Loader2 className="w-6 h-6 text-whatsapp animate-spin" />
+                      </div>
+                    ) : kartelaItems.length === 0 ? (
+                      <p className="text-xs text-gray-400 text-center py-10 px-3">
+                        Kartela bulunamadi
+                      </p>
+                    ) : (
+                      <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                        {kartelaItems.map((k) => {
+                          const fullMediaUrl = `${backendPublicUrl()}${k.fileUrl}`;
+                          const isPdf = String(k.mimeType || '').toLowerCase().includes('pdf');
+                          return (
+                            <button
+                              key={k.id}
+                              type="button"
+                              disabled={sending}
+                              onClick={() => {
+                                setSending(true);
+                                sendMediaMessage({
+                                  conversationId: activeConversation.id,
+                                  sessionName: activeConversation.session.name,
+                                  chatId,
+                                  mediaUrl: fullMediaUrl,
+                                  caption: k.name || undefined,
+                                  mediaTypeHint: isPdf ? 'DOCUMENT' : 'IMAGE',
+                                })
+                                  .then(() => {
+                                    setKartelaPickerOpen(false);
+                                    setKartelaSearch('');
+                                  })
+                                  .catch((err) => {
+                                    toast.error(getApiErrorMessage(err, 'Kartela gonderilemedi'));
+                                  })
+                                  .finally(() => setSending(false));
+                              }}
+                              className="rounded-lg border border-gray-200 overflow-hidden bg-white hover:border-whatsapp/40 hover:shadow-sm transition-all text-left disabled:opacity-60"
+                            >
+                              <div className="aspect-[4/3] bg-gray-50 border-b border-gray-100 flex items-center justify-center">
+                                {isPdf ? (
+                                  <FileText className="w-8 h-8 text-gray-400" />
+                                ) : (
+                                  // eslint-disable-next-line @next/next/no-img-element
+                                  <img src={fullMediaUrl} alt={k.name} className="w-full h-full object-cover" />
+                                )}
+                              </div>
+                              <div className="p-2">
+                                <p className="text-xs font-medium text-gray-800 line-clamp-2">{k.name}</p>
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
                     )}
                   </div>
                 </div>

@@ -23,7 +23,6 @@ import {
   MessagesSquare,
   MessageCircleReply,
   Clock,
-  Zap,
   Activity,
   Building2,
   Shield,
@@ -104,10 +103,9 @@ const menuItems: MenuItem[] = [
     ],
   },
   { href: '/tasks', label: 'Görevler', icon: CalendarCheck, menuKey: 'tasks' },
-  { href: '/admin/auto-reply', label: 'Otomasyon', icon: Zap, adminOnly: true, menuKey: 'admin' },
   { href: '/calendar', label: 'Takvim', icon: CalendarDays, menuKey: 'calendar' },
   { href: '/reports', label: 'Raporlar', icon: BarChart3, adminOnly: true, menuKey: 'reports' },
-  { href: '/admin/integrations', label: 'Entegrasyonlar', icon: Plug, adminOnly: true, menuKey: 'integrations' },
+  { href: '/admin/integrations', label: 'Modüller', icon: Plug, adminOnly: true, menuKey: 'integrations' },
   { href: '/settings', label: 'Ayarlar', icon: Settings, adminOnly: true, menuKey: 'settings' },
   { href: '/admin/support', label: 'Destek', icon: HeadphonesIcon, adminOnly: true, menuKey: 'support' },
   {
@@ -275,6 +273,7 @@ export default function Sidebar({
     cachedMenu?.submenuHidden || {},
   );
   const [menuVisibilityEpoch, setMenuVisibilityEpoch] = useState(0);
+  const [moduleToggles, setModuleToggles] = useState<Record<string, boolean> | null>(null);
 
   const refreshMenuVisibility = useCallback(() => {
     if (isSuperAdmin) {
@@ -329,6 +328,13 @@ export default function Sidebar({
   }, [refreshMenuVisibility, user?.id, menuVisibilityEpoch]);
 
   useEffect(() => {
+    api
+      .get<{ toggles?: Record<string, boolean> }>('/organizations/my/module-toggles')
+      .then(({ data }) => setModuleToggles(data?.toggles || null))
+      .catch(() => setModuleToggles(null));
+  }, [user?.id, menuVisibilityEpoch]);
+
+  useEffect(() => {
     const onMenuChanged = () => setMenuVisibilityEpoch((e) => e + 1);
     window.addEventListener('crm-menu-visibility-changed', onMenuChanged);
     return () => window.removeEventListener('crm-menu-visibility-changed', onMenuChanged);
@@ -374,6 +380,12 @@ export default function Sidebar({
     });
     if (!isSuperAdmin && allowedMenuKeys) {
       filtered = filtered.filter((item) => allowedMenuKeys.has(item.menuKey));
+    }
+    if (moduleToggles) {
+      filtered = filtered.filter((item) => {
+        if (item.href === '/quotes' && moduleToggles.quotes === false) return false;
+        return true;
+      });
     }
     if (!isSuperAdmin && orderedMenuKeys?.length) {
       const orderIndex = new Map(orderedMenuKeys.map((k, i) => [k, i]));
@@ -441,7 +453,7 @@ export default function Sidebar({
         }),
       };
     });
-  }, [isAdmin, isSuperAdmin, isAccountant, ecommerceMenuVisible, ecommerceProvider, allowedMenuKeys, orderedMenuKeys, submenuOrder, user?.role]);
+  }, [isAdmin, isSuperAdmin, isAccountant, ecommerceMenuVisible, ecommerceProvider, allowedMenuKeys, orderedMenuKeys, submenuOrder, user?.role, moduleToggles]);
 
   const getInitialExpanded = () => {
     const active: string[] = [];

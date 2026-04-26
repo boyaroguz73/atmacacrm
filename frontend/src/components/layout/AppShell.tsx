@@ -10,6 +10,24 @@ import { Menu } from 'lucide-react';
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL?.replace('/api', '') || 'http://localhost:3002';
 
+function pathRequiredMenuKey(pathname: string): string | null {
+  const p = String(pathname || '/');
+  if (p.startsWith('/dashboard')) return 'dashboard';
+  if (p.startsWith('/inbox')) return 'inbox';
+  if (p.startsWith('/contacts')) return 'contacts';
+  if (p.startsWith('/kartelas')) return 'kartelas';
+  if (p.startsWith('/leads')) return 'leads';
+  if (p.startsWith('/quotes')) return 'quotes';
+  if (p.startsWith('/orders')) return 'orders';
+  if (p.startsWith('/accounting')) return 'accounting';
+  if (p.startsWith('/tasks')) return 'tasks';
+  if (p.startsWith('/calendar')) return 'calendar';
+  if (p.startsWith('/reports')) return 'reports';
+  if (p.startsWith('/admin/integrations')) return 'integrations';
+  if (p.startsWith('/settings')) return 'settings';
+  return null;
+}
+
 function pageTitleFromPath(pathname: string): string {
   const p = String(pathname || '/');
   if (p === '/' || p.startsWith('/dashboard')) return 'Gösterge Paneli';
@@ -32,6 +50,7 @@ function pageTitleFromPath(pathname: string): string {
   if (p.startsWith('/settings')) return 'Ayarlar';
   if (p.startsWith('/profile')) return 'Profil';
   if (p.startsWith('/ecommerce')) return 'E-Ticaret';
+  if (p.startsWith('/admin/integrations')) return 'Modüller';
   if (p.startsWith('/admin')) return 'Yönetim';
   if (p.startsWith('/superadmin')) return 'Süper Admin';
   return 'Atmaca Ofis';
@@ -73,6 +92,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [authReady, setAuthReady] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [allowedMenuKeys, setAllowedMenuKeys] = useState<Set<string> | null>(null);
+  const [moduleToggles, setModuleToggles] = useState<Record<string, boolean> | null>(null);
 
   useEffect(() => {
     loadFromStorage();
@@ -126,6 +147,66 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       disconnectSocket();
     };
   }, [userId, router]);
+
+  useEffect(() => {
+    if (!userId) return;
+    let cancelled = false;
+    api
+      .get<{ allowedKeys?: string[] }>('/organizations/my/menu-visibility')
+      .then(({ data }) => {
+        if (cancelled) return;
+        setAllowedMenuKeys(
+          Array.isArray(data?.allowedKeys) ? new Set(data.allowedKeys) : null,
+        );
+      })
+      .catch(() => {
+        if (!cancelled) setAllowedMenuKeys(null);
+      });
+    api
+      .get<{ toggles?: Record<string, boolean> }>('/organizations/my/module-toggles')
+      .then(({ data }) => {
+        if (cancelled) return;
+        setModuleToggles(data?.toggles || null);
+      })
+      .catch(() => {
+        if (!cancelled) setModuleToggles(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [userId]);
+
+  useEffect(() => {
+    if (!userId || !pathname) return;
+
+    // Bu modüllerin detayları sadece /admin/integrations (Modüller) içinden yönetilir.
+    // Direkt URL erişimini kapatıyoruz.
+    if (
+      pathname === '/settings/kartelas' ||
+      pathname === '/settings/templates' ||
+      pathname === '/settings/suppliers' ||
+      pathname === '/settings/cargo-companies' ||
+      pathname === '/kartelas'
+    ) {
+      router.replace('/admin/integrations');
+      return;
+    }
+
+    const needed = pathRequiredMenuKey(pathname);
+    if (needed && allowedMenuKeys && !allowedMenuKeys.has(needed)) {
+      router.replace('/inbox');
+      return;
+    }
+    if (moduleToggles) {
+      if (moduleToggles.quotes === false && pathname.startsWith('/quotes')) {
+        router.replace('/inbox');
+        return;
+      }
+      if (moduleToggles.automation === false && pathname.startsWith('/admin/auto-reply')) {
+        router.replace('/admin/integrations');
+      }
+    }
+  }, [userId, pathname, allowedMenuKeys, moduleToggles, router]);
 
   // Sayfa başlığı standardı: {Sayfa Adı} | Atmaca Ofis
   useEffect(() => {
