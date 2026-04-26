@@ -28,6 +28,7 @@ const PAGE_META: Record<string, { label: string; description: string; hasLogo?: 
   cargoCompanies: { label: 'Kargo Firmaları',  description: 'Kargo firma tanımları' },
   automation:     { label: 'Otomasyon',        description: 'Otomatik yanıt kuralları' },
   quotes:         { label: 'Teklifler',        description: 'Teklif menüsü ve sohbet aksiyonları' },
+  chatbot:        { label: 'AI Chatbot',       description: 'GPT tabanlı akıllı müşteri yanıtlayıcı' },
 };
 
 interface Integration {

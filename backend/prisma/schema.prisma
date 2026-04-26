@@ -198,6 +198,13 @@ model Organization {
   integrations         OrgIntegration[]
   tsoftCatalogProducts TsoftCatalogProduct[]
   tsoftPushQueue       TsoftPushQueue[]
+  aiConfig             AiConfig?
+  aiActionPolicies     AiActionPolicy[]
+  aiBusinessMemory     AiBusinessMemory?
+  aiPrompt             AiPrompt?
+  aiAutomationRules    AiAutomationRule[]
+  aiPendingActions     AiPendingAction[]
+  aiLogs               AiLog[]
 
   @@map("organizations")
 }
@@ -1217,4 +1224,155 @@ model DeliveryNote {
 
   @@index([orderId])
   @@map("delivery_notes")
+}
+
+// ─── AI Chatbot ───────────────────────────────────────────────────────────────
+
+/// Organizasyon bazlı AI genel ayarları
+model AiConfig {
+  id                    String   @id @default(uuid())
+  organizationId        String   @unique
+  enabled               Boolean  @default(false)
+  /// SAFE | BALANCED | AGGRESSIVE
+  mode                  String   @default("BALANCED")
+  model                 String   @default("gpt-4o-mini")
+  temperature           Float    @default(0.7)
+  maxTokens             Int      @default(500)
+  /// OpenAI API key (tenant bazlı)
+  openaiKey             String?
+  customerMemoryEnabled Boolean  @default(false)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("ai_configs")
+}
+
+/// Eylem bazlı izin politikası (OFF / ASK / AUTO)
+model AiActionPolicy {
+  id             String   @id @default(uuid())
+  organizationId String
+  /// send_message | ask_question | suggest_product | create_offer | send_offer |
+  /// create_order | send_payment_link | update_customer_note | assign_tag | handoff_to_human
+  action         String
+  /// OFF | ASK | AUTO
+  mode           String   @default("OFF")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, action])
+  @@index([organizationId])
+  @@map("ai_action_policies")
+}
+
+/// İşletme hafızası — tek seferlik konuşma analizi sonucu
+model AiBusinessMemory {
+  id                String    @id @default(uuid())
+  organizationId    String    @unique
+  sector            String?
+  tone              String?
+  salesStyle        String?
+  pricingBehavior   String?
+  objectionPatterns String?   @db.Text
+  closingPatterns   String?   @db.Text
+  rawMemory         String?   @db.Text
+  analyzedAt        DateTime?
+  /// idle | running | done | failed
+  analyzeStatus     String    @default("idle")
+  analyzeProgress   Int       @default(0)
+  analyzeError      String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("ai_business_memories")
+}
+
+/// Sistem / satış / destek promptları ve ton ayarı
+model AiPrompt {
+  id             String   @id @default(uuid())
+  organizationId String   @unique
+  systemPrompt   String?  @db.Text
+  salesPrompt    String?  @db.Text
+  supportPrompt  String?  @db.Text
+  /// professional | friendly | formal | direct | custom
+  tone           String   @default("professional")
+  customTone     String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("ai_prompts")
+}
+
+/// AI tetikleyici kuralları
+model AiAutomationRule {
+  id             String   @id @default(uuid())
+  organizationId String
+  /// new_message | no_operator_reply | outside_hours | keyword
+  trigger        String
+  enabled        Boolean  @default(true)
+  config         Json     @default("{}")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@map("ai_automation_rules")
+}
+
+/// Onay bekleyen AI aksiyonları (ASK modunda)
+model AiPendingAction {
+  id             String    @id @default(uuid())
+  organizationId String
+  conversationId String?
+  contactId      String?
+  contactName    String?
+  contactPhone   String?
+  action         String
+  payload        Json
+  suggestion     String?   @db.Text
+  /// PENDING | APPROVED | REJECTED | EXECUTED
+  status         String    @default("PENDING")
+  reviewedById   String?
+  reviewedAt     DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, status])
+  @@index([organizationId, createdAt(sort: Desc)])
+  @@map("ai_pending_actions")
+}
+
+/// Tüm AI eylem günlükleri
+model AiLog {
+  id             String   @id @default(uuid())
+  organizationId String
+  conversationId String?
+  contactId      String?
+  contactName    String?
+  contactPhone   String?
+  action         String
+  input          String?  @db.Text
+  output         String?  @db.Text
+  /// SUCCESS | FAILED | PENDING | REJECTED
+  status         String
+  durationMs     Int?
+  errorMessage   String?
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, createdAt(sort: Desc)])
+  @@index([organizationId, action])
+  @@index([organizationId, status])
+  @@map("ai_logs")
 }

@@ -32,7 +32,7 @@ function integrationOrgParams(): Record<string, string> {
 
 type ModuleToggleKey =
   | 'whatsapp' | 'tsoft' | 'kartelas' | 'templates'
-  | 'suppliers' | 'cargoCompanies' | 'automation' | 'quotes';
+  | 'suppliers' | 'cargoCompanies' | 'automation' | 'quotes' | 'chatbot';
 
 interface Integration {
   key: string;
@@ -70,12 +70,14 @@ const MODULE_META: Array<{
   { key: 'cargoCompanies', label: 'Kargo Firmaları',   description: 'Kargo firma tanımları',                   icon: Truck,             detailPath: '/admin/integrations/cargoCompanies' },
   { key: 'automation',     label: 'Otomasyon',         description: 'Otomatik yanıt kuralları',                icon: Bot,               detailPath: '/admin/integrations/automation' },
   { key: 'quotes',         label: 'Teklifler',         description: 'Teklif menüsü ve sohbet aksiyonları',     icon: FileText,          detailPath: '/admin/integrations/quotes' },
+  { key: 'chatbot',        label: 'AI Chatbot',        description: 'GPT tabanlı akıllı müşteri yanıtlayıcı',  icon: Bot,               detailPath: '/admin/integrations/chatbot' },
 ];
 
 const MODULE_GROUPS: Array<{ label: string; keys: ModuleToggleKey[] }> = [
   { label: 'Mesajlaşma',    keys: ['whatsapp', 'templates', 'automation', 'kartelas'] },
   { label: 'E-Ticaret',     keys: ['tsoft'] },
   { label: 'Ek Modüller',   keys: ['suppliers', 'cargoCompanies', 'quotes'] },
+  { label: 'Yapay Zeka',   keys: ['chatbot'] },
 ];
 
 const ACTIVE_INTEGRATION_KEYS = new Set(['whatsapp', 'tsoft']);

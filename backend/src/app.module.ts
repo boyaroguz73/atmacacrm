@@ -34,6 +34,7 @@ import { PdfModule } from './modules/pdf/pdf.module';
 import { SuppliersModule } from './modules/suppliers/suppliers.module';
 import { CargoCompaniesModule } from './modules/cargo-companies/cargo-companies.module';
 import { KartelasModule } from './modules/kartelas/kartelas.module';
+import { AiModule } from './modules/ai/ai.module';
 import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerGuard } from '@nestjs/throttler';
 
@@ -74,6 +75,7 @@ import { ThrottlerGuard } from '@nestjs/throttler';
     SuppliersModule,
     CargoCompaniesModule,
     KartelasModule,
+    AiModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },
