@@ -8,6 +8,7 @@ import { ContactsModule } from '../contacts/contacts.module';
 import { ConversationsModule } from '../conversations/conversations.module';
 import { WebsocketModule } from '../websocket/websocket.module';
 import { AutoReplyModule } from '../auto-reply/auto-reply.module';
+import { AiModule } from '../ai/ai.module';
 
 @Module({
   imports: [
@@ -15,6 +16,7 @@ import { AutoReplyModule } from '../auto-reply/auto-reply.module';
     forwardRef(() => ConversationsModule),
     forwardRef(() => WebsocketModule),
     forwardRef(() => AutoReplyModule),
+    forwardRef(() => AiModule),
   ],
   controllers: [WahaWebhookController, WahaSessionController, WahaFilesController],
   providers: [WahaService, WahaWebhookHandler],

@@ -6,6 +6,7 @@ import { WahaService } from './waha.service';
 import { ChatGateway } from '../websocket/chat.gateway';
 import { AutoReplyEngineService } from '../auto-reply/auto-reply-engine.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
+import { AiEngineService } from '../ai/ai-engine.service';
 import { MessageDirection, MessageStatus, Prisma } from '@prisma/client';
 import { ConfigService } from '@nestjs/config';
 import { writeFileSync, existsSync, mkdirSync } from 'fs';
@@ -172,6 +173,8 @@ export class WahaWebhookHandler {
     @Inject(forwardRef(() => AutoReplyEngineService))
     private autoReplyEngine: AutoReplyEngineService,
     private auditLog: AuditLogService,
+    @Inject(forwardRef(() => AiEngineService))
+    private aiEngine: AiEngineService,
   ) {
     this.wahaApiUrl = this.config.get('WAHA_API_URL', 'http://localhost:3001');
   }
@@ -737,6 +740,20 @@ export class WahaWebhookHandler {
           .catch((err) =>
             this.logger.error(`Otomatik yanıt hatası: ${err.message}`),
           );
+
+        if (waSession.organizationId) {
+          this.aiEngine
+            .processIncomingMessage({
+              orgId: waSession.organizationId,
+              sessionName,
+              conversationId: conversation.id,
+              contactId: contact.id,
+              messageBody: msg.body || '',
+            })
+            .catch((err) =>
+              this.logger.error(`AI engine hatası: ${err.message}`),
+            );
+        }
       }
 
       const logIdentifier = isGroup 
