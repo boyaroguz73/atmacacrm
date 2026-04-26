@@ -321,7 +321,7 @@ function WhatsAppDetail({ integration }: { integration: Integration }) {
         <div className="flex items-center justify-between p-4 bg-gray-50 rounded-xl">
           <div>
             <p className="text-sm font-medium text-gray-900">Mesajları senkronize et</p>
-            <p className="text-xs text-gray-400 mt-0.5">Aktif oturumlar için eksik mesajları WAHA'dan çeker.</p>
+            <p className="text-xs text-gray-400 mt-0.5">Aktif oturumlar için eksik mesajları WAHA&apos;dan çeker.</p>
           </div>
           <button onClick={syncMessages} disabled={syncingMessages}
             className="flex items-center gap-2 px-4 py-2 bg-orange-50 text-orange-700 rounded-lg text-xs font-medium hover:bg-orange-100 transition-colors disabled:opacity-50 shrink-0 ml-4">
