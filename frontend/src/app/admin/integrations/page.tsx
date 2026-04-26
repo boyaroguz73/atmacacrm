@@ -225,7 +225,7 @@ export default function IntegrationsPage() {
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [selectedModuleKey, setSelectedModuleKey] = useState<ModuleToggleKey | null>(null);
   const [moduleToggles, setModuleToggles] = useState<Record<ModuleToggleKey, boolean> | null>(null);
-  const [savingModules, setSavingModules] = useState(false);
+  const [savingModuleKey, setSavingModuleKey] = useState<ModuleToggleKey | null>(null);
 
   const fetchCatalog = useCallback(async () => {
     try {
@@ -256,36 +256,36 @@ export default function IntegrationsPage() {
       .catch(() => {});
   }, []);
 
-  const handleToggleModule = (key: ModuleToggleKey) => {
-    setModuleToggles((prev) => {
-      if (!prev) return prev;
-      return { ...prev, [key]: !prev[key] };
-    });
-  };
+  const persistModuleToggles = useCallback(async (toggles: Record<ModuleToggleKey, boolean>) => {
+    await api.patch('/organizations/my/module-toggles', toggles);
+    if (toggles.quotes === false) {
+      const { data } = await api.get<{ preview?: Record<string, string[]> }>('/organizations/my/menu-visibility');
+      const preview = data?.preview || {};
+      const stripQuotes = (arr: string[] | undefined) =>
+        (Array.isArray(arr) ? arr : []).filter((k) => k !== 'quotes');
+      await api.patch('/organizations/my/menu-visibility', {
+        AGENT: stripQuotes(preview.AGENT),
+        ACCOUNTANT: stripQuotes(preview.ACCOUNTANT),
+        ADMIN: stripQuotes(preview.ADMIN),
+      });
+    }
+    window.dispatchEvent(new Event('crm-menu-visibility-changed'));
+    await fetchCatalog();
+  }, [fetchCatalog]);
 
-  const handleSaveModules = async () => {
-    if (!moduleToggles) return;
-    setSavingModules(true);
+  const handleToggleModule = async (key: ModuleToggleKey) => {
+    if (!moduleToggles || savingModuleKey) return;
+    const next = { ...moduleToggles, [key]: !moduleToggles[key] };
+    setModuleToggles(next);
+    setSavingModuleKey(key);
     try {
-      await api.patch('/organizations/my/module-toggles', moduleToggles);
-      if (moduleToggles.quotes === false) {
-        const { data } = await api.get<{ preview?: Record<string, string[]> }>('/organizations/my/menu-visibility');
-        const preview = data?.preview || {};
-        const stripQuotes = (arr: string[] | undefined) =>
-          (Array.isArray(arr) ? arr : []).filter((k) => k !== 'quotes');
-        await api.patch('/organizations/my/menu-visibility', {
-          AGENT: stripQuotes(preview.AGENT),
-          ACCOUNTANT: stripQuotes(preview.ACCOUNTANT),
-          ADMIN: stripQuotes(preview.ADMIN),
-        });
-      }
-      window.dispatchEvent(new Event('crm-menu-visibility-changed'));
-      toast.success('Modül ayarları kaydedildi');
-      await fetchCatalog();
+      await persistModuleToggles(next);
+      toast.success(`${MODULE_TOGGLE_META.find((m) => m.key === key)?.label || 'Modül'} ${next[key] ? 'açıldı' : 'kapatıldı'}`);
     } catch (err) {
-      toast.error(getApiErrorMessage(err, 'Modül ayarları kaydedilemedi'));
+      setModuleToggles(moduleToggles);
+      toast.error(getApiErrorMessage(err, 'Modül durumu kaydedilemedi'));
     } finally {
-      setSavingModules(false);
+      setSavingModuleKey(null);
     }
   };
 
@@ -371,17 +371,6 @@ export default function IntegrationsPage() {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            {moduleToggles && (
-              <button
-                type="button"
-                onClick={handleSaveModules}
-                disabled={savingModules}
-                className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-gray-900 text-white text-xs font-medium hover:bg-gray-800 disabled:opacity-50"
-              >
-                {savingModules ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-                Modül Degisikliklerini Kaydet
-              </button>
-            )}
             <div className="flex items-center gap-2 px-4 py-2 bg-gray-100 rounded-xl">
               <Crown className="w-4 h-4 text-yellow-500" />
               <span className="text-sm font-medium text-gray-700">
@@ -403,6 +392,7 @@ export default function IntegrationsPage() {
                   {segment.items.map((m) => {
                     const Icon = MODULE_ICON_MAP[m.key] || Settings;
                     const enabled = moduleToggles[m.key];
+                    const isSaving = savingModuleKey === m.key;
                     const isActiveCard =
                       selectedModuleKey === m.key || (selectedKey === m.key && (m.key === 'whatsapp' || m.key === 'tsoft'));
                     return (
@@ -417,15 +407,21 @@ export default function IntegrationsPage() {
                           setSelectedKey(null);
                           setSelectedModuleKey(selectedModuleKey === m.key ? null : m.key);
                         }}
-                        className={`flex items-center gap-3 px-3 py-2.5 rounded-xl border transition-all cursor-pointer ${
+                        className={`flex items-center gap-3 px-3 py-2.5 rounded-xl border transition-all cursor-pointer active:scale-[0.99] ${
                           isActiveCard
-                            ? 'border-green-400 bg-green-50/50 ring-1 ring-green-200'
-                            : 'border-gray-100 bg-white hover:border-gray-200 hover:shadow-sm'
+                            ? 'border-green-400 bg-white ring-1 ring-green-200 shadow-sm'
+                            : 'border-gray-200 bg-white hover:border-gray-300 hover:shadow-md'
                         }`}
                       >
-                        <div className={`w-8 h-8 shrink-0 rounded-lg flex items-center justify-center ${enabled ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
-                          <Icon className="w-4 h-4" />
-                        </div>
+                        {m.key === 'whatsapp' ? (
+                          <img src="/module-logos/whatsapp.png" alt="WhatsApp" className="w-8 h-8 shrink-0 rounded-lg object-contain bg-white border border-gray-200 p-1" />
+                        ) : m.key === 'tsoft' ? (
+                          <img src="/module-logos/tsoft.png" alt="T-Soft" className="w-8 h-8 shrink-0 rounded-lg object-contain bg-white border border-gray-200 p-1" />
+                        ) : (
+                          <div className={`w-8 h-8 shrink-0 rounded-lg flex items-center justify-center ${enabled ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                            <Icon className="w-4 h-4" />
+                          </div>
+                        )}
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-medium text-gray-900 truncate">{m.label}</p>
                           <p className="text-[11px] text-gray-500 truncate">{m.description}</p>
@@ -439,12 +435,15 @@ export default function IntegrationsPage() {
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
-                            handleToggleModule(m.key);
+                            void handleToggleModule(m.key);
                           }}
                           className="shrink-0"
                           title={enabled ? 'Kapat' : 'Aç'}
+                          disabled={isSaving}
                         >
-                          {enabled ? (
+                          {isSaving ? (
+                            <Loader2 className="w-5 h-5 text-gray-400 animate-spin" />
+                          ) : enabled ? (
                             <ToggleRight className="w-5 h-5 text-green-600" />
                           ) : (
                             <ToggleLeft className="w-5 h-5 text-gray-400" />
