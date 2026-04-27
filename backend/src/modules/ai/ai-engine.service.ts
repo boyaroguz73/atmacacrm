@@ -66,8 +66,8 @@ export class AiEngineService {
     const policyMap = Object.fromEntries(policies.map((p) => [p.action, p.mode]));
     const getPolicy = (action: string) => (policyMap[action] as string) ?? 'OFF';
 
-    // 4. Build context — products fetched smartly (keyword match, not full catalog)
-    const [history, contact, memory, prompts] = await Promise.all([
+    // 4. Build context
+    const [history, contact, memory, prompts, allProducts] = await Promise.all([
       this.getHistory(ctx.conversationId),
       this.prisma.contact.findUnique({
         where: { id: ctx.contactId },
@@ -75,6 +75,12 @@ export class AiEngineService {
       }),
       this.prisma.aiBusinessMemory.findUnique({ where: { organizationId: ctx.orgId } }),
       this.prisma.aiPrompt.findUnique({ where: { organizationId: ctx.orgId } }),
+      // Tüm aktif ürünler — sadece id + name + fiyat (katalog index olarak)
+      this.prisma.product.findMany({
+        where: { isActive: true },
+        orderBy: { name: 'asc' },
+        select: { id: true, name: true, unitPrice: true, currency: true, category: true },
+      }),
     ]);
 
     const products = await this.getRelevantProducts(ctx.messageBody, memory);
@@ -128,7 +134,7 @@ export class AiEngineService {
     }
 
     // 5. Build system prompt
-    const systemPrompt = this.buildSystemPrompt(config, memory, prompts, contact, products, scrapedContext);
+    const systemPrompt = this.buildSystemPrompt(config, memory, prompts, contact, products, scrapedContext, allProducts);
 
     // 6. Build tool definitions (only include tools whose policy != OFF)
     const tools = this.buildTools(policyMap);
@@ -794,7 +800,7 @@ export class AiEngineService {
     });
   }
 
-  private buildSystemPrompt(config: any, memory: any, prompts: any, contact: any, products: any[], scrapedContext: ScrapedProduct[] = []): string {
+  private buildSystemPrompt(config: any, memory: any, prompts: any, contact: any, products: any[], scrapedContext: ScrapedProduct[] = [], allProducts: any[] = []): string {
     const parts: string[] = [];
 
     const customPrompt = prompts?.systemPrompt?.trim();
@@ -840,28 +846,29 @@ export class AiEngineService {
       parts.push(`\n## Müşteri Bilgileri\n${contactParts.join('\n')}`);
     }
 
-    // Yalnızca mesajla ilgili ürünler (tüm katalog değil)
+    // ── Tüm aktif ürünler (kısa katalog index) ──
+    if (allProducts.length > 0) {
+      const catalogLines = allProducts.map(
+        (p) => `${p.id} | ${p.name} | ${p.unitPrice} ${p.currency}${p.category ? ` | ${p.category}` : ''}`,
+      );
+      parts.push(
+        `\n## Tam Ürün Kataloğu (${allProducts.length} ürün)\n` +
+        `KURAL: Müşteri bir ürün sorduğunda YALNIZCA bu katalogdaki ürünleri öner. ` +
+        `Katalogda olmayan ürün, boyut veya model için "sistemimizde bu ürün bulunmuyor" de, tahmin yürütme.\n\n` +
+        catalogLines.join('\n'),
+      );
+    }
+
+    // ── Mesajla ilgili ürünler — detaylı bilgi (açıklama, stok vb.) ──
     if (products.length > 0) {
-      const productLines = products.map((p) => {
+      const detailLines = products.map((p) => {
         let line = `- ID:${p.id} | ${p.name} | ${p.unitPrice} ${p.currency}`;
         if (p.stock != null) line += ` | Stok:${p.stock}`;
-        if (p.category) line += ` | Kategori:${p.category}`;
         if (p.sku) line += ` | SKU:${p.sku}`;
-        if (p.description) line += `\n  Açıklama: ${String(p.description).slice(0, 300)}`;
+        if (p.description) line += `\n  → ${String(p.description).slice(0, 400)}`;
         return line;
       });
-      parts.push(
-        `\n## CRM Ürün Listesi (KESİN VERİ)\n` +
-        `KURAL: Müşteri bir ürün veya özellik sorduğunda YALNIZCA bu listede olan ürünleri sun. ` +
-        `Listede olmayan ürün, boyut veya varyant için "sistemimizde bu ürün bulunmuyor" de, ` +
-        `tahmin yürütme veya "olabilir" deme.\n\n` +
-        productLines.join('\n'),
-      );
-    } else {
-      parts.push(
-        `\n## CRM Ürün Listesi\nBu mesajla ilgili ürün bulunamadı. ` +
-        `Müşteriye farklı anahtar kelimelerle aramayı dene veya ürün kategorisini sor.`,
-      );
+      parts.push(`\n## Bu Mesajla İlgili Ürünler (Detaylı)\n${detailLines.join('\n')}`);
     }
 
     if (prompts?.salesPrompt) parts.push(`\n## Satış Talimatları\n${prompts.salesPrompt}`);
