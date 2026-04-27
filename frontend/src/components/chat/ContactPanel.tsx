@@ -101,6 +101,7 @@ export default function ContactPanel({
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [editingNoteText, setEditingNoteText] = useState('');
   const [noteActionBusyId, setNoteActionBusyId] = useState<string | null>(null);
+  const [leadCreating, setLeadCreating] = useState(false);
 
   const [openSections, setOpenSections] = useState({
     info: true,
@@ -198,12 +199,16 @@ export default function ContactPanel({
   };
 
   const createLead = async () => {
+    setLeadCreating(true);
     try {
       const { data } = await api.post('/leads', { contactId: contact.id });
       setLead(data);
       toast.success('Potansiyel müşteri olarak işaretlendi');
+      fetchContact();
     } catch (err: any) {
       toast.error(err.response?.data?.message || 'Potansiyel müşteri oluşturulamadı');
+    } finally {
+      setLeadCreating(false);
     }
   };
 
@@ -378,14 +383,14 @@ export default function ContactPanel({
                 <div className="grid grid-cols-1 gap-2">
                   <Link
                     href={`/quotes/new?contactId=${contact.id}`}
-                    className="w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-purple-600 text-white rounded-lg text-xs font-semibold hover:bg-purple-700 transition"
+                    className="w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-purple-600 text-white rounded-lg text-xs font-semibold hover:bg-purple-700 transition shadow-sm"
                   >
                     <ClipboardList className="w-3.5 h-3.5" />
                     Teklif Oluştur
                   </Link>
                   <Link
                     href={`/orders/new?contactId=${contact.id}`}
-                    className="w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-whatsapp text-white rounded-lg text-xs font-semibold hover:bg-green-700 transition"
+                    className="w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-whatsapp text-white rounded-lg text-xs font-semibold hover:bg-green-700 transition shadow-sm"
                   >
                     <Truck className="w-3.5 h-3.5" />
                     Sipariş Oluştur
@@ -403,7 +408,21 @@ export default function ContactPanel({
                         <option key={s.value} value={s.value}>{s.label}</option>
                       ))}
                     </select>
-                  ) : null}
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => void createLead()}
+                      disabled={leadCreating}
+                      className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg text-xs font-semibold transition shadow-sm bg-gradient-to-br from-sky-500 to-indigo-600 text-white hover:from-sky-600 hover:to-indigo-700 disabled:opacity-55 disabled:pointer-events-none"
+                    >
+                      {leadCreating ? (
+                        <span className="inline-block w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin shrink-0" />
+                      ) : (
+                        <Target className="w-3.5 h-3.5 shrink-0" />
+                      )}
+                      {leadCreating ? 'Ekleniyor…' : 'Potansiyel müşteri olarak işaretle'}
+                    </button>
+                  )}
                 </div>
               )}
 
