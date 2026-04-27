@@ -36,4 +36,4 @@ RUN mkdir -p /app/fonts && \
 EXPOSE 4000
 
 # Şema ile DB uyumu: container her açılışta bekleyen migration'ları uygular (supplierId vb.)
-CMD ["sh", "-c", "set -e; echo '[backend] prisma migrate deploy...'; npx prisma migrate deploy; echo '[backend] starting NestJS'; exec node dist/main"]
+CMD ["sh", "-c", "set -e; echo '[backend] clearing failed migrations...'; npx prisma migrate resolve --rolled-back 20260427120000_ai_learning_beta 2>/dev/null || true; echo '[backend] prisma migrate deploy...'; npx prisma migrate deploy; echo '[backend] starting NestJS'; exec node dist/main"]
