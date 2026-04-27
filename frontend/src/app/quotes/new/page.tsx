@@ -1595,12 +1595,11 @@ export default function NewQuotePage() {
                   {fmt(totals.vatTotal)}
                 </dd>
               </div>
-              {grandTotalOverride && parseFloat(grandTotalOverride) > 0 && (
-                <div className="flex justify-between gap-2 text-gray-500 text-xs">
-                  <dt>Hesaplanan Toplam</dt>
-                  <dd className="tabular-nums line-through">
-                    {sym}
-                    {fmt(totals.grandTotal)}
+              {grandTotalOverride && parseFloat(grandTotalOverride) > 0 && parseFloat(grandTotalOverride) < totals.grandTotal && (
+                <div className="flex justify-between gap-2 text-orange-600 text-sm font-medium">
+                  <dt>Manuel iskonto</dt>
+                  <dd className="tabular-nums">
+                    -{sym}{fmt(totals.grandTotal - parseFloat(grandTotalOverride))}
                   </dd>
                 </div>
               )}

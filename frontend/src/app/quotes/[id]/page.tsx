@@ -1174,12 +1174,11 @@ export default function QuoteDetailPage() {
                     {fmtNum(totals.vatTotal)}
                   </dd>
                 </div>
-                {grandTotalOverride && parseFloat(grandTotalOverride) > 0 && (
-                  <div className="flex justify-between gap-2 text-gray-500 text-xs">
-                    <dt>Hesaplanan Toplam</dt>
-                    <dd className="tabular-nums line-through">
-                      {sym}
-                      {fmtNum(totals.grandTotal)}
+                {grandTotalOverride && parseFloat(grandTotalOverride) > 0 && parseFloat(grandTotalOverride) < totals.grandTotal && (
+                  <div className="flex justify-between gap-2 text-orange-600 text-sm font-medium">
+                    <dt>Manuel iskonto</dt>
+                    <dd className="tabular-nums">
+                      -{sym}{fmtNum(totals.grandTotal - parseFloat(grandTotalOverride))}
                     </dd>
                   </div>
                 )}
@@ -1608,10 +1607,10 @@ export default function QuoteDetailPage() {
               <span className="text-gray-500">KDV</span>
               <span>{fmt(quote.vatTotal)}</span>
             </div>
-            {quote.grandTotalOverride && quote.grandTotalOverride !== quote.grandTotal && (
-              <div className="flex justify-between text-xs text-gray-400">
-                <span>Hesaplanan</span>
-                <span className="line-through">{fmt(quote.grandTotal)}</span>
+            {quote.grandTotalOverride && Number(quote.grandTotalOverride) > 0 && Number(quote.grandTotalOverride) < Number(quote.grandTotal) && (
+              <div className="flex justify-between text-sm font-medium text-orange-600">
+                <span>Manuel iskonto</span>
+                <span>-{fmt(Number(quote.grandTotal) - Number(quote.grandTotalOverride))}</span>
               </div>
             )}
             <div className="border-t pt-3 flex justify-between">

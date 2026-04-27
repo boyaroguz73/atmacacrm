@@ -110,6 +110,7 @@ interface SalesOrder {
   invoice?: { id: string } | null;
   createdBy?: { id: string; name: string | null } | null;
   contact: {
+    id: string;
     name: string | null;
     surname: string | null;
     phone: string;
