@@ -88,6 +88,26 @@ export class AiController {
     };
   }
 
+  // ─── Learning ─────────────────────────────────────────────────────────────
+
+  @Post('memory/learn')
+  async startLearning(@Req() req: any, @Query() q: any) {
+    const orgId = await this.orgId(req, q);
+    return this.ai.startLearning(orgId);
+  }
+
+  @Get('memory/learn/status')
+  async getLearningStatus(@Req() req: any, @Query() q: any) {
+    const orgId = await this.orgId(req, q);
+    return this.ai.getLearningStatus(orgId);
+  }
+
+  @Get('memory/learn/data')
+  async getLearningData(@Req() req: any, @Query() q: any) {
+    const orgId = await this.orgId(req, q);
+    return this.ai.getLearningData(orgId);
+  }
+
   // ─── Prompts ──────────────────────────────────────────────────────────────
 
   @Get('prompts')

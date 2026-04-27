@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import api from '@/lib/api';
 import {
   ArrowLeft, Bot, Save, Loader2, CheckCircle2, XCircle,
-  ChevronDown, Play, RefreshCw, Plus, Trash2, Eye, Check, X,
+  Play, RefreshCw, Plus, Trash2, Check, X, FlaskConical,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -199,6 +199,9 @@ function GeneralTab() {
         </div>
       </div>
 
+      {/* Beta modu */}
+      <BetaPanel config={config} setConfig={setConfig} />
+
       <button
         onClick={save}
         disabled={saving}
@@ -207,6 +210,80 @@ function GeneralTab() {
         {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
         Kaydet
       </button>
+    </div>
+  );
+}
+
+/* ─── Beta Panel (used inside GeneralTab) ─── */
+function BetaPanel({ config, setConfig }: { config: any; setConfig: (c: any) => void }) {
+  const [input, setInput] = useState('');
+  const list: string[] = Array.isArray(config.betaContactIds) ? config.betaContactIds : [];
+
+  const add = () => {
+    const val = input.trim();
+    if (!val || list.includes(val)) return;
+    setConfig({ ...config, betaContactIds: [...list, val] });
+    setInput('');
+  };
+
+  const remove = (v: string) =>
+    setConfig({ ...config, betaContactIds: list.filter((x) => x !== v) });
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-100 p-5 space-y-4">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <FlaskConical className="w-4 h-4 text-yellow-500" />
+          <div>
+            <p className="text-sm font-medium text-gray-900">Beta Modu</p>
+            <p className="text-xs text-gray-400 mt-0.5">AI sadece aşağıdaki numaralara yanıt versin</p>
+          </div>
+        </div>
+        <button
+          onClick={() => setConfig({ ...config, betaMode: !config.betaMode })}
+          className={`relative inline-flex h-5 w-9 rounded-full border-2 border-transparent transition-colors ${config.betaMode ? 'bg-yellow-400' : 'bg-gray-200'}`}
+        >
+          <span className={`inline-block h-4 w-4 rounded-full bg-white shadow transform transition-transform ${config.betaMode ? 'translate-x-4' : 'translate-x-0'}`} />
+        </button>
+      </div>
+
+      {config.betaMode && (
+        <div className="space-y-3">
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && add()}
+              placeholder="Telefon no veya Contact ID (Enter ile ekle)"
+              className="flex-1 text-sm border border-gray-200 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/20"
+            />
+            <button
+              onClick={add}
+              disabled={!input.trim()}
+              className="flex items-center gap-1.5 text-sm px-4 py-2 bg-gray-900 text-white rounded-xl hover:bg-gray-800 transition-colors disabled:opacity-50"
+            >
+              <Plus className="w-3.5 h-3.5" /> Ekle
+            </button>
+          </div>
+          {list.length === 0 ? (
+            <p className="text-xs text-amber-600 bg-amber-50 rounded-xl px-3 py-2">
+              Liste boş — beta açık olduğu sürece AI hiç kimseye yanıt vermez.
+            </p>
+          ) : (
+            <div className="space-y-1.5">
+              {list.map((v) => (
+                <div key={v} className="flex items-center justify-between bg-gray-50 rounded-xl px-3 py-2">
+                  <span className="text-sm text-gray-700 font-mono">{v}</span>
+                  <button onClick={() => remove(v)} className="text-gray-400 hover:text-red-500 transition-colors">
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -273,7 +350,9 @@ function MemoryTab() {
   const [memory, setMemory] = useState<any>(null);
   const [saving, setSaving] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
+  const [learning, setLearning] = useState(false);
   const pollRef = useRef<NodeJS.Timeout | null>(null);
+  const learnPollRef = useRef<NodeJS.Timeout | null>(null);
   const params = orgParams();
 
   const loadMemory = useCallback(async () => {
@@ -284,7 +363,10 @@ function MemoryTab() {
 
   useEffect(() => {
     loadMemory().catch(() => {});
-    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+      if (learnPollRef.current) clearInterval(learnPollRef.current);
+    };
   }, [loadMemory]);
 
   const startAnalysis = async () => {
@@ -310,6 +392,29 @@ function MemoryTab() {
     }
   };
 
+  const startLearning = async () => {
+    setLearning(true);
+    try {
+      await api.post('/ai/memory/learn', {}, { params });
+      learnPollRef.current = setInterval(async () => {
+        try {
+          const { data } = await api.get('/ai/memory/learn/status', { params });
+          setMemory((prev: any) => prev ? { ...prev, learningStatus: data.status, learningProgress: data.progress, learnedAt: data.learnedAt } : prev);
+          if (data.status === 'done' || data.status === 'failed') {
+            clearInterval(learnPollRef.current!);
+            setLearning(false);
+            await loadMemory();
+            if (data.status === 'done') toast.success('Öğrenme tamamlandı');
+            else toast.error('Öğrenme başarısız: ' + (data.error ?? ''));
+          }
+        } catch { /* ignore */ }
+      }, 2500);
+    } catch (err: any) {
+      setLearning(false);
+      toast.error(err?.response?.data?.message ?? 'Öğrenme başlatılamadı');
+    }
+  };
+
   const save = async () => {
     setSaving(true);
     try {
@@ -332,6 +437,8 @@ function MemoryTab() {
 
   const isRunning = memory.analyzeStatus === 'running';
   const progress = memory.analyzeProgress ?? 0;
+  const isLearning = memory.learningStatus === 'running' || learning;
+  const learnProgress = memory.learningProgress ?? 0;
 
   return (
     <div className="space-y-5">
@@ -361,6 +468,49 @@ function MemoryTab() {
         )}
         {memory.analyzedAt && !isRunning && (
           <p className="text-xs text-gray-400">Son analiz: {new Date(memory.analyzedAt).toLocaleString('tr-TR')}</p>
+        )}
+      </div>
+
+      {/* Learning engine */}
+      <div className="bg-white rounded-2xl border border-gray-100 p-5 space-y-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm font-semibold text-gray-900">Öğrenme Motoru</p>
+            <p className="text-xs text-gray-400 mt-0.5">500 konuşmayı tarayarak FAQ, ürün eşleştirme ve itiraz yanıtlarını öğrenir</p>
+          </div>
+          <button
+            onClick={startLearning}
+            disabled={isLearning}
+            className="flex items-center gap-2 text-sm px-4 py-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors disabled:opacity-50"
+          >
+            {isLearning ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FlaskConical className="w-3.5 h-3.5" />}
+            Öğrenmeyi Başlat
+          </button>
+        </div>
+        {isLearning && (
+          <div className="space-y-1">
+            <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+              <div className="h-full bg-indigo-500 rounded-full transition-all duration-500" style={{ width: `${learnProgress}%` }} />
+            </div>
+            <p className="text-xs text-gray-400">%{learnProgress} — 500 konuşma işleniyor...</p>
+          </div>
+        )}
+        {memory.learnedAt && !isLearning && (
+          <div className="space-y-2">
+            <p className="text-xs text-gray-400">Son öğrenme: {new Date(memory.learnedAt).toLocaleString('tr-TR')}</p>
+            <div className="grid grid-cols-3 gap-2 text-center">
+              {[
+                { label: 'FAQ', val: Array.isArray(memory.learnedFaq) ? memory.learnedFaq.length : 0 },
+                { label: 'Ürün Eşleştirme', val: Array.isArray(memory.learnedProducts) ? memory.learnedProducts.length : 0 },
+                { label: 'İtiraz Yanıtı', val: Array.isArray(memory.learnedObjections) ? memory.learnedObjections.length : 0 },
+              ].map((s) => (
+                <div key={s.label} className="bg-indigo-50 rounded-xl p-2">
+                  <p className="text-lg font-semibold text-indigo-700">{s.val}</p>
+                  <p className="text-xs text-indigo-400">{s.label}</p>
+                </div>
+              ))}
+            </div>
+          </div>
         )}
       </div>
 

@@ -5,6 +5,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { AiLearningService } from './ai-learning.service';
 
 const AI_ACTIONS = [
   'send_message',
@@ -25,7 +26,10 @@ export type AiAction = (typeof AI_ACTIONS)[number];
 export class AiService {
   private readonly logger = new Logger(AiService.name);
 
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private learning: AiLearningService,
+  ) {}
 
   // ─── helpers ──────────────────────────────────────────────────────────────
 
@@ -55,6 +59,8 @@ export class AiService {
     maxTokens?: number;
     openaiKey?: string;
     customerMemoryEnabled?: boolean;
+    betaMode?: boolean;
+    betaContactIds?: string[];
   }) {
     const data: any = { ...dto };
     if (data.openaiKey === '') data.openaiKey = null;
@@ -404,6 +410,27 @@ Sadece JSON döndür, başka açıklama ekleme.`,
       ok: true,
       model: completion.model,
       usage: completion.usage,
+    };
+  }
+
+  // ─── Learning (delegate to AiLearningService) ─────────────────────────────
+
+  async startLearning(orgId: string) {
+    return this.learning.startLearning(orgId);
+  }
+
+  async getLearningStatus(orgId: string) {
+    return this.learning.getLearningStatus(orgId);
+  }
+
+  async getLearningData(orgId: string) {
+    const mem = await this.prisma.aiBusinessMemory.findUnique({ where: { organizationId: orgId } });
+    return {
+      learnedFaq: mem?.learnedFaq ?? [],
+      learnedProducts: mem?.learnedProducts ?? [],
+      learnedObjections: mem?.learnedObjections ?? [],
+      learnedAt: mem?.learnedAt ?? null,
+      learningStatus: mem?.learningStatus ?? 'idle',
     };
   }
 }

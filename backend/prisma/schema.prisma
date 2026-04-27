@@ -1241,6 +1241,10 @@ model AiConfig {
   /// OpenAI API key (tenant bazlı)
   openaiKey             String?
   customerMemoryEnabled Boolean  @default(false)
+  /// Beta modu: sadece izin verilen numaralara yanıt ver
+  betaMode              Boolean  @default(true)
+  /// Beta izin listesi: telefon numaraları veya contactId'ler (JSON string array)
+  betaContactIds        Json     @default("[]")
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
 
@@ -1284,6 +1288,14 @@ model AiBusinessMemory {
   analyzeStatus     String    @default("idle")
   analyzeProgress   Int       @default(0)
   analyzeError      String?
+  /// Öğrenme motoru — 500 konuşma taraması
+  learnedFaq        Json?     /// [{q:string, a:string}]
+  learnedProducts   Json?     /// [{keyword:string, productIds:string[]}]
+  learnedObjections Json?     /// [{objection:string, response:string}]
+  learningStatus    String    @default("idle")
+  learningProgress  Int       @default(0)
+  learningError     String?
+  learnedAt         DateTime?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 

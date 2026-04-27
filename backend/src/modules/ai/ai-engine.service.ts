@@ -30,7 +30,21 @@ export class AiEngineService {
     });
     if (!config?.enabled || !config?.openaiKey) return;
 
-    // 2. Don't process if conversation is closed
+    // 2. Beta modu: sadece izin verilen kişilere yanıt ver
+    if (config.betaMode) {
+      const betaList: string[] = Array.isArray(config.betaContactIds) ? config.betaContactIds as string[] : [];
+      if (betaList.length === 0) return; // beta açık ama liste boş → hiç yanıt verme
+      const contact = await this.prisma.contact.findUnique({
+        where: { id: ctx.contactId },
+        select: { id: true, phone: true },
+      });
+      const allowed =
+        betaList.includes(ctx.contactId) ||
+        (contact?.phone && betaList.includes(contact.phone));
+      if (!allowed) return;
+    }
+
+    // 3. Don't process if conversation is closed
     const conversation = await this.prisma.conversation.findUnique({
       where: { id: ctx.conversationId },
       select: { isClosed: true, isGroup: true },
@@ -44,8 +58,8 @@ export class AiEngineService {
     const policyMap = Object.fromEntries(policies.map((p) => [p.action, p.mode]));
     const getPolicy = (action: string) => (policyMap[action] as string) ?? 'OFF';
 
-    // 4. Build context
-    const [history, contact, memory, prompts, products] = await Promise.all([
+    // 4. Build context — products fetched smartly (keyword match, not full catalog)
+    const [history, contact, memory, prompts] = await Promise.all([
       this.getHistory(ctx.conversationId),
       this.prisma.contact.findUnique({
         where: { id: ctx.contactId },
@@ -53,8 +67,9 @@ export class AiEngineService {
       }),
       this.prisma.aiBusinessMemory.findUnique({ where: { organizationId: ctx.orgId } }),
       this.prisma.aiPrompt.findUnique({ where: { organizationId: ctx.orgId } }),
-      this.getProductCatalog(),
     ]);
+
+    const products = await this.getRelevantProducts(ctx.messageBody, memory);
 
     // 5. Build system prompt
     const systemPrompt = this.buildSystemPrompt(config, memory, prompts, contact, products);
@@ -414,11 +429,82 @@ export class AiEngineService {
     }));
   }
 
-  private async getProductCatalog() {
+  /**
+   * Tüm kataloğu göndermek yerine mesaj içeriğini analiz ederek
+   * yalnızca ilgili ürünleri döndürür. Maliyet: 0 ek API çağrısı.
+   *
+   * Öncelik sırası:
+   * 1. Öğrenme motorunun keyword→productId eşleştirmeleri (learnedProducts)
+   * 2. DB text araması (name / category ILIKE)
+   * 3. Hiç eşleşme yoksa son eklenen 15 aktif ürün
+   */
+  private async getRelevantProducts(messageBody: string, memory: any): Promise<any[]> {
+    const TR_STOPWORDS = new Set([
+      'bir', 'bu', 'şu', 'ile', 'için', 'veya', 'bile', 'daha', 'gibi',
+      'bunu', 'bana', 'sana', 'evet', 'hayır', 'nasıl', 'nedir', 'hangi',
+      'kadar', 'olan', 'olur', 'oldu', 'eder', 'etmek', 'yapmak', 'almak',
+      'vermek', 'lütfen', 'merhaba', 'teşekkür', 'iyi', 'var', 'yok',
+      'ben', 'sen', 'biz', 'siz', 'ama', 'fakat', 'ancak', 'çok', 'az',
+    ]);
+
+    const words = messageBody
+      .toLowerCase()
+      .replace(/[^a-zçğışöüa-z0-9\s]/gi, ' ')
+      .split(/\s+/)
+      .filter((w) => w.length > 2 && !TR_STOPWORDS.has(w));
+
+    if (words.length === 0) return this.getFallbackProducts();
+
+    // ── 1. Öğrenilmiş keyword eşleştirmeleri ──────────────────────────────
+    const learnedIds = new Set<string>();
+    if (memory?.learnedProducts && Array.isArray(memory.learnedProducts)) {
+      for (const entry of memory.learnedProducts as Array<{ keyword: string; productIds: string[] }>) {
+        if (words.some((w) => entry.keyword?.toLowerCase().includes(w) || w.includes(entry.keyword?.toLowerCase()))) {
+          for (const id of (entry.productIds ?? [])) learnedIds.add(id);
+        }
+      }
+    }
+
+    // ── 2. DB text araması ─────────────────────────────────────────────────
+    const dbResults = await this.prisma.product.findMany({
+      where: {
+        isActive: true,
+        OR: words.flatMap((w) => [
+          { name: { contains: w, mode: 'insensitive' as const } },
+          { category: { contains: w, mode: 'insensitive' as const } },
+          { description: { contains: w, mode: 'insensitive' as const } },
+        ]),
+      },
+      orderBy: { name: 'asc' },
+      take: 30,
+      select: { id: true, name: true, unitPrice: true, currency: true, stock: true, category: true },
+    });
+
+    // ── 3. Learned-id ürünleri ekle ────────────────────────────────────────
+    let extra: any[] = [];
+    if (learnedIds.size > 0) {
+      const dbIds = new Set(dbResults.map((p) => p.id));
+      const missing = [...learnedIds].filter((id) => !dbIds.has(id));
+      if (missing.length > 0) {
+        extra = await this.prisma.product.findMany({
+          where: { id: { in: missing }, isActive: true },
+          select: { id: true, name: true, unitPrice: true, currency: true, stock: true, category: true },
+        });
+      }
+    }
+
+    const combined = [...dbResults, ...extra];
+    if (combined.length > 0) return combined;
+
+    // ── 4. Fallback ────────────────────────────────────────────────────────
+    return this.getFallbackProducts();
+  }
+
+  private async getFallbackProducts() {
     return this.prisma.product.findMany({
       where: { isActive: true },
-      orderBy: { name: 'asc' },
-      take: 100,
+      orderBy: { createdAt: 'desc' },
+      take: 15,
       select: { id: true, name: true, unitPrice: true, currency: true, stock: true, category: true },
     });
   }
@@ -441,6 +527,23 @@ export class AiEngineService {
       if (memory.pricingBehavior) memParts.push(`Fiyatlandırma: ${memory.pricingBehavior}`);
       if (memory.rawMemory) memParts.push(`\nİşletme özeti: ${memory.rawMemory}`);
       if (memParts.length > 0) parts.push(`\n## İşletme Bilgileri\n${memParts.join('\n')}`);
+
+      // Öğrenilmiş bilgileri ekle (maliyetsiz, DB'den okunuyor)
+      if (memory.learnedFaq && Array.isArray(memory.learnedFaq) && memory.learnedFaq.length > 0) {
+        const faqLines = (memory.learnedFaq as Array<{ q: string; a: string }>)
+          .slice(0, 15)
+          .map((f) => `S: ${f.q}\nC: ${f.a}`)
+          .join('\n\n');
+        parts.push(`\n## Sık Sorulan Sorular\n${faqLines}`);
+      }
+
+      if (memory.learnedObjections && Array.isArray(memory.learnedObjections) && memory.learnedObjections.length > 0) {
+        const objLines = (memory.learnedObjections as Array<{ objection: string; response: string }>)
+          .slice(0, 10)
+          .map((o) => `İtiraz: ${o.objection}\nYanıt: ${o.response}`)
+          .join('\n\n');
+        parts.push(`\n## İtiraz Yanıtları\n${objLines}`);
+      }
     }
 
     if (contact) {
@@ -452,11 +555,12 @@ export class AiEngineService {
       parts.push(`\n## Müşteri Bilgileri\n${contactParts.join('\n')}`);
     }
 
+    // Yalnızca mesajla ilgili ürünler (tüm katalog değil)
     if (products.length > 0) {
       const productLines = products.map(
         (p) => `- ID:${p.id} | ${p.name} | ${p.unitPrice} ${p.currency}${p.stock != null ? ` | Stok:${p.stock}` : ''}${p.category ? ` | Kategori:${p.category}` : ''}`,
       );
-      parts.push(`\n## Ürün Kataloğu\n${productLines.join('\n')}`);
+      parts.push(`\n## İlgili Ürünler\n${productLines.join('\n')}`);
     }
 
     if (prompts?.salesPrompt) parts.push(`\n## Satış Talimatları\n${prompts.salesPrompt}`);
