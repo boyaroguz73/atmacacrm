@@ -107,7 +107,12 @@ export class OrdersService {
   }) {
     const { status, contactId, from, to, search, source, page = 1, limit = 50 } = params;
     const where: any = {};
-    if (status) where.status = status;
+    /** Sepet terk yalnızca status=AWAITING_CHECKOUT ile listelenir; genel liste "tümü" bunları göstermez */
+    if (status) {
+      where.status = status;
+    } else {
+      where.status = { not: 'AWAITING_CHECKOUT' };
+    }
     if (contactId) where.contactId = contactId;
     const src = typeof source === 'string' ? source.trim().toUpperCase() : '';
     if (src === 'TSOFT') where.source = 'TSOFT';

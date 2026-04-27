@@ -16,6 +16,19 @@ export interface TsoftIntegrationConfig {
   orderWsLookbackMinutes?: number;
 }
 
+/** orgIntegration.config.sync içinde saklanan bayraklar + sipariş tarih sınırı */
+export interface TsoftOrgSyncConfig {
+  orders?: boolean;
+  products?: boolean;
+  customers?: boolean;
+  images?: boolean;
+  variants?: boolean;
+  push?: boolean;
+  cartAbandonTasks?: boolean;
+  /** YYYY-MM-DD — sipariş çekiminde başlangıç bu günden önceye inemez */
+  ordersPullSince?: string;
+}
+
 export interface CreateTsoftSiteCustomerPayload {
   name: string;
   surname: string;

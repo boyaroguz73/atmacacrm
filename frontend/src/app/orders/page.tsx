@@ -123,7 +123,6 @@ const LIMIT = 20;
 
 const STATUS_FILTERS: { value: '' | OrderStatus; label: string }[] = [
   { value: '', label: 'Tümü' },
-  { value: 'AWAITING_CHECKOUT', label: 'Sepet Terk' },
   { value: 'AWAITING_PAYMENT', label: 'Ödeme Bekleniyor' },
   { value: 'PREPARING', label: 'Hazırlanıyor' },
   { value: 'SHIPPED', label: 'Kargoda' },
@@ -193,7 +192,12 @@ export default function OrdersPage() {
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
-  const [statusFilter, setStatusFilter] = useState<'' | OrderStatus>('');
+  const [statusFilter, setStatusFilter] = useState<'' | OrderStatus>(() => {
+    if (typeof window === 'undefined') return '';
+    return new URLSearchParams(window.location.search).get('status') === 'AWAITING_CHECKOUT'
+      ? 'AWAITING_CHECKOUT'
+      : '';
+  });
   // Varsayılan filtre: son 7 gün. localStorage'da kayıtlı değer varsa onu kullan.
   const defaultDateRange = useMemo(() => {
     const end = new Date();
@@ -252,6 +256,24 @@ export default function OrdersPage() {
     fetchOrders();
   }, [fetchOrders]);
 
+  /** Sidebar / geri: URL’deki status=AWAITING_CHECKOUT ile sekme durumunu hizala */
+  useEffect(() => {
+    const s = searchParams.get('status');
+    if (s === 'AWAITING_CHECKOUT') setStatusFilter('AWAITING_CHECKOUT');
+    else if (!s) setStatusFilter((prev) => (prev === 'AWAITING_CHECKOUT' ? '' : prev));
+  }, [searchParams]);
+
+  const buildOrdersListPath = useCallback(
+    (nextStatus: '' | OrderStatus) => {
+      const q = new URLSearchParams();
+      if (searchParams.get('tsoft') === '1') q.set('tsoft', '1');
+      if (nextStatus === 'AWAITING_CHECKOUT') q.set('status', 'AWAITING_CHECKOUT');
+      const qs = q.toString();
+      return qs ? `/orders?${qs}` : '/orders';
+    },
+    [searchParams],
+  );
+
   useEffect(() => {
     const tsoftFromQuery = searchParams.get('tsoft') === '1';
     setSiteOrdersOnly(tsoftFromQuery);
@@ -299,8 +321,15 @@ export default function OrdersPage() {
               <Package className="w-5 h-5" />
             </span>
             Siparişler
+            {statusFilter === 'AWAITING_CHECKOUT' ? (
+              <span className="text-base font-semibold text-orange-700">· Sepet terk</span>
+            ) : null}
           </h1>
-          <p className="text-sm text-gray-500 mt-1">Satış siparişlerini görüntüleyin, durum güncelleyin ve fatura oluşturun.</p>
+          <p className="text-sm text-gray-500 mt-1">
+            {statusFilter === 'AWAITING_CHECKOUT'
+              ? 'Henüz tamamlanmamış (sepet terk) kayıtlar. Genel liste için menüden «Tümü»ne geçin.'
+              : 'Satış siparişlerini görüntüleyin, durum güncelleyin ve fatura oluşturun.'}
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <Link
@@ -322,6 +351,7 @@ export default function OrdersPage() {
               onClick={() => {
                 setStatusFilter(f.value);
                 setPage(1);
+                router.replace(buildOrdersListPath(f.value));
               }}
               className={`px-4 py-2 rounded-full text-sm font-semibold border transition-colors ${
                 statusFilter === f.value

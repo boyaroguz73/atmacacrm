@@ -410,6 +410,8 @@ function TsoftDetail({ integration }: { integration: Integration }) {
   const [apiEmail, setApiEmail] = useState(String(ic.apiEmail || ic.username || ''));
   const [apiPassword, setApiPassword] = useState('');
   const [flags, setFlags] = useState<TsoftSyncFlags>(readFlags(integration.config));
+  /** YYYY-MM-DD — bu tarihten önceki siparişler T-Soft’tan çekilmez */
+  const [ordersPullSince, setOrdersPullSince] = useState('');
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [syncingCustomers, setSyncingCustomers] = useState(false);
@@ -425,6 +427,8 @@ function TsoftDetail({ integration }: { integration: Integration }) {
     setApiEmail(String(c.apiEmail || c.username || ''));
     setApiPassword('');
     setFlags(readFlags(c));
+    const op = (c?.sync as Record<string, unknown> | undefined)?.ordersPullSince;
+    setOrdersPullSince(typeof op === 'string' ? op.slice(0, 10) : '');
   }, [integration.key, configSnapshot]);
 
   const handleSave = async (e?: React.FormEvent) => {
@@ -432,7 +436,15 @@ function TsoftDetail({ integration }: { integration: Integration }) {
     setSaving(true);
     try {
       await api.post(`/integrations/${integration.key}/config`,
-        { baseUrl: baseUrl.trim(), apiEmail: apiEmail.trim(), apiPassword, sync: flags },
+        {
+          baseUrl: baseUrl.trim(),
+          apiEmail: apiEmail.trim(),
+          apiPassword,
+          sync: {
+            ...flags,
+            ...(ordersPullSince.trim() ? { ordersPullSince: ordersPullSince.trim() } : {}),
+          },
+        },
         { params: integrationOrgParams() });
       toast.success('Yapılandırma kaydedildi');
     } catch (err) { toast.error(getApiErrorMessage(err, 'Bir sorun oluştu, lütfen tekrar deneyin')); }
@@ -542,6 +554,24 @@ function TsoftDetail({ integration }: { integration: Integration }) {
             <FlagChip key={key} label={label} checked={flags[key]}
               onToggle={() => setFlags((p) => ({ ...p, [key]: !p[key] }))} />
           ))}
+        </div>
+
+        <div className="mt-5 pt-5 border-t border-gray-100">
+          <label className="block text-xs font-medium text-gray-500 mb-1.5">
+            Siparişleri şu tarihten sonrakileri çek
+          </label>
+          <input
+            type="date"
+            value={ordersPullSince}
+            onChange={(e) => setOrdersPullSince(e.target.value)}
+            className="max-w-xs px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-orange-400 focus:ring-1 focus:ring-orange-100"
+          />
+          <p className="text-xs text-gray-400 mt-2 leading-relaxed">
+            T-Soft’tan sipariş çekerken seçilen aralığın <span className="font-medium text-gray-600">en erken</span>{' '}
+            günüdür; bu tarihten önceki siparişler çekilmez.
+            Alan boşsa başlangıç «bugünden 30 gün geri» olarak ayarlanır; doluysa iki sınırın{' '}
+            <span className="font-medium text-gray-600">yenisi</span> (daha geç olan) kullanılır.
+          </p>
         </div>
       </section>
 

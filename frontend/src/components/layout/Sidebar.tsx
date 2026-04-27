@@ -90,7 +90,21 @@ const menuItems: MenuItem[] = [
       { href: '/quotes/new', label: 'Yeni Teklif', icon: Receipt, key: 'quotes_new', adminOnly: true },
     ],
   },
-  { href: '/orders', label: 'Siparişler', icon: Truck, menuKey: 'orders' },
+  {
+    href: '/orders',
+    label: 'Siparişler',
+    icon: Truck,
+    menuKey: 'orders',
+    children: [
+      { href: '/orders', label: 'Tümü', icon: Truck, key: 'orders_all' },
+      {
+        href: '/orders?status=AWAITING_CHECKOUT',
+        label: 'Sepet Terk',
+        icon: ShoppingCart,
+        key: 'orders_abandon',
+      },
+    ],
+  },
   {
     href: '/accounting',
     label: 'Muhasebe',
@@ -464,10 +478,18 @@ export default function Sidebar({
     if (pathname.startsWith('/ecommerce')) active.push('/ecommerce');
     for (const item of menuItems) {
       if (item.children?.some((c) => {
+        if (c.key === 'orders_all') {
+          return pathname === '/orders' && !searchParams.get('status');
+        }
+        if (c.key === 'orders_abandon') {
+          return pathname === '/orders' && searchParams.get('status') === 'AWAITING_CHECKOUT';
+        }
         if (c.param) return pathname === '/inbox' && currentFilter === c.param;
         if (c.href.includes('?status=')) {
           const s = new URL(c.href, 'http://x').searchParams.get('status');
-          return pathname === '/leads' && currentStatus === s;
+          if (pathname === '/leads' && currentStatus === s) return true;
+          if (pathname === '/orders' && searchParams.get('status') === s) return true;
+          return false;
         }
         if (c.href === '/inbox' && !c.param) return pathname === '/inbox' && !currentFilter;
         return childHrefMatchesWithAliases(pathname, searchParams, c.href);
@@ -486,8 +508,19 @@ export default function Sidebar({
   useEffect(() => {
     const activeParent = visibleMenuItems.find((item) =>
       item.children?.some((c) => {
+        if (c.key === 'orders_all') {
+          return pathname === '/orders' && !searchParams.get('status');
+        }
+        if (c.key === 'orders_abandon') {
+          return pathname === '/orders' && searchParams.get('status') === 'AWAITING_CHECKOUT';
+        }
         if (c.param) return pathname === '/inbox' && currentFilter === c.param;
-        if (c.href.includes('?status=')) return false;
+        if (c.href.includes('?status=')) {
+          const s = new URL(c.href, 'http://x').searchParams.get('status');
+          if (pathname === '/leads' && currentStatus === s) return true;
+          if (pathname === '/orders') return searchParams.get('status') === s;
+          return false;
+        }
         if (c.href === '/inbox' && !c.param) return pathname === '/inbox' && !currentFilter;
         return childHrefMatchesWithAliases(pathname, searchParams, c.href);
       }),
@@ -511,6 +544,12 @@ export default function Sidebar({
     }
   }, [pathname, searchParams, ecommerceMenuVisible]);
 
+  useEffect(() => {
+    if (pathname === '/orders') {
+      setExpandedMenus((prev) => (prev.includes('/orders') ? prev : [...prev, '/orders']));
+    }
+  }, [pathname]);
+
   /** SuperAdmin: sadece SaaS Panel ve alt menüleri; CRM sayfaları sidebar’da gösterilmez */
 
   const toggleExpand = (href: string) => {
@@ -520,12 +559,20 @@ export default function Sidebar({
   };
 
   const isSubItemActive = (child: SubItem) => {
+    if (child.key === 'orders_all') {
+      return pathname === '/orders' && !searchParams.get('status');
+    }
+    if (child.key === 'orders_abandon') {
+      return pathname === '/orders' && searchParams.get('status') === 'AWAITING_CHECKOUT';
+    }
     if (child.param) {
       return pathname === '/inbox' && currentFilter === child.param;
     }
     if (child.href.includes('?status=')) {
       const status = new URL(child.href, 'http://x').searchParams.get('status');
-      return pathname === '/leads' && currentStatus === status;
+      if (pathname === '/leads' && currentStatus === status) return true;
+      if (pathname === '/orders' && searchParams.get('status') === status) return true;
+      return false;
     }
     if (child.href === '/inbox' && !child.param) {
       return pathname === '/inbox' && !currentFilter;

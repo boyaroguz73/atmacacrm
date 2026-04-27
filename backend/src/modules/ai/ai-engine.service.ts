@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { WahaService } from '../waha/waha.service';
+import { AiIntentRouterService } from './ai-intent-router.service';
 
 export interface AiMessageContext {
   orgId: string;
@@ -27,6 +28,7 @@ export class AiEngineService {
   constructor(
     private prisma: PrismaService,
     private waha: WahaService,
+    private intentRouter: AiIntentRouterService,
   ) {}
 
   // ─── Entry point ──────────────────────────────────────────────────────────
@@ -85,6 +87,21 @@ export class AiEngineService {
 
     const products = await this.getRelevantProducts(ctx.messageBody, memory);
 
+    /** SAFE modunda her zaman tam katalog; diğerlerinde hafif niyet sınıflandırıcı ile token tasarrufu */
+    const mode = String(config.mode || 'BALANCED').toUpperCase();
+    let attachFullCatalog = true;
+    if (mode !== 'SAFE' && config.openaiKey) {
+      const { intent } = await this.intentRouter.classify(
+        config.openaiKey,
+        config.model ?? 'gpt-4o-mini',
+        ctx.messageBody,
+      );
+      attachFullCatalog = this.intentRouter.shouldAttachFullCatalog(intent);
+      if (!attachFullCatalog) {
+        this.logger.debug(`AI intent=${intent} → katalog özeti kısaltıldı`);
+      }
+    }
+
     // 4b. URL'den ürün çek + geçmiş konuşmalardan benzer soruları bul
     const urls = this.extractUrls(ctx.messageBody);
     let scrapedContext: ScrapedProduct[] = [];
@@ -134,16 +151,21 @@ export class AiEngineService {
     }
 
     // 5. Build system prompt
-    const systemPrompt = this.buildSystemPrompt(config, memory, prompts, contact, products, scrapedContext, allProducts);
+    const systemPrompt = this.buildSystemPrompt(
+      config,
+      memory,
+      prompts,
+      contact,
+      products,
+      scrapedContext,
+      allProducts,
+      attachFullCatalog,
+    );
 
     // 6. Build tool definitions (only include tools whose policy != OFF)
     const tools = this.buildTools(policyMap);
-    if (tools.length === 0) {
-      // Only send_message and ask_question available at minimum
-      return;
-    }
 
-    // 7. Call OpenAI
+    // 7. OpenAI — çok adımlı araç döngüsü (tool sonuçlarını modele geri verir)
     const { default: OpenAI } = await import('openai');
     const client = new OpenAI({ apiKey: config.openaiKey });
 
@@ -153,62 +175,112 @@ export class AiEngineService {
       { role: 'user', content: ctx.messageBody },
     ];
 
-    let response: any;
+    const maxRounds = Math.min(
+      Math.max(parseInt(String(process.env.AI_MAX_TOOL_ROUNDS || '6'), 10) || 6, 1),
+      10,
+    );
+    let usageAgg = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
+    const engineStarted = Date.now();
+
     try {
-      response = await client.chat.completions.create({
-        model: config.model ?? 'gpt-4o-mini',
-        messages,
-        tools,
-        tool_choice: 'auto',
-        temperature: config.temperature ?? 0.7,
-        max_tokens: config.maxTokens ?? 500,
-      });
-    } catch (err: any) {
-      this.logger.error(`OpenAI error for org ${ctx.orgId}: ${err.message}`);
-      await this.logAction(ctx.orgId, ctx.contactId, ctx.conversationId, 'send_message', 'FAILED', null, err.message);
-      return;
-    }
+      for (let round = 0; round < maxRounds; round++) {
+        let response: any;
+        try {
+          response = await client.chat.completions.create({
+            model: config.model ?? 'gpt-4o-mini',
+            messages,
+            tools,
+            tool_choice: 'auto',
+            temperature: config.temperature ?? 0.7,
+            max_tokens: config.maxTokens ?? 500,
+          });
+        } catch (err: any) {
+          this.logger.error(`OpenAI error for org ${ctx.orgId}: ${err.message}`);
+          await this.logAction(ctx.orgId, ctx.contactId, ctx.conversationId, 'send_message', 'FAILED', null, err.message);
+          return;
+        }
 
-    const choice = response.choices[0];
-    if (!choice) return;
+        if (response.usage) {
+          usageAgg.prompt_tokens += response.usage.prompt_tokens ?? 0;
+          usageAgg.completion_tokens += response.usage.completion_tokens ?? 0;
+          usageAgg.total_tokens += response.usage.total_tokens ?? 0;
+        }
 
-    // 8. Handle tool calls
-    if (choice.finish_reason === 'tool_calls' && choice.message.tool_calls?.length) {
-      let askSent = false; // "Talebiniz alındı" sadece bir kez gitsin
-      for (const toolCall of choice.message.tool_calls) {
-        const action = toolCall.function.name;
-        let args: any = {};
-        try { args = JSON.parse(toolCall.function.arguments || '{}'); } catch { /* ignore */ }
+        const choice = response.choices[0];
+        if (!choice?.message) break;
 
-        await this.dispatchAction(ctx, action, args, getPolicy(action), config, askSent);
-        // ASK policy kullandıysa flag'i set et — sonraki tool call'larda tekrar gönderme
-        if (getPolicy(action) === 'ASK') askSent = true;
+        if (choice.finish_reason === 'tool_calls' && choice.message.tool_calls?.length) {
+          messages.push(choice.message);
+          let askSent = false;
+          for (const toolCall of choice.message.tool_calls) {
+            const action = toolCall.function.name;
+            let args: any = {};
+            try {
+              args = JSON.parse(toolCall.function.arguments || '{}');
+            } catch {
+              /* ignore */
+            }
+            const { content, askSent: nextAsk } = await this.dispatchActionWithToolResult(
+              ctx,
+              action,
+              args,
+              getPolicy(action),
+              config,
+              askSent,
+            );
+            askSent = nextAsk;
+            messages.push({
+              role: 'tool',
+              tool_call_id: toolCall.id,
+              content: String(content).slice(0, 12_000),
+            });
+          }
+          continue;
+        }
+
+        const text = choice.message.content?.trim();
+        if (text) {
+          await this.executeSendMessage(ctx, text, getPolicy('send_message'), config);
+        }
+
+        await this.logAction(ctx.orgId, ctx.contactId, ctx.conversationId, 'ai_engine_turn', 'SUCCESS', {
+          rounds: round + 1,
+          usage: usageAgg,
+          durationMs: Date.now() - engineStarted,
+        });
+        return;
       }
-      return;
-    }
 
-    // 9. Plain text response → send as message
-    const text = choice.message?.content?.trim();
-    if (text) {
-      await this.executeSendMessage(ctx, text, getPolicy('send_message'), config);
+      this.logger.warn(`AI max tool rounds (${maxRounds}) reached for conv ${ctx.conversationId}`);
+      await this.logAction(ctx.orgId, ctx.contactId, ctx.conversationId, 'ai_engine_turn', 'FAILED', {
+        reason: 'max_rounds',
+        usage: usageAgg,
+      });
+    } catch (loopErr: any) {
+      this.logger.error(`AI engine loop error: ${loopErr?.message}`);
     }
   }
 
-  // ─── Action dispatcher ───────────────────────────────────────────────────
+  // ─── Action dispatcher (tool döngüsü için araç çıktısı döner) ─────────────
 
-  private async dispatchAction(
+  private async dispatchActionWithToolResult(
     ctx: AiMessageContext,
     action: string,
     args: any,
     policy: string,
     config: any,
-    askAlreadySent = false,
-  ) {
-    if (policy === 'OFF') return;
+    askAlreadySent: boolean,
+  ): Promise<{ content: string; askSent: boolean }> {
+    if (policy === 'OFF') {
+      return {
+        content: JSON.stringify({ ok: false, action, skipped: 'policy_off' }),
+        askSent: askAlreadySent,
+      };
+    }
 
     if (policy === 'ASK') {
       await this.queuePendingAction(ctx, action, args);
-      // Sadece ilk ASK action'da müşteriyi bilgilendir — çift mesajı önle
+      let sent = askAlreadySent;
       if (!askAlreadySent) {
         const actionLabels: Record<string, string> = {
           create_order: 'Sipariş talebiniz alındı, onaylandıktan sonra işleme alınacaktır.',
@@ -221,61 +293,106 @@ export class AiEngineService {
         };
         const infoMsg = actionLabels[action] ?? 'Talebiniz alındı, kısa süre içinde size dönüş yapılacaktır.';
         await this.sendWhatsApp(ctx, infoMsg, config);
+        sent = true;
       }
-      return;
+      return {
+        content: JSON.stringify({ ok: true, pendingApproval: true, action }),
+        askSent: sent,
+      };
     }
 
-    // AUTO
     try {
       switch (action) {
         case 'send_message':
           await this.sendWhatsApp(ctx, args.text, config);
           await this.logAction(ctx.orgId, ctx.contactId, ctx.conversationId, action, 'SUCCESS', args);
-          break;
+          return {
+            content: JSON.stringify({ ok: true, action: 'send_message', delivered: true }),
+            askSent: askAlreadySent,
+          };
 
         case 'ask_question':
           await this.sendWhatsApp(ctx, args.question, config);
           await this.logAction(ctx.orgId, ctx.contactId, ctx.conversationId, action, 'SUCCESS', args);
-          break;
+          return {
+            content: JSON.stringify({ ok: true, action: 'ask_question', delivered: true }),
+            askSent: askAlreadySent,
+          };
 
         case 'suggest_product':
           await this.executeSuggestProduct(ctx, args, config);
-          break;
+          return {
+            content: JSON.stringify({
+              ok: true,
+              action: 'suggest_product',
+              productIds: args.productIds ?? [],
+            }),
+            askSent: askAlreadySent,
+          };
 
         case 'create_offer':
           await this.executeCreateOffer(ctx, args, config);
-          break;
+          return {
+            content: JSON.stringify({ ok: true, action: 'create_offer' }),
+            askSent: askAlreadySent,
+          };
 
         case 'send_offer':
           await this.executeSendOffer(ctx, args, config);
-          break;
+          return {
+            content: JSON.stringify({ ok: true, action: 'send_offer', quoteId: args.quoteId }),
+            askSent: askAlreadySent,
+          };
 
         case 'create_order':
           await this.executeCreateOrder(ctx, args, config);
-          break;
+          return {
+            content: JSON.stringify({ ok: true, action: 'create_order' }),
+            askSent: askAlreadySent,
+          };
 
         case 'send_payment_link':
           await this.executeSendPaymentLink(ctx, args, config);
-          break;
+          return {
+            content: JSON.stringify({ ok: true, action: 'send_payment_link' }),
+            askSent: askAlreadySent,
+          };
 
         case 'update_customer_note':
           await this.executeUpdateNote(ctx, args);
-          break;
+          return {
+            content: JSON.stringify({ ok: true, action: 'update_customer_note' }),
+            askSent: askAlreadySent,
+          };
 
         case 'assign_tag':
           await this.executeAssignTag(ctx, args);
-          break;
+          return {
+            content: JSON.stringify({ ok: true, action: 'assign_tag', tag: args.tag }),
+            askSent: askAlreadySent,
+          };
 
         case 'handoff_to_human':
           await this.executeHandoff(ctx, args, config);
-          break;
+          return {
+            content: JSON.stringify({ ok: true, action: 'handoff_to_human' }),
+            askSent: askAlreadySent,
+          };
 
         default:
           this.logger.warn(`Unknown AI action: ${action}`);
+          return {
+            content: JSON.stringify({ ok: false, unknownAction: action }),
+            askSent: askAlreadySent,
+          };
       }
     } catch (err: any) {
       this.logger.error(`AI action ${action} failed: ${err.message}`);
       await this.logAction(ctx.orgId, ctx.contactId, ctx.conversationId, action, 'FAILED', args, err.message);
+      return {
+        content: JSON.stringify({ ok: false, action, error: err.message }),
+        askSent: askAlreadySent,
+      };
     }
   }
 
@@ -800,7 +917,16 @@ export class AiEngineService {
     });
   }
 
-  private buildSystemPrompt(config: any, memory: any, prompts: any, contact: any, products: any[], scrapedContext: ScrapedProduct[] = [], allProducts: any[] = []): string {
+  private buildSystemPrompt(
+    config: any,
+    memory: any,
+    prompts: any,
+    contact: any,
+    products: any[],
+    scrapedContext: ScrapedProduct[] = [],
+    allProducts: any[] = [],
+    attachFullCatalog = true,
+  ): string {
     const parts: string[] = [];
 
     const customPrompt = prompts?.systemPrompt?.trim();
@@ -846,8 +972,8 @@ export class AiEngineService {
       parts.push(`\n## Müşteri Bilgileri\n${contactParts.join('\n')}`);
     }
 
-    // ── Tüm aktif ürünler (kısa katalog index) ──
-    if (allProducts.length > 0) {
+    // ── Tam katalog index (intent/product mesajlarında); selam/sohbette token tasarrufu ──
+    if (allProducts.length > 0 && attachFullCatalog) {
       const catalogLines = allProducts.map(
         (p) => `${p.id} | ${p.name} | ${p.unitPrice} ${p.currency}${p.category ? ` | ${p.category}` : ''}`,
       );
@@ -856,6 +982,13 @@ export class AiEngineService {
         `KURAL: Müşteri bir ürün sorduğunda YALNIZCA bu katalogdaki ürünleri öner. ` +
         `Katalogda olmayan ürün, boyut veya model için "sistemimizde bu ürün bulunmuyor" de, tahmin yürütme.\n\n` +
         catalogLines.join('\n'),
+      );
+    } else if (allProducts.length > 0 && !attachFullCatalog) {
+      parts.push(
+        `\n## Ürün Kataloğu (özet mod)\nBu mesajda tam ürün ID listesi gönderilmedi (${allProducts.length} aktif ürün sistemde kayıtlı). ` +
+          `Selamlaşma veya kısa sohbette ürün ID gerektirmez. Müşteri ürün/sipariş/teklif konusunu açınca tam katalog kullanılacaktır. ` +
+          `Şimdilik müşteriyle doğal iletişim kur; gerektiği yerde müşteriden ürün adını veya ihtiyacını sor. ` +
+          `Bu mesajla ilişkilendirilmiş ürün satırları varsa "Bu Mesajla İlgili Ürünler" bölümünden kullan.`,
       );
     }
 
@@ -1098,7 +1231,7 @@ export class AiEngineService {
     }
 
     // send_message is always needed as fallback (even if OFF, we still add it
-    // but won't execute — handled in dispatchAction policy gate)
+    // but won't execute — handled in dispatchActionWithToolResult policy gate)
     if (!tools.find((t) => t.function.name === 'send_message')) {
       tools.push({
         type: 'function',

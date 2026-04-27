@@ -63,6 +63,15 @@ function scoreConversationMatch(conv: any, rawNeedles: string[], digitNeedles: s
     else if (phoneDigits.includes(needle)) score += 450;
   }
 
+  const groupLabel = normalizeSearchText(conv?.groupName);
+  if (conv?.isGroup && groupLabel) {
+    for (const needle of rawNeedles.map((n) => normalizeSearchText(n)).filter(Boolean)) {
+      if (groupLabel === needle) score += 900;
+      else if (groupLabel.startsWith(needle)) score += 550;
+      else if (groupLabel.includes(needle)) score += 320;
+    }
+  }
+
   return score;
 }
 
@@ -277,6 +286,25 @@ export class ConversationsService {
       whereExtras.contact = channelFilter.contact;
     } else {
       whereExtras.contact = channelFilter.contact;
+    }
+
+    /** Arama: kişi alanlarına ek olarak WhatsApp grubu başlığı (groupName) */
+    if (trimmedSearch && whereExtras.contact) {
+      const { rawNeedles } = searchNeedles(trimmedSearch);
+      const needles = rawNeedles.map((n) => n.trim()).filter((n) => n.length > 0);
+      if (needles.length > 0) {
+        const contactWhere = whereExtras.contact;
+        delete whereExtras.contact;
+        whereExtras.OR = [
+          { contact: contactWhere },
+          ...needles.map((needle) => ({
+            AND: [
+              { isGroup: true },
+              { groupName: { contains: needle, mode: 'insensitive' as const } },
+            ],
+          })),
+        ];
+      }
     }
 
     const where = whereConversationsForOrg(user, whereExtras);

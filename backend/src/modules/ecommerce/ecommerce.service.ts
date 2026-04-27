@@ -29,6 +29,7 @@ import {
 import { OrdersService } from '../orders/orders.service';
 import { AutoReplyEngineService } from '../auto-reply/auto-reply-engine.service';
 import { SettingsService } from '../settings/settings.service';
+import { queryDateFromGte } from '../../common/query-date-range';
 
 const TSOFT_LABEL = 'Site müşterisi';
 const TSOFT_SOURCE = 'TSOFT';
@@ -563,9 +564,6 @@ export class EcommerceService {
     opts: { dateStart?: Date | string | null; dateEnd?: Date | string | null } = {},
   ) {
     const now = new Date();
-    const defaultStart = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-    const dateStart = opts.dateStart ? new Date(opts.dateStart) : defaultStart;
-    const dateEnd = opts.dateEnd ? new Date(opts.dateEnd) : now;
     const integration = await this.prisma.orgIntegration.findUnique({
       where: {
         organizationId_integrationKey: { organizationId, integrationKey: 'tsoft' },
@@ -576,6 +574,27 @@ export class EcommerceService {
       integration?.config && typeof integration.config === 'object'
         ? ((integration.config as Record<string, unknown>).sync as Record<string, unknown> | undefined)
         : undefined;
+
+    const defaultStart = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    let dateStart = opts.dateStart ? new Date(opts.dateStart) : defaultStart;
+    const dateEnd = opts.dateEnd ? new Date(opts.dateEnd) : now;
+
+    const sinceRaw = syncCfg?.ordersPullSince;
+    if (typeof sinceRaw === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(sinceRaw.trim())) {
+      const floor = queryDateFromGte(sinceRaw.trim());
+      if (dateStart < floor) {
+        this.logger.log(
+          `[TSOFT-SYNC-ORDERS] ordersPullSince=${sinceRaw.trim()} → başlangıç ${floor.toISOString()} (önceki ${dateStart.toISOString()})`,
+        );
+        dateStart = floor;
+      }
+    }
+    if (dateStart > dateEnd) {
+      this.logger.warn(
+        `[TSOFT-SYNC-ORDERS] Başlangıç bitişten sonra; bitişe çekiliyor orgId=${organizationId}`,
+      );
+      dateStart = new Date(dateEnd.getTime() - 60_000);
+    }
     const createCartAbandonTasks = syncCfg?.cartAbandonTasks !== false;
     const autoTaskTsoftOrdersEnabled =
       (await this.settingsService.get('auto_task_tsoft_order_sync')) !== 'false';

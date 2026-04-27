@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useChatStore } from '@/store/chat';
 import { getSocket } from '@/lib/socket';
@@ -194,6 +194,8 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
   const [forwardConvsLoading, setForwardConvsLoading] = useState(false);
   const [forwardSelected, setForwardSelected] = useState<Set<string>>(new Set());
   const [forwardSending, setForwardSending] = useState(false);
+  /** Eski istekleri yoksaymak için ilet modalı liste fetch */
+  const forwardFetchGen = useRef(0);
   const [replyingTo, setReplyingTo] = useState<{ id: string; body: string | null } | null>(null);
   const [emojiPickerOpen, setEmojiPickerOpen] = useState<string | null>(null);
   const emojiPickerRef = useRef<HTMLDivElement>(null);
@@ -665,21 +667,46 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
     }
   };
 
-  const openForwardModal = async (msg: { id: string; body: string | null }) => {
+  const loadForwardTargets = useCallback(
+    async (query: string) => {
+      if (!activeConversation) return;
+      const gen = ++forwardFetchGen.current;
+      setForwardConvsLoading(true);
+      try {
+        const params: Record<string, string | number> = {
+          limit: 200,
+          page: 1,
+          filter: 'all',
+        };
+        const q = query.trim();
+        if (q) params.search = q;
+        const { data } = await api.get('/conversations', { params });
+        const list = Array.isArray(data) ? data : (data?.conversations ?? data?.items ?? []);
+        if (gen !== forwardFetchGen.current) return;
+        setForwardConvs((list as any[]).filter((c) => c.id !== activeConversation.id));
+      } catch {
+        if (gen === forwardFetchGen.current) toast.error('Konuşmalar yüklenemedi');
+      } finally {
+        if (gen === forwardFetchGen.current) setForwardConvsLoading(false);
+      }
+    },
+    [activeConversation],
+  );
+
+  const openForwardModal = (msg: { id: string; body: string | null }) => {
     setForwardingMsg(msg);
     setForwardSelected(new Set());
     setForwardSearch('');
-    setForwardConvsLoading(true);
-    try {
-      const { data } = await api.get('/conversations', { params: { limit: 50 } });
-      const list = Array.isArray(data) ? data : (data.items ?? []);
-      setForwardConvs(list.filter((c: any) => c.id !== activeConversation.id));
-    } catch {
-      toast.error('Konuşmalar yüklenemedi');
-    } finally {
-      setForwardConvsLoading(false);
-    }
   };
+
+  useEffect(() => {
+    if (!forwardingMsg) return;
+    const delay = forwardSearch.trim() ? 380 : 0;
+    const t = setTimeout(() => {
+      loadForwardTargets(forwardSearch);
+    }, delay);
+    return () => clearTimeout(t);
+  }, [forwardingMsg, forwardSearch, loadForwardTargets]);
 
   const handleForwardSend = async () => {
     if (!forwardingMsg || forwardSelected.size === 0) return;
@@ -2473,7 +2500,7 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
               <input
                 autoFocus
                 type="text"
-                placeholder="Konuşma ara..."
+                placeholder="İsim, telefon veya grup adı ara..."
                 value={forwardSearch}
                 onChange={(e) => setForwardSearch(e.target.value)}
                 className="flex-1 bg-transparent text-sm outline-none placeholder-gray-400"
@@ -2487,37 +2514,62 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
               <div className="flex justify-center py-8">
                 <Loader2 className="w-5 h-5 text-gray-400 animate-spin" />
               </div>
+            ) : forwardConvs.length === 0 ? (
+              <p className="text-xs text-gray-400 text-center py-6">
+                {forwardSearch.trim() ? 'Eşleşen konuşma yok. Aramayı değiştirmeyi deneyin.' : 'Konuşma bulunamadı.'}
+              </p>
             ) : (
-              forwardConvs
-                .filter((c: any) => {
-                  const name = getContactDisplayTitle(c.contact) ?? c.contact?.phone ?? '';
-                  return name.toLowerCase().includes(forwardSearch.toLowerCase());
-                })
-                .map((c: any) => {
-                  const name = getContactDisplayTitle(c.contact) ?? c.contact?.phone ?? 'İsimsiz';
-                  const phone = c.contact?.phone ?? '';
-                  const isChecked = forwardSelected.has(c.id);
-                  return (
-                    <button
-                      key={c.id}
-                      onClick={() => {
-                        const next = new Set(forwardSelected);
-                        if (isChecked) next.delete(c.id); else next.add(c.id);
-                        setForwardSelected(next);
-                      }}
-                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-colors text-left ${isChecked ? 'bg-indigo-50' : 'hover:bg-gray-50'}`}
-                    >
-                      <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${isChecked ? 'bg-indigo-500 border-indigo-500' : 'border-gray-300'}`}>
-                        {isChecked && <Check className="w-3 h-3 text-white" />}
+              forwardConvs.map((c: any) => {
+                const isGroup = !!c.isGroup;
+                const title = isGroup
+                  ? (c.groupName || c.contact?.name || 'WhatsApp Grubu')
+                  : (getContactDisplayTitle(c.contact) ?? c.contact?.phone ?? 'İsimsiz');
+                const phone = c.contact?.phone ?? '';
+                const subline = isGroup
+                  ? phone.includes('@g.us')
+                    ? 'Grup'
+                    : phone
+                      ? formatPhone(phone)
+                      : ''
+                  : phone
+                    ? formatPhone(phone)
+                    : '';
+                const isChecked = forwardSelected.has(c.id);
+                return (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onClick={() => {
+                      const next = new Set(forwardSelected);
+                      if (isChecked) next.delete(c.id); else next.add(c.id);
+                      setForwardSelected(next);
+                    }}
+                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-colors text-left ${isChecked ? 'bg-indigo-50' : 'hover:bg-gray-50'}`}
+                  >
+                    <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${isChecked ? 'bg-indigo-500 border-indigo-500' : 'border-gray-300'}`}>
+                      {isChecked && <Check className="w-3 h-3 text-white" />}
+                    </div>
+                    {isGroup ? (
+                      <div className="w-9 h-9 rounded-full bg-gradient-to-br from-green-400 to-green-600 flex items-center justify-center shrink-0">
+                        <Users className="w-4 h-4 text-white" />
                       </div>
+                    ) : (
                       <ContactAvatar name={c.contact?.name} surname={c.contact?.surname} phone={c.contact?.phone} avatarUrl={c.contact?.avatarUrl} size="sm" />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-gray-900 truncate">{name}</p>
-                        {phone && <p className="text-xs text-gray-400">{phone}</p>}
-                      </div>
-                    </button>
-                  );
-                })
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-gray-900 truncate flex items-center gap-1.5">
+                        {isGroup && (
+                          <span className="text-[10px] bg-green-100 text-green-700 px-1 py-0.5 rounded font-medium shrink-0">
+                            Grup
+                          </span>
+                        )}
+                        <span className="truncate">{title}</span>
+                      </p>
+                      {subline ? <p className="text-xs text-gray-400 truncate">{subline}</p> : null}
+                    </div>
+                  </button>
+                );
+              })
             )}
           </div>
 
