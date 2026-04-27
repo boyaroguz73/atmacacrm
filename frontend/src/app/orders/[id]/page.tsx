@@ -18,6 +18,7 @@ import {
   FileText,
   Landmark,
   Loader2,
+  MessageSquare,
   Package,
   Plus,
   Receipt,
@@ -31,6 +32,7 @@ import {
   Wallet,
   X,
 } from 'lucide-react';
+import { QuoteEmbeddedChat } from '@/components/quotes/QuoteEmbeddedChat';
 import PanelEditedBadge from '@/components/ui/PanelEditedBadge';
 import SiteOrderDetailsPanel from '@/components/orders/SiteOrderDetailsPanel';
 
@@ -279,6 +281,7 @@ export default function OrderDetailPage() {
   const [payReference, setPayReference] = useState('');
   const [payDescription, setPayDescription] = useState('');
   const [payOccurredAt, setPayOccurredAt] = useState('');
+  const [chatOpen, setChatOpen] = useState(true);
 
   const fetchOrder = async () => {
     if (!orderId) return;
@@ -1265,6 +1268,26 @@ export default function OrderDetailPage() {
                   </div>
                 </div>
               ) : null}
+
+              {/* WhatsApp Sohbet Akordiyon */}
+              <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => setChatOpen((v) => !v)}
+                  className="w-full flex items-center justify-between px-4 py-3 text-sm font-semibold text-gray-800 hover:bg-gray-50 active:bg-gray-100 transition-colors"
+                >
+                  <div className="flex items-center gap-2">
+                    <MessageSquare className="w-4 h-4 text-whatsapp" />
+                    WhatsApp Sohbet
+                  </div>
+                  <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform duration-200 ${chatOpen ? 'rotate-0' : '-rotate-90'}`} />
+                </button>
+                {chatOpen && (
+                  <div className="border-t border-gray-100 h-[440px] flex flex-col">
+                    <QuoteEmbeddedChat contactId={order.contact.id} contactPhone={order.contact.phone} />
+                  </div>
+                )}
+              </div>
             </aside>
           </div>
 

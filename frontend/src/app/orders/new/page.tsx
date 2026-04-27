@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import api, { getApiErrorMessage } from '@/lib/api';
 import { cn, formatPhone, rewriteMediaUrlForClient } from '@/lib/utils';
 import toast from 'react-hot-toast';
-import { ArrowLeft, Loader2, Package, Search, Trash2, PanelRightClose, PanelRightOpen, X } from 'lucide-react';
+import { ArrowLeft, Loader2, Package, Search, Trash2, ChevronDown, MessageSquare } from 'lucide-react';
 import { ColorFabricLineCell } from '@/components/quotes/ColorFabricLineCell';
 import { VariantPickerOption } from '@/components/quotes/VariantPickerOption';
 import { QuoteEmbeddedChat } from '@/components/quotes/QuoteEmbeddedChat';
@@ -682,40 +682,32 @@ export default function NewOrderPage() {
           </button>
         </div>
       </div>
-      <div className="fixed bottom-6 right-6 z-40">
+      {/* WhatsApp Sohbet Akordiyon */}
+      <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
         <button
           type="button"
           onClick={() => selectedContact && setChatOpen((v) => !v)}
           disabled={!selectedContact}
           className={cn(
-            'inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm shadow-lg border',
+            'w-full flex items-center justify-between px-4 py-3 text-sm font-semibold transition-colors',
             selectedContact
-              ? 'bg-white border-whatsapp/30 text-gray-800 hover:bg-green-50'
-              : 'bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed',
+              ? 'text-gray-800 hover:bg-gray-50 active:bg-gray-100 cursor-pointer'
+              : 'text-gray-400 cursor-not-allowed',
           )}
         >
-          {chatOpen ? <PanelRightClose className="w-4 h-4" /> : <PanelRightOpen className="w-4 h-4" />}
-          WhatsApp
+          <div className="flex items-center gap-2">
+            <MessageSquare className="w-4 h-4 text-whatsapp" />
+            WhatsApp Sohbet
+            {!selectedContact && <span className="text-xs font-normal text-gray-400">(önce müşteri seçin)</span>}
+          </div>
+          <ChevronDown className={cn('w-4 h-4 text-gray-400 transition-transform duration-200', chatOpen ? 'rotate-0' : '-rotate-90')} />
         </button>
-      </div>
-      {selectedContact && chatOpen && (
-        <>
-          <div className="fixed inset-0 bg-black/20 z-40" onClick={() => setChatOpen(false)} />
-          <aside className="fixed top-0 right-0 h-full w-full sm:w-[420px] bg-white z-50 shadow-2xl border-l border-gray-200 p-3">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-sm font-semibold text-gray-900">WhatsApp Sohbet</h3>
-              <button
-                type="button"
-                onClick={() => setChatOpen(false)}
-                className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
+        {selectedContact && chatOpen && (
+          <div className="border-t border-gray-100 h-[480px] flex flex-col">
             <QuoteEmbeddedChat contactId={selectedContact.id} contactPhone={selectedContact.phone} />
-          </aside>
-        </>
-      )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

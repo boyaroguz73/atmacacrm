@@ -229,6 +229,10 @@ export class PdfService {
       });
     };
 
+    // Stack for inline style overrides (span with style attributes)
+    const boldStack: boolean[] = [];
+    const italicStack: boolean[] = [];
+
     for (const token of parts) {
       if (!token.startsWith('<')) {
         pushText(token);
@@ -263,6 +267,24 @@ export class PdfService {
       }
       if (tag === '</i>' || tag === '</em>') {
         italic = false;
+        continue;
+      }
+      // Handle <span style="..."> with inline font-weight/font-style
+      if (tag.startsWith('<span')) {
+        const styleMatch = token.match(/style\s*=\s*["']([^"']+)["']/i);
+        const style = styleMatch ? styleMatch[1].toLowerCase() : '';
+        const isBoldStyle = /font-weight\s*:\s*(bold|700|800|900)/.test(style);
+        const isItalicStyle = /font-style\s*:\s*italic/.test(style);
+        boldStack.push(bold);
+        italicStack.push(italic);
+        if (isBoldStyle) bold = true;
+        if (isItalicStyle) italic = true;
+        continue;
+      }
+      if (tag === '</span>') {
+        if (boldStack.length > 0) bold = boldStack.pop()!;
+        if (italicStack.length > 0) italic = italicStack.pop()!;
+        continue;
       }
     }
 

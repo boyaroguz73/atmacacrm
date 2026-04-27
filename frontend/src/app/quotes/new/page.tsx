@@ -18,8 +18,6 @@ import {
   Loader2,
   MessageSquare,
   Package,
-  PanelRightClose,
-  PanelRightOpen,
   Search,
   Trash2,
   Upload,
@@ -330,8 +328,7 @@ export default function NewQuotePage() {
   const [submitting, setSubmitting] = useState(false);
   const [showCustomerDetails, setShowCustomerDetails] = useState(false);
   const [showOptionalDetails, setShowOptionalDetails] = useState(false);
-  const [showDiscount, setShowDiscount] = useState(false);
-  const [chatOpen, setChatOpen] = useState(false);
+  const [chatOpen, setChatOpen] = useState(true); // Açık gelsin
   const [expandedLineKey, setExpandedLineKey] = useState<string | null>(null);
   const [descriptionPreview, setDescriptionPreview] = useState<{ title: string; html: string } | null>(null);
 
@@ -573,10 +570,11 @@ export default function NewQuotePage() {
           ? p.priceIncludesVat
           : true;
 
+    const newKey = genKey();
     setLines((prev) => [
       ...prev,
       {
-        key: genKey(),
+        key: newKey,
         productId: p.id,
         productVariantId: variant?.id ?? undefined,
         lineImageUrl: (variant?.imageUrl && String(variant.imageUrl).trim()) || p.imageUrl || undefined,
@@ -593,6 +591,8 @@ export default function NewQuotePage() {
         discountValue: 0,
       },
     ]);
+    // Ürün eklenince kutusu açık gelsin (ölçü, renk/kumaş alanları görünsün)
+    setExpandedLineKey(newKey);
     toast.success(salePrice != null ? 'Ürün indirimli fiyatla eklendi' : 'Ürün satıra eklendi');
   };
 
@@ -781,7 +781,7 @@ export default function NewQuotePage() {
                   property2={v.property2}
                   priceDisplay={`${sym}${v.unitPrice.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}`}
                   discountedPriceDisplay={
-                    v.salePriceAmount != null && v.salePriceAmount !== v.unitPrice
+                    v.salePriceAmount != null && v.salePriceAmount > 0 && v.salePriceAmount < v.unitPrice
                       ? `${sym}${v.salePriceAmount.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}`
                       : null
                   }
@@ -1049,18 +1049,6 @@ export default function NewQuotePage() {
             <option value="USD">USD ($)</option>
             <option value="EUR">EUR (€)</option>
           </select>
-          <button
-            type="button"
-            onClick={() => setShowDiscount((v) => !v)}
-            className={cn(
-              'text-xs px-2.5 py-2 rounded-lg border transition-colors',
-              showDiscount
-                ? 'border-green-200 bg-green-50 text-green-700'
-                : 'border-gray-200 text-gray-600 hover:bg-gray-50',
-            )}
-          >
-            İndirim {showDiscount ? 'Açık' : 'Kapalı'}
-          </button>
         </div>
       </div>
 
@@ -1346,9 +1334,20 @@ export default function NewQuotePage() {
                         onChange={(e) => updateLine(line.key, { unitPrice: parseFloat(e.target.value) || 0 })}
                         className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm text-right tabular-nums"
                       />
-                      <div className="text-right text-sm font-bold text-red-600 tabular-nums">
-                        {sym}
-                        {fmt(totals.lineTotals[idx] ?? 0)}
+                      <div className="text-right tabular-nums">
+                        {(() => {
+                          const gross = totals.lineTotals[idx] ?? 0;
+                          const vatR = Math.max(0, Number(line.vatRate) || 0) / 100;
+                          const exVat = line.priceIncludesVat && vatR > 0
+                            ? gross / (1 + vatR)
+                            : gross;
+                          return (
+                            <>
+                              <p className="text-sm font-bold text-gray-800">{sym}{fmt(exVat)}</p>
+                              <p className="text-[10px] text-gray-400">KDV hariç</p>
+                            </>
+                          );
+                        })()}
                       </div>
                       <button
                         type="button"
@@ -1485,32 +1484,28 @@ export default function NewQuotePage() {
             </button>
             {showOptionalDetails && (
               <div className="p-4 pt-0 grid sm:grid-cols-2 gap-4 border-t border-gray-100">
-                {showDiscount ? (
-                  <>
-                    <div>
-                      <label className="block text-xs font-semibold text-gray-500 mb-1">Genel indirim tipi</label>
-                      <select
-                        value={discountType}
-                        onChange={(e) => setDiscountType(e.target.value as DiscountType)}
-                        className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:border-whatsapp"
-                      >
-                        <option value="PERCENT">Yüzde (%)</option>
-                        <option value="AMOUNT">Tutar ({currency === 'TRY' ? 'TL' : currency})</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-xs font-semibold text-gray-500 mb-1">Genel indirim değeri</label>
-                      <input
-                        type="number"
-                        min={0}
-                        step={0.01}
-                        value={discountValue}
-                        onChange={(e) => setDiscountValue(parseFloat(e.target.value) || 0)}
-                        className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-whatsapp tabular-nums"
-                      />
-                    </div>
-                  </>
-                ) : null}
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 mb-1">Genel indirim tipi</label>
+                  <select
+                    value={discountType}
+                    onChange={(e) => setDiscountType(e.target.value as DiscountType)}
+                    className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:border-whatsapp"
+                  >
+                    <option value="PERCENT">Yüzde (%)</option>
+                    <option value="AMOUNT">Tutar ({currency === 'TRY' ? 'TL' : currency})</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 mb-1">Genel indirim değeri</label>
+                  <input
+                    type="number"
+                    min={0}
+                    step={0.01}
+                    value={discountValue}
+                    onChange={(e) => setDiscountValue(parseFloat(e.target.value) || 0)}
+                    className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-whatsapp tabular-nums"
+                  />
+                </div>
                 <div>
                   <label className="block text-xs font-semibold text-gray-500 mb-1">Geçerlilik tarihi</label>
                   <input
@@ -1652,42 +1647,41 @@ export default function NewQuotePage() {
               Teklifi kaydet
             </button>
           </div>
+
+          {/* WhatsApp Sohbet — Teklifi Kaydet altında akordiyon */}
+          <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
+            <button
+              type="button"
+              onClick={() => selectedContact && setChatOpen((v) => !v)}
+              disabled={!selectedContact}
+              className={cn(
+                'w-full flex items-center justify-between px-4 py-3 transition-colors',
+                selectedContact
+                  ? 'hover:bg-green-50 cursor-pointer'
+                  : 'cursor-not-allowed opacity-50',
+                chatOpen ? 'bg-green-50' : 'bg-white',
+              )}
+            >
+              <div className="flex items-center gap-2">
+                <MessageSquare className="w-4 h-4 text-whatsapp" />
+                <span className="text-sm font-semibold text-gray-800">WhatsApp Sohbet</span>
+                {!selectedContact && (
+                  <span className="text-xs text-gray-400">(müşteri seçin)</span>
+                )}
+              </div>
+              <ChevronDown className={cn(
+                'w-4 h-4 text-gray-400 transition-transform duration-200',
+                chatOpen ? 'rotate-0' : '-rotate-90',
+              )} />
+            </button>
+            {selectedContact && chatOpen && (
+              <div className="border-t border-gray-100 h-[480px] flex flex-col">
+                <QuoteEmbeddedChat contactId={selectedContact.id} contactPhone={selectedContact.phone} />
+              </div>
+            )}
+          </div>
         </aside>
       </form>
-      <div className="fixed bottom-6 right-6 z-40">
-        <button
-          type="button"
-          onClick={() => selectedContact && setChatOpen((v) => !v)}
-          disabled={!selectedContact}
-          className={cn(
-            'inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm shadow-lg border',
-            selectedContact
-              ? 'bg-white border-whatsapp/30 text-gray-800 hover:bg-green-50'
-              : 'bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed',
-          )}
-        >
-          {chatOpen ? <PanelRightClose className="w-4 h-4" /> : <PanelRightOpen className="w-4 h-4" />}
-          WhatsApp
-        </button>
-      </div>
-      {selectedContact && chatOpen && (
-        <>
-          <div className="fixed inset-0 bg-black/20 z-40" onClick={() => setChatOpen(false)} />
-          <aside className="fixed top-0 right-0 h-full w-full sm:w-[420px] bg-white z-50 shadow-2xl border-l border-gray-200 p-3">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-sm font-semibold text-gray-900">WhatsApp Sohbet</h3>
-              <button
-                type="button"
-                onClick={() => setChatOpen(false)}
-                className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            <QuoteEmbeddedChat contactId={selectedContact.id} contactPhone={selectedContact.phone} />
-          </aside>
-        </>
-      )}
     </div>
   );
 }

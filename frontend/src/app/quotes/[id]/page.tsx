@@ -22,6 +22,8 @@ import {
   Upload,
   Edit3,
   Save,
+  ChevronDown,
+  MessageSquare,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuthStore } from '@/store/auth';
@@ -279,6 +281,7 @@ export default function QuoteDetailPage() {
   } | null>(null);
 
   // Accept modal
+  const [chatOpen, setChatOpen] = useState(true);
   const [showAcceptModal, setShowAcceptModal] = useState(false);
   const [acceptPaymentMode, setAcceptPaymentMode] = useState<PaymentModeUI>('FULL');
   const [acceptCustomPaymentAmount, setAcceptCustomPaymentAmount] = useState<string>('');
@@ -767,8 +770,24 @@ export default function QuoteDetailPage() {
 
         <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 xl:gap-6 items-start">
           <aside className="xl:col-span-3 space-y-2 order-2 xl:order-1">
-            <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Sohbet</h3>
-            <QuoteEmbeddedChat contactId={c.id} contactPhone={c.phone} />
+            <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setChatOpen((v) => !v)}
+                className="w-full flex items-center justify-between px-4 py-3 text-sm font-semibold text-gray-800 hover:bg-gray-50 active:bg-gray-100 transition-colors"
+              >
+                <div className="flex items-center gap-2">
+                  <MessageSquare className="w-4 h-4 text-whatsapp" />
+                  WhatsApp Sohbet
+                </div>
+                <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform duration-200 ${chatOpen ? 'rotate-0' : '-rotate-90'}`} />
+              </button>
+              {chatOpen && (
+                <div className="border-t border-gray-100 h-[480px] flex flex-col">
+                  <QuoteEmbeddedChat contactId={c.id} contactPhone={c.phone} />
+                </div>
+              )}
+            </div>
           </aside>
           <div className="xl:col-span-6 space-y-6 order-1 xl:order-2 min-w-0">
             {/* Ürün arama */}
