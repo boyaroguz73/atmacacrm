@@ -599,17 +599,22 @@ export default function QuoteDetailPage() {
   };
 
   const openConvertModal = (manual: boolean) => {
-    const initial = (quote?.items || []).map((item: any) => ({
-      quoteItemId: String(item.id),
-      source: 'STOCK' as const,
-      supplierId: '',
-      supplierOrderNo: '',
-    }));
     setConvertManual(manual);
     setConvertPaymentMode('FULL');
     setConvertCustomPaymentValue('');
-    setConvertItemSources(initial);
-    setShowConvertModal(true);
+    setConvertItemSources([]);
+    void (async () => {
+      setActionLoading(manual ? 'convert-manual' : 'convert');
+      try {
+        await api.post(`/quotes/${id}/convert-to-order`, { manual, itemSources: [] });
+        toast.success(manual ? 'Teklif manuel olarak siparişe çevrildi' : 'Sipariş oluşturuldu');
+        router.push('/orders');
+      } catch (err) {
+        toast.error(getApiErrorMessage(err, 'İşlem başarısız'));
+      } finally {
+        setActionLoading('');
+      }
+    })();
   };
 
   const updateConvertSource = (quoteItemId: string, patch: Partial<ConvertItemSource>) => {
@@ -1279,96 +1284,6 @@ export default function QuoteDetailPage() {
               >
                 {actionLoading === 'send' ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
                 Evet, Gönder
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-      {showConvertModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-3xl p-5 space-y-4 max-h-[85vh] overflow-y-auto">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <h2 className="text-lg font-bold text-gray-900">Siparişe dönüştürme kaynak seçimi</h2>
-                <p className="text-xs text-gray-500 mt-1">
-                  Kaynak seçimi opsiyoneldir; sipariş detayından sonradan güncelleyebilirsiniz.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowConvertModal(false)}
-                className="p-1 rounded-lg hover:bg-gray-100 text-gray-500"
-                aria-label="Kapat"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="space-y-3">
-              {(quote.items || []).map((item: any) => {
-                const src = convertItemSources.find((x) => x.quoteItemId === String(item.id));
-                if (!src) return null;
-                return (
-                  <div key={item.id} className="border border-gray-100 rounded-xl p-3 space-y-2">
-                    <p className="text-sm font-semibold text-gray-900">{item.name}</p>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-                      <select
-                        value={src.source}
-                        onChange={(e) =>
-                          updateConvertSource(String(item.id), {
-                            source: e.target.value as ConvertSource,
-                          })
-                        }
-                        className="px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white"
-                      >
-                        <option value="STOCK">Stoktan</option>
-                        <option value="SUPPLIER">Tedarikçi</option>
-                      </select>
-                      <select
-                        value={src.supplierId}
-                        disabled={src.source !== 'SUPPLIER'}
-                        onChange={(e) => updateConvertSource(String(item.id), { supplierId: e.target.value })}
-                        className="px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white disabled:bg-gray-50 disabled:text-gray-400"
-                      >
-                        <option value="">Tedarikçi seçin</option>
-                        {suppliers.map((s) => (
-                          <option key={s.id} value={s.id}>
-                            {s.name}
-                          </option>
-                        ))}
-                      </select>
-                      <input
-                        type="text"
-                        value={src.supplierOrderNo}
-                        disabled={src.source !== 'SUPPLIER' || !src.supplierId}
-                        onChange={(e) =>
-                          updateConvertSource(String(item.id), { supplierOrderNo: e.target.value })
-                        }
-                        placeholder="Sipariş no (opsiyonel)"
-                        className="px-3 py-2 border border-gray-200 rounded-lg text-sm disabled:bg-gray-50 disabled:text-gray-400"
-                      />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-            <div className="flex justify-end gap-2 pt-2">
-              <button
-                type="button"
-                onClick={() => setShowConvertModal(false)}
-                className="px-4 py-2 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-100"
-              >
-                Vazgeç
-              </button>
-              <button
-                type="button"
-                disabled={!!actionLoading}
-                onClick={() => void submitConvert()}
-                className="px-4 py-2 rounded-xl text-sm font-medium bg-whatsapp text-white hover:bg-green-600 disabled:opacity-50 inline-flex items-center gap-2"
-              >
-                {(actionLoading === 'convert' || actionLoading === 'convert-manual') ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : null}
-                Dönüştür
               </button>
             </div>
           </div>
