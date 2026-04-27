@@ -239,19 +239,16 @@ export class AiEngineService {
       await this.sendWhatsApp(ctx, productText.trim(), config);
     }
 
-    // Send product images
-    const session = await this.getSessionName(ctx.conversationId);
-    const contact = await this.prisma.contact.findUnique({ where: { id: ctx.contactId }, select: { phone: true } });
-    if (session && contact?.phone) {
-      for (const p of products) {
-        if (p.imageUrl) {
-          try {
-            const baseUrl = process.env.BASE_URL || 'http://localhost:4000';
-            const fullUrl = p.imageUrl.startsWith('http') ? p.imageUrl : `${baseUrl}${p.imageUrl}`;
-            await this.waha.sendImage(session, `${contact.phone}@c.us`, fullUrl, p.name, p.name);
-          } catch { /* gorsel gonderimi basarisiz olabilir */ }
-        }
-      }
+    // Ürün görsellerini link olarak ekle (sendText kullanıyoruz — sendImage base64 gerektirir)
+    const baseUrl = process.env.BASE_URL || 'http://localhost:4000';
+    const imageLines = products
+      .filter((p) => p.imageUrl)
+      .map((p) => {
+        const url = p.imageUrl!.startsWith('http') ? p.imageUrl! : `${baseUrl}${p.imageUrl}`;
+        return `🖼 ${p.name}: ${url}`;
+      });
+    if (imageLines.length > 0) {
+      await this.sendWhatsApp(ctx, imageLines.join('\n'), config);
     }
 
     await this.logAction(ctx.orgId, ctx.contactId, ctx.conversationId, 'suggest_product', 'SUCCESS', { productIds, message });
@@ -806,7 +803,15 @@ export class AiEngineService {
   ) {
     try {
       await this.prisma.aiLog.create({
-        data: { organizationId: orgId, contactId, conversationId, action, status, payload: payload ?? {}, error: error ?? null },
+        data: {
+          organizationId: orgId,
+          contactId,
+          conversationId,
+          action,
+          status,
+          input: payload ? JSON.stringify(payload) : null,
+          errorMessage: error ?? null,
+        },
       });
     } catch { /* log failure should not crash the engine */ }
   }
