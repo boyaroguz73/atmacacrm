@@ -454,6 +454,41 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
     return out;
   }, [displayMessages]);
 
+  const loadForwardTargets = useCallback(
+    async (query: string) => {
+      if (!activeConversation) return;
+      const gen = ++forwardFetchGen.current;
+      setForwardConvsLoading(true);
+      try {
+        const params: Record<string, string | number> = {
+          limit: 200,
+          page: 1,
+          filter: 'all',
+        };
+        const q = query.trim();
+        if (q) params.search = q;
+        const { data } = await api.get('/conversations', { params });
+        const list = Array.isArray(data) ? data : (data?.conversations ?? data?.items ?? []);
+        if (gen !== forwardFetchGen.current) return;
+        setForwardConvs((list as any[]).filter((c) => c.id !== activeConversation.id));
+      } catch {
+        if (gen === forwardFetchGen.current) toast.error('Konuşmalar yüklenemedi');
+      } finally {
+        if (gen === forwardFetchGen.current) setForwardConvsLoading(false);
+      }
+    },
+    [activeConversation],
+  );
+
+  useEffect(() => {
+    if (!forwardingMsg) return;
+    const delay = forwardSearch.trim() ? 380 : 0;
+    const t = setTimeout(() => {
+      loadForwardTargets(forwardSearch);
+    }, delay);
+    return () => clearTimeout(t);
+  }, [forwardingMsg, forwardSearch, loadForwardTargets]);
+
   if (!activeConversation) return null;
 
   const contact = activeConversation.contact;
@@ -667,46 +702,11 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
     }
   };
 
-  const loadForwardTargets = useCallback(
-    async (query: string) => {
-      if (!activeConversation) return;
-      const gen = ++forwardFetchGen.current;
-      setForwardConvsLoading(true);
-      try {
-        const params: Record<string, string | number> = {
-          limit: 200,
-          page: 1,
-          filter: 'all',
-        };
-        const q = query.trim();
-        if (q) params.search = q;
-        const { data } = await api.get('/conversations', { params });
-        const list = Array.isArray(data) ? data : (data?.conversations ?? data?.items ?? []);
-        if (gen !== forwardFetchGen.current) return;
-        setForwardConvs((list as any[]).filter((c) => c.id !== activeConversation.id));
-      } catch {
-        if (gen === forwardFetchGen.current) toast.error('Konuşmalar yüklenemedi');
-      } finally {
-        if (gen === forwardFetchGen.current) setForwardConvsLoading(false);
-      }
-    },
-    [activeConversation],
-  );
-
   const openForwardModal = (msg: { id: string; body: string | null }) => {
     setForwardingMsg(msg);
     setForwardSelected(new Set());
     setForwardSearch('');
   };
-
-  useEffect(() => {
-    if (!forwardingMsg) return;
-    const delay = forwardSearch.trim() ? 380 : 0;
-    const t = setTimeout(() => {
-      loadForwardTargets(forwardSearch);
-    }, delay);
-    return () => clearTimeout(t);
-  }, [forwardingMsg, forwardSearch, loadForwardTargets]);
 
   const handleForwardSend = async () => {
     if (!forwardingMsg || forwardSelected.size === 0) return;
