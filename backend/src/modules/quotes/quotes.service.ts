@@ -630,6 +630,7 @@ export class QuotesService {
         ? Number((quote as any).grandTotalOverride)
         : null;
     const baseSubtotal = Number(quote.subtotal) || 0;
+    const baseDiscountTotal = Number(quote.discountTotal) || 0;
     const baseVatTotal = Number(quote.vatTotal) || 0;
     const effectiveVatRate =
       baseSubtotal > 0 && baseVatTotal >= 0 ? baseVatTotal / baseSubtotal : 0;
@@ -640,6 +641,12 @@ export class QuotesService {
     const effectiveVatTotal = overrideGrandTotal != null
       ? this.roundMoney(Math.max(0, effectiveGrandTotal - effectiveSubtotal))
       : baseVatTotal;
+    // PDF'te gösterilecek iskonto:
+    // Override varsa → (genel iskonto öncesi KDV-hariç toplam) - effectiveSubtotal
+    // Override yoksa → sadece genel iskonto
+    const pdfDiscountTotal = overrideGrandTotal != null
+      ? this.roundMoney(Math.max(0, baseSubtotal + baseDiscountTotal - effectiveSubtotal))
+      : baseDiscountTotal;
 
     const fallbackDeliveryRange = this.defaultDeliveryDateRangeText(new Date(quote.createdAt));
     const pdfUrl = await this.pdfService.generateQuotePdf({
@@ -694,8 +701,8 @@ export class QuotesService {
       }),
       currency: quote.currency,
       subtotal: effectiveSubtotal,
-      /** Yalnızca genel iskonto (KDV hariç); PDF özetinde iskonto öncesi/sonrası satırları için */
-      discountTotal: Number(quote.discountTotal) || 0,
+      /** Genel iskonto + manuel override farkı — PDF'te "iskonto öncesi/sonrası" satırları için */
+      discountTotal: pdfDiscountTotal,
       vatTotal: effectiveVatTotal,
       grandTotal: effectiveGrandTotal,
       notes: quote.notes || undefined,
