@@ -714,9 +714,9 @@ export default function QuoteDetailPage() {
               <h3 className="text-sm font-bold text-gray-900">Varyant seçin</h3>
               <p className="text-xs text-gray-500 line-clamp-2">{variantPick.product.name}</p>
               <div className="max-h-72 overflow-y-auto space-y-1.5">
-                {variantPick.variants.map((v) => (
+                {variantPick.variants.filter((v) => !!v.id).map((v) => (
                   <VariantPickerOption
-                    key={v.id ?? '__product_base__'}
+                    key={v.id}
                     name={v.name}
                     imageUrl={v.imageUrl}
                     property2={v.property2}
