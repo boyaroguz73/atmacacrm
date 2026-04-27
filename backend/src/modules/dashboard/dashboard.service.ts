@@ -92,7 +92,7 @@ export class DashboardService {
       }),
       this.getAgentPerformance(organizationId, dateRange),
       this.prisma.salesOrder.aggregate({
-        where: orderFilter,
+        where: { ...orderFilter, status: { notIn: ['CANCELLED', 'AWAITING_CHECKOUT'] } },
         _sum: { grandTotal: true },
         _count: { id: true },
       }),
@@ -103,9 +103,9 @@ export class DashboardService {
         _count: { _all: true },
         _sum: { grandTotal: true },
       }),
-      // Tüm açık/teslim edilmiş sipariş ciro toplamı (iptaller hariç)
+      // Tüm açık/teslim edilmiş sipariş ciro toplamı (iptaller ve sepet terk hariç)
       this.prisma.salesOrder.aggregate({
-        where: { ...allOrdersFilter, status: { not: 'CANCELLED' } },
+        where: { ...allOrdersFilter, status: { notIn: ['CANCELLED', 'AWAITING_CHECKOUT'] } },
         _sum: { grandTotal: true },
       }),
       // Tüm siparişlere ilişkin tahsilat/iade toplamları (outstanding hesabı için)
@@ -115,11 +115,12 @@ export class DashboardService {
         _sum: { amount: true },
       }),
       // Gecikmiş teslimatlar: beklenen tarih geçmiş ama teslim/iptal değil
+      // Sepet terk (AWAITING_CHECKOUT) teslimat beklentisi olmadığı için hariç
       this.prisma.salesOrder.count({
         where: {
           ...allOrdersFilter,
           expectedDeliveryDate: { lt: now },
-          status: { notIn: ['COMPLETED', 'CANCELLED'] },
+          status: { notIn: ['COMPLETED', 'CANCELLED', 'AWAITING_CHECKOUT'] },
         },
       }),
       this.cashAggregate(organizationId, 'INCOME', dateRange),

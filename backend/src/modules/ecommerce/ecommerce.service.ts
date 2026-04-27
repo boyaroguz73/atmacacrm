@@ -501,22 +501,24 @@ export class EcommerceService {
     statusId: number,
   ): 'AWAITING_CHECKOUT' | 'AWAITING_PAYMENT' | 'PREPARING' | 'SHIPPED' | 'COMPLETED' | 'CANCELLED' {
     const s = tsoftStatusText.toLowerCase();
-    if (s.includes('iptal') || s.includes('cancel') || s.includes('iade') || statusId === 6 || statusId === 7) {
-      return 'CANCELLED';
-    }
-    if (s.includes('tamamland') || s.includes('teslim') || s.includes('complet') || s.includes('deliver') || statusId === 5) {
-      return 'COMPLETED';
-    }
-    if (s.includes('kargo') || s.includes('ship') || statusId === 4) {
-      return 'SHIPPED';
-    }
-    if (s.includes('hazırla') || s.includes('process') || s.includes('onay') || s.includes('preparing') || statusId === 3) {
-      return 'PREPARING';
-    }
-    if (s.includes('henüz') || s.includes('tamamlanmadı') || s.includes('incomplete') || statusId === 1) {
-      return 'AWAITING_CHECKOUT';
-    }
-    // Yeni Sipariş / Ödeme Bekleniyor (statusId 2 veya tanınmayan)
+
+    // statusId kesin eşleşmeleri metin kontrolünden ÖNCE gelsin
+    if (statusId === 1) return 'AWAITING_CHECKOUT';   // Henüz Tamamlanmadı (sepet terk)
+    if (statusId === 2) return 'AWAITING_PAYMENT';    // Yeni Sipariş / Ödeme Bekleniyor
+    if (statusId === 3) return 'PREPARING';           // Ürün Hazırlanıyor
+    if (statusId === 4) return 'SHIPPED';             // Kargoya Verildi
+    if (statusId === 5) return 'COMPLETED';           // Tamamlandı
+    if (statusId === 6 || statusId === 7) return 'CANCELLED'; // İptal / İade
+
+    // statusId gelmedi veya 0 → metin bazlı fallback
+    if (s.includes('iptal') || s.includes('cancel') || s.includes('iade')) return 'CANCELLED';
+    if (s.includes('tamamland') || s.includes('teslim') || s.includes('complet') || s.includes('deliver')) return 'COMPLETED';
+    if (s.includes('kargo') || s.includes('ship')) return 'SHIPPED';
+    if (s.includes('hazırla') || s.includes('process') || s.includes('onay') || s.includes('preparing')) return 'PREPARING';
+    if (s.includes('henüz') || s.includes('tamamlanmadı') || s.includes('incomplete') || s.includes('abandon')) return 'AWAITING_CHECKOUT';
+    if (s.includes('yeni') || s.includes('ödeme') || s.includes('payment') || s.includes('new')) return 'AWAITING_PAYMENT';
+
+    // Son çare: statusId 0 / bilinmiyor → AWAITING_PAYMENT (en güvenli varsayılan)
     return 'AWAITING_PAYMENT';
   }
 
@@ -607,10 +609,12 @@ export class EcommerceService {
       fetchPages(1), // orderStatusId=1 = "Henüz Tamamlanmadı"
     ]);
 
-    // Birleştir, tsoftId üzerinden tekilleştir
+    // Birleştir, tsoftId üzerinden tekilleştir.
+    // abandonedOrders ÖNCE gelsin: aynı sipariş her iki listede varsa
+    // sepet terk statüsü (statusId=1) korunmuş olur.
     const seenTsoftIds = new Set<string>();
     const allOrders: Record<string, unknown>[] = [];
-    for (const r of [...regularOrders, ...abandonedOrders]) {
+    for (const r of [...abandonedOrders, ...regularOrders]) {
       const id = String(r.OrderId ?? r.OrderCode ?? r.id ?? r.orderId ?? '').trim();
       if (id && !seenTsoftIds.has(id)) {
         seenTsoftIds.add(id);
@@ -639,8 +643,10 @@ export class EcommerceService {
       const siteOidRaw = raw.OrderId ?? raw.orderId;
       const siteOid =
         siteOidRaw != null && String(siteOidRaw).trim() !== '' ? String(siteOidRaw).trim() : null;
-      const tsoftStatusText = String(raw.OrderStatus || raw.status || raw.orderStatus || '').trim();
-      const statusId = Number(raw.OrderStatusId || 0);
+      const tsoftStatusText = String(raw.OrderStatus || raw.status || raw.orderStatus || raw.OrderStatusName || '').trim();
+      const statusId = Number(
+        raw.OrderStatusId ?? raw.orderStatusId ?? raw.order_status_id ?? raw.StatusId ?? raw.statusId ?? 0,
+      );
       const crmStatus = this.mapTsoftOrderStatus(tsoftStatusText, statusId);
 
       let existing = await this.prisma.salesOrder.findUnique({ where: { externalId } });

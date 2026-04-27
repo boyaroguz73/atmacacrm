@@ -531,7 +531,7 @@ export class ReportsService {
         FROM sales_orders o
         INNER JOIN contacts c ON o."contactId" = c.id
         WHERE o."createdAt" >= ${from} AND o."createdAt" <= ${to}
-          AND o.status <> 'CANCELLED'::"OrderStatus"
+          AND o.status NOT IN ('CANCELLED'::"OrderStatus", 'AWAITING_CHECKOUT'::"OrderStatus")
         ${orgClause}
         ${sourceClause}
         GROUP BY 1
@@ -590,7 +590,7 @@ export class ReportsService {
         FROM sales_orders o
         INNER JOIN contacts c ON o."contactId" = c.id
         WHERE o."createdAt" >= ${from} AND o."createdAt" <= ${to}
-          AND o.status <> 'CANCELLED'::"OrderStatus"
+          AND o.status NOT IN ('CANCELLED'::"OrderStatus", 'AWAITING_CHECKOUT'::"OrderStatus")
         ${orgClause}
         ${sourceClause}
         GROUP BY c.id, c.name, c.phone
@@ -683,7 +683,7 @@ export class ReportsService {
         INNER JOIN contacts c ON o."contactId" = c.id
         LEFT JOIN products p ON oi."productId" = p.id
         WHERE o."createdAt" >= ${from} AND o."createdAt" <= ${to}
-          AND o.status <> 'CANCELLED'::"OrderStatus"
+          AND o.status NOT IN ('CANCELLED'::"OrderStatus", 'AWAITING_CHECKOUT'::"OrderStatus")
         ${orgClause}
         ${sourceClause}
         GROUP BY 1
