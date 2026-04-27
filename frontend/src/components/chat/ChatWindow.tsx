@@ -687,7 +687,7 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
     try {
       const { data } = await api.post(
         `/conversations/${activeConversation.id}/forward-message`,
-        { messageId: forwardingMsg.id, toConversationIds: [...forwardSelected] },
+        { messageId: forwardingMsg.id, toConversationIds: Array.from(forwardSelected) },
       );
       const failed = (data.results as any[]).filter((r) => !r.success);
       if (failed.length === 0) {
@@ -2379,10 +2379,9 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
           </div>
         </div>
       )}
-    </div>
 
-    {/* ─── Forward Message Modal ─── */}
-    {forwardingMsg && mounted && createPortal(
+      {/* ─── Forward Message Modal ─── */}
+      {forwardingMsg && mounted && createPortal(
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
         <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md flex flex-col max-h-[80vh]">
           {/* Header */}
@@ -2447,7 +2446,7 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
                       <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${isChecked ? 'bg-indigo-500 border-indigo-500' : 'border-gray-300'}`}>
                         {isChecked && <Check className="w-3 h-3 text-white" />}
                       </div>
-                      <ContactAvatar contact={c.contact} size="sm" />
+                      <ContactAvatar name={c.contact?.name} surname={c.contact?.surname} phone={c.contact?.phone} avatarUrl={c.contact?.avatarUrl} size="sm" />
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium text-gray-900 truncate">{name}</p>
                         {phone && <p className="text-xs text-gray-400">{phone}</p>}
@@ -2484,5 +2483,6 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
       </div>,
       document.body,
     )}
+    </div>
   );
 }
