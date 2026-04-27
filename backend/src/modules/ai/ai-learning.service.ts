@@ -99,7 +99,7 @@ export class AiLearningService {
 
       await setProgress(20);
 
-      // ── 3. Group by conversation, keep last 30 per conv ───────────────────
+      // ── 3. Group by conversation, keep last 10 per conv ───────────────────
       const byConv: Record<string, Array<{ role: string; text: string }>> = {};
       for (const msg of allMessages) {
         if (!byConv[msg.conversationId]) byConv[msg.conversationId] = [];
@@ -110,11 +110,11 @@ export class AiLearningService {
       }
 
       // ── 4. Build compact text samples ─────────────────────────────────────
-      // Each conversation → max 20 exchanges → compact line format
+      // Each conversation → max 10 exchanges → compact line format (token tasarrufu)
       const samples: string[] = [];
       for (const [, turns] of Object.entries(byConv)) {
-        const last = turns.slice(-20);
-        const compact = last.map((t) => `[${t.role}]: ${t.text.slice(0, 200)}`).join('\n');
+        const last = turns.slice(-10);
+        const compact = last.map((t) => `[${t.role}]: ${t.text.slice(0, 150)}`).join('\n');
         samples.push(compact);
       }
 
@@ -129,15 +129,15 @@ export class AiLearningService {
 
       await setProgress(40);
 
-      // ── 6. Process in chunks of 50 conversations each ─────────────────────
-      const CHUNK = 50;
+      // ── 6. Process in chunks of 25 conversations each ─────────────────────
+      const CHUNK = 25;
       const chunks: string[][] = [];
       for (let i = 0; i < samples.length; i += CHUNK) {
         chunks.push(samples.slice(i, i + CHUNK));
       }
 
       const chunkResults: ChunkResult[] = [];
-      const progressPerChunk = 40 / chunks.length; // 40% → 80%
+      const progressPerChunk = 40 / Math.max(chunks.length, 1); // 40% → 80%
 
       for (let i = 0; i < chunks.length; i++) {
         const chunk = chunks[i];
@@ -218,12 +218,17 @@ Konuşmalar:
 ${samples.map((s, i) => `--- Konuşma ${i + 1} ---\n${s}`).join('\n\n')}`;
 
     try {
-      const completion = await client.chat.completions.create({
-        model: 'gpt-4o-mini',
-        messages: [{ role: 'user', content: prompt }],
-        temperature: 0.2,
-        max_tokens: 2000,
-      });
+      const completion = await Promise.race([
+        client.chat.completions.create({
+          model: 'gpt-4o-mini',
+          messages: [{ role: 'user', content: prompt }],
+          temperature: 0.2,
+          max_tokens: 2000,
+        }),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('OpenAI chunk timeout (90s)')), 90_000),
+        ),
+      ]) as any;
 
       const raw = completion.choices[0]?.message?.content ?? '{}';
       const jsonMatch = raw.match(/\{[\s\S]*\}/);
@@ -235,7 +240,7 @@ ${samples.map((s, i) => `--- Konuşma ${i + 1} ---\n${s}`).join('\n\n')}`;
         objections: Array.isArray(parsed.objections) ? parsed.objections : [],
       };
     } catch (err: any) {
-      this.logger.warn(`Chunk analysis failed: ${err.message}`);
+      this.logger.warn(`Chunk analysis failed (skipping): ${err.message}`);
       return { faq: [], productKeywords: [], objections: [] };
     }
   }
@@ -319,12 +324,17 @@ Ham veri:
 ${JSON.stringify(merged, null, 1).slice(0, 8000)}`;
 
     try {
-      const completion = await client.chat.completions.create({
-        model: 'gpt-4o-mini',
-        messages: [{ role: 'user', content: prompt }],
-        temperature: 0.1,
-        max_tokens: 3000,
-      });
+      const completion = await Promise.race([
+        client.chat.completions.create({
+          model: 'gpt-4o-mini',
+          messages: [{ role: 'user', content: prompt }],
+          temperature: 0.1,
+          max_tokens: 3000,
+        }),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('consolidate timeout (120s)')), 120_000),
+        ),
+      ]) as any;
 
       const raw = completion.choices[0]?.message?.content ?? '{}';
       const jsonMatch = raw.match(/\{[\s\S]*\}/);
