@@ -1,7 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { WahaService } from '../waha/waha.service';
-import { QuotesService } from '../quotes/quotes.service';
 
 export interface AiMessageContext {
   orgId: string;
@@ -18,7 +17,6 @@ export class AiEngineService {
   constructor(
     private prisma: PrismaService,
     private waha: WahaService,
-    private quotes: QuotesService,
   ) {}
 
   // ─── Entry point ──────────────────────────────────────────────────────────
@@ -255,29 +253,65 @@ export class AiEngineService {
   }
 
   private async executeCreateOffer(ctx: AiMessageContext, args: any, config: any) {
-    // Find a system/bot user for this org
     const botUser = await this.getOrgBotUser(ctx.orgId);
     if (!botUser) {
       this.logger.warn(`No bot user found for org ${ctx.orgId}`);
       return;
     }
 
-    const items: Array<{ name: string; qty: number; unitPrice: number; productId?: string }> =
+    const rawItems: Array<{ name: string; qty: number; unitPrice: number; productId?: string }> =
       Array.isArray(args.items) ? args.items : [];
+    if (rawItems.length === 0) return;
 
-    if (items.length === 0) return;
-
-    const quote = await this.quotes.create(botUser.id, {
-      contactId: ctx.contactId,
-      notes: args.note ?? undefined,
-      items: items.map((item) => ({
+    // Calculate totals inline (no QuotesService dependency)
+    const VAT_RATE = 20;
+    let subtotal = 0;
+    let vatTotal = 0;
+    const lineItems = rawItems.map((item) => {
+      const qty = item.qty ?? 1;
+      const gross = item.unitPrice * qty; // price already includes VAT
+      const ex = gross / (1 + VAT_RATE / 100);
+      const vat = gross - ex;
+      subtotal += ex;
+      vatTotal += vat;
+      return {
         name: item.name,
-        quantity: item.qty ?? 1,
+        quantity: qty,
         unitPrice: item.unitPrice,
-        vatRate: 20,
+        vatRate: VAT_RATE,
         priceIncludesVat: true,
-        productId: item.productId ?? undefined,
-      })),
+        lineTotal: Math.round(gross * 100) / 100,
+        productId: item.productId ?? null,
+      };
+    });
+    const grandTotal = Math.round((subtotal + vatTotal) * 100) / 100;
+
+    const quote = await this.prisma.quote.create({
+      data: {
+        contactId: ctx.contactId,
+        createdById: botUser.id,
+        currency: 'TRY',
+        discountType: 'PERCENT',
+        discountValue: 0,
+        discountTotal: 0,
+        subtotal: Math.round(subtotal * 100) / 100,
+        vatTotal: Math.round(vatTotal * 100) / 100,
+        grandTotal,
+        notes: args.note ?? null,
+        items: {
+          create: lineItems.map((li) => ({
+            name: li.name,
+            quantity: li.quantity,
+            unitPrice: li.unitPrice,
+            vatRate: li.vatRate,
+            priceIncludesVat: li.priceIncludesVat,
+            lineTotal: li.lineTotal,
+            discountValue: 0,
+            ...(li.productId ? { productId: li.productId } : {}),
+          })),
+        },
+      },
+      select: { id: true, quoteNumber: true, grandTotal: true, currency: true },
     });
 
     const confirmMsg = `✅ Teklifiniz oluşturuldu.\nTeklif No: *#${quote.quoteNumber}*\nToplam: *${quote.grandTotal.toLocaleString('tr-TR')} ${quote.currency}*\n\nTeklifi göndermemi ister misiniz?`;
