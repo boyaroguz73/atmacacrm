@@ -1468,18 +1468,20 @@ export default function NewQuotePage() {
             </div>
           </section>
 
-          <section className="bg-white rounded-xl border border-gray-100 shadow-sm">
+          <section className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
             <button
               type="button"
               onClick={() => setShowOptionalDetails((v) => !v)}
-              className="w-full px-4 py-3 text-sm font-semibold text-gray-700 flex items-center justify-between"
+              className={`w-full px-4 py-3 flex items-center justify-between transition-colors hover:bg-gray-50 active:bg-gray-100 cursor-pointer ${showOptionalDetails ? 'bg-gray-50' : 'bg-white'}`}
             >
-              <span>Opsiyonel detaylar (notlar ve koşullar)</span>
-              {showOptionalDetails ? (
-                <ChevronDown className="w-4 h-4 text-gray-500" />
-              ) : (
-                <ChevronRight className="w-4 h-4 text-gray-500" />
-              )}
+              <div className="flex items-center gap-2">
+                <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform duration-200 ${showOptionalDetails ? 'rotate-0' : '-rotate-90'}`} />
+                <span className="text-sm font-semibold text-gray-700">Opsiyonel Detaylar</span>
+                <span className="text-xs text-gray-400 font-normal">(notlar ve koşullar)</span>
+              </div>
+              <span className="text-xs text-primary font-medium">
+                {showOptionalDetails ? 'Gizle' : 'Göster'}
+              </span>
             </button>
             {showOptionalDetails && (
               <div className="p-4 pt-0 grid sm:grid-cols-2 gap-4 border-t border-gray-100">
