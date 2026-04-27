@@ -1214,6 +1214,28 @@ export class WahaService implements OnModuleInit {
     }
   }
 
+  /** WAHA - Mesaj iletme (forwardMessage) */
+  async forwardMessage(
+    sessionName: string,
+    messageId: string,
+    toChatId: string,
+  ): Promise<any> {
+    try {
+      const response = await this.http.post('/api/forwardMessage', {
+        session: sessionName,
+        messageId,
+        chatId: toChatId,
+      });
+      return response.data;
+    } catch (error: any) {
+      const detail = error.response?.data
+        ? JSON.stringify(error.response.data)
+        : error.message;
+      this.logger.error(`Mesaj iletilemedi: ${messageId} → ${toChatId} — ${detail}`);
+      throw error;
+    }
+  }
+
   async downloadFile(
     sessionName: string,
     fileId: string,

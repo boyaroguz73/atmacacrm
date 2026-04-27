@@ -1133,4 +1133,42 @@ export class ConversationsController {
     await this.conversationsService.deleteInternalNote(noteId);
     return { deleted: true };
   }
+
+  // ─── Forward Message ───────────────────────────────────────────────────────
+
+  @Post(':id/forward-message')
+  async forwardMessage(
+    @Param('id') conversationId: string,
+    @Body() body: { messageId: string; toConversationIds: string[] },
+    @CurrentUser() user: { id: string; role: string; organizationId?: string | null },
+  ) {
+    const sourceConv = await this.conversationsService.findById(conversationId);
+    assertConversationBelongsToOrg(sourceConv, user);
+
+    const sessionName = (sourceConv as any).session?.name;
+    if (!sessionName) throw new NotFoundException('Oturum bulunamadı');
+
+    const results: Array<{ conversationId: string; success: boolean; error?: string }> = [];
+
+    for (const toConvId of body.toConversationIds) {
+      try {
+        const targetConv = await this.conversationsService.findById(toConvId);
+        assertConversationBelongsToOrg(targetConv, user);
+
+        const targetContact = (targetConv as any).contact;
+        if (!targetContact?.phone) {
+          results.push({ conversationId: toConvId, success: false, error: 'Hedef konuşmada telefon numarası yok' });
+          continue;
+        }
+
+        const toChatId = `${targetContact.phone}@c.us`;
+        await this.wahaService.forwardMessage(sessionName, body.messageId, toChatId);
+        results.push({ conversationId: toConvId, success: true });
+      } catch (err: any) {
+        results.push({ conversationId: toConvId, success: false, error: err.message });
+      }
+    }
+
+    return { results };
+  }
 }

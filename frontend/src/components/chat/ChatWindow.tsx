@@ -37,6 +37,7 @@ import {
   Reply,
   Trash2,
   Smile,
+  Forward,
   MapPin,
   FileUp,
   ArrowLeft,
@@ -187,6 +188,12 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
   const actionTrayRef = useRef<HTMLDivElement>(null);
 
   const [contextMenuMsg, setContextMenuMsg] = useState<{ id: string; body: string | null; x: number; y: number } | null>(null);
+  const [forwardingMsg, setForwardingMsg] = useState<{ id: string; body: string | null } | null>(null);
+  const [forwardSearch, setForwardSearch] = useState('');
+  const [forwardConvs, setForwardConvs] = useState<any[]>([]);
+  const [forwardConvsLoading, setForwardConvsLoading] = useState(false);
+  const [forwardSelected, setForwardSelected] = useState<Set<string>>(new Set());
+  const [forwardSending, setForwardSending] = useState(false);
   const [replyingTo, setReplyingTo] = useState<{ id: string; body: string | null } | null>(null);
   const [emojiPickerOpen, setEmojiPickerOpen] = useState<string | null>(null);
   const emojiPickerRef = useRef<HTMLDivElement>(null);
@@ -655,6 +662,44 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
       toast.success('Mesaj silindi');
     } catch (err: any) {
       toast.error(getApiErrorMessage(err, 'Mesaj silinemedi'));
+    }
+  };
+
+  const openForwardModal = async (msg: { id: string; body: string | null }) => {
+    setForwardingMsg(msg);
+    setForwardSelected(new Set());
+    setForwardSearch('');
+    setForwardConvsLoading(true);
+    try {
+      const { data } = await api.get('/conversations', { params: { limit: 50 } });
+      const list = Array.isArray(data) ? data : (data.items ?? []);
+      setForwardConvs(list.filter((c: any) => c.id !== activeConversation.id));
+    } catch {
+      toast.error('Konuşmalar yüklenemedi');
+    } finally {
+      setForwardConvsLoading(false);
+    }
+  };
+
+  const handleForwardSend = async () => {
+    if (!forwardingMsg || forwardSelected.size === 0) return;
+    setForwardSending(true);
+    try {
+      const { data } = await api.post(
+        `/conversations/${activeConversation.id}/forward-message`,
+        { messageId: forwardingMsg.id, toConversationIds: [...forwardSelected] },
+      );
+      const failed = (data.results as any[]).filter((r) => !r.success);
+      if (failed.length === 0) {
+        toast.success(`Mesaj ${forwardSelected.size} kişiye iletildi`);
+      } else {
+        toast.success(`${forwardSelected.size - failed.length} kişiye iletildi, ${failed.length} başarısız`);
+      }
+      setForwardingMsg(null);
+    } catch (err: any) {
+      toast.error(getApiErrorMessage(err, 'Mesaj iletilemedi'));
+    } finally {
+      setForwardSending(false);
     }
   };
 
@@ -1193,6 +1238,15 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
                             title="Sil"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                        {!msg.id.startsWith('temp-') && (
+                          <button
+                            onClick={() => openForwardModal({ id: msg.id, body: msg.body })}
+                            className="p-1.5 text-gray-400 hover:text-indigo-500 hover:bg-indigo-50 rounded-md transition-colors"
+                            title="İlet"
+                          >
+                            <Forward className="w-3.5 h-3.5" />
                           </button>
                         )}
                       </div>
@@ -2326,5 +2380,109 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
         </div>
       )}
     </div>
+
+    {/* ─── Forward Message Modal ─── */}
+    {forwardingMsg && mounted && createPortal(
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md flex flex-col max-h-[80vh]">
+          {/* Header */}
+          <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+            <div className="flex items-center gap-2">
+              <Forward className="w-4 h-4 text-indigo-500" />
+              <h2 className="text-sm font-semibold text-gray-900">Mesajı İlet</h2>
+            </div>
+            <button onClick={() => setForwardingMsg(null)} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          {/* Mesaj önizleme */}
+          {forwardingMsg.body && (
+            <div className="mx-5 mt-3 px-3 py-2 bg-gray-50 rounded-xl text-xs text-gray-500 border border-gray-200 line-clamp-2">
+              {forwardingMsg.body}
+            </div>
+          )}
+
+          {/* Arama */}
+          <div className="px-5 py-3">
+            <div className="flex items-center gap-2 bg-gray-100 rounded-xl px-3 py-2">
+              <Search className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+              <input
+                autoFocus
+                type="text"
+                placeholder="Konuşma ara..."
+                value={forwardSearch}
+                onChange={(e) => setForwardSearch(e.target.value)}
+                className="flex-1 bg-transparent text-sm outline-none placeholder-gray-400"
+              />
+            </div>
+          </div>
+
+          {/* Konuşma listesi */}
+          <div className="flex-1 overflow-y-auto px-5 pb-2 space-y-1">
+            {forwardConvsLoading ? (
+              <div className="flex justify-center py-8">
+                <Loader2 className="w-5 h-5 text-gray-400 animate-spin" />
+              </div>
+            ) : (
+              forwardConvs
+                .filter((c: any) => {
+                  const name = getContactDisplayTitle(c.contact) ?? c.contact?.phone ?? '';
+                  return name.toLowerCase().includes(forwardSearch.toLowerCase());
+                })
+                .map((c: any) => {
+                  const name = getContactDisplayTitle(c.contact) ?? c.contact?.phone ?? 'İsimsiz';
+                  const phone = c.contact?.phone ?? '';
+                  const isChecked = forwardSelected.has(c.id);
+                  return (
+                    <button
+                      key={c.id}
+                      onClick={() => {
+                        const next = new Set(forwardSelected);
+                        if (isChecked) next.delete(c.id); else next.add(c.id);
+                        setForwardSelected(next);
+                      }}
+                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-colors text-left ${isChecked ? 'bg-indigo-50' : 'hover:bg-gray-50'}`}
+                    >
+                      <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${isChecked ? 'bg-indigo-500 border-indigo-500' : 'border-gray-300'}`}>
+                        {isChecked && <Check className="w-3 h-3 text-white" />}
+                      </div>
+                      <ContactAvatar contact={c.contact} size="sm" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-gray-900 truncate">{name}</p>
+                        {phone && <p className="text-xs text-gray-400">{phone}</p>}
+                      </div>
+                    </button>
+                  );
+                })
+            )}
+          </div>
+
+          {/* Footer */}
+          <div className="px-5 py-4 border-t border-gray-100 flex items-center justify-between">
+            <span className="text-xs text-gray-400">
+              {forwardSelected.size > 0 ? `${forwardSelected.size} kişi seçildi` : 'Kişi seçin'}
+            </span>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setForwardingMsg(null)}
+                className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-xl transition-colors"
+              >
+                İptal
+              </button>
+              <button
+                onClick={handleForwardSend}
+                disabled={forwardSelected.size === 0 || forwardSending}
+                className="flex items-center gap-2 px-4 py-2 text-sm bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+              >
+                {forwardSending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Forward className="w-3.5 h-3.5" />}
+                İlet
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>,
+      document.body,
+    )}
   );
 }
