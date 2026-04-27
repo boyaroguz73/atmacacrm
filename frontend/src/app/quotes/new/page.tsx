@@ -203,12 +203,16 @@ function calcTotals(items: LocalLineItem[], discountType: DiscountType, discount
     return round2(lineGrossAfterGeneral);
   });
 
+  // KDV hariç satır tutarları (satır toplamı gösterimi için)
+  const lineExTotals = rows.map(({ exBefore }) => round2(exBefore * ratio));
+
   const subtotal = round2(sumExAfter);
   vatTotal = round2(vatTotal);
   const grandTotal = round2(sumExAfter + vatTotal);
 
   return {
     lineTotals,
+    lineExTotals,
     subtotal,
     discountTotal,
     vatTotal,
@@ -1296,6 +1300,14 @@ export default function NewQuotePage() {
                 </div>
               )}
             </div>
+            {/* Sütun başlıkları */}
+            <div className="grid grid-cols-[minmax(0,1fr)_80px_140px_140px_40px] gap-2 px-3 pb-1">
+              <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide">Ürün</span>
+              <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide text-right">Adet</span>
+              <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide text-right">Birim fiyat</span>
+              <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide text-right">Toplam (KDV hariç)</span>
+              <span />
+            </div>
             <div className="space-y-2">
               {lines.map((line, idx) => {
                 const isExpanded = expandedLineKey === line.key;
@@ -1311,7 +1323,7 @@ export default function NewQuotePage() {
                           {line.name?.trim() || `Kalem ${idx + 1}`}
                         </p>
                         <p className="text-[11px] text-gray-500 truncate">
-                          {line.priceIncludesVat ? 'KDV dahil' : 'KDV hariç'} · %{line.vatRate}
+                          KDV %{line.vatRate}
                         </p>
                       </button>
                       <input
@@ -1335,19 +1347,7 @@ export default function NewQuotePage() {
                         className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm text-right tabular-nums"
                       />
                       <div className="text-right tabular-nums">
-                        {(() => {
-                          const gross = totals.lineTotals[idx] ?? 0;
-                          const vatR = Math.max(0, Number(line.vatRate) || 0) / 100;
-                          const exVat = line.priceIncludesVat && vatR > 0
-                            ? gross / (1 + vatR)
-                            : gross;
-                          return (
-                            <>
-                              <p className="text-sm font-bold text-gray-800">{sym}{fmt(exVat)}</p>
-                              <p className="text-[10px] text-gray-400">KDV hariç</p>
-                            </>
-                          );
-                        })()}
+                        <p className="text-sm font-bold text-gray-800">{sym}{fmt(totals.lineExTotals[idx] ?? 0)}</p>
                       </div>
                       <button
                         type="button"
