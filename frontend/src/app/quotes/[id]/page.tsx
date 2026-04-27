@@ -283,6 +283,7 @@ export default function QuoteDetailPage() {
     }[];
   } | null>(null);
 
+  const [showOptionalDetails, setShowOptionalDetails] = useState(true);
   // Accept modal
   const [chatOpen, setChatOpen] = useState(true);
   const [showAcceptModal, setShowAcceptModal] = useState(false);
@@ -771,28 +772,8 @@ export default function QuoteDetailPage() {
           </span>
         </div>
 
-        <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 xl:gap-6 items-start">
-          <aside className="xl:col-span-3 space-y-2 order-2 xl:order-1">
-            <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
-              <button
-                type="button"
-                onClick={() => setChatOpen((v) => !v)}
-                className="w-full flex items-center justify-between px-4 py-3 text-sm font-semibold text-gray-800 hover:bg-gray-50 active:bg-gray-100 transition-colors"
-              >
-                <div className="flex items-center gap-2">
-                  <MessageSquare className="w-4 h-4 text-whatsapp" />
-                  WhatsApp Sohbet
-                </div>
-                <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform duration-200 ${chatOpen ? 'rotate-0' : '-rotate-90'}`} />
-              </button>
-              {chatOpen && (
-                <div className="border-t border-gray-100 h-[480px] flex flex-col">
-                  <QuoteEmbeddedChat contactId={c.id} contactPhone={c.phone} />
-                </div>
-              )}
-            </div>
-          </aside>
-          <div className="xl:col-span-6 space-y-6 order-1 xl:order-2 min-w-0">
+        <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_320px] gap-6 items-start">
+          <div className="min-w-0 space-y-5">
             {/* Ürün arama */}
             <section className="bg-white rounded-xl border border-gray-100 shadow-sm p-5 space-y-3">
               <h2 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
@@ -1021,197 +1002,150 @@ export default function QuoteDetailPage() {
               </div>
             </section>
 
-            {/* İndirim ve genel ayarlar */}
-            <section className="bg-white rounded-xl border border-gray-100 shadow-sm p-5 grid sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-semibold text-gray-500 mb-1">Genel indirim tipi</label>
-                <select
-                  value={discountType}
-                  onChange={(e) => setDiscountType(e.target.value as DiscountType)}
-                  className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:border-whatsapp"
-                >
-                  <option value="PERCENT">Yüzde (%)</option>
-                  <option value="AMOUNT">Tutar (TL)</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-gray-500 mb-1">Genel indirim değeri</label>
-                <input
-                  type="number"
-                  min={0}
-                  step={0.01}
-                  value={discountValue}
-                  onChange={(e) => setDiscountValue(parseFloat(e.target.value) || 0)}
-                  className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-whatsapp tabular-nums"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-gray-500 mb-1">Para birimi</label>
-                <select
-                  value={currency}
-                  onChange={(e) => setCurrency(e.target.value)}
-                  className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:border-whatsapp"
-                >
-                  <option value="TRY">TL (₺)</option>
-                  <option value="USD">USD ($)</option>
-                  <option value="EUR">EUR (€)</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-gray-500 mb-1">PDF başlığı (belge türü)</label>
-                <select
-                  value={documentKind}
-                  onChange={(e) => setDocumentKind(e.target.value as 'PROFORMA' | 'QUOTE')}
-                  className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:border-whatsapp"
-                >
-                  <option value="PROFORMA">Proforma teklif</option>
-                  <option value="QUOTE">Satış teklifi</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-gray-500 mb-1">Geçerlilik tarihi</label>
-                <input
-                  type="date"
-                  value={validUntil}
-                  onChange={(e) => setValidUntil(e.target.value)}
-                  className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-whatsapp"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-gray-500 mb-1">Teslimat tarihi</label>
-                <input
-                  type="date"
-                  value={deliveryDate}
-                  onChange={(e) => setDeliveryDate(e.target.value)}
-                  className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-whatsapp"
-                />
-              </div>
-            </section>
-
-            {/* Notlar */}
-            <section className="bg-white rounded-xl border border-gray-100 shadow-sm p-5 space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-gray-500 mb-1">Notlar</label>
-                <HtmlEditor
-                  value={notes}
-                  onChange={setNotes}
-                  placeholder="Teklif ile ilgili notlar…"
-                  minHeight="80px"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-gray-500 mb-1">
-                  Ödeme Koşulları (bu teklife özel)
-                </label>
-                <HtmlEditor
-                  value={termsOverride}
-                  onChange={setTermsOverride}
-                  placeholder="Bu teklifte PDF'e basılacak ödeme koşulları…"
-                  minHeight="96px"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-gray-500 mb-1">
-                  Alt Not (bu teklife özel)
-                </label>
-                <HtmlEditor
-                  value={footerNoteOverride}
-                  onChange={setFooterNoteOverride}
-                  placeholder="Bu teklifte PDF'e basılacak alt not…"
-                  minHeight="80px"
-                />
-              </div>
-            </section>
-
-            {/* Kaydet / İptal */}
-            <div className="flex flex-wrap gap-3">
+            {/* Opsiyonel Detaylar */}
+            <section className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden mt-4">
               <button
                 type="button"
-                onClick={() => {
-                  setEditMode(false);
-                  initFormFromQuote(quote);
-                }}
-                className="px-5 py-2.5 rounded-xl border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                onClick={() => setShowOptionalDetails((v) => !v)}
+                className={`w-full px-4 py-3 flex items-center justify-between transition-colors hover:bg-gray-50 active:bg-gray-100 cursor-pointer ${showOptionalDetails ? 'bg-gray-50' : 'bg-white'}`}
               >
-                İptal
+                <div className="flex items-center gap-2">
+                  <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform duration-200 ${showOptionalDetails ? 'rotate-0' : '-rotate-90'}`} />
+                  <span className="text-sm font-semibold text-gray-700">Opsiyonel Detaylar</span>
+                  <span className="text-xs text-gray-400 font-normal">(notlar ve koşullar)</span>
+                </div>
+                <span className="text-xs text-primary font-medium">
+                  {showOptionalDetails ? 'Gizle' : 'Göster'}
+                </span>
               </button>
-              <button
-                type="button"
-                onClick={handleSave}
-                disabled={saving}
-                className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl bg-whatsapp text-white text-sm font-semibold hover:bg-green-600 disabled:opacity-60 shadow-sm"
-              >
-                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                Değişiklikleri Kaydet
-              </button>
-            </div>
+              {showOptionalDetails && (
+                <div className="p-4 pt-0 grid sm:grid-cols-2 gap-4 border-t border-gray-100">
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-500 mb-1">Genel indirim tipi</label>
+                    <select value={discountType} onChange={(e) => setDiscountType(e.target.value as DiscountType)}
+                      className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:border-whatsapp">
+                      <option value="PERCENT">Yüzde (%)</option>
+                      <option value="AMOUNT">Tutar ({currency === 'TRY' ? 'TL' : currency})</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-500 mb-1">Genel indirim değeri</label>
+                    <input type="number" min={0} step={0.01} value={discountValue}
+                      onChange={(e) => setDiscountValue(parseFloat(e.target.value) || 0)}
+                      className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-whatsapp tabular-nums" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-500 mb-1">Para birimi</label>
+                    <select value={currency} onChange={(e) => setCurrency(e.target.value)}
+                      className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:border-whatsapp">
+                      <option value="TRY">TL (₺)</option>
+                      <option value="USD">USD ($)</option>
+                      <option value="EUR">EUR (€)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-500 mb-1">PDF başlığı (belge türü)</label>
+                    <select value={documentKind} onChange={(e) => setDocumentKind(e.target.value as 'PROFORMA' | 'QUOTE')}
+                      className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:border-whatsapp">
+                      <option value="PROFORMA">Proforma teklif</option>
+                      <option value="QUOTE">Satış teklifi</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-500 mb-1">Geçerlilik tarihi</label>
+                    <input type="date" value={validUntil} onChange={(e) => setValidUntil(e.target.value)}
+                      className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-whatsapp" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-500 mb-1">Teslimat tarihi</label>
+                    <input type="date" value={deliveryDate} onChange={(e) => setDeliveryDate(e.target.value)}
+                      className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-whatsapp" />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="block text-xs font-semibold text-gray-500 mb-1">Notlar</label>
+                    <HtmlEditor value={notes} onChange={setNotes} placeholder="Teklif ile ilgili notlar…" minHeight="80px" />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="block text-xs font-semibold text-gray-500 mb-1">Ödeme Koşulları (bu teklife özel)</label>
+                    <HtmlEditor value={termsOverride} onChange={setTermsOverride} placeholder="Bu teklifte PDF'e basılacak ödeme koşulları…" minHeight="96px" />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="block text-xs font-semibold text-gray-500 mb-1">Alt Not (bu teklife özel)</label>
+                    <HtmlEditor value={footerNoteOverride} onChange={setFooterNoteOverride} placeholder="Bu teklifte PDF'e basılacak alt not…" minHeight="80px" />
+                  </div>
+                </div>
+              )}
+            </section>
           </div>
 
-          {/* Özet paneli */}
-          <aside className="xl:col-span-3 order-3">
-            <div className="sticky top-6 bg-gradient-to-b from-green-50/80 to-white rounded-2xl border border-green-100 shadow-md p-6 space-y-4">
-              <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wide text-whatsapp">
-                Özet
-              </h3>
+          {/* Sağ sidebar */}
+          <aside className="w-full xl:w-[320px] xl:sticky xl:top-6 space-y-4">
+            <div className="bg-gradient-to-b from-green-50/80 to-white rounded-2xl border border-green-100 shadow-md p-5 space-y-4">
+              <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wide text-whatsapp">Özet</h3>
               <dl className="space-y-3 text-sm">
                 {totals.discountTotal > 0 ? (
                   <div className="flex justify-between gap-2 text-gray-600">
-                    <dt>İskonto öncesi toplam (KDV hariç)</dt>
-                    <dd className="font-medium text-gray-900 tabular-nums">
-                      {sym}
-                      {fmtNum(totals.subtotal + totals.discountTotal)}
-                    </dd>
+                    <dt>İskonto öncesi (KDV hariç)</dt>
+                    <dd className="font-medium text-gray-900 tabular-nums">{sym}{fmtNum(totals.subtotal + totals.discountTotal)}</dd>
                   </div>
                 ) : null}
                 <div className="flex justify-between gap-2 text-gray-600">
                   <dt>İskontolu toplam (KDV hariç)</dt>
-                  <dd className="font-medium text-gray-900 tabular-nums">
-                    {sym}
-                    {fmtNum(totals.subtotal)}
-                  </dd>
+                  <dd className="font-medium text-gray-900 tabular-nums">{sym}{fmtNum(totals.subtotal)}</dd>
                 </div>
                 <div className="flex justify-between gap-2 text-gray-600">
                   <dt>KDV</dt>
-                  <dd className="font-medium text-gray-900 tabular-nums">
-                    {sym}
-                    {fmtNum(totals.vatTotal)}
-                  </dd>
+                  <dd className="font-medium text-gray-900 tabular-nums">{sym}{fmtNum(totals.vatTotal)}</dd>
                 </div>
                 {grandTotalOverride && parseFloat(grandTotalOverride) > 0 && parseFloat(grandTotalOverride) < totals.grandTotal && (
                   <div className="flex justify-between gap-2 text-orange-600 text-sm font-medium">
                     <dt>Manuel iskonto</dt>
-                    <dd className="tabular-nums">
-                      -{sym}{fmtNum(totals.grandTotal - parseFloat(grandTotalOverride))}
-                    </dd>
+                    <dd className="tabular-nums">-{sym}{fmtNum(totals.grandTotal - parseFloat(grandTotalOverride))}</dd>
                   </div>
                 )}
                 <div className="pt-3 border-t border-green-100 flex justify-between items-baseline gap-2">
                   <dt className="text-base font-bold text-gray-900">GENEL TOPLAM (KDV dahil)</dt>
-                  <dd className="text-2xl font-extrabold text-whatsapp tabular-nums">
-                    {sym}
-                    {fmtNum(displayGrandTotal)}
-                  </dd>
+                  <dd className="text-2xl font-extrabold text-red-600 tabular-nums">{sym}{fmtNum(displayGrandTotal)}</dd>
                 </div>
               </dl>
               <div className="space-y-1.5">
                 <label className="block text-[11px] font-semibold text-gray-500">
                   Genel Toplam (Manuel)
-                  <span className="text-[10px] text-gray-400 font-normal ml-1">(Doluysa hesaplanan yerine)</span>
+                  <span className="text-[10px] text-gray-400 font-normal ml-1">(Hesaplanan yerine)</span>
                 </label>
-                <input
-                  type="number"
-                  min={0}
-                  step={0.01}
-                  value={grandTotalOverride}
+                <input type="number" min={0} step={0.01} value={grandTotalOverride}
                   onChange={(e) => setGrandTotalOverride(e.target.value)}
-                  placeholder="Boş bırakılırsa otomatik hesaplanır"
-                  className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-whatsapp tabular-nums bg-white"
-                />
+                  placeholder="Boş bırakılırsa otomatik"
+                  className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-whatsapp tabular-nums bg-white" />
               </div>
-              <p className="text-[11px] text-gray-400 leading-relaxed">
-                Kaydet&apos;e tıkladığınızda değişiklikler veritabanına yazılır. PDF&apos;i yeniden oluşturmak
-                gerekebilir.
-              </p>
+            </div>
+            <div className="flex flex-col gap-2">
+              <button type="button"
+                onClick={() => { setEditMode(false); initFormFromQuote(quote); }}
+                className="w-full px-5 py-2.5 rounded-xl border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50">
+                İptal
+              </button>
+              <button type="button" onClick={handleSave} disabled={saving}
+                className="inline-flex items-center justify-center gap-2 w-full px-6 py-2.5 rounded-xl bg-whatsapp text-white text-sm font-semibold hover:bg-green-600 disabled:opacity-60 shadow-sm">
+                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                Değişiklikleri Kaydet
+              </button>
+            </div>
+            {/* WhatsApp Sohbet */}
+            <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
+              <button type="button" onClick={() => setChatOpen((v) => !v)}
+                className="w-full flex items-center justify-between px-4 py-3 text-sm font-semibold text-gray-800 hover:bg-gray-50 active:bg-gray-100 transition-colors">
+                <div className="flex items-center gap-2">
+                  <MessageSquare className="w-4 h-4 text-whatsapp" />
+                  WhatsApp Sohbet
+                </div>
+                <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform duration-200 ${chatOpen ? 'rotate-0' : '-rotate-90'}`} />
+              </button>
+              {chatOpen && (
+                <div className="border-t border-gray-100 h-[480px] flex flex-col">
+                  <QuoteEmbeddedChat contactId={c.id} contactPhone={c.phone} />
+                </div>
+              )}
             </div>
           </aside>
         </div>
@@ -1475,12 +1409,8 @@ export default function QuoteDetailPage() {
         </span>
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 xl:gap-6 items-start">
-        <aside className="xl:col-span-3 space-y-2 order-2 xl:order-1">
-          <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Sohbet</h3>
-          <QuoteEmbeddedChat contactId={c.id} contactPhone={c.phone} />
-        </aside>
-        <div className="xl:col-span-6 space-y-4 order-1 xl:order-2 min-w-0">
+      <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_320px] gap-6 items-start">
+        <div className="min-w-0 space-y-4">
           <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-sm min-w-[820px]">
@@ -1592,7 +1522,7 @@ export default function QuoteDetailPage() {
           </div>
         </div>
 
-        <div className="xl:col-span-3 space-y-4 order-3">
+        <aside className="w-full xl:w-[320px] xl:sticky xl:top-6 space-y-4">
           <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5 space-y-3">
             {Number(quote.discountTotal) > 0 && (
               <div className="flex justify-between text-sm">
@@ -1734,7 +1664,24 @@ export default function QuoteDetailPage() {
               </button>
             )}
           </div>
-        </div>
+
+          {/* WhatsApp Sohbet */}
+          <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
+            <button type="button" onClick={() => setChatOpen((v) => !v)}
+              className="w-full flex items-center justify-between px-4 py-3 text-sm font-semibold text-gray-800 hover:bg-gray-50 active:bg-gray-100 transition-colors">
+              <div className="flex items-center gap-2">
+                <MessageSquare className="w-4 h-4 text-whatsapp" />
+                WhatsApp Sohbet
+              </div>
+              <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform duration-200 ${chatOpen ? 'rotate-0' : '-rotate-90'}`} />
+            </button>
+            {chatOpen && (
+              <div className="border-t border-gray-100 h-[480px] flex flex-col">
+                <QuoteEmbeddedChat contactId={c.id} contactPhone={c.phone} />
+              </div>
+            )}
+          </div>
+        </aside>
       </div>
     </div>
   );
