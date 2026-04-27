@@ -420,6 +420,86 @@ export class AiEngineService {
     await this.logAction(ctx.orgId, ctx.contactId, ctx.conversationId, 'handoff_to_human', 'SUCCESS', { reason });
   }
 
+  // ─── Execute approved pending action ────────────────────────────────────
+
+  async executeApprovedAction(pendingAction: {
+    id: string;
+    organizationId: string;
+    conversationId: string | null;
+    contactId: string | null;
+    action: string;
+    payload: any;
+  }): Promise<void> {
+    const config = await this.prisma.aiConfig.findUnique({
+      where: { organizationId: pendingAction.organizationId },
+    });
+    if (!config?.openaiKey) return;
+
+    const ctx: AiMessageContext = {
+      orgId: pendingAction.organizationId,
+      sessionName: '',   // will be resolved inside sendWhatsApp via conversationId
+      conversationId: pendingAction.conversationId ?? '',
+      contactId: pendingAction.contactId ?? '',
+      messageBody: '',
+    };
+
+    const payload = typeof pendingAction.payload === 'object' && pendingAction.payload !== null
+      ? pendingAction.payload
+      : {};
+
+    try {
+      switch (pendingAction.action) {
+        case 'send_message':
+          await this.sendWhatsApp(ctx, payload.text ?? '', config);
+          await this.logAction(ctx.orgId, ctx.contactId, ctx.conversationId, pendingAction.action, 'SUCCESS', payload);
+          break;
+
+        case 'ask_question':
+          await this.sendWhatsApp(ctx, payload.question ?? '', config);
+          await this.logAction(ctx.orgId, ctx.contactId, ctx.conversationId, pendingAction.action, 'SUCCESS', payload);
+          break;
+
+        case 'suggest_product':
+          await this.executeSuggestProduct(ctx, payload, config);
+          break;
+
+        case 'create_offer':
+          await this.executeCreateOffer(ctx, payload, config);
+          break;
+
+        case 'send_offer':
+          await this.executeSendOffer(ctx, payload, config);
+          break;
+
+        case 'create_order':
+          await this.executeCreateOrder(ctx, payload, config);
+          break;
+
+        case 'send_payment_link':
+          await this.executeSendPaymentLink(ctx, payload, config);
+          break;
+
+        case 'update_customer_note':
+          await this.executeUpdateNote(ctx, payload);
+          break;
+
+        case 'assign_tag':
+          await this.executeAssignTag(ctx, payload);
+          break;
+
+        case 'handoff_to_human':
+          await this.executeHandoff(ctx, payload, config);
+          break;
+
+        default:
+          this.logger.warn(`executeApprovedAction: unknown action ${pendingAction.action}`);
+      }
+    } catch (err: any) {
+      this.logger.error(`executeApprovedAction failed for action ${pendingAction.action}: ${err.message}`);
+      await this.logAction(ctx.orgId, ctx.contactId, ctx.conversationId, pendingAction.action, 'FAILED', payload, err.message);
+    }
+  }
+
   // ─── Helpers ─────────────────────────────────────────────────────────────
 
   private async sendWhatsApp(ctx: AiMessageContext, text: string, config: any) {

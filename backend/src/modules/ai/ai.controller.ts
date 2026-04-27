@@ -12,11 +12,15 @@ import {
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { AiService } from './ai.service';
+import { AiEngineService } from './ai-engine.service';
 
 @Controller('ai')
 @UseGuards(JwtAuthGuard)
 export class AiController {
-  constructor(private readonly ai: AiService) {}
+  constructor(
+    private readonly ai: AiService,
+    private readonly engine: AiEngineService,
+  ) {}
 
   private orgId(req: any, query?: any): Promise<string> {
     return this.ai.resolveOrgId(req.user, query?.organizationId);
@@ -169,10 +173,19 @@ export class AiController {
     @Body() body: any,
   ) {
     const orgId = await this.orgId(req, q);
-    return this.ai.reviewPendingAction(orgId, id, {
+    const updated = await this.ai.reviewPendingAction(orgId, id, {
       decision: body.decision,
       reviewedById: req.user?.id ?? body.reviewedById,
     });
+
+    // ONAYLANDI → action'ı gerçekten çalıştır
+    if (body.decision === 'APPROVED') {
+      this.engine.executeApprovedAction(updated).catch((err) =>
+        console.error(`executeApprovedAction error: ${err.message}`),
+      );
+    }
+
+    return updated;
   }
 
   // ─── Logs ─────────────────────────────────────────────────────────────────
