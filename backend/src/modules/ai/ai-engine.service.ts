@@ -96,7 +96,7 @@ export class AiEngineService {
               OR: nameWords.map((w) => ({ name: { contains: w, mode: 'insensitive' as const } })),
             },
             take: 5,
-            select: { id: true, name: true, unitPrice: true, currency: true, stock: true, category: true },
+            select: { id: true, name: true, description: true, unitPrice: true, currency: true, stock: true, category: true, sku: true },
           });
           for (const m of matched) {
             if (!products.find((p: any) => p.id === m.id)) products.push(m);
@@ -277,7 +277,7 @@ export class AiEngineService {
     const products = productIds.length > 0
       ? await this.prisma.product.findMany({
           where: { id: { in: productIds }, isActive: true },
-          select: { id: true, name: true, unitPrice: true, currency: true, imageUrl: true, description: true, stock: true },
+          select: { id: true, name: true, unitPrice: true, currency: true, imageUrl: true, description: true, stock: true, sku: true },
         })
       : [];
 
@@ -646,7 +646,7 @@ export class AiEngineService {
       },
       orderBy: { name: 'asc' },
       take: 30,
-      select: { id: true, name: true, unitPrice: true, currency: true, stock: true, category: true },
+      select: { id: true, name: true, description: true, unitPrice: true, currency: true, stock: true, category: true, sku: true },
     });
 
     // ── 3. Learned-id ürünleri ekle ────────────────────────────────────────
@@ -657,7 +657,7 @@ export class AiEngineService {
       if (missing.length > 0) {
         extra = await this.prisma.product.findMany({
           where: { id: { in: missing }, isActive: true },
-          select: { id: true, name: true, unitPrice: true, currency: true, stock: true, category: true },
+          select: { id: true, name: true, description: true, unitPrice: true, currency: true, stock: true, category: true, sku: true },
         });
       }
     }
@@ -775,7 +775,7 @@ export class AiEngineService {
       where: { isActive: true },
       orderBy: { createdAt: 'desc' },
       take: 15,
-      select: { id: true, name: true, unitPrice: true, currency: true, stock: true, category: true },
+      select: { id: true, name: true, description: true, unitPrice: true, currency: true, stock: true, category: true, sku: true },
     });
   }
 
@@ -827,10 +827,26 @@ export class AiEngineService {
 
     // Yalnızca mesajla ilgili ürünler (tüm katalog değil)
     if (products.length > 0) {
-      const productLines = products.map(
-        (p) => `- ID:${p.id} | ${p.name} | ${p.unitPrice} ${p.currency}${p.stock != null ? ` | Stok:${p.stock}` : ''}${p.category ? ` | Kategori:${p.category}` : ''}`,
+      const productLines = products.map((p) => {
+        let line = `- ID:${p.id} | ${p.name} | ${p.unitPrice} ${p.currency}`;
+        if (p.stock != null) line += ` | Stok:${p.stock}`;
+        if (p.category) line += ` | Kategori:${p.category}`;
+        if (p.sku) line += ` | SKU:${p.sku}`;
+        if (p.description) line += `\n  Açıklama: ${String(p.description).slice(0, 300)}`;
+        return line;
+      });
+      parts.push(
+        `\n## CRM Ürün Listesi (KESİN VERİ)\n` +
+        `KURAL: Müşteri bir ürün veya özellik sorduğunda YALNIZCA bu listede olan ürünleri sun. ` +
+        `Listede olmayan ürün, boyut veya varyant için "sistemimizde bu ürün bulunmuyor" de, ` +
+        `tahmin yürütme veya "olabilir" deme.\n\n` +
+        productLines.join('\n'),
       );
-      parts.push(`\n## İlgili Ürünler\n${productLines.join('\n')}`);
+    } else {
+      parts.push(
+        `\n## CRM Ürün Listesi\nBu mesajla ilgili ürün bulunamadı. ` +
+        `Müşteriye farklı anahtar kelimelerle aramayı dene veya ürün kategorisini sor.`,
+      );
     }
 
     if (prompts?.salesPrompt) parts.push(`\n## Satış Talimatları\n${prompts.salesPrompt}`);
