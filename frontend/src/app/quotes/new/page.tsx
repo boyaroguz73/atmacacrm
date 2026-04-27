@@ -331,7 +331,7 @@ export default function NewQuotePage() {
   const [grandTotalOverride, setGrandTotalOverride] = useState<string>('');
   const [submitting, setSubmitting] = useState(false);
   const [showCustomerDetails, setShowCustomerDetails] = useState(false);
-  const [showOptionalDetails, setShowOptionalDetails] = useState(false);
+  const [showOptionalDetails, setShowOptionalDetails] = useState(true);
   const [chatOpen, setChatOpen] = useState(true); // Açık gelsin
   const [expandedLineKey, setExpandedLineKey] = useState<string | null>(null);
   const [descriptionPreview, setDescriptionPreview] = useState<{ title: string; html: string } | null>(null);
@@ -1467,7 +1467,7 @@ export default function NewQuotePage() {
             </div>
           </section>
 
-          <section className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+          <section className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden mt-4">
             <button
               type="button"
               onClick={() => setShowOptionalDetails((v) => !v)}
