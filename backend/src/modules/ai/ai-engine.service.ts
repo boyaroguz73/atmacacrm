@@ -168,12 +168,15 @@ export class AiEngineService {
 
     // 8. Handle tool calls
     if (choice.finish_reason === 'tool_calls' && choice.message.tool_calls?.length) {
+      let askSent = false; // "Talebiniz alındı" sadece bir kez gitsin
       for (const toolCall of choice.message.tool_calls) {
         const action = toolCall.function.name;
         let args: any = {};
         try { args = JSON.parse(toolCall.function.arguments || '{}'); } catch { /* ignore */ }
 
-        await this.dispatchAction(ctx, action, args, getPolicy(action), config);
+        await this.dispatchAction(ctx, action, args, getPolicy(action), config, askSent);
+        // ASK policy kullandıysa flag'i set et — sonraki tool call'larda tekrar gönderme
+        if (getPolicy(action) === 'ASK') askSent = true;
       }
       return;
     }
@@ -193,14 +196,26 @@ export class AiEngineService {
     args: any,
     policy: string,
     config: any,
+    askAlreadySent = false,
   ) {
     if (policy === 'OFF') return;
 
     if (policy === 'ASK') {
       await this.queuePendingAction(ctx, action, args);
-      // Inform customer that a human will review
-      const infoMsg = 'Talebiniz alındı, kısa süre içinde size dönüş yapılacaktır.';
-      await this.sendWhatsApp(ctx, infoMsg, config);
+      // Sadece ilk ASK action'da müşteriyi bilgilendir — çift mesajı önle
+      if (!askAlreadySent) {
+        const actionLabels: Record<string, string> = {
+          create_order: 'Sipariş talebiniz alındı, onaylandıktan sonra işleme alınacaktır.',
+          create_offer: 'Teklif talebiniz alındı, hazırlandıktan sonra size iletilecektir.',
+          send_offer: 'Teklif gönderme talebiniz alındı.',
+          send_payment_link: 'Ödeme linki talebiniz alındı.',
+          update_customer_note: 'Bilgileriniz güncelleme için alındı.',
+          assign_tag: 'Talebiniz alındı.',
+          handoff_to_human: 'Müşteri temsilcimize bağlanıyorsunuz, kısa süre içinde dönüş yapılacaktır.',
+        };
+        const infoMsg = actionLabels[action] ?? 'Talebiniz alındı, kısa süre içinde size dönüş yapılacaktır.';
+        await this.sendWhatsApp(ctx, infoMsg, config);
+      }
       return;
     }
 
@@ -870,7 +885,17 @@ export class AiEngineService {
       }
     }
 
-    parts.push('\nMüşteriye yardımcı olmak için uygun fonksiyonları kullan. Gerekmedikçe sadece text mesaj gönder.');
+    parts.push(`
+## Sipariş ve Teklif Akışı Kuralları
+1. Müşteri sipariş veya teklif istediğinde, önce şunları netleştir (bilmiyorsan sor):
+   - Hangi ürün? (CRM listesindeki tam adı)
+   - Kaç adet?
+   - Varsa özel ölçü/renk/model
+2. Tüm bilgiler netteyse create_order veya create_offer fonksiyonunu çağır.
+3. Sipariş/teklif oluşturduktan sonra müşteriye özet bilgi ver ve "onaylanması gerekiyor" ise bunu belirt.
+4. Tek seferde hem soru sor hem de sipariş oluşturma — önce soruyu sor, cevap gelince siparişi oluştur.
+5. Gerekmedikçe sadece text mesaj gönder.`);
+
 
     return parts.join('\n');
   }
