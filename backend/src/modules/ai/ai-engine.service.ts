@@ -10,6 +10,16 @@ export interface AiMessageContext {
   messageBody: string;
 }
 
+interface ScrapedProduct {
+  url: string;
+  name?: string;
+  description?: string;
+  price?: string;
+  imageUrl?: string;
+  sku?: string;
+  pastConversations?: string[];
+}
+
 @Injectable()
 export class AiEngineService {
   private readonly logger = new Logger(AiEngineService.name);
@@ -69,8 +79,56 @@ export class AiEngineService {
 
     const products = await this.getRelevantProducts(ctx.messageBody, memory);
 
+    // 4b. URL'den ürün çek + geçmiş konuşmalardan benzer soruları bul
+    const urls = this.extractUrls(ctx.messageBody);
+    let scrapedContext: ScrapedProduct[] = [];
+    if (urls.length > 0) {
+      const scraped = await Promise.all(urls.slice(0, 2).map((u) => this.scrapeProductFromUrl(u)));
+      scrapedContext = scraped.filter((s): s is ScrapedProduct => s !== null);
+
+      // Scraped ürün adıyla DB'den eşleştir — bulunursa products listesine ekle
+      for (const sp of scrapedContext) {
+        if (sp.name) {
+          const nameWords = sp.name.split(/\s+/).filter((w) => w.length > 2).slice(0, 4);
+          const matched = await this.prisma.product.findMany({
+            where: {
+              isActive: true,
+              OR: nameWords.map((w) => ({ name: { contains: w, mode: 'insensitive' as const } })),
+            },
+            take: 5,
+            select: { id: true, name: true, unitPrice: true, currency: true, stock: true, category: true },
+          });
+          for (const m of matched) {
+            if (!products.find((p: any) => p.id === m.id)) products.push(m);
+          }
+        }
+      }
+
+      // O ürün hakkında daha önce sorulan konuşmalardan bağlam çek
+      for (const sp of scrapedContext) {
+        if (sp.name) {
+          const nameWord = sp.name.split(/\s+/).slice(0, 3).join(' ');
+          const pastMsgs = await this.prisma.message.findMany({
+            where: {
+              conversation: { session: { organizationId: ctx.orgId } },
+              body: { contains: nameWord, mode: 'insensitive' },
+              conversationId: { not: ctx.conversationId }, // başka konuşmalar
+            },
+            orderBy: { timestamp: 'desc' },
+            take: 10,
+            select: { body: true, direction: true },
+          });
+          if (pastMsgs.length > 0) {
+            sp.pastConversations = pastMsgs.map(
+              (m) => `[${m.direction === 'INCOMING' ? 'Müşteri' : 'Operatör'}]: ${m.body}`,
+            );
+          }
+        }
+      }
+    }
+
     // 5. Build system prompt
-    const systemPrompt = this.buildSystemPrompt(config, memory, prompts, contact, products);
+    const systemPrompt = this.buildSystemPrompt(config, memory, prompts, contact, products, scrapedContext);
 
     // 6. Build tool definitions (only include tools whose policy != OFF)
     const tools = this.buildTools(policyMap);
@@ -611,6 +669,107 @@ export class AiEngineService {
     return this.getFallbackProducts();
   }
 
+  // ─── URL detection & web scraping ────────────────────────────────────────
+
+  private extractUrls(text: string): string[] {
+    const matches = text.match(/https?:\/\/[^\s]+/g) ?? [];
+    // Temizle: sondaki noktalama işaretlerini at
+    return matches.map((u) => u.replace(/[.,!?)]+$/, ''));
+  }
+
+  private async scrapeProductFromUrl(url: string): Promise<ScrapedProduct | null> {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 8000);
+      const res = await fetch(url, {
+        signal: controller.signal,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (compatible; AtmacaCRM/1.0; +https://atmacaofis.com)',
+          'Accept-Language': 'tr-TR,tr;q=0.9,en;q=0.8',
+        },
+      });
+      clearTimeout(timeout);
+      if (!res.ok) return null;
+
+      const html = await res.text();
+
+      // ── 1. JSON-LD (schema.org/Product) ──────────────────────────────────
+      const jsonLdBlocks = html.match(/<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi) ?? [];
+      for (const block of jsonLdBlocks) {
+        const content = block.replace(/<script[^>]*>|<\/script>/gi, '').trim();
+        try {
+          const data = JSON.parse(content);
+          const items: any[] = Array.isArray(data) ? data : [data];
+          for (const item of items) {
+            const type = item['@type'];
+            const isProduct = type === 'Product' || (Array.isArray(type) && type.includes('Product'));
+            if (isProduct) {
+              const offers = Array.isArray(item.offers) ? item.offers[0] : item.offers;
+              const price = offers?.price ?? offers?.lowPrice;
+              const currency = offers?.priceCurrency;
+              return {
+                url,
+                name: item.name,
+                description: item.description
+                  ? String(item.description).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
+                  : undefined,
+                price: price ? `${price}${currency ? ' ' + currency : ''}` : undefined,
+                imageUrl: Array.isArray(item.image) ? item.image[0] : item.image,
+                sku: item.sku ?? item.mpn,
+              };
+            }
+          }
+        } catch { /* invalid JSON */ }
+      }
+
+      // ── 2. Meta / OG tags ─────────────────────────────────────────────────
+      const getMeta = (name: string): string | undefined => {
+        const patterns = [
+          new RegExp(`<meta[^>]+(?:property|name)=["']${name}["'][^>]+content=["']([^"']+)["']`, 'i'),
+          new RegExp(`<meta[^>]+content=["']([^"']+)["'][^>]+(?:property|name)=["']${name}["']`, 'i'),
+        ];
+        for (const re of patterns) {
+          const m = html.match(re);
+          if (m?.[1]) return m[1].trim();
+        }
+        return undefined;
+      };
+
+      const name =
+        getMeta('og:title') ??
+        getMeta('twitter:title') ??
+        html.match(/<title[^>]*>([^<]+)<\/title>/i)?.[1]?.trim();
+
+      const description =
+        getMeta('og:description') ??
+        getMeta('description') ??
+        getMeta('twitter:description');
+
+      const price =
+        getMeta('product:price:amount') ??
+        getMeta('og:price:amount') ??
+        getMeta('twitter:data1');
+
+      const currency = getMeta('product:price:currency') ?? getMeta('og:price:currency');
+      const imageUrl = getMeta('og:image') ?? getMeta('twitter:image');
+
+      if (name) {
+        return {
+          url,
+          name,
+          description: description?.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim(),
+          price: price ? `${price}${currency ? ' ' + currency : ''}` : undefined,
+          imageUrl,
+        };
+      }
+
+      return null;
+    } catch (err: any) {
+      this.logger.warn(`scrapeProductFromUrl failed for ${url}: ${err.message}`);
+      return null;
+    }
+  }
+
   private async getFallbackProducts() {
     return this.prisma.product.findMany({
       where: { isActive: true },
@@ -620,7 +779,7 @@ export class AiEngineService {
     });
   }
 
-  private buildSystemPrompt(config: any, memory: any, prompts: any, contact: any, products: any[]): string {
+  private buildSystemPrompt(config: any, memory: any, prompts: any, contact: any, products: any[], scrapedContext: ScrapedProduct[] = []): string {
     const parts: string[] = [];
 
     const customPrompt = prompts?.systemPrompt?.trim();
@@ -676,6 +835,24 @@ export class AiEngineService {
 
     if (prompts?.salesPrompt) parts.push(`\n## Satış Talimatları\n${prompts.salesPrompt}`);
     if (prompts?.supportPrompt) parts.push(`\n## Destek Talimatları\n${prompts.supportPrompt}`);
+
+    // URL'den çekilen ürün bilgileri
+    if (scrapedContext.length > 0) {
+      for (const sp of scrapedContext) {
+        const spParts: string[] = [`\n## Müşterinin Paylaştığı Ürün (${sp.url})`];
+        if (sp.name) spParts.push(`Ürün Adı: ${sp.name}`);
+        if (sp.sku) spParts.push(`SKU: ${sp.sku}`);
+        if (sp.price) spParts.push(`Fiyat (web sitesi): ${sp.price}`);
+        if (sp.description) spParts.push(`Açıklama: ${sp.description.slice(0, 600)}`);
+        if (sp.imageUrl) spParts.push(`Görsel: ${sp.imageUrl}`);
+        if (sp.pastConversations && sp.pastConversations.length > 0) {
+          spParts.push(`\nBu ürün hakkında geçmiş konuşmalardan örnekler:`);
+          spParts.push(sp.pastConversations.slice(0, 6).join('\n'));
+        }
+        spParts.push(`\nBu ürün bilgilerini kullanarak müşteriye yardımcı ol. Kendi DB'mizde eşleşen ürün varsa onun ID'sini kullan.`);
+        parts.push(spParts.join('\n'));
+      }
+    }
 
     parts.push('\nMüşteriye yardımcı olmak için uygun fonksiyonları kullan. Gerekmedikçe sadece text mesaj gönder.');
 
