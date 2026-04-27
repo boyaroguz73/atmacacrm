@@ -776,7 +776,17 @@ export class PdfService {
         if (hasGeneralDiscount) {
           rowY += sumRow(this.t('Iskontolu Ara Tutar (KDV haric):'), fmtMoney(subEx), rowY, true, primary);
         }
-        rowY += sumRow(this.t('KDV Tutari:'), fmtMoney(vatAmt), rowY);
+        const uniqueVatRates = [
+          ...new Set(
+            (data.items ?? []).map((i) => Math.round(Number((i as LineItem).vatRate) || 0)),
+          ),
+        ].filter((r) => r > 0);
+        const singleVatPercent = uniqueVatRates.length === 1 ? uniqueVatRates[0] : null;
+        const kdvLabel =
+          singleVatPercent != null
+            ? `KDV Tutari (%${singleVatPercent}):`
+            : 'KDV Tutari:';
+        rowY += sumRow(this.t(kdvLabel), fmtMoney(vatAmt), rowY);
 
         // Genel toplam kutusu: sabit 22px yerine etiket+tutar yüksekliğine göre
         const labelGT = this.t('GENEL TOPLAM (KDV dahil):');

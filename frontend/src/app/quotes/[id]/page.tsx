@@ -728,7 +728,6 @@ export default function QuoteDetailPage() {
                     key={v.id}
                     name={v.name}
                     imageUrl={v.imageUrl}
-                    property2={v.property2}
                     priceDisplay={`${sym}${v.unitPrice.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}`}
                     discountedPriceDisplay={
                       v.salePriceAmount != null && v.salePriceAmount !== v.unitPrice

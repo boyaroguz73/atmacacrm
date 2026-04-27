@@ -850,8 +850,29 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
     }
   };
 
+  /** Sunucuda statik servis edilen `/uploads/...` (JWT gerektirmez). */
+  const isLikelyPublicUploadMediaUrl = (url: string) => {
+    const u = url.split('?')[0];
+    return (
+      u.startsWith('/uploads/') ||
+      u.startsWith('uploads/') ||
+      /^https?:\/\/[^/]+\/uploads\//i.test(u)
+    );
+  };
+
   const resolveMediaUrl = (msg: Message) => {
-    const preferred = msg.metadata?.originalMediaUrl || msg.mediaUrl;
+    const meta = msg.metadata as Record<string, unknown> | undefined;
+    const storedTrim = String(msg.mediaUrl ?? '').trim();
+    const originalTrim =
+      typeof meta?.originalMediaUrl === 'string'
+        ? String(meta.originalMediaUrl).trim()
+        : '';
+    // Backfill sonrası mediaUrl `/uploads/...` olur; metadata.originalMediaUrl çoğu zaman eski `/api/files/...` kalır.
+    // Önce eski proxy URL’sini seçmek JWT olmadan yeni sekmede/RGB fetch’te PDF’nin açılmamasına yol açar.
+    const preferred =
+      storedTrim && isLikelyPublicUploadMediaUrl(storedTrim)
+        ? storedTrim
+        : originalTrim || storedTrim;
     if (!preferred) return null;
     const t = String(preferred).trim();
     if (t.startsWith('http')) return rewriteMediaUrlForClient(t);
@@ -866,9 +887,48 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
     return t;
   };
 
+  const apiFilesNeedsBearer = (url: string) => url.includes('/api/files/');
+
+  const fetchMediaAuthenticated = async (url: string): Promise<Blob | null> => {
+    try {
+      const headers: HeadersInit = {};
+      if (typeof window !== 'undefined') {
+        const token = localStorage.getItem('token');
+        if (token) headers.Authorization = `Bearer ${token}`;
+      }
+      const res = await fetch(url, { headers });
+      if (!res.ok) return null;
+      return res.blob();
+    } catch {
+      return null;
+    }
+  };
+
+  const openResolvedMediaTab = async (url: string) => {
+    if (!apiFilesNeedsBearer(url)) {
+      const opened = window.open(url, '_blank', 'noopener,noreferrer');
+      return !!opened;
+    }
+    const blob = await fetchMediaAuthenticated(url);
+    if (!blob) return false;
+    const blobUrl = URL.createObjectURL(blob);
+    const opened = window.open(blobUrl, '_blank', 'noopener,noreferrer');
+    if (!opened) {
+      URL.revokeObjectURL(blobUrl);
+      return false;
+    }
+    window.setTimeout(() => URL.revokeObjectURL(blobUrl), 120_000);
+    return true;
+  };
+
   const handleDownload = async (url: string, filename?: string) => {
     try {
-      const response = await fetch(url);
+      const headers: HeadersInit = {};
+      if (typeof window !== 'undefined' && apiFilesNeedsBearer(url)) {
+        const token = localStorage.getItem('token');
+        if (token) headers.Authorization = `Bearer ${token}`;
+      }
+      const response = await fetch(url, { headers });
       if (!response.ok) {
         toast.error('Dosya bulunamadı — WAHA oturumu yeniden başlatılmış olabilir');
         return;
@@ -1362,18 +1422,22 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
                           role="button"
                           tabIndex={0}
                           onClick={() => {
-                            const opened = window.open(mediaUrlResolved, '_blank', 'noopener,noreferrer');
-                            if (!opened) {
-                              handleDownload(mediaUrlResolved, inferDownloadFilename(msg, mediaUrlResolved));
-                            }
+                            void (async () => {
+                              const opened = await openResolvedMediaTab(mediaUrlResolved);
+                              if (!opened) {
+                                handleDownload(mediaUrlResolved, inferDownloadFilename(msg, mediaUrlResolved));
+                              }
+                            })();
                           }}
                           onKeyDown={(e) => {
                             if (e.key === 'Enter' || e.key === ' ') {
                               e.preventDefault();
-                              const opened = window.open(mediaUrlResolved, '_blank', 'noopener,noreferrer');
-                              if (!opened) {
-                                handleDownload(mediaUrlResolved, inferDownloadFilename(msg, mediaUrlResolved));
-                              }
+                              void (async () => {
+                                const opened = await openResolvedMediaTab(mediaUrlResolved);
+                                if (!opened) {
+                                  handleDownload(mediaUrlResolved, inferDownloadFilename(msg, mediaUrlResolved));
+                                }
+                              })();
                             }
                           }}
                           className="flex items-center gap-2 p-2.5 bg-gray-50 rounded-lg mb-1 hover:bg-gray-100 transition-colors border border-gray-100 w-full text-left cursor-pointer"

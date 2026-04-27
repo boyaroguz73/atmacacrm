@@ -394,14 +394,12 @@ export class ConversationsService {
     };
   }
 
-  /** Teklif/Sipariş gömülü chat: kişiye ait en uygun görüşme. */
+  /** Teklif/Sipariş/gömülü chat + gelen kutusu derin bağlantı: son mesaj zamanına göre en güncel görüşme. */
   async findLatestByContactId(
     contactId: string,
     opts?: {
-      currentUserId?: string;
       currentUserRole?: string;
       organizationId?: string | null;
-      preferAssignedToCurrentAgent?: boolean;
     },
   ) {
     const include = {
@@ -420,34 +418,11 @@ export class ConversationsService {
       baseWhere.contact = { organizationId: opts.organizationId };
     }
 
-    const shouldPreferMine =
-      opts?.preferAssignedToCurrentAgent !== false &&
-      opts?.currentUserRole === 'AGENT' &&
-      !!opts?.currentUserId;
-
-    let conv = shouldPreferMine
-      ? await this.prisma.conversation.findFirst({
-          where: {
-            ...baseWhere,
-            assignments: {
-              some: {
-                userId: String(opts?.currentUserId),
-                unassignedAt: null,
-              },
-            },
-          },
-          include,
-          orderBy: { lastMessageAt: 'desc' },
-        })
-      : null;
-
-    if (!conv) {
-      conv = await this.prisma.conversation.findFirst({
-        where: baseWhere,
-        include,
-        orderBy: { lastMessageAt: 'desc' },
-      });
-    }
+    let conv = await this.prisma.conversation.findFirst({
+      where: baseWhere,
+      include,
+      orderBy: { lastMessageAt: 'desc' },
+    });
     if (
       conv &&
       !conv.isGroup &&
@@ -466,6 +441,49 @@ export class ConversationsService {
       });
     }
     return conv;
+  }
+
+  /**
+   * Gömülü WhatsApp: aynı kişi için farklı oturumlardaki sohbetler (son mesaja göre sıralı).
+   */
+  async listConversationsForContact(
+    contactId: string,
+    opts?: {
+      currentUserRole?: string;
+      organizationId?: string | null;
+    },
+  ) {
+    const baseWhere: any = { contactId };
+    if (opts?.organizationId && opts.currentUserRole !== 'SUPERADMIN') {
+      baseWhere.contact = { organizationId: opts.organizationId };
+    }
+
+    const rows = await this.prisma.conversation.findMany({
+      where: baseWhere,
+      orderBy: { lastMessageAt: 'desc' },
+      take: 40,
+      select: {
+        id: true,
+        lastMessageAt: true,
+        lastMessageText: true,
+        isGroup: true,
+        waGroupId: true,
+        groupName: true,
+        session: { select: { id: true, name: true, phone: true } },
+        contact: { select: { phone: true } },
+      },
+    });
+
+    return rows.map((c) => ({
+      id: c.id,
+      lastMessageAt: c.lastMessageAt.toISOString(),
+      lastMessagePreview: c.lastMessageText,
+      isGroup: c.isGroup,
+      waGroupId: c.waGroupId,
+      groupName: c.groupName,
+      session: c.session,
+      contactPhone: c.contact.phone,
+    }));
   }
 
   async findById(

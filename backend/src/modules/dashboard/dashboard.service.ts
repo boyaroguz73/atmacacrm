@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { queryDateFromGte, queryDateToLte } from '../../common/query-date-range';
 
 @Injectable()
 export class DashboardService {
@@ -226,8 +227,8 @@ export class DashboardService {
   private parseDateRange(from?: string, to?: string) {
     if (!from && !to) return null;
     const range: any = {};
-    if (from) range.gte = new Date(from);
-    if (to) range.lte = new Date(to);
+    if (from) range.gte = queryDateFromGte(from);
+    if (to) range.lte = queryDateToLte(to);
     return range;
   }
 

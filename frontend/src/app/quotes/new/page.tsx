@@ -782,7 +782,6 @@ export default function NewQuotePage() {
                   key={v.id}
                   name={v.name}
                   imageUrl={v.imageUrl}
-                  property2={v.property2}
                   priceDisplay={`${sym}${v.unitPrice.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}`}
                   discountedPriceDisplay={
                     v.salePriceAmount != null && v.salePriceAmount > 0 && v.salePriceAmount < v.unitPrice
@@ -1323,7 +1322,9 @@ export default function NewQuotePage() {
                           {line.name?.trim() || `Kalem ${idx + 1}`}
                         </p>
                         <p className="text-[11px] text-gray-500 truncate">
-                          KDV %{line.vatRate}
+                          {[line.measurementInfo?.trim(), line.colorFabricInfo?.trim()]
+                            .filter(Boolean)
+                            .join(' · ') || '—'}
                         </p>
                       </button>
                       <input

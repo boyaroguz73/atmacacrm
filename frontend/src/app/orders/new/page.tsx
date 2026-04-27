@@ -389,7 +389,6 @@ export default function NewOrderPage() {
                   key={v.id ?? '__product_base__'}
                   name={v.name}
                   imageUrl={v.imageUrl}
-                  property2={v.property2}
                   priceDisplay={fmt(v.unitPrice)}
                   discountedPriceDisplay={
                     v.salePriceAmount != null && v.salePriceAmount !== v.unitPrice

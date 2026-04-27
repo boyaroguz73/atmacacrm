@@ -10,6 +10,7 @@ import { extractTsoftNumericOrderIdFromApiResult } from '../ecommerce/tsoft-orde
 import { Prisma } from '@prisma/client';
 import { WahaService } from '../waha/waha.service';
 import { normalizeWhatsappChatId } from '../../common/whatsapp-chat-id';
+import { queryDateFromGte, queryDateToLte } from '../../common/query-date-range';
 
 @Injectable()
 export class OrdersService {
@@ -111,11 +112,11 @@ export class OrdersService {
     const src = typeof source === 'string' ? source.trim().toUpperCase() : '';
     if (src === 'TSOFT') where.source = 'TSOFT';
     
-    // Tarih filtresi
+    // Tarih filtresi (YYYY-MM-DD → UTC günü başı / gün sonu; tek anlık lte hatası önlenir)
     if (from || to) {
       where.createdAt = {};
-      if (from) where.createdAt.gte = new Date(from);
-      if (to) where.createdAt.lte = new Date(to);
+      if (from) where.createdAt.gte = queryDateFromGte(from);
+      if (to) where.createdAt.lte = queryDateToLte(to);
     }
 
     const tokens = splitSearchTokens(search);

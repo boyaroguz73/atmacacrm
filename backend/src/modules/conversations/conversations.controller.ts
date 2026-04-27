@@ -114,17 +114,28 @@ export class ConversationsController {
     });
   }
 
-  /** Teklif sayfası: kişiye göre son görüşme (gömülü chat) */
+  /** Teklif/Sipariş gömülü chat: oturum seçenekleri (son mesaja göre sıralı). */
+  @Get('for-contact/:contactId/list')
+  async listForContact(
+    @Param('contactId') contactId: string,
+    @CurrentUser() user: { role: string; organizationId?: string | null },
+  ) {
+    const items = await this.conversationsService.listConversationsForContact(contactId, {
+      currentUserRole: user.role,
+      organizationId: user.organizationId,
+    });
+    return { conversations: items };
+  }
+
+  /** Kişiye göre en son konuşulan WhatsApp görüşmesi (tek kayıt). */
   @Get('for-contact/:contactId')
   async findForContact(
     @Param('contactId') contactId: string,
     @CurrentUser() user: { id: string; role: string; organizationId?: string | null },
   ) {
     return this.conversationsService.findLatestByContactId(contactId, {
-      currentUserId: user.id,
       currentUserRole: user.role,
       organizationId: user.organizationId,
-      preferAssignedToCurrentAgent: true,
     });
   }
 

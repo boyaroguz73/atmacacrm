@@ -8,6 +8,7 @@ import { join } from 'path';
 import { readFileSync, existsSync } from 'fs';
 import { normalizeWhatsappChatId } from '../../common/whatsapp-chat-id';
 import { splitSearchTokens } from '../../common/search-tokens';
+import { queryDateFromGte, queryDateToLte } from '../../common/query-date-range';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { AutoReplyEngineService } from '../auto-reply/auto-reply-engine.service';
 
@@ -196,11 +197,11 @@ export class QuotesService {
     if (status) where.status = status;
     if (contactId) where.contactId = contactId;
 
-    // Tarih filtresi
+    // Tarih filtresi (YYYY-MM-DD → UTC gün başı / gün sonu)
     if (from || to) {
       where.createdAt = {};
-      if (from) where.createdAt.gte = new Date(from);
-      if (to) where.createdAt.lte = new Date(to);
+      if (from) where.createdAt.gte = queryDateFromGte(from);
+      if (to) where.createdAt.lte = queryDateToLte(to);
     }
 
     const tokens = splitSearchTokens(search);

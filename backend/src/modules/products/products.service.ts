@@ -7,6 +7,24 @@ import { join, extname as pathExtname } from 'path';
 import { existsSync, mkdirSync, writeFileSync } from 'fs';
 import { splitSearchTokens } from '../../common/search-tokens';
 
+function escapeRegExp(s: string) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/** İsimde kalan " — ölçü" / " -- ölçü" son ekini kaldırır (ölçü yalnızca Property2 / ölçü alanında). */
+function stripTrailingProperty2FromName(displayName: string, measurement: string | null): string {
+  if (!measurement || !displayName) return displayName;
+  const m = measurement.trim();
+  if (!m) return displayName;
+  const esc = escapeRegExp(m);
+  const re = new RegExp(
+    `(?:\\s+[\\u2014\\u2013]\\s+|\\s*--+\\s*|\\s+-\\s+-\\s*|\\s+-\\s+)${esc}\\s*$`,
+    'u',
+  );
+  const t = displayName.trim().replace(re, '').trim();
+  return t.length ? t : displayName;
+}
+
 @Injectable()
 export class ProductsService {
   private readonly logger = new Logger(ProductsService.name);
@@ -396,10 +414,10 @@ export class ProductsService {
         String(v.externalId ?? '').trim() ||
         String(v.sku ?? '').trim() ||
         productBaseName;
-      const resolvedName = fallbackName;
 
-      // Property2 → ürün ölçüsü (T-Soft subProduct alanı)
+      // Property2 → ürün ölçüsü (T-Soft); isim alanına yazılmaz, eski "Ad — ölçü" kayıtlarından temizlenir
       const property2 = pickMetaString(v.metadata, ['Property2', 'property2']) || null;
+      const resolvedName = stripTrailingProperty2FromName(fallbackName, property2);
 
       // DiscountedSellingPrice varsa salePriceAmount; frontend'e her ikisini de gönder
       const effectiveSalePrice =

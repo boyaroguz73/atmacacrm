@@ -7,14 +7,12 @@ export function VariantPickerOption({
   name,
   priceDisplay,
   discountedPriceDisplay,
-  property2,
   imageUrl,
   onSelect,
 }: {
   name: string;
   priceDisplay: string;
   discountedPriceDisplay?: string | null;
-  property2?: string | null;
   imageUrl?: string | null;
   onSelect: () => void;
 }) {

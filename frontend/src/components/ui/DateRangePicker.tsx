@@ -29,39 +29,35 @@ function localDateStr(date: Date): string {
 function getPresetDates(key: string): { from: string; to: string } {
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-
-  const tomorrow = new Date(today);
-  tomorrow.setDate(tomorrow.getDate() + 1);
-
   const todayStr = localDateStr(today);
-  const toStr = localDateStr(tomorrow);
 
   switch (key) {
     case 'today':
-      return { from: todayStr, to: toStr };
+      return { from: todayStr, to: todayStr };
     case 'yesterday': {
       const y = new Date(today);
       y.setDate(y.getDate() - 1);
-      return { from: localDateStr(y), to: todayStr };
+      const ys = localDateStr(y);
+      return { from: ys, to: ys };
     }
     case 'week': {
       const w = new Date(today);
       w.setDate(w.getDate() - 7);
-      return { from: localDateStr(w), to: toStr };
+      return { from: localDateStr(w), to: todayStr };
     }
     case 'month': {
       const m = new Date(today);
       m.setDate(m.getDate() - 30);
-      return { from: localDateStr(m), to: toStr };
+      return { from: localDateStr(m), to: todayStr };
     }
     case 'this_month': {
       const fm = new Date(now.getFullYear(), now.getMonth(), 1);
-      return { from: localDateStr(fm), to: toStr };
+      return { from: localDateStr(fm), to: todayStr };
     }
     case 'all':
       return { from: '', to: '' };
     default:
-      return { from: todayStr, to: toStr };
+      return { from: todayStr, to: todayStr };
   }
 }
 

@@ -2,14 +2,19 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import api, { getApiErrorMessage } from '@/lib/api';
-import { phoneToWhatsappChatId, rewriteMediaUrlForClient } from '@/lib/utils';
+import { formatPhone, phoneToWhatsappChatId, rewriteMediaUrlForClient } from '@/lib/utils';
 import { Loader2, MessageCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
 
-type Conv = {
+type ConvOption = {
   id: string;
-  session: { name: string };
-  contact: { phone: string };
+  lastMessageAt: string;
+  lastMessagePreview?: string | null;
+  isGroup: boolean;
+  waGroupId: string | null;
+  groupName: string | null;
+  session: { id: string; name: string; phone: string };
+  contactPhone: string;
 };
 
 type Msg = {
@@ -22,6 +27,17 @@ type Msg = {
   timestamp: string;
 };
 
+function sessionLabel(c: ConvOption, index: number): string {
+  const recent = index === 0 ? 'En son konuşulan · ' : '';
+  if (c.isGroup) {
+    const title = c.groupName?.trim() || c.waGroupId || 'WhatsApp grubu';
+    return `${recent}Grup: ${title}`;
+  }
+  const num = c.session.phone ? formatPhone(c.session.phone) : formatPhone(c.contactPhone);
+  const sess = c.session.name?.trim() || 'Oturum';
+  return `${recent}${num} · ${sess}`;
+}
+
 export function QuoteEmbeddedChat({
   contactId,
   contactPhone,
@@ -29,34 +45,37 @@ export function QuoteEmbeddedChat({
   contactId: string;
   contactPhone: string;
 }) {
-  const [conv, setConv] = useState<Conv | null>(null);
+  const [options, setOptions] = useState<ConvOption[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [noConv, setNoConv] = useState(false);
   const [messages, setMessages] = useState<Msg[]>([]);
   const [loading, setLoading] = useState(true);
+  const [messagesLoading, setMessagesLoading] = useState(false);
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
 
-  const load = useCallback(async () => {
+  const selected = options.find((o) => o.id === selectedId) ?? null;
+
+  const loadOptions = useCallback(async () => {
     setLoading(true);
     try {
-      const { data } = await api.get(`/conversations/for-contact/${contactId}`);
-      if (!data?.id) {
-        setConv(null);
+      const { data } = await api.get<{ conversations?: ConvOption[] }>(
+        `/conversations/for-contact/${contactId}/list`,
+      );
+      const list = Array.isArray(data?.conversations) ? data.conversations : [];
+      setOptions(list);
+      if (list.length === 0) {
+        setSelectedId(null);
         setNoConv(true);
         setMessages([]);
         return;
       }
       setNoConv(false);
-      setConv({
-        id: data.id,
-        session: data.session,
-        contact: data.contact,
-      });
-      const msgRes = await api.get(`/messages/conversation/${data.id}`, { params: { limit: 80 } });
-      setMessages(msgRes.data.messages || []);
+      setSelectedId(list[0].id);
     } catch {
-      setConv(null);
+      setOptions([]);
+      setSelectedId(null);
       setNoConv(true);
       setMessages([]);
     } finally {
@@ -64,9 +83,31 @@ export function QuoteEmbeddedChat({
     }
   }, [contactId]);
 
+  const loadMessages = useCallback(
+    async (conversationId: string) => {
+      setMessagesLoading(true);
+      try {
+        const msgRes = await api.get(`/messages/conversation/${conversationId}`, {
+          params: { limit: 80 },
+        });
+        setMessages(msgRes.data.messages || []);
+      } catch {
+        setMessages([]);
+      } finally {
+        setMessagesLoading(false);
+      }
+    },
+    [],
+  );
+
   useEffect(() => {
-    void load();
-  }, [load]);
+    void loadOptions();
+  }, [loadOptions]);
+
+  useEffect(() => {
+    if (!selectedId) return;
+    void loadMessages(selectedId);
+  }, [selectedId, loadMessages]);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -74,16 +115,18 @@ export function QuoteEmbeddedChat({
 
   const send = async () => {
     const t = text.trim();
-    if (!t || !conv || sending) return;
+    if (!t || !selected || sending) return;
     const chatId =
-      phoneToWhatsappChatId(contactPhone) ||
-      `${String(contactPhone).replace(/\D/g, '')}@c.us`;
+      selected.isGroup && selected.waGroupId
+        ? selected.waGroupId
+        : phoneToWhatsappChatId(contactPhone) ||
+          `${String(contactPhone).replace(/\D/g, '')}@c.us`;
     setSending(true);
     setText('');
     try {
       const { data } = await api.post('/messages/send', {
-        conversationId: conv.id,
-        sessionName: conv.session.name,
+        conversationId: selected.id,
+        sessionName: selected.session.name,
         chatId,
         body: t.length > 0 ? t.charAt(0).toUpperCase() + t.slice(1) : t,
       });
@@ -103,7 +146,7 @@ export function QuoteEmbeddedChat({
     );
   }
 
-  if (noConv || !conv) {
+  if (noConv || !selectedId || !selected) {
     return (
       <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50/50 p-4 text-center text-xs text-gray-500">
         <MessageCircle className="w-8 h-8 mx-auto mb-2 text-gray-300" />
@@ -114,7 +157,37 @@ export function QuoteEmbeddedChat({
 
   return (
     <div className="flex flex-col h-[min(420px,50vh)] rounded-xl border border-gray-200 bg-white overflow-hidden shadow-sm">
-      <div className="flex-1 overflow-y-auto p-3 space-y-2 text-xs">
+      {options.length > 1 ? (
+        <div className="px-2.5 pt-2.5 pb-1 border-b border-gray-100 bg-gray-50/80">
+          <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1">
+            Hangi hat / oturum?
+          </label>
+          <select
+            value={selectedId}
+            onChange={(e) => setSelectedId(e.target.value)}
+            className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-whatsapp/25 focus:border-whatsapp"
+          >
+            {options.map((c, idx) => (
+              <option key={c.id} value={c.id}>
+                {sessionLabel(c, idx)}
+              </option>
+            ))}
+          </select>
+        </div>
+      ) : (
+        <div className="px-2.5 pt-2 pb-1 border-b border-gray-100 bg-gray-50/50">
+          <p className="text-[10px] text-gray-500 leading-snug">
+            <span className="font-semibold text-gray-600">Sohbet:</span>{' '}
+            {sessionLabel(selected, 0).replace(/^En son konuşulan · /, '')}
+          </p>
+        </div>
+      )}
+      <div className="flex-1 overflow-y-auto p-3 space-y-2 text-xs relative min-h-[120px]">
+        {messagesLoading ? (
+          <div className="absolute inset-0 flex items-center justify-center bg-white/60 z-[1]">
+            <Loader2 className="w-5 h-5 animate-spin text-gray-400" />
+          </div>
+        ) : null}
         {messages.map((m) => (
           <div
             key={m.id}

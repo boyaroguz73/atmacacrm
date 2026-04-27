@@ -191,15 +191,12 @@ function extractImageUrls(row: Record<string, unknown>): string[] {
 
 /**
  * Alt ürün satırından varyant "ek" etiketi.
- * Öncelik Property2 (T-Soft’ta kod TA4120 yerine gösterilecek alan); kod son çare.
+ * Property2 (ölçü) isme eklenmez; yalnızca metadata’da tutulur, teklifte ölçü alanına yazılır.
  */
 function variantSuffixFromSubProduct(
   v: Record<string, unknown>,
   fallbackCode?: string | null,
 ): string {
-  const p2 = pickString(v.Property2, v.property2, v.Property_2);
-  if (p2) return p2;
-
   const direct = pickString(
     v.VariantName,
     v.Name,
@@ -234,7 +231,7 @@ function variantSuffixFromSubProduct(
   return 'Varyant';
 }
 
-/** CRM’de görünen varyant adı: ana ürün adı — Property2 (veya suffix) */
+/** CRM’de görünen varyant adı: ana ürün + renk/beden vb. (Property2/ölçü hariç) */
 function buildVariantDisplayName(
   v: Record<string, unknown>,
   mainProductName: string,

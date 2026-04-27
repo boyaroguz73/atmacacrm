@@ -198,7 +198,8 @@ export default function OrdersPage() {
   const defaultDateRange = useMemo(() => {
     const end = new Date();
     const start = new Date(end.getTime() - 7 * 24 * 60 * 60 * 1000);
-    const fmt = (d: Date) => d.toISOString().slice(0, 10);
+    const fmt = (d: Date) =>
+      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     return { from: fmt(start), to: fmt(end) };
   }, []);
   const [dateFrom, setDateFrom] = useState(() => {
