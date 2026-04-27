@@ -179,8 +179,11 @@ function calcTotals(items: LocalLineItem[], discountType: DiscountType, discount
     return round2(lineGrossAfterGeneral);
   });
 
+  const lineExTotals = rows.map(({ exBefore }) => round2(exBefore * ratio));
+
   return {
     lineTotals,
+    lineExTotals,
     subtotal: round2(sumExAfter),
     discountTotal,
     vatTotal: round2(vatTotal),
@@ -554,8 +557,8 @@ export default function QuoteDetailPage() {
           unitPrice: l.unitPrice,
           vatRate: Math.round(l.vatRate),
           priceIncludesVat: l.priceIncludesVat,
-          discountType: 'PERCENT',
-          discountValue: 0,
+          discountType: l.discountType,
+          discountValue: l.applyDiscount ? (l.discountValue || 0) : 0,
           colorFabricInfo: String(l.colorFabricInfo ?? '').trim() || null,
           measurementInfo: String(l.measurementInfo ?? '').trim() || null,
         })),
@@ -847,7 +850,7 @@ export default function QuoteDetailPage() {
                       <th className="text-left px-2 py-2 w-16">Miktar</th>
                       <th className="text-left px-2 py-2 w-28">Birim fiyat</th>
                       <th className="text-left px-2 py-2 w-40">Satır indirimi</th>
-                      <th className="text-right px-3 py-2 w-24">Satır Toplamı</th>
+                      <th className="text-right px-3 py-2 w-28">Toplam (KDV hariç)</th>
                       <th className="w-10" />
                     </tr>
                   </thead>
@@ -999,7 +1002,7 @@ export default function QuoteDetailPage() {
                         </td>
                         <td className="px-3 py-2 text-right text-sm font-semibold text-gray-800 tabular-nums">
                           {sym}
-                          {fmtNum(totals.lineTotals[idx] ?? 0)}
+                          {fmtNum(totals.lineExTotals[idx] ?? 0)}
                         </td>
                         <td className="px-1 py-2 text-center">
                           <button
