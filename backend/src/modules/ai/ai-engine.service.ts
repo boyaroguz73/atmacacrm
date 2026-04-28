@@ -2,12 +2,14 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { WahaService } from '../waha/waha.service';
 import { AiIntentRouterService } from './ai-intent-router.service';
+import { MessagesService } from '../messages/messages.service';
 
 export interface AiMessageContext {
   orgId: string;
   sessionName: string;
   conversationId: string;
   contactId: string;
+  waMessageId?: string;
   messageBody: string;
 }
 
@@ -29,11 +31,29 @@ export class AiEngineService {
     private prisma: PrismaService,
     private waha: WahaService,
     private intentRouter: AiIntentRouterService,
+    private messagesService: MessagesService,
   ) {}
 
   // ─── Entry point ──────────────────────────────────────────────────────────
 
   async processIncomingMessage(ctx: AiMessageContext): Promise<void> {
+    const incomingHash = `${ctx.conversationId}:${ctx.waMessageId || ctx.messageBody}`.slice(0, 500);
+    const duplicateTurn = await this.prisma.aiLog.findFirst({
+      where: {
+        organizationId: ctx.orgId,
+        conversationId: ctx.conversationId,
+        action: 'ai_engine_turn',
+        status: 'SUCCESS',
+        input: incomingHash,
+        createdAt: { gte: new Date(Date.now() - 60_000) },
+      },
+      select: { id: true },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (duplicateTurn) {
+      this.logger.debug(`Skip duplicate AI turn for conv=${ctx.conversationId}`);
+      return;
+    }
     // 1. Check if AI is enabled
     const config = await this.prisma.aiConfig.findUnique({
       where: { organizationId: ctx.orgId },
@@ -42,15 +62,18 @@ export class AiEngineService {
 
     // 2. Beta modu: sadece izin verilen kişilere yanıt ver
     if (config.betaMode) {
-      const betaList: string[] = Array.isArray(config.betaContactIds) ? config.betaContactIds as string[] : [];
+      const normalizePhone = (v: string) => String(v || '').replace(/[^\d]/g, '');
+      const betaListRaw: string[] = Array.isArray(config.betaContactIds) ? config.betaContactIds as string[] : [];
+      const betaList = [...new Set(betaListRaw.map((v) => String(v || '').trim()).filter(Boolean))];
       if (betaList.length === 0) return; // beta açık ama liste boş → hiç yanıt verme
       const contact = await this.prisma.contact.findUnique({
         where: { id: ctx.contactId },
         select: { id: true, phone: true },
       });
+      const phone = normalizePhone(contact?.phone || '');
       const allowed =
         betaList.includes(ctx.contactId) ||
-        (contact?.phone && betaList.includes(contact.phone));
+        (phone && betaList.some((entry) => normalizePhone(entry) === phone));
       if (!allowed) return;
     }
 
@@ -247,7 +270,7 @@ export class AiEngineService {
           rounds: round + 1,
           usage: usageAgg,
           durationMs: Date.now() - engineStarted,
-        });
+        }, undefined, undefined, incomingHash);
         return;
       }
 
@@ -419,33 +442,47 @@ export class AiEngineService {
         })
       : [];
 
-    // Build product message
-    let productText = message ? `${message}\n\n` : '';
-    for (const p of products) {
-      productText += `📦 *${p.name}*\n`;
-      productText += `💰 ${p.unitPrice.toLocaleString('tr-TR')} ${p.currency}`;
-      if (p.stock != null) productText += ` | Stok: ${p.stock}`;
-      if (p.description) productText += `\n${p.description}`;
-      productText += '\n\n';
-    }
-
-    if (productText.trim()) {
-      await this.sendWhatsApp(ctx, productText.trim(), config);
-    }
-
-    // Ürün görsellerini link olarak ekle (sendText kullanıyoruz — sendImage base64 gerektirir)
-    const baseUrl = process.env.BASE_URL || 'http://localhost:4000';
-    const imageLines = products
-      .filter((p) => p.imageUrl)
-      .map((p) => {
-        const url = p.imageUrl!.startsWith('http') ? p.imageUrl! : `${baseUrl}${p.imageUrl}`;
-        return `🖼 ${p.name}: ${url}`;
+    const botUser = await this.getOrgBotUser(ctx.orgId);
+    if (!botUser) {
+      // fallback: eski davranış (sadece metin), bot user yoksa ürün kartı gönderemeyiz
+      let productText = message ? `${message}\n\n` : '';
+      for (const p of products) {
+        productText += `📦 *${p.name}*\n`;
+        productText += `💰 ${p.unitPrice.toLocaleString('tr-TR')} ${p.currency}`;
+        if (p.stock != null) productText += ` | Stok: ${p.stock}`;
+        if (p.description) productText += `\n${p.description}`;
+        productText += '\n\n';
+      }
+      if (productText.trim()) {
+        await this.sendWhatsApp(ctx, productText.trim(), config);
+      }
+      await this.logAction(ctx.orgId, ctx.contactId, ctx.conversationId, 'suggest_product', 'SUCCESS', {
+        productIds,
+        message,
+        transport: 'text_fallback_no_bot_user',
       });
-    if (imageLines.length > 0) {
-      await this.sendWhatsApp(ctx, imageLines.join('\n'), config);
+      return;
     }
 
-    await this.logAction(ctx.orgId, ctx.contactId, ctx.conversationId, 'suggest_product', 'SUCCESS', { productIds, message });
+    // Ön mesaj (opsiyonel)
+    if (String(message || '').trim()) {
+      await this.sendWhatsApp(ctx, String(message).trim(), config);
+    }
+
+    // Chat ile aynı ürün paylaşım mekanizması: MessagesService.sendProductShare
+    for (const pid of productIds) {
+      await this.messagesService.sendProductShare({
+        conversationId: ctx.conversationId,
+        productId: pid,
+        sentById: botUser.id,
+      });
+    }
+
+    await this.logAction(ctx.orgId, ctx.contactId, ctx.conversationId, 'suggest_product', 'SUCCESS', {
+      productIds,
+      message,
+      transport: 'messages.sendProductShare',
+    });
   }
 
   private async executeCreateOffer(ctx: AiMessageContext, args: any, config: any) {
@@ -510,8 +547,8 @@ export class AiEngineService {
       select: { id: true, quoteNumber: true, grandTotal: true, currency: true },
     });
 
-    const confirmMsg = `✅ Teklifiniz oluşturuldu.\nTeklif No: *#${quote.quoteNumber}*\nToplam: *${quote.grandTotal.toLocaleString('tr-TR')} ${quote.currency}*\n\nTeklifi göndermemi ister misiniz?`;
-    await this.sendWhatsApp(ctx, confirmMsg, config);
+    // Teklif oluşturulduktan sonra aynı send_offer mekanizmasını kullanarak müşteriye ilet.
+    await this.executeSendOffer(ctx, { quoteId: quote.id }, config);
     await this.logAction(ctx.orgId, ctx.contactId, ctx.conversationId, 'create_offer', 'SUCCESS', { quoteId: quote.id, quoteNumber: quote.quoteNumber });
   }
 
@@ -1251,6 +1288,22 @@ export class AiEngineService {
   }
 
   private async queuePendingAction(ctx: AiMessageContext, action: string, payload: any) {
+    const payloadStr = JSON.stringify(payload ?? {});
+    const duplicate = await this.prisma.aiPendingAction.findFirst({
+      where: {
+        organizationId: ctx.orgId,
+        conversationId: ctx.conversationId,
+        action,
+        status: 'PENDING',
+        createdAt: { gte: new Date(Date.now() - 90_000) },
+      },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true, payload: true },
+    });
+    if (duplicate) {
+      const existingStr = JSON.stringify(duplicate.payload ?? {});
+      if (existingStr === payloadStr) return;
+    }
     await this.prisma.aiPendingAction.create({
       data: {
         organizationId: ctx.orgId,
@@ -1272,6 +1325,8 @@ export class AiEngineService {
     status: string,
     payload?: any,
     error?: string,
+    durationMs?: number,
+    rawInput?: string,
   ) {
     try {
       await this.prisma.aiLog.create({
@@ -1281,7 +1336,8 @@ export class AiEngineService {
           conversationId,
           action,
           status,
-          input: payload ? JSON.stringify(payload) : null,
+          input: rawInput ?? (payload ? JSON.stringify(payload) : null),
+          durationMs: durationMs ?? null,
           errorMessage: error ?? null,
         },
       });

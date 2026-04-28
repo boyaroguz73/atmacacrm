@@ -117,6 +117,7 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
   const [userRole, setUserRole] = useState('AGENT');
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const composerWrapRef = useRef<HTMLDivElement>(null);
   const prevConversationId = useRef<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
@@ -226,6 +227,8 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
     address?: string;
   } | null>(null);
   const [moduleToggles, setModuleToggles] = useState<Record<string, boolean> | null>(null);
+  const [mobileKeyboardInset, setMobileKeyboardInset] = useState(0);
+  const [composerStickyHeight, setComposerStickyHeight] = useState(0);
 
   useEffect(() => {
     setMounted(true);
@@ -233,6 +236,51 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
       .get('/templates?active=true')
       .then(({ data }) => setTemplates(data))
       .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    const measure = () => {
+      const h = composerWrapRef.current?.offsetHeight ?? 0;
+      setComposerStickyHeight(h);
+    };
+    measure();
+    const el = composerWrapRef.current;
+    if (!el) return;
+    if (typeof ResizeObserver !== 'undefined') {
+      const ro = new ResizeObserver(() => measure());
+      ro.observe(el);
+      return () => ro.disconnect();
+    }
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, [selectedFile, replyingTo, editingMessage, productPickerOpen, contactPickerOpen, kartelaPickerOpen, showTemplates, productHits.length, variantHits.length, contactHits.length, kartelaItems.length]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const updateInset = () => {
+      const isMobile = window.matchMedia('(max-width: 767px)').matches;
+      if (!isMobile) {
+        setMobileKeyboardInset(0);
+        return;
+      }
+      const layoutH = window.innerHeight;
+      const viewportBottom = vv.height + vv.offsetTop;
+      const inset = Math.max(0, Math.round(layoutH - viewportBottom));
+      setMobileKeyboardInset(inset);
+    };
+    updateInset();
+    vv.addEventListener('resize', updateInset);
+    vv.addEventListener('scroll', updateInset);
+    window.addEventListener('orientationchange', updateInset);
+    window.addEventListener('resize', updateInset);
+    return () => {
+      vv.removeEventListener('resize', updateInset);
+      vv.removeEventListener('scroll', updateInset);
+      window.removeEventListener('orientationchange', updateInset);
+      window.removeEventListener('resize', updateInset);
+    };
   }, []);
 
   useEffect(() => {
@@ -1051,9 +1099,9 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
   return (
     <div className="flex-1 flex h-full">
       {/* Chat Area */}
-      <div className="flex-1 flex flex-col h-full bg-[#efeae2]">
+      <div className="flex-1 flex flex-col h-full bg-[#efeae2] min-h-0">
         {/* Header */}
-        <div className="bg-white border-b border-gray-200 px-3 lg:px-5 py-3 flex items-center justify-between">
+        <div className="sticky top-0 z-30 bg-white border-b border-gray-200 px-3 lg:px-5 py-3 flex items-center justify-between">
           <div className="flex items-center gap-2 md:gap-3">
             {/* Mobile back button */}
             {onMobileBack && (
@@ -1181,7 +1229,10 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
         </div>
 
         {/* Messages */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-2 scrollbar-thin">
+        <div
+          className="flex-1 overflow-y-auto p-4 space-y-2 scrollbar-thin"
+          style={{ paddingBottom: `calc(1rem + ${composerStickyHeight}px + ${mobileKeyboardInset}px)` }}
+        >
           {isLoadingMessages ? (
             <div className="flex items-center justify-center h-full">
               <div className="w-6 h-6 border-2 border-whatsapp border-t-transparent rounded-full animate-spin" />
@@ -1612,6 +1663,11 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
           )}
         </div>
 
+        <div
+          ref={composerWrapRef}
+          className="sticky bottom-0 z-30"
+          style={{ bottom: `${mobileKeyboardInset}px` }}
+        >
         {/* File Preview */}
         {selectedFile && (
           <div className="bg-white border-t border-gray-200 px-4 py-3">
@@ -1723,7 +1779,7 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
               else if (replyingTo) void handleSendReply();
               else submitComposer();
             }}
-            className="bg-white border-t border-gray-200 px-4 py-3 flex items-end gap-3"
+            className="bg-white border-t border-gray-200 px-4 py-3 flex items-end gap-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]"
           >
             <input
               ref={fileInputRef}
@@ -2368,22 +2424,41 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
             </button>
           </form>
         )}
+        </div>
       </div>
 
       {/* Right Panel */}
       {showPanel && (
-        <ContactPanel
-          key={activeConversation.id}
-          conversationId={activeConversation.id}
-          contact={contact}
-          assignments={activeConversation.assignments}
-          onClose={() => setShowPanel(false)}
-          internalChatEnabled={internalChatEnabled}
-          userRole={userRole}
-          isGroup={!!activeConversation.isGroup}
-          groupName={activeConversation.groupName ?? undefined}
-          groupParticipantCount={activeConversation.groupParticipantCount ?? undefined}
-        />
+        <>
+          <div className="hidden md:flex h-full">
+            <ContactPanel
+              key={activeConversation.id}
+              conversationId={activeConversation.id}
+              contact={contact}
+              assignments={activeConversation.assignments}
+              onClose={() => setShowPanel(false)}
+              internalChatEnabled={internalChatEnabled}
+              userRole={userRole}
+              isGroup={!!activeConversation.isGroup}
+              groupName={activeConversation.groupName ?? undefined}
+              groupParticipantCount={activeConversation.groupParticipantCount ?? undefined}
+            />
+          </div>
+          <div className="md:hidden fixed inset-0 z-[80] bg-white">
+            <ContactPanel
+              key={`${activeConversation.id}-mobile`}
+              conversationId={activeConversation.id}
+              contact={contact}
+              assignments={activeConversation.assignments}
+              onClose={() => setShowPanel(false)}
+              internalChatEnabled={internalChatEnabled}
+              userRole={userRole}
+              isGroup={!!activeConversation.isGroup}
+              groupName={activeConversation.groupName ?? undefined}
+              groupParticipantCount={activeConversation.groupParticipantCount ?? undefined}
+            />
+          </div>
+        </>
       )}
 
       {/* Lightbox via Portal */}

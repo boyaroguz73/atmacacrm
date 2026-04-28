@@ -638,6 +638,11 @@ export class WahaWebhookHandler {
             }
           : {}),
       };
+      const existingBefore = await this.prisma.message.findUnique({
+        where: { waMessageId },
+        select: { id: true },
+      });
+      const isNewIncomingMessage = !existingBefore && !isFromMe;
       let message;
       try {
         message = await this.prisma.message.upsert({
@@ -689,7 +694,7 @@ export class WahaWebhookHandler {
       // ─────────────────────────────────────────────────────────────
       // OTOMATİK YANITLAR (sadece bireysel için, gruplar için değil)
       // ─────────────────────────────────────────────────────────────
-      if (!isFromMe && !isGroup) {
+      if (!isFromMe && !isGroup && isNewIncomingMessage) {
         const activeAssignments = Array.isArray(fullConversation.assignments)
           ? fullConversation.assignments
           : [];
@@ -748,6 +753,7 @@ export class WahaWebhookHandler {
               sessionName,
               conversationId: conversation.id,
               contactId: contact.id,
+              waMessageId,
               messageBody: msg.body || '',
             })
             .catch((err) =>

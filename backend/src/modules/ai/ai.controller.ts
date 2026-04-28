@@ -126,6 +126,12 @@ export class AiController {
     return this.ai.savePrompts(orgId, body);
   }
 
+  @Post('prompts/generate')
+  async generatePrompts(@Req() req: any, @Query() q: any) {
+    const orgId = await this.orgId(req, q);
+    return this.ai.generatePromptsFromMemory(orgId);
+  }
+
   // ─── Automation rules ─────────────────────────────────────────────────────
 
   @Get('automation-rules')
@@ -162,7 +168,10 @@ export class AiController {
   @Get('pending')
   async getPending(@Req() req: any, @Query() q: any) {
     const orgId = await this.orgId(req, q);
-    return this.ai.getPendingActions(orgId, q.status);
+    return this.ai.getPendingActions(orgId, q.status, {
+      skip: q.skip ? Number(q.skip) : 0,
+      take: q.take ? Number(q.take) : 25,
+    });
   }
 
   @Patch('pending/:id/review')
@@ -201,6 +210,15 @@ export class AiController {
       to: q.to,
       skip: q.skip ? Number(q.skip) : undefined,
       take: q.take ? Number(q.take) : undefined,
+    });
+  }
+
+  @Get('reports')
+  async getReports(@Req() req: any, @Query() q: any) {
+    const orgId = await this.orgId(req, q);
+    return this.ai.getReports(orgId, {
+      from: q.from,
+      to: q.to,
     });
   }
 }

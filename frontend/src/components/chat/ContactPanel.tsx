@@ -303,7 +303,7 @@ export default function ContactPanel({
   const labelCls = 'text-[10px] font-semibold text-gray-500 uppercase tracking-wide';
 
   return (
-    <div className="w-80 border-l border-gray-200 bg-gray-50/40 flex flex-col h-full overflow-hidden">
+    <div className="w-full md:w-80 border-l border-gray-200 bg-gray-50/40 flex flex-col h-full overflow-hidden">
       {/* Header */}
       <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between bg-white">
         <div className="flex items-center gap-2">

@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import api from '@/lib/api';
 import {
   ArrowLeft, Bot, Save, Loader2, CheckCircle2, XCircle,
-  Play, RefreshCw, Plus, Trash2, Check, X, FlaskConical,
+  Play, RefreshCw, Plus, Trash2, Check, X, FlaskConical, BarChart3, ShieldAlert,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -21,11 +21,11 @@ function orgParams(): Record<string, string> {
 }
 
 const TABS = [
+  { key: 'reports',    label: 'Rapor' },
   { key: 'general',    label: 'Genel Ayarlar' },
   { key: 'policies',   label: 'İzinler' },
   { key: 'memory',     label: 'İşletme Hafızası' },
   { key: 'prompts',    label: 'Promptlar' },
-  { key: 'rules',      label: 'Otomasyon Kuralları' },
   { key: 'pending',    label: 'Onay Bekleyenler' },
   { key: 'logs',       label: 'Loglar' },
 ] as const;
@@ -218,10 +218,19 @@ function GeneralTab() {
 function BetaPanel({ config, setConfig }: { config: any; setConfig: (c: any) => void }) {
   const [input, setInput] = useState('');
   const list: string[] = Array.isArray(config.betaContactIds) ? config.betaContactIds : [];
+  const normalizePhone = (v: string) => v.replace(/[^\d]/g, '');
+  const isContactId = (v: string) => /^[0-9a-fA-F-]{20,}$/.test(v);
 
   const add = () => {
-    const val = input.trim();
-    if (!val || list.includes(val)) return;
+    const raw = input.trim();
+    if (!raw) return;
+    const val = isContactId(raw) ? raw : normalizePhone(raw);
+    if (!val) return;
+    if (!isContactId(raw) && val.length < 10) {
+      toast.error('Telefon için en az 10 hane girin');
+      return;
+    }
+    if (list.includes(val)) return;
     setConfig({ ...config, betaContactIds: [...list, val] });
     setInput('');
   };
@@ -236,7 +245,7 @@ function BetaPanel({ config, setConfig }: { config: any; setConfig: (c: any) => 
           <FlaskConical className="w-4 h-4 text-yellow-500" />
           <div>
             <p className="text-sm font-medium text-gray-900">Beta Modu</p>
-            <p className="text-xs text-gray-400 mt-0.5">AI sadece aşağıdaki numaralara yanıt versin</p>
+            <p className="text-xs text-gray-400 mt-0.5">AI sadece allowlist&apos;teki telefon/ContactId için yanıt versin</p>
           </div>
         </div>
         <button
@@ -249,13 +258,17 @@ function BetaPanel({ config, setConfig }: { config: any; setConfig: (c: any) => 
 
       {config.betaMode && (
         <div className="space-y-3">
+          <div className="flex items-start gap-2 text-xs rounded-xl border border-amber-200 bg-amber-50 text-amber-800 px-3 py-2">
+            <ShieldAlert className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+            Listeye eklenen telefonlar otomatik normalize edilir. Liste dışı hiç kimseye AI yanıt vermez.
+          </div>
           <div className="flex gap-2">
             <input
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && add()}
-              placeholder="Telefon no veya Contact ID (Enter ile ekle)"
+              placeholder="Telefon no (örn 9053...) veya Contact ID"
               className="flex-1 text-sm border border-gray-200 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/20"
             />
             <button
@@ -562,6 +575,7 @@ function MemoryTab() {
 function PromptsTab() {
   const [prompts, setPrompts] = useState<any>(null);
   const [saving, setSaving] = useState(false);
+  const [generating, setGenerating] = useState(false);
   const params = orgParams();
 
   useEffect(() => {
@@ -576,6 +590,19 @@ function PromptsTab() {
       toast.success('Promptlar kaydedildi');
     } catch { toast.error('Kayıt başarısız'); }
     finally { setSaving(false); }
+  };
+
+  const generate = async () => {
+    setGenerating(true);
+    try {
+      const { data } = await api.post('/ai/prompts/generate', {}, { params });
+      setPrompts(data);
+      toast.success('Promptlar otomatik oluşturuldu');
+    } catch {
+      toast.error('Prompt oluşturulamadı');
+    } finally {
+      setGenerating(false);
+    }
   };
 
   if (!prompts) return <div className="flex justify-center py-16"><Loader2 className="w-5 h-5 animate-spin text-gray-300" /></div>;
@@ -643,114 +670,24 @@ function PromptsTab() {
         </div>
       </div>
 
-      <button
-        onClick={save}
-        disabled={saving}
-        className="flex items-center gap-2 text-sm bg-gray-900 text-white px-5 py-2.5 rounded-xl hover:bg-gray-800 transition-colors disabled:opacity-50"
-      >
-        {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-        Kaydet
-      </button>
-    </div>
-  );
-}
-
-/* ─── Automation Rules Tab ─── */
-function RulesTab() {
-  const [rules, setRules] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [creating, setCreating] = useState(false);
-  const [newTrigger, setNewTrigger] = useState('');
-  const params = orgParams();
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const { data } = await api.get('/ai/automation-rules', { params });
-      setRules(Array.isArray(data) ? data : []);
-    } catch { /* ignore */ }
-    finally { setLoading(false); }
-  }, []);
-
-  useEffect(() => { load(); }, [load]);
-
-  const create = async () => {
-    if (!newTrigger.trim()) return;
-    setCreating(true);
-    try {
-      await api.post('/ai/automation-rules', { trigger: newTrigger.trim() }, { params });
-      setNewTrigger('');
-      await load();
-    } catch { toast.error('Kural eklenemedi'); }
-    finally { setCreating(false); }
-  };
-
-  const toggle = async (rule: any) => {
-    try {
-      await api.patch(`/ai/automation-rules/${rule.id}`, { enabled: !rule.enabled }, { params });
-      setRules((prev) => prev.map((r) => r.id === rule.id ? { ...r, enabled: !r.enabled } : r));
-    } catch { toast.error('Güncellenemedi'); }
-  };
-
-  const remove = async (id: string) => {
-    try {
-      await api.delete(`/ai/automation-rules/${id}`, { params });
-      setRules((prev) => prev.filter((r) => r.id !== id));
-    } catch { toast.error('Silinemedi'); }
-  };
-
-  return (
-    <div className="space-y-5">
-      {/* Add rule */}
-      <div className="bg-white rounded-2xl border border-gray-100 p-5">
-        <p className="text-sm font-semibold text-gray-900 mb-3">Yeni Kural</p>
-        <div className="flex gap-2">
-          <input
-            type="text"
-            value={newTrigger}
-            onChange={(e) => setNewTrigger(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && create()}
-            placeholder="Tetikleyici tanımı (ör: müşteri iade istedi)"
-            className="flex-1 text-sm border border-gray-200 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/20"
-          />
-          <button
-            onClick={create}
-            disabled={creating || !newTrigger.trim()}
-            className="flex items-center gap-1.5 text-sm px-4 py-2 bg-gray-900 text-white rounded-xl hover:bg-gray-800 transition-colors disabled:opacity-50"
-          >
-            {creating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
-            Ekle
-          </button>
-        </div>
+      <div className="flex items-center gap-2">
+        <button
+          onClick={generate}
+          disabled={generating}
+          className="flex items-center gap-2 text-sm px-5 py-2.5 border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors disabled:opacity-50"
+        >
+          {generating ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+          Prompt Oluştur
+        </button>
+        <button
+          onClick={save}
+          disabled={saving}
+          className="flex items-center gap-2 text-sm bg-gray-900 text-white px-5 py-2.5 rounded-xl hover:bg-gray-800 transition-colors disabled:opacity-50"
+        >
+          {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+          Kaydet
+        </button>
       </div>
-
-      {/* Rules list */}
-      {loading ? (
-        <div className="flex justify-center py-8"><Loader2 className="w-5 h-5 animate-spin text-gray-300" /></div>
-      ) : rules.length === 0 ? (
-        <div className="bg-white rounded-2xl border border-gray-100 p-8 text-center">
-          <p className="text-sm text-gray-400">Henüz otomasyon kuralı eklenmemiş.</p>
-        </div>
-      ) : (
-        <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
-          {rules.map((rule, i) => (
-            <div key={rule.id} className={`flex items-center gap-4 px-5 py-3.5 ${i > 0 ? 'border-t border-gray-50' : ''}`}>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm text-gray-800 truncate">{rule.trigger}</p>
-              </div>
-              <button
-                onClick={() => toggle(rule)}
-                className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors ${rule.enabled ? 'bg-green-500' : 'bg-gray-200'}`}
-              >
-                <span className={`inline-block h-4 w-4 rounded-full bg-white shadow transform transition-transform ${rule.enabled ? 'translate-x-4' : 'translate-x-0'}`} />
-              </button>
-              <button onClick={() => remove(rule.id)} className="shrink-0 p-1 text-gray-400 hover:text-red-500 transition-colors">
-                <Trash2 className="w-4 h-4" />
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
     </div>
   );
 }
@@ -758,19 +695,26 @@ function RulesTab() {
 /* ─── Pending Actions Tab ─── */
 function PendingTab() {
   const [items, setItems] = useState<any[]>([]);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('PENDING');
+  const [page, setPage] = useState(0);
   const params = orgParams();
+  const take = 25;
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const { data } = await api.get('/ai/pending', { params: { ...params, status: filter } });
-      setItems(Array.isArray(data) ? data : []);
+      const { data } = await api.get('/ai/pending', {
+        params: { ...params, status: filter, skip: page * take, take },
+      });
+      setItems(Array.isArray(data?.items) ? data.items : []);
+      setTotal(Number(data?.total ?? 0));
     } catch { /* ignore */ }
     finally { setLoading(false); }
-  }, [filter]);
+  }, [filter, page]);
 
+  useEffect(() => { setPage(0); }, [filter]);
   useEffect(() => { load(); }, [load]);
 
   const review = async (id: string, decision: 'APPROVED' | 'REJECTED') => {
@@ -809,7 +753,15 @@ function PendingTab() {
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-gray-900">{ACTION_LABELS[item.action] ?? item.action}</p>
                   {item.payload && (
-                    <p className="text-xs text-gray-400 mt-0.5 truncate">{JSON.stringify(item.payload)}</p>
+                    <p className="text-xs text-gray-400 mt-0.5 break-words">
+                      {[
+                        item.payload.text && `Mesaj: ${item.payload.text}`,
+                        item.payload.question && `Soru: ${item.payload.question}`,
+                        item.payload.note && `Not: ${item.payload.note}`,
+                        item.payload.tag && `Etiket: ${item.payload.tag}`,
+                        Array.isArray(item.payload.items) ? `Kalem: ${item.payload.items.length}` : '',
+                      ].filter(Boolean).join(' · ') || 'Detay mevcut'}
+                    </p>
                   )}
                   <p className="text-xs text-gray-300 mt-1">{new Date(item.createdAt).toLocaleString('tr-TR')}</p>
                 </div>
@@ -839,6 +791,14 @@ function PendingTab() {
           ))}
         </div>
       )}
+      <div className="flex items-center justify-between text-xs text-gray-400">
+        <span>Toplam {total} kayıt</span>
+        <div className="flex items-center gap-2">
+          <button disabled={page === 0} onClick={() => setPage(page - 1)} className="px-3 py-1.5 border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40">Önceki</button>
+          <span>{page + 1} / {Math.max(1, Math.ceil(total / take))}</span>
+          <button disabled={(page + 1) * take >= total} onClick={() => setPage(page + 1)} className="px-3 py-1.5 border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40">Sonraki</button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -889,6 +849,16 @@ function LogsTab() {
                     <p className="text-sm text-gray-800">{ACTION_LABELS[log.action] ?? log.action}</p>
                     <span className={`text-xs px-2 py-0.5 rounded-md font-medium ${statusBadge(log.status)}`}>{log.status}</span>
                   </div>
+                  {log.parsedInput && (
+                    <p className="text-xs text-gray-500 break-words">
+                      {[
+                        log.parsedInput.text && `Mesaj: ${log.parsedInput.text}`,
+                        log.parsedInput.question && `Soru: ${log.parsedInput.question}`,
+                        log.parsedInput.tag && `Etiket: ${log.parsedInput.tag}`,
+                        Array.isArray(log.parsedInput.items) ? `Kalem: ${log.parsedInput.items.length}` : '',
+                      ].filter(Boolean).join(' · ') || 'Detay mevcut'}
+                    </p>
+                  )}
                   {log.error && <p className="text-xs text-red-400 truncate">{log.error}</p>}
                   <p className="text-xs text-gray-300">{new Date(log.createdAt).toLocaleString('tr-TR')}</p>
                 </div>
@@ -905,6 +875,76 @@ function LogsTab() {
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+function ReportsTab() {
+  const params = orgParams();
+  const [loading, setLoading] = useState(true);
+  const [data, setData] = useState<any>(null);
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const { data } = await api.get('/ai/reports', { params: { ...params, from: from || undefined, to: to || undefined } });
+      setData(data);
+    } catch {
+      toast.error('Rapor yüklenemedi');
+    } finally {
+      setLoading(false);
+    }
+  }, [from, to]);
+
+  useEffect(() => { load(); }, [load]);
+
+  if (loading || !data) return <div className="flex justify-center py-16"><Loader2 className="w-5 h-5 animate-spin text-gray-300" /></div>;
+
+  const stats = [
+    { label: 'Konuşulan kişi', value: data.talkedContacts ?? 0 },
+    { label: 'Gelen mesaj', value: data.incomingMessages ?? 0 },
+    { label: 'Gönderilen mesaj', value: data.outgoingMessages ?? 0 },
+    { label: 'Oluşturulan teklif', value: data.offersCreated ?? 0 },
+    { label: 'Oluşturulan sipariş', value: data.ordersCreated ?? 0 },
+    { label: 'Muhasebeye giden sipariş', value: data.ordersToAccounting ?? 0 },
+  ];
+
+  return (
+    <div className="space-y-4">
+      <div className="bg-white rounded-2xl border border-gray-100 p-4">
+        <div className="flex flex-wrap items-end gap-2">
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Başlangıç</label>
+            <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="text-sm border border-gray-200 rounded-xl px-3 py-2" />
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Bitiş</label>
+            <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="text-sm border border-gray-200 rounded-xl px-3 py-2" />
+          </div>
+          <button onClick={() => void load()} className="text-sm px-4 py-2 rounded-xl bg-gray-900 text-white hover:bg-gray-800">Yenile</button>
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        {stats.map((s) => (
+          <div key={s.label} className="bg-white rounded-2xl border border-gray-100 p-4">
+            <p className="text-xs text-gray-400">{s.label}</p>
+            <p className="text-2xl font-semibold text-gray-900 mt-1">{Number(s.value || 0).toLocaleString('tr-TR')}</p>
+          </div>
+        ))}
+      </div>
+      <div className="bg-white rounded-2xl border border-gray-100 p-4">
+        <p className="text-sm font-medium text-gray-900 mb-2">Aksiyon Kırılımı</p>
+        <div className="space-y-1.5">
+          {Array.isArray(data.actionBreakdown) && data.actionBreakdown.length > 0 ? data.actionBreakdown.map((x: any) => (
+            <div key={x.action} className="flex items-center justify-between text-sm text-gray-700">
+              <span>{ACTION_LABELS[x.action] ?? x.action}</span>
+              <span className="font-medium">{Number(x.count || 0).toLocaleString('tr-TR')}</span>
+            </div>
+          )) : <p className="text-sm text-gray-400">Kayıt yok</p>}
+        </div>
+      </div>
     </div>
   );
 }
@@ -928,7 +968,7 @@ export default function ChatbotPage() {
           </button>
           <div className="flex items-center gap-4">
             <div className="w-12 h-12 rounded-2xl bg-gray-900 flex items-center justify-center">
-              <Bot className="w-6 h-6 text-white" />
+              <BarChart3 className="w-6 h-6 text-white" />
             </div>
             <div>
               <h1 className="text-xl font-semibold text-gray-900">AI Chatbot</h1>
@@ -951,11 +991,11 @@ export default function ChatbotPage() {
         </div>
 
         {/* Tab content */}
+        {tab === 'reports'  && <ReportsTab />}
         {tab === 'general'  && <GeneralTab />}
         {tab === 'policies' && <PoliciesTab />}
         {tab === 'memory'   && <MemoryTab />}
         {tab === 'prompts'  && <PromptsTab />}
-        {tab === 'rules'    && <RulesTab />}
         {tab === 'pending'  && <PendingTab />}
         {tab === 'logs'     && <LogsTab />}
       </div>

@@ -6,9 +6,10 @@ import { AiLearningService } from './ai-learning.service';
 import { AiIntentRouterService } from './ai-intent-router.service';
 import { PrismaModule } from '../prisma/prisma.module';
 import { WahaModule } from '../waha/waha.module';
+import { MessagesModule } from '../messages/messages.module';
 
 @Module({
-  imports: [PrismaModule, forwardRef(() => WahaModule)],
+  imports: [PrismaModule, forwardRef(() => WahaModule), MessagesModule],
   controllers: [AiController],
   providers: [AiService, AiEngineService, AiLearningService, AiIntentRouterService],
   exports: [AiService, AiEngineService, AiLearningService, AiIntentRouterService],

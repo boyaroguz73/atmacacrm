@@ -64,6 +64,9 @@ export class AiService {
   }) {
     const data: any = { ...dto };
     if (data.openaiKey === '') data.openaiKey = null;
+    if (Array.isArray(data.betaContactIds)) {
+      data.betaContactIds = [...new Set(data.betaContactIds.map((v: unknown) => String(v || '').trim()).filter(Boolean))];
+    }
     return this.prisma.aiConfig.upsert({
       where: { organizationId: orgId },
       update: data,
@@ -287,6 +290,82 @@ Sadece JSON döndür, başka açıklama ekleme.`,
     });
   }
 
+  async generatePromptsFromMemory(orgId: string) {
+    const [config, memory, existing] = await Promise.all([
+      this.prisma.aiConfig.findUnique({ where: { organizationId: orgId } }),
+      this.prisma.aiBusinessMemory.findUnique({ where: { organizationId: orgId } }),
+      this.prisma.aiPrompt.findUnique({ where: { organizationId: orgId } }),
+    ]);
+    if (!config?.openaiKey) throw new BadRequestException('OpenAI API anahtarı girilmemiş');
+    const { default: OpenAI } = await import('openai');
+    const client = new OpenAI({ apiKey: config.openaiKey });
+    const mem = {
+      sector: memory?.sector ?? '',
+      tone: memory?.tone ?? '',
+      salesStyle: memory?.salesStyle ?? '',
+      pricingBehavior: memory?.pricingBehavior ?? '',
+      objectionPatterns: memory?.objectionPatterns ?? '',
+      closingPatterns: memory?.closingPatterns ?? '',
+      rawMemory: memory?.rawMemory ?? '',
+      learnedFaq: Array.isArray(memory?.learnedFaq) ? memory?.learnedFaq : [],
+      learnedObjections: Array.isArray(memory?.learnedObjections) ? memory?.learnedObjections : [],
+      learnedProducts: Array.isArray(memory?.learnedProducts) ? memory?.learnedProducts : [],
+    };
+
+    const completion = await client.chat.completions.create({
+      model: config.model ?? 'gpt-4o-mini',
+      temperature: 0.2,
+      max_tokens: 1200,
+      messages: [
+        {
+          role: 'system',
+          content:
+            'Sen CRM için prompt yazan bir uzmansın. Sana işletme hafızası verilecek. Sadece JSON döndür.',
+        },
+        {
+          role: 'user',
+          content: `Aşağıdaki hafızayı baz alarak kısa ve etkili promptlar üret:
+${JSON.stringify(mem)}
+
+JSON formatı:
+{
+  "systemPrompt": "...",
+  "salesPrompt": "...",
+  "supportPrompt": "...",
+  "tone": "PROFESSIONAL|FRIENDLY|FORMAL|CASUAL|CUSTOM",
+  "customTone": "..."
+}`,
+        },
+      ],
+    });
+    const raw = completion.choices[0]?.message?.content ?? '{}';
+    let parsed: any = {};
+    try {
+      const m = raw.match(/\{[\s\S]*\}/);
+      parsed = JSON.parse(m ? m[0] : raw);
+    } catch {
+      parsed = {};
+    }
+    return this.prisma.aiPrompt.upsert({
+      where: { organizationId: orgId },
+      update: {
+        systemPrompt: String(parsed.systemPrompt ?? existing?.systemPrompt ?? ''),
+        salesPrompt: String(parsed.salesPrompt ?? existing?.salesPrompt ?? ''),
+        supportPrompt: String(parsed.supportPrompt ?? existing?.supportPrompt ?? ''),
+        tone: String(parsed.tone ?? existing?.tone ?? 'PROFESSIONAL').toUpperCase(),
+        customTone: String(parsed.customTone ?? existing?.customTone ?? ''),
+      },
+      create: {
+        organizationId: orgId,
+        systemPrompt: String(parsed.systemPrompt ?? ''),
+        salesPrompt: String(parsed.salesPrompt ?? ''),
+        supportPrompt: String(parsed.supportPrompt ?? ''),
+        tone: String(parsed.tone ?? 'PROFESSIONAL').toUpperCase(),
+        customTone: String(parsed.customTone ?? ''),
+      },
+    });
+  }
+
   // ─── Automation rules ─────────────────────────────────────────────────────
 
   async getRules(orgId: string) {
@@ -326,12 +405,18 @@ Sadece JSON döndür, başka açıklama ekleme.`,
 
   // ─── Pending actions ──────────────────────────────────────────────────────
 
-  async getPendingActions(orgId: string, status?: string) {
-    return this.prisma.aiPendingAction.findMany({
-      where: { organizationId: orgId, ...(status ? { status } : {}) },
-      orderBy: { createdAt: 'desc' },
-      take: 100,
-    });
+  async getPendingActions(orgId: string, status?: string, paging?: { skip?: number; take?: number }) {
+    const where = { organizationId: orgId, ...(status ? { status } : {}) };
+    const [total, items] = await Promise.all([
+      this.prisma.aiPendingAction.count({ where }),
+      this.prisma.aiPendingAction.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip: paging?.skip ?? 0,
+        take: paging?.take ?? 25,
+      }),
+    ]);
+    return { total, items };
   }
 
   async reviewPendingAction(
@@ -378,7 +463,7 @@ Sadece JSON döndür, başka açıklama ekleme.`,
       };
     }
 
-    const [total, items] = await Promise.all([
+    const [total, itemsRaw] = await Promise.all([
       this.prisma.aiLog.count({ where }),
       this.prisma.aiLog.findMany({
         where,
@@ -387,8 +472,68 @@ Sadece JSON döndür, başka açıklama ekleme.`,
         take: filters.take ?? 50,
       }),
     ]);
-
+    const items = itemsRaw.map((it) => {
+      let parsedInput: any = null;
+      let parsedOutput: any = null;
+      try { parsedInput = it.input ? JSON.parse(it.input) : null; } catch {}
+      try { parsedOutput = it.output ? JSON.parse(it.output) : null; } catch {}
+      return { ...it, parsedInput, parsedOutput };
+    });
     return { total, items };
+  }
+
+  async getReports(orgId: string, filters: { from?: string; to?: string }) {
+    const dateWhere =
+      filters.from || filters.to
+        ? {
+            ...(filters.from ? { gte: new Date(filters.from) } : {}),
+            ...(filters.to ? { lte: new Date(filters.to) } : {}),
+          }
+        : undefined;
+    const messageWhere: any = { conversation: { session: { organizationId: orgId } } };
+    if (dateWhere) messageWhere.timestamp = dateWhere;
+    const orderWhere: any = { contact: { organizationId: orgId } };
+    if (dateWhere) orderWhere.createdAt = dateWhere;
+    const quoteWhere: any = { contact: { organizationId: orgId } };
+    if (dateWhere) quoteWhere.createdAt = dateWhere;
+    const logWhere: any = { organizationId: orgId };
+    if (dateWhere) logWhere.createdAt = dateWhere;
+
+    const [
+      talkedContacts,
+      incomingMessages,
+      outgoingMessages,
+      offersCreated,
+      ordersCreated,
+      ordersToAccounting,
+      aiActionStats,
+    ] = await Promise.all([
+      this.prisma.message.findMany({
+        where: messageWhere,
+        select: { conversation: { select: { contactId: true } } },
+        distinct: ['conversationId'],
+      }).then((rows) => new Set(rows.map((r) => r.conversation?.contactId).filter(Boolean)).size),
+      this.prisma.message.count({ where: { ...messageWhere, direction: 'INCOMING' } }),
+      this.prisma.message.count({ where: { ...messageWhere, direction: 'OUTGOING' } }),
+      this.prisma.quote.count({ where: quoteWhere }),
+      this.prisma.salesOrder.count({ where: orderWhere }),
+      this.prisma.salesOrder.count({ where: { ...orderWhere, invoice: { isNot: null } } }),
+      this.prisma.aiLog.groupBy({
+        by: ['action'],
+        _count: { _all: true },
+        where: logWhere,
+      }),
+    ]);
+
+    return {
+      talkedContacts,
+      incomingMessages,
+      outgoingMessages,
+      offersCreated,
+      ordersCreated,
+      ordersToAccounting,
+      actionBreakdown: aiActionStats.map((x) => ({ action: x.action, count: x._count._all })),
+    };
   }
 
   // ─── Test connection ──────────────────────────────────────────────────────
