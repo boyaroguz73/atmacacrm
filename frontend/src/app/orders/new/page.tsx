@@ -107,7 +107,7 @@ function fmt(amount: number) {
 
 function productProperty2Text(p: ProductHit): string {
   if (typeof p.property2 === 'string' && p.property2.trim()) return p.property2.trim();
-  const topLevel = (p as Record<string, unknown>).Property2;
+  const topLevel = (p as unknown as Record<string, unknown>).Property2;
   if (typeof topLevel === 'string' && topLevel.trim()) return topLevel.trim();
   const meta =
     p.metadata && typeof p.metadata === 'object' && !Array.isArray(p.metadata)
