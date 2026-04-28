@@ -337,7 +337,7 @@ export default function OrganizationSettingsPanel({
       return;
     }
     const ok = window.confirm(
-      'Bu işlem teklifleri, siparişleri, görev/takvim kayıtlarını sıfırlar ve 0415/0456/0440 eşleştirmesine göre konuşma atamalarını yeniden uygular. Devam edilsin mi?',
+      'Bu işlem teklifleri, siparişleri, görev/takvim kayıtlarını, muhasebe kayıtlarını ve potansiyel müşteri kayıtlarını sıfırlar; ardından 0415/0456/0440 eşleştirmesine göre konuşma atamalarını yeniden uygular. Devam edilsin mi?',
     );
     if (!ok) return;
 
@@ -348,7 +348,7 @@ export default function OrganizationSettingsPanel({
       });
       setOpResetPassword('');
       toast.success(
-        `Sıfırlama tamamlandı · Teklif: ${data?.reset?.quotes ?? 0}, Sipariş: ${data?.reset?.orders ?? 0}, Görev: ${data?.reset?.tasks ?? 0}`,
+        `Sıfırlama tamamlandı · Teklif: ${data?.reset?.quotes ?? 0}, Sipariş: ${data?.reset?.orders ?? 0}, Görev: ${data?.reset?.tasks ?? 0}, Muhasebe: ${(data?.reset?.cashEntries ?? 0) + (data?.reset?.accountingInvoices ?? 0) + (data?.reset?.ledgerEntries ?? 0)}, Potansiyel: ${data?.reset?.leads ?? 0}`,
       );
     } catch (err: any) {
       toast.error(getApiErrorMessage(err, 'İşlem başarısız'));
@@ -485,7 +485,7 @@ export default function OrganizationSettingsPanel({
           <div className="flex-1 min-w-0">
             <h2 className="text-lg font-semibold text-red-700">Operasyonel Sıfırlama</h2>
             <p className="text-xs text-gray-600 mt-1 leading-relaxed">
-              Bu işlem <span className="font-semibold">teklifleri, siparişleri, görev/takvim kayıtlarını</span> temizler
+              Bu işlem <span className="font-semibold">teklifleri, siparişleri, görev/takvim kayıtlarını, muhasebe kayıtlarını ve potansiyel müşteri kayıtlarını</span> temizler
               ve konuşma atamalarını şu eşleştirmeye göre tekrar uygular: 0415 → Umeyma, 0456 → Betül, 0440 → Sümeyye.
             </p>
             <div className="mt-4 flex flex-col sm:flex-row gap-2 sm:items-center">

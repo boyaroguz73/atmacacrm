@@ -5,12 +5,14 @@ import { rewriteMediaUrlForClient } from '@/lib/utils';
 
 export function VariantPickerOption({
   name,
+  subtitle,
   priceDisplay,
   discountedPriceDisplay,
   imageUrl,
   onSelect,
 }: {
   name: string;
+  subtitle?: string | null;
   priceDisplay: string;
   discountedPriceDisplay?: string | null;
   imageUrl?: string | null;
@@ -32,6 +34,7 @@ export function VariantPickerOption({
       </div>
       <div className="flex-1 min-w-0">
         <div className="font-medium text-gray-900 line-clamp-2">{name}</div>
+        {subtitle && <div className="text-[11px] text-gray-500 mt-0.5 line-clamp-2">{subtitle}</div>}
         <div className="flex items-center gap-1.5 mt-0.5 tabular-nums">
           {discountedPriceDisplay ? (
             <>

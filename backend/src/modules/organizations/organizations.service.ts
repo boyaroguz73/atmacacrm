@@ -478,8 +478,11 @@ export class OrganizationsService {
       quotes: number;
       orders: number;
       tasks: number;
+      leads: number;
       orderItems: number;
       cashEntries: number;
+      accountingInvoices: number;
+      ledgerEntries: number;
       deliveryNotes: number;
     };
     reassignment: {
@@ -512,26 +515,39 @@ export class OrganizationsService {
       const orderIds = targetOrders.map((o) => o.id);
       const quoteIds = targetQuotes.map((q) => q.id);
       const userIds = orgUsers.map((u) => u.id);
+      const userIdWhere = userIds.length > 0 ? { in: userIds } : undefined;
 
       let orderItemsDeleted = 0;
       let cashDeleted = 0;
+      let accInvoiceDeleted = 0;
+      let ledgerDeleted = 0;
       let deliveryDeleted = 0;
       if (orderIds.length > 0) {
-        const [di, dc, dd] = await Promise.all([
+        const [di, dd] = await Promise.all([
           tx.orderItem.deleteMany({ where: { orderId: { in: orderIds } } }),
-          tx.cashBookEntry.deleteMany({ where: { orderId: { in: orderIds } } }),
           tx.deliveryNote.deleteMany({ where: { orderId: { in: orderIds } } }),
         ]);
         orderItemsDeleted = di.count;
-        cashDeleted = dc.count;
         deliveryDeleted = dd.count;
       }
 
-      const [deletedQuotes, deletedOrders, deletedTasks] = await Promise.all([
+      const [deletedQuotes, deletedOrders, deletedTasks, deletedLeads] = await Promise.all([
         tx.quote.deleteMany({ where: { id: { in: quoteIds } } }),
         tx.salesOrder.deleteMany({ where: { id: { in: orderIds } } }),
-        tx.task.deleteMany({ where: { userId: { in: userIds } } }),
+        userIdWhere ? tx.task.deleteMany({ where: { userId: userIdWhere } }) : Promise.resolve({ count: 0 }),
+        tx.lead.deleteMany({ where: { contact: { organizationId } } }),
       ]);
+
+      if (userIdWhere) {
+        const [dc, dai, dle] = await Promise.all([
+          tx.cashBookEntry.deleteMany({ where: { userId: userIdWhere } }),
+          tx.accountingInvoice.deleteMany({ where: { contact: { organizationId } } }),
+          tx.ledgerEntry.deleteMany({ where: { userId: userIdWhere } }),
+        ]);
+        cashDeleted = dc.count;
+        accInvoiceDeleted = dai.count;
+        ledgerDeleted = dle.count;
+      }
 
       const mappings = [
         { suffix: '0415', fullName: 'Umeyma', email: 'umeyma@atmacaofis.com.tr' },
@@ -605,8 +621,11 @@ export class OrganizationsService {
           quotes: deletedQuotes.count,
           orders: deletedOrders.count,
           tasks: deletedTasks.count,
+          leads: deletedLeads.count,
           orderItems: orderItemsDeleted,
           cashEntries: cashDeleted,
+          accountingInvoices: accInvoiceDeleted,
+          ledgerEntries: ledgerDeleted,
           deliveryNotes: deliveryDeleted,
         },
         reassignment: {

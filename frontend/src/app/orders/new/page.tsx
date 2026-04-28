@@ -107,6 +107,8 @@ function fmt(amount: number) {
 
 function productProperty2Text(p: ProductHit): string {
   if (typeof p.property2 === 'string' && p.property2.trim()) return p.property2.trim();
+  const topLevel = (p as Record<string, unknown>).Property2;
+  if (typeof topLevel === 'string' && topLevel.trim()) return topLevel.trim();
   const meta =
     p.metadata && typeof p.metadata === 'object' && !Array.isArray(p.metadata)
       ? (p.metadata as Record<string, unknown>)
@@ -400,6 +402,7 @@ export default function NewOrderPage() {
                 <VariantPickerOption
                   key={v.id ?? '__product_base__'}
                   name={v.name}
+                  subtitle={typeof v.property2 === 'string' ? v.property2.trim() : ''}
                   imageUrl={v.imageUrl}
                   priceDisplay={fmt(v.unitPrice)}
                   discountedPriceDisplay={

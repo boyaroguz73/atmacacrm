@@ -143,11 +143,13 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
       id: string;
       name: string;
       sku: string;
+      property2?: string | null;
       imageUrl?: string | null;
       unitPrice: number;
       salePriceAmount?: number | null;
       currency: string;
       category?: string | null;
+      metadata?: unknown;
     }[]
   >([]);
   const [productCategoryFilter, setProductCategoryFilter] = useState('');
@@ -171,6 +173,17 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
     }[]
   >([]);
   const [variantLoading, setVariantLoading] = useState(false);
+  const productProperty2Text = useCallback((p: { property2?: string | null; metadata?: unknown } & Record<string, unknown>) => {
+    if (typeof p.property2 === 'string' && p.property2.trim()) return p.property2.trim();
+    const topLevel = p.Property2;
+    if (typeof topLevel === 'string' && topLevel.trim()) return topLevel.trim();
+    const meta =
+      p.metadata && typeof p.metadata === 'object' && !Array.isArray(p.metadata)
+        ? (p.metadata as Record<string, unknown>)
+        : null;
+    const v = meta?.Property2 ?? meta?.property2;
+    return typeof v === 'string' ? v.trim() : '';
+  }, []);
   const [contactPickerOpen, setContactPickerOpen] = useState(false);
   const [contactSearch, setContactSearch] = useState('');
   const [contactHits, setContactHits] = useState<
@@ -1940,11 +1953,7 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
                           </div>
                           <div className="min-w-0 flex-1">
                             <p className="text-sm font-medium text-gray-900 truncate">{v.name}</p>
-                            {v.property2 && (
-                              <span className="inline-block mt-0.5 px-1.5 py-0.5 rounded bg-gray-100 text-[10px] text-gray-600 font-medium">
-                                {v.property2}
-                              </span>
-                            )}
+                            {v.property2?.trim() ? <p className="text-[11px] text-gray-500 mt-0.5 truncate">{v.property2.trim()}</p> : null}
                             <p className="text-[11px] text-gray-500 flex items-center gap-1 flex-wrap">
                               {v.salePriceAmount != null && v.salePriceAmount !== v.unitPrice ? (
                                 <>
@@ -2077,6 +2086,9 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
                           </div>
                           <div className="min-w-0 flex-1">
                             <p className="text-sm font-medium text-gray-900 truncate">{p.name}</p>
+                            {productProperty2Text(p) ? (
+                              <p className="text-[11px] text-gray-500 truncate">{productProperty2Text(p)}</p>
+                            ) : null}
                             {p.category ? (
                               <p className="text-[11px] text-gray-400 truncate">{p.category}</p>
                             ) : null}
