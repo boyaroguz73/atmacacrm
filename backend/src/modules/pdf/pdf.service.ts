@@ -902,10 +902,10 @@ export class PdfService {
           const notesPlain = this.htmlToPlainText(notesRaw);
           R(); doc.fontSize(8).fillColor('#444');
           const h = doc.heightOfString(this.t(notesPlain), { width: PW }) + 8;
-          ensureSpace(h + 8, tailReserve);
+          ensureSpace(h + 8, signatureBottomPad);
           if (String(notesRaw).includes('<')) {
             const estimated = Math.max(h * 1.25, 24);
-            ensureSpace(estimated + 8, tailReserve);
+            ensureSpace(estimated + 8, signatureBottomPad);
             rowY += richTxt(String(notesRaw), ML, rowY, { width: PW, size: 8, color: '#444' }) + 6;
           } else {
             doc.text(this.t(notesPlain), ML, rowY, { width: PW, lineBreak: true });
@@ -914,6 +914,16 @@ export class PdfService {
         }
         if (termsText) {
           rowY += 4;
+          // Basligin bir sayfada tek basina kalmasini engelle:
+          // en az baslik + ayirici + ilk 1-2 satir metin birlikte sigsin.
+          R();
+          doc.fontSize(7.5);
+          const minTermsBody = Math.max(
+            doc.heightOfString(this.t(termsText), { width: PW }) * 0.18,
+            24,
+          );
+          const termsHeaderReserve = 4 + 12 + 6 + minTermsBody + 6;
+          ensureSpace(termsHeaderReserve, signatureBottomPad);
           R(); doc.fontSize(8.5).fillColor(primary);
           doc.text(this.t('Sartlar ve Kosullar'), ML, rowY, { width: PW, lineBreak: false });
           rowY += 12;
@@ -932,7 +942,7 @@ export class PdfService {
               doc.heightOfString(this.t(termsText), { width: termsBlockWidth }) * 1.3,
               28,
             );
-            ensureSpace(estimated + 14, tailReserve);
+            ensureSpace(estimated + 14, signatureBottomPad);
             rowY += richTxt(String(rawTermsSource), ML, rowY, {
               width: termsBlockWidth,
               size: 7.5,
@@ -943,7 +953,7 @@ export class PdfService {
             for (const p of paragraphs) {
               const block = p.replace(/\n/g, ' \n');
               const hBlock = doc.heightOfString(block, { width: termsBlockWidth }) + 3;
-              ensureSpace(hBlock + 10, tailReserve);
+              ensureSpace(hBlock + 10, signatureBottomPad);
               doc.text(block, ML, rowY, { width: termsBlockWidth, lineBreak: true });
               rowY += hBlock + 3;
             }
@@ -953,10 +963,10 @@ export class PdfService {
         if (footerNoteText) {
           R(); doc.fontSize(8).fillColor('#444');
           const h = doc.heightOfString(this.t(footerNoteText), { width: PW }) + 8;
-          ensureSpace(h + 8, tailReserve);
+          ensureSpace(h + 8, signatureBottomPad);
           if (String(rawFooterSource).includes('<')) {
             const estimated = Math.max(h * 1.25, 24);
-            ensureSpace(estimated + 10, tailReserve);
+            ensureSpace(estimated + 10, signatureBottomPad);
             rowY += richTxt(String(rawFooterSource), ML, rowY, {
               width: PW,
               size: 8,
@@ -985,7 +995,8 @@ export class PdfService {
           const textH = Math.max(h1, h2);
           const blockH = Math.max(textH, qrSize);
           const approxTitle = 16;
-          ensureSpace(approxTitle + blockH + 24);
+          const bankWithSignatureReserve = approxTitle + blockH + 24 + (settings.showSignatureArea ? 72 : 0);
+          ensureSpace(bankWithSignatureReserve, signatureBottomPad);
 
           rowY += txt(this.t('Banka Bilgileri:'), ML, rowY, { size: 8.5, bold: true, width: PW, lineBreak: true }) + 2;
           const yBank = rowY;
