@@ -566,24 +566,52 @@ export class PdfService {
         const headerBottom = Math.max(cy + 6, titleBoxBottom + 6);
         doc.moveTo(ML, headerBottom).lineTo(ML + PW, headerBottom).lineWidth(1).strokeColor(primary).stroke();
 
-        // ── CUSTOMER INFO ────────────────────────────────────────────────
+        // ── CUSTOMER INFO (inline / iki sutun) ───────────────────────────
         let startY = headerBottom + 8;
-        startY += txt(this.t('MUSTERI BILGILERI'), ML, startY, { size: 8, bold: true, color: primary, width: PW, lineBreak: true }) + 3;
-        startY += txt(this.t(data.contactName), ML, startY, { size: 9, bold: true, width: PW, lineBreak: true }) + 3;
-        if (data.contactCompany) { startY += txt(this.t(data.contactCompany), ML, startY, { size: 8, width: PW, lineBreak: true }) + 2; }
-        if (data.contactPhone)   { startY += txt(`Tel: ${data.contactPhone}`, ML, startY, { size: 8, width: PW, lineBreak: true }) + 2; }
-        if (data.contactEmail)   { startY += txt(`E: ${data.contactEmail}`, ML, startY, { size: 8, width: PW, lineBreak: true }) + 2; }
-        if (data.contactAddress) { startY += txt(this.t(data.contactAddress), ML, startY, { size: 8, width: PW, lineBreak: true }) + 2; }
+        startY += txt(this.t('MUSTERI BILGILERI'), ML, startY, {
+          size: 8,
+          bold: true,
+          color: primary,
+          width: PW,
+          lineBreak: true,
+        }) + 4;
+
+        const infoGap = 14;
+        const leftW = Math.floor((PW - infoGap) * 0.48);
+        const rightW = PW - leftW - infoGap;
+        const leftX = ML;
+        const rightX = ML + leftW + infoGap;
+        let leftY = startY;
+        let rightY = startY;
+
+        leftY += txt(this.t(data.contactName), leftX, leftY, { size: 9, bold: true, width: leftW, lineBreak: true }) + 3;
+        if (data.contactCompany) { leftY += txt(this.t(data.contactCompany), leftX, leftY, { size: 8, width: leftW, lineBreak: true }) + 2; }
+        if (data.contactPhone)   { leftY += txt(`Tel: ${data.contactPhone}`, leftX, leftY, { size: 8, width: leftW, lineBreak: true }) + 2; }
+        if (data.contactEmail)   { leftY += txt(`E: ${data.contactEmail}`, leftX, leftY, { size: 8, width: leftW, lineBreak: true }) + 2; }
         if (data.contactTaxOffice || data.contactTaxNumber) {
-          startY += txt(`VD: ${this.t(data.contactTaxOffice || '')}  VN: ${data.contactTaxNumber || ''}`, ML, startY, { size: 8, width: PW, lineBreak: true }) + 2;
+          leftY += txt(`VD: ${this.t(data.contactTaxOffice || '')}  VN: ${data.contactTaxNumber || ''}`, leftX, leftY, { size: 8, width: leftW, lineBreak: true }) + 2;
         }
         if (data.contactIdentityNumber) {
-          startY += txt(`TC: ${data.contactIdentityNumber}`, ML, startY, { size: 8, width: PW, lineBreak: true }) + 2;
+          leftY += txt(`TC: ${data.contactIdentityNumber}`, leftX, leftY, { size: 8, width: leftW, lineBreak: true }) + 2;
         }
-        // Temsilci bilgisi
         if (data.createdByName) {
-          startY += txt(`${this.t('Temsilci')}: ${this.t(data.createdByName)}`, ML, startY, { size: 8, bold: true, color: primary, width: PW, lineBreak: true }) + 2;
+          leftY += txt(`${this.t('Temsilci')}: ${this.t(data.createdByName)}`, leftX, leftY, { size: 8, bold: true, color: primary, width: leftW, lineBreak: true }) + 2;
         }
+
+        rightY += txt(this.t('Adres Bilgileri'), rightX, rightY, {
+          size: 8,
+          bold: true,
+          color: primary,
+          width: rightW,
+          lineBreak: true,
+        }) + 2;
+        if (data.contactAddress) {
+          rightY += txt(this.t(data.contactAddress), rightX, rightY, { size: 8, width: rightW, lineBreak: true }) + 2;
+        } else {
+          rightY += txt('-', rightX, rightY, { size: 8, width: rightW, lineBreak: true }) + 2;
+        }
+
+        startY = Math.max(leftY, rightY);
 
         // ── TABLE ────────────────────────────────────────────────────────
         const tableY = startY + 10;
@@ -764,6 +792,25 @@ export class PdfService {
           rowY = 28;
         };
         const signatureBottomPad = settings.showSignatureArea ? 92 : 56;
+        // Alt kısımdaki banka/QR + imza blokları için yer rezerve et.
+        // Böylece şartlar/koşullar bu alanı tüketip bu blokları gereksiz şekilde
+        // ikinci sayfaya itmez.
+        let bankTailReserve = 0;
+        if (settings.bankInfo || settings.bank2Info || bankQrBuffer) {
+          const qrSize = bankQrBuffer ? 82 : 0;
+          const qrGap = bankQrBuffer ? 10 : 0;
+          const textW = bankQrBuffer ? Math.max(160, PW - qrSize - qrGap) : PW;
+          const halfW = textW > 20 ? (textW - 10) / 2 : textW;
+          R();
+          doc.fontSize(8).fillColor('#444');
+          const bankH1 = settings.bankInfo ? doc.heightOfString(this.t(settings.bankInfo), { width: halfW }) : 0;
+          const bankH2 = settings.bank2Info ? doc.heightOfString(this.t(settings.bank2Info), { width: halfW }) : 0;
+          const textH = Math.max(bankH1, bankH2);
+          const blockH = Math.max(textH, qrSize);
+          const approxTitle = 16;
+          bankTailReserve = approxTitle + blockH + 24;
+        }
+        const tailReserve = Math.max(signatureBottomPad, bankTailReserve + (settings.showSignatureArea ? 72 : 0));
         const ensureSpace = (neededHeight: number, bottomPad = signatureBottomPad) => {
           if (rowY + neededHeight <= PAGE_H - bottomPad) return;
           drawPageTop();
@@ -855,10 +902,10 @@ export class PdfService {
           const notesPlain = this.htmlToPlainText(notesRaw);
           R(); doc.fontSize(8).fillColor('#444');
           const h = doc.heightOfString(this.t(notesPlain), { width: PW }) + 8;
-          ensureSpace(h + 8);
+          ensureSpace(h + 8, tailReserve);
           if (String(notesRaw).includes('<')) {
             const estimated = Math.max(h * 1.25, 24);
-            ensureSpace(estimated + 8);
+            ensureSpace(estimated + 8, tailReserve);
             rowY += richTxt(String(notesRaw), ML, rowY, { width: PW, size: 8, color: '#444' }) + 6;
           } else {
             doc.text(this.t(notesPlain), ML, rowY, { width: PW, lineBreak: true });
@@ -885,7 +932,7 @@ export class PdfService {
               doc.heightOfString(this.t(termsText), { width: termsBlockWidth }) * 1.3,
               28,
             );
-            ensureSpace(estimated + 14);
+            ensureSpace(estimated + 14, tailReserve);
             rowY += richTxt(String(rawTermsSource), ML, rowY, {
               width: termsBlockWidth,
               size: 7.5,
@@ -896,7 +943,7 @@ export class PdfService {
             for (const p of paragraphs) {
               const block = p.replace(/\n/g, ' \n');
               const hBlock = doc.heightOfString(block, { width: termsBlockWidth }) + 3;
-              ensureSpace(hBlock + 10);
+              ensureSpace(hBlock + 10, tailReserve);
               doc.text(block, ML, rowY, { width: termsBlockWidth, lineBreak: true });
               rowY += hBlock + 3;
             }
@@ -906,10 +953,10 @@ export class PdfService {
         if (footerNoteText) {
           R(); doc.fontSize(8).fillColor('#444');
           const h = doc.heightOfString(this.t(footerNoteText), { width: PW }) + 8;
-          ensureSpace(h + 8);
+          ensureSpace(h + 8, tailReserve);
           if (String(rawFooterSource).includes('<')) {
             const estimated = Math.max(h * 1.25, 24);
-            ensureSpace(estimated + 10);
+            ensureSpace(estimated + 10, tailReserve);
             rowY += richTxt(String(rawFooterSource), ML, rowY, {
               width: PW,
               size: 8,
