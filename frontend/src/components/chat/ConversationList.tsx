@@ -55,6 +55,7 @@ export default function ConversationList() {
   const [user, setUser] = useState<{ role?: string } | null>(null);
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
+  const scrollRootRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     const stored = localStorage.getItem('user');
@@ -111,13 +112,13 @@ export default function ConversationList() {
   );
 
   useEffect(() => {
-    const root = loadMoreRef.current?.closest('.scrollbar-thin');
+    const root = scrollRootRef.current;
     const target = loadMoreRef.current;
     if (!target || !root) return;
     const observer = new IntersectionObserver(
       (entries) => {
         const hit = entries.some((e) => e.isIntersecting);
-        if (hit) {
+        if (hit && hasMoreConversations && !isLoadingMoreConversations) {
           void loadMoreConversations();
         }
       },
@@ -125,7 +126,13 @@ export default function ConversationList() {
     );
     observer.observe(target);
     return () => observer.disconnect();
-  }, [loadMoreConversations, visibleConversations.length, hasMoreConversations]);
+  }, [
+    loadMoreConversations,
+    hasMoreConversations,
+    isLoadingMoreConversations,
+    conversations.length,
+    isGroupsRoute,
+  ]);
 
   const lastPreview = (conv: any) => {
     const raw = conv?.lastMessageText ? truncate(conv.lastMessageText, 45) : '';
@@ -203,7 +210,7 @@ export default function ConversationList() {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto scrollbar-thin">
+      <div ref={scrollRootRef} className="flex-1 overflow-y-auto scrollbar-thin">
         {isLoadingConversations ? (
           <div className="flex items-center justify-center py-12">
             <div className="w-6 h-6 border-2 border-whatsapp border-t-transparent rounded-full animate-spin" />

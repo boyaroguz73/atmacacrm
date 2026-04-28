@@ -117,6 +117,7 @@ interface ProductHit {
   id: string;
   sku: string;
   name: string;
+  property2?: string | null;
   description?: string | null;
   unitPrice: number;
   salePriceAmount?: number | null;
@@ -136,6 +137,16 @@ function currencySymbol(c: string): string {
 
 function round2(n: number) {
   return Math.round(n * 100) / 100;
+}
+
+function productProperty2Text(p: ProductHit): string {
+  if (typeof p.property2 === 'string' && p.property2.trim()) return p.property2.trim();
+  const meta =
+    p.metadata && typeof p.metadata === 'object' && !Array.isArray(p.metadata)
+      ? (p.metadata as Record<string, unknown>)
+      : null;
+  const v = meta?.Property2 ?? meta?.property2;
+  return typeof v === 'string' ? v.trim() : '';
 }
 
 function pickVatRate(...candidates: unknown[]): number | null {
@@ -1294,6 +1305,9 @@ export default function NewQuotePage() {
                       className="w-full text-left px-4 py-2.5 hover:bg-green-50/60 border-b border-gray-50 last:border-0"
                     >
                       <p className="text-sm font-medium text-gray-900">{p.name}</p>
+                      {productProperty2Text(p) ? (
+                        <p className="text-[11px] text-gray-500 mt-0.5">{productProperty2Text(p)}</p>
+                      ) : null}
                     </button>
                   ))}
                 </div>

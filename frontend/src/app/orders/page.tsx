@@ -57,6 +57,7 @@ interface SalesOrder {
   tsoftPushedAt?: string | null;
   tsoftLastError?: string | null;
   siteOrderData?: Record<string, unknown> | null;
+  automationState?: Record<string, unknown> | null;
   invoice?: { id: string } | null;
   createdBy?: { id: string; name: string | null } | null;
   contact: {
@@ -117,6 +118,15 @@ function packagingFor(o: SalesOrder): string {
 
 function isTsoftOrder(o: SalesOrder) {
   return o.source === 'TSOFT' || (o.externalId?.startsWith('tsoft_') ?? false);
+}
+
+function hasCartAbandonReminderSent(o: SalesOrder): boolean {
+  const st = o.automationState;
+  if (!st || typeof st !== 'object') return false;
+  const sent = (st as Record<string, unknown>).sent;
+  if (!sent || typeof sent !== 'object') return false;
+  const v = (sent as Record<string, unknown>).cart_abandon_reminder_sent;
+  return Boolean(v);
 }
 
 const LIMIT = 20;
@@ -514,6 +524,11 @@ export default function OrdersPage() {
                           title={order.tsoftLastError}
                         >
                           {providerLabel(ecomProvider)} ✕
+                        </div>
+                      ) : null}
+                      {order.status === 'AWAITING_CHECKOUT' && hasCartAbandonReminderSent(order) ? (
+                        <div className="mt-1 inline-flex text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-900">
+                          Hatırlatma gönderildi
                         </div>
                       ) : null}
                     </td>

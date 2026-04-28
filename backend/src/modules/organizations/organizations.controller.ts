@@ -187,6 +187,19 @@ export class OrganizationsController {
     return this.orgService.patchModuleToggles(orgId, body);
   }
 
+  @Post('my/reset-operational-data')
+  @Roles('ADMIN')
+  async resetOperationalData(
+    @Req() req: any,
+    @Body() body: { password: string },
+  ) {
+    const orgId = await this.resolveMyOrgId(req);
+    return this.orgService.resetOperationalDataAndReassign(
+      orgId,
+      String(body?.password || ''),
+    );
+  }
+
   // ===== SUPERADMIN endpoints (tüm organizasyonlar) =====
 
   @Get()

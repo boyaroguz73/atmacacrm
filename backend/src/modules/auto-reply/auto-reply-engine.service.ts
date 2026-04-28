@@ -261,7 +261,10 @@ export class AutoReplyEngineService {
       }
 
       if (step.type === 'condition') {
-        const ok = await this.evaluateCondition(step.data, runtime.conversationId);
+        const ok = await this.evaluateCondition(step.data, runtime.conversationId, {
+          entityType: run.entityType,
+          entityId: run.entityId,
+        });
         if (!ok) {
           await this.prisma.automationRun.update({
             where: { id: run.id },
@@ -281,7 +284,15 @@ export class AutoReplyEngineService {
         }
         const text = await this.renderTemplateForRun(run.entityType, run.entityId, template, statusText, runtime.agentName);
         if (text) {
-          await this.sendRunMessage(runtime.conversationId, runtime.sessionId, runtime.sessionName, runtime.chatId, text, run);
+          await this.sendRunMessage(
+            runtime.conversationId,
+            runtime.sessionId,
+            runtime.sessionName,
+            runtime.chatId,
+            text,
+            run,
+            step,
+          );
         }
         idx++;
         continue;
@@ -315,8 +326,22 @@ export class AutoReplyEngineService {
   private async evaluateCondition(
     data: Record<string, unknown> | undefined,
     conversationId: string,
+    run?: { entityType?: string; entityId?: string },
   ): Promise<boolean> {
     const field = String(data?.field || '');
+    if (field === 'order_status_not_in') {
+      if (run?.entityType !== 'ORDER' || !run.entityId) return true;
+      const statuses = Array.isArray(data?.statuses)
+        ? data!.statuses.map((s) => String(s))
+        : [];
+      if (!statuses.length) return true;
+      const order = await this.prisma.salesOrder.findUnique({
+        where: { id: run.entityId },
+        select: { status: true },
+      });
+      if (!order) return false;
+      return !statuses.includes(String(order.status));
+    }
     if (field !== 'conversation_last_message_older_than') return true;
     const threshold = this.readWaitSeconds(data);
     const conversation = await this.prisma.conversation.findUnique({
@@ -518,6 +543,7 @@ export class AutoReplyEngineService {
     chatId: string,
     text: string,
     run: { id: string; trigger: string; entityType: string; entityId: string; context: unknown; flowId: string },
+    step?: FlowStep,
   ) {
     const normalizedChatId = normalizeWhatsappChatId(chatId);
     const waResponse = await this.wahaService.sendText(sessionName, normalizedChatId, text);
@@ -552,6 +578,36 @@ export class AutoReplyEngineService {
       where: { id: conversationId },
       data: { lastMessageText: text, lastMessageAt: new Date() },
     });
+
+    const sentKey = String(step?.data?.sentKey || '').trim();
+    if (run.entityType === 'ORDER' && sentKey) {
+      const order = await this.prisma.salesOrder.findUnique({
+        where: { id: run.entityId },
+        select: { automationState: true },
+      });
+      const prevState =
+        order?.automationState &&
+        typeof order.automationState === 'object' &&
+        !Array.isArray(order.automationState)
+          ? (order.automationState as Record<string, unknown>)
+          : {};
+      const prevSent =
+        prevState.sent && typeof prevState.sent === 'object' && !Array.isArray(prevState.sent)
+          ? (prevState.sent as Record<string, unknown>)
+          : {};
+      await this.prisma.salesOrder.update({
+        where: { id: run.entityId },
+        data: {
+          automationState: {
+            ...prevState,
+            sent: {
+              ...prevSent,
+              [sentKey]: new Date().toISOString(),
+            },
+          } as Prisma.InputJsonValue,
+        },
+      });
+    }
   }
 
   private hasOrderAutomationSent(state: unknown, sentKey: string): boolean {

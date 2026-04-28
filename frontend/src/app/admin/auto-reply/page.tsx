@@ -43,6 +43,7 @@ function AutoReplyManager({ embedded = false }: { embedded?: boolean }) {
   const [flows, setFlows] = useState<Flow[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedFlow, setExpandedFlow] = useState<string | null>(null);
+  const [creatingPreset, setCreatingPreset] = useState(false);
 
   const fetchFlows = async () => {
     try {
@@ -68,6 +69,16 @@ function AutoReplyManager({ embedded = false }: { embedded?: boolean }) {
     await fetchFlows();
   };
 
+  const createCartAbandonPreset = async () => {
+    setCreatingPreset(true);
+    try {
+      await api.post('/auto-reply/presets/cart-abandon');
+      await fetchFlows();
+    } finally {
+      setCreatingPreset(false);
+    }
+  };
+
   return (
     <div className={embedded ? 'p-0' : 'p-6 max-w-6xl mx-auto'}>
       <div className="flex items-center justify-between mb-6">
@@ -83,6 +94,14 @@ function AutoReplyManager({ embedded = false }: { embedded?: boolean }) {
         >
           <Plus className="w-4 h-4" />
           Yeni Akış
+        </button>
+        <button
+          onClick={() => void createCartAbandonPreset()}
+          disabled={creatingPreset}
+          className="flex items-center gap-2 px-4 py-2 bg-amber-500 text-white rounded-lg hover:bg-amber-600 transition-colors disabled:opacity-60"
+        >
+          {creatingPreset ? <Zap className="w-4 h-4 animate-pulse" /> : <Zap className="w-4 h-4" />}
+          Hazır Sepet Terk Otomasyonu
         </button>
       </div>
 

@@ -140,6 +140,50 @@ export class EcommerceService {
     return { ok: true };
   }
 
+  /**
+   * T-Soft kaynaklı eski CRM siparişlerini güvenli şekilde temizler.
+   * - Sadece `source=TSOFT`
+   * - Sadece verilen tarihten ESKİ kayıtlar
+   * - Faturası / tahsilat hareketi / irsaliyesi olan kayıtları silmez
+   */
+  async pruneOldTsoftOrders(
+    organizationId: string,
+    beforeDate: string,
+  ): Promise<{ before: string; cutoffIso: string; totalOld: number; deletable: number; deleted: number; protected: number }> {
+    const before = String(beforeDate || '').trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(before)) {
+      throw new BadRequestException('Geçerli tarih gerekli (YYYY-MM-DD)');
+    }
+    const cutoff = queryDateFromGte(before);
+
+    const olderWhere: Prisma.SalesOrderWhereInput = {
+      source: TSOFT_SOURCE,
+      createdAt: { lt: cutoff },
+      contact: { organizationId },
+    };
+    const deletableWhere: Prisma.SalesOrderWhereInput = {
+      ...olderWhere,
+      invoice: null,
+      cashBookEntries: { none: {} },
+      deliveryNotes: { none: {} },
+    };
+
+    const [totalOld, deletable, deletedRes] = await this.prisma.$transaction([
+      this.prisma.salesOrder.count({ where: olderWhere }),
+      this.prisma.salesOrder.count({ where: deletableWhere }),
+      this.prisma.salesOrder.deleteMany({ where: deletableWhere }),
+    ]);
+
+    return {
+      before,
+      cutoffIso: cutoff.toISOString(),
+      totalOld,
+      deletable,
+      deleted: deletedRes.count,
+      protected: Math.max(totalOld - deletedRes.count, 0),
+    };
+  }
+
   /** T-Soft giriş teşhisi (token yazılmaz; yine de istek limitine girer) */
   diagnoseTsoft(organizationId: string) {
     return this.tsoftApi.diagnoseLogin(organizationId);

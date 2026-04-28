@@ -55,6 +55,13 @@ export class AutoReplyController {
     return this.autoReplyService.create(body, user.id, user.organizationId);
   }
 
+  @Post('presets/cart-abandon')
+  createCartAbandonPreset(
+    @CurrentUser() user: { id: string; role: string; organizationId?: string },
+  ) {
+    return this.autoReplyService.ensureCartAbandonPreset(user.id, user.organizationId);
+  }
+
   @Patch(':id')
   async update(
     @Param('id') id: string,

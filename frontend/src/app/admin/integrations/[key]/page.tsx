@@ -417,6 +417,7 @@ function TsoftDetail({ integration }: { integration: Integration }) {
   const [syncingCustomers, setSyncingCustomers] = useState(false);
   const [syncingProducts, setSyncingProducts] = useState(false);
   const [syncingOrders, setSyncingOrders] = useState(false);
+  const [savingAndPruning, setSavingAndPruning] = useState(false);
   const [diagnosing, setDiagnosing] = useState(false);
   const [diagnoseOut, setDiagnoseOut] = useState<string | null>(null);
 
@@ -458,6 +459,44 @@ function TsoftDetail({ integration }: { integration: Integration }) {
       toast.success('Bağlantı başarılı');
     } catch (err) { toast.error(getApiErrorMessage(err, 'Bir sorun oluştu, lütfen tekrar deneyin')); }
     finally { setTesting(false); }
+  };
+
+  const handleSaveAndPrune = async () => {
+    const since = ordersPullSince.trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(since)) {
+      toast.error('Önce geçerli bir tarih seçin');
+      return;
+    }
+    const confirmed = window.confirm(
+      `Ayar kaydedilecek ve ${since} tarihinden önceki T-Soft siparişleri (fatura/tahsilat/irsaliye bağlı olmayanlar) silinecek. Devam edilsin mi?`,
+    );
+    if (!confirmed) return;
+
+    setSavingAndPruning(true);
+    try {
+      await api.post(`/integrations/${integration.key}/config`,
+        {
+          baseUrl: baseUrl.trim(),
+          apiEmail: apiEmail.trim(),
+          apiPassword,
+          sync: {
+            ...flags,
+            ...(since ? { ordersPullSince: since } : {}),
+          },
+        },
+        { params: integrationOrgParams() });
+
+      const { data } = await api.post('/ecommerce/tsoft/prune-orders', { before: since });
+      toast.success(
+        `Ayar kaydedildi · Silinen: ${data?.deleted ?? 0}${
+          (data?.protected ?? 0) > 0 ? ` · Korunan: ${data.protected}` : ''
+        }`,
+      );
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, 'Bir sorun oluştu, lütfen tekrar deneyin'));
+    } finally {
+      setSavingAndPruning(false);
+    }
   };
 
   const handleSyncCustomers = async () => {
@@ -566,6 +605,17 @@ function TsoftDetail({ integration }: { integration: Integration }) {
             onChange={(e) => setOrdersPullSince(e.target.value)}
             className="max-w-xs px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-orange-400 focus:ring-1 focus:ring-orange-100"
           />
+          <div className="mt-3">
+            <button
+              type="button"
+              onClick={handleSaveAndPrune}
+              disabled={savingAndPruning || !ordersPullSince.trim()}
+              className="inline-flex items-center gap-2 px-4 py-2.5 bg-rose-600 text-white rounded-xl text-sm font-medium hover:bg-rose-700 transition-colors disabled:opacity-50"
+            >
+              {savingAndPruning ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+              Kaydet ve Eskileri Sil
+            </button>
+          </div>
           <p className="text-xs text-gray-400 mt-2 leading-relaxed">
             T-Soft’tan sipariş çekerken seçilen aralığın <span className="font-medium text-gray-600">en erken</span>{' '}
             günüdür; bu tarihten önceki siparişler çekilmez.

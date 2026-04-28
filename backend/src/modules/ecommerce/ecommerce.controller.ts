@@ -102,6 +102,16 @@ export class EcommerceController {
     });
   }
 
+  @Post('tsoft/prune-orders')
+  @UseGuards(RolesGuard)
+  @Roles('ADMIN')
+  pruneTsoftOrders(
+    @CurrentUser() user: { role?: string; organizationId?: string | null },
+    @Body() body: { before: string },
+  ) {
+    return this.ecommerceService.pruneOldTsoftOrders(this.orgId(user), body?.before);
+  }
+
   /** Admin paneli: T-Soft pull/push özet durumu */
   @Get('tsoft/sync-status')
   @UseGuards(RolesGuard)

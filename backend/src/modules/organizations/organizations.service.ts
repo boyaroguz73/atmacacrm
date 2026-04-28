@@ -1,4 +1,9 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ConflictException,
+  BadRequestException,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import {
@@ -11,6 +16,7 @@ import {
 @Injectable()
 export class OrganizationsService {
   constructor(private prisma: PrismaService) {}
+  private static readonly OP_RESET_PASSWORD = '123@123';
 
   private readonly moduleToggleKeys = [
     'whatsapp',
@@ -459,6 +465,158 @@ export class OrganizationsService {
       ]);
 
     return { users, sessions, contacts, conversations, messages };
+  }
+
+  /**
+   * Operasyonel kayıtları temizler ve WA session koduna göre atama eşleştirmesini tekrar uygular.
+   */
+  async resetOperationalDataAndReassign(
+    organizationId: string,
+    password: string,
+  ): Promise<{
+    reset: {
+      quotes: number;
+      orders: number;
+      tasks: number;
+      orderItems: number;
+      cashEntries: number;
+      deliveryNotes: number;
+    };
+    reassignment: {
+      mappings: number;
+      targets: number;
+      closed: number;
+      inserted: number;
+    };
+  }> {
+    if (String(password || '') !== OrganizationsService.OP_RESET_PASSWORD) {
+      throw new BadRequestException('Şifre hatalı');
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const [targetOrders, targetQuotes, orgUsers] = await Promise.all([
+        tx.salesOrder.findMany({
+          where: { contact: { organizationId } },
+          select: { id: true },
+        }),
+        tx.quote.findMany({
+          where: { contact: { organizationId } },
+          select: { id: true },
+        }),
+        tx.user.findMany({
+          where: { organizationId },
+          select: { id: true },
+        }),
+      ]);
+
+      const orderIds = targetOrders.map((o) => o.id);
+      const quoteIds = targetQuotes.map((q) => q.id);
+      const userIds = orgUsers.map((u) => u.id);
+
+      let orderItemsDeleted = 0;
+      let cashDeleted = 0;
+      let deliveryDeleted = 0;
+      if (orderIds.length > 0) {
+        const [di, dc, dd] = await Promise.all([
+          tx.orderItem.deleteMany({ where: { orderId: { in: orderIds } } }),
+          tx.cashBookEntry.deleteMany({ where: { orderId: { in: orderIds } } }),
+          tx.deliveryNote.deleteMany({ where: { orderId: { in: orderIds } } }),
+        ]);
+        orderItemsDeleted = di.count;
+        cashDeleted = dc.count;
+        deliveryDeleted = dd.count;
+      }
+
+      const [deletedQuotes, deletedOrders, deletedTasks] = await Promise.all([
+        tx.quote.deleteMany({ where: { id: { in: quoteIds } } }),
+        tx.salesOrder.deleteMany({ where: { id: { in: orderIds } } }),
+        tx.task.deleteMany({ where: { userId: { in: userIds } } }),
+      ]);
+
+      const mappings = [
+        { suffix: '0415', fullName: 'Umeyma', email: 'umeyma@atmacaofis.com.tr' },
+        { suffix: '0456', fullName: 'Betül', email: 'betul@atmacaofis.com.tr' },
+        { suffix: '0440', fullName: 'Sümeyye', email: 'sumeyye@atmacaofis.com.tr' },
+      ] as const;
+
+      let targets = 0;
+      let closed = 0;
+      let inserted = 0;
+
+      for (const m of mappings) {
+        const agent = await tx.user.findFirst({
+          where: {
+            organizationId,
+            role: 'AGENT',
+            isActive: true,
+            OR: [
+              { name: { equals: m.fullName, mode: 'insensitive' } },
+              { email: { equals: m.email, mode: 'insensitive' } },
+            ],
+          },
+          select: { id: true },
+        });
+        if (!agent) continue;
+
+        const convs = await tx.conversation.findMany({
+          where: {
+            session: { name: { contains: m.suffix } },
+            contact: { organizationId },
+          },
+          select: { id: true },
+        });
+        const convIds = convs.map((c) => c.id);
+        if (!convIds.length) continue;
+        targets += convIds.length;
+
+        const closedRes = await tx.assignment.updateMany({
+          where: {
+            conversationId: { in: convIds },
+            unassignedAt: null,
+            userId: { not: agent.id },
+          },
+          data: { unassignedAt: new Date() },
+        });
+        closed += closedRes.count;
+
+        const existingActive = await tx.assignment.findMany({
+          where: {
+            conversationId: { in: convIds },
+            unassignedAt: null,
+          },
+          select: { conversationId: true },
+        });
+        const activeSet = new Set(existingActive.map((a) => a.conversationId));
+        const missing = convIds.filter((id) => !activeSet.has(id));
+        if (missing.length > 0) {
+          const ins = await tx.assignment.createMany({
+            data: missing.map((conversationId) => ({
+              conversationId,
+              userId: agent.id,
+              assignedAt: new Date(),
+            })),
+          });
+          inserted += ins.count;
+        }
+      }
+
+      return {
+        reset: {
+          quotes: deletedQuotes.count,
+          orders: deletedOrders.count,
+          tasks: deletedTasks.count,
+          orderItems: orderItemsDeleted,
+          cashEntries: cashDeleted,
+          deliveryNotes: deliveryDeleted,
+        },
+        reassignment: {
+          mappings: mappings.length,
+          targets,
+          closed,
+          inserted,
+        },
+      };
+    });
   }
 
 }

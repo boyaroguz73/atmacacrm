@@ -107,7 +107,7 @@ export class TsoftSyncScheduler implements OnModuleInit {
   }
 
   /** Sipariş (15 dk) — createdById için org'un bir admin'ini seçer */
-  // @Cron('0 */15 * * * *', { name: 'tsoft-order-sync' }) — pull zamanlayıcısı kapatıldı
+  @Cron('0 */15 * * * *', { name: 'tsoft-order-sync' })
   async runOrderSync(): Promise<void> {
     const orgs = await this.listEnabledTsoftOrgs();
     for (const org of orgs) {

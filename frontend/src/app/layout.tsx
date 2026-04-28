@@ -12,9 +12,9 @@ export const metadata: Metadata = {
   },
   description: 'WhatsApp CRM & Müşteri Yönetim Sistemi',
   icons: {
-    icon: '/favicon.ico',
-    shortcut: '/favicon.ico',
-    apple: '/favicon.ico',
+    icon: '/logo.svg',
+    shortcut: '/logo.svg',
+    apple: '/logo.svg',
   },
 };
 

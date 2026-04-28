@@ -39,6 +39,9 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { PrismaService } from '../prisma/prisma.service';
 import { MessageDirection, MessageStatus } from '@prisma/client';
+import { existsSync, readFileSync } from 'fs';
+import { extname, join } from 'path';
+import { lookup } from 'mime-types';
 
 @ApiTags('Conversations')
 @ApiBearerAuth()
@@ -1159,6 +1162,21 @@ export class ConversationsController {
     const sessionName = (sourceConv as any).session?.name;
     if (!sessionName) throw new NotFoundException('Oturum bulunamadı');
 
+    const sourceMessage = await this.prisma.message.findUnique({
+      where: { id: body.messageId },
+      select: {
+        id: true,
+        conversationId: true,
+        body: true,
+        mediaUrl: true,
+        mediaType: true,
+        mediaMimeType: true,
+      },
+    });
+    if (!sourceMessage || sourceMessage.conversationId !== conversationId) {
+      throw new NotFoundException('İletilecek mesaj bulunamadı');
+    }
+
     const results: Array<{ conversationId: string; success: boolean; error?: string }> = [];
 
     for (const toConvId of body.toConversationIds) {
@@ -1173,7 +1191,40 @@ export class ConversationsController {
         }
 
         const toChatId = `${targetContact.phone}@c.us`;
-        await this.wahaService.forwardMessage(sessionName, body.messageId, toChatId);
+        try {
+          await this.wahaService.forwardMessage(sessionName, body.messageId, toChatId);
+        } catch (err: any) {
+          // GOWS motorunda /forwardMessage yok: metni normal mesaj olarak ilet.
+          const status = Number(err?.response?.status || 0);
+          const raw = String(
+            err?.response?.data?.message ||
+              err?.response?.data?.error ||
+              err?.message ||
+              '',
+          ).toLowerCase();
+          const notImplemented =
+            status === 501 ||
+            raw.includes('not implemented') ||
+            raw.includes('method is not implemented') ||
+            raw.includes('gows');
+          if (!notImplemented) throw err;
+
+          const fallbackText = String(sourceMessage.body || '').trim();
+          if (fallbackText) {
+            await this.wahaService.sendText(sessionName, toChatId, fallbackText);
+          } else {
+            const forwardedAsMedia = await this.forwardAsMediaFallback(
+              sessionName,
+              toChatId,
+              sourceMessage,
+            );
+            if (!forwardedAsMedia) {
+              throw new Error(
+                'Bu WAHA motorunda bu mesaj tipi iletilemiyor (forward desteklenmiyor)',
+              );
+            }
+          }
+        }
         results.push({ conversationId: toConvId, success: true });
       } catch (err: any) {
         results.push({ conversationId: toConvId, success: false, error: err.message });
@@ -1181,5 +1232,66 @@ export class ConversationsController {
     }
 
     return { results };
+  }
+
+  private async forwardAsMediaFallback(
+    sessionName: string,
+    toChatId: string,
+    sourceMessage: {
+      mediaUrl: string | null;
+      mediaType: any;
+      mediaMimeType: string | null;
+    },
+  ): Promise<boolean> {
+    const mediaUrl = String(sourceMessage.mediaUrl || '').trim();
+    if (!mediaUrl) return false;
+
+    let buffer: Buffer | null = null;
+    let mime = String(sourceMessage.mediaMimeType || '').trim();
+    let filename = `forwarded-${Date.now()}`;
+
+    const uploadPath = this.resolveUploadPath(mediaUrl);
+    if (uploadPath && existsSync(uploadPath)) {
+      buffer = readFileSync(uploadPath);
+      filename = uploadPath.split(/[\\/]/).pop() || filename;
+      if (!mime) mime = ((lookup(extname(uploadPath)) as string) || '').trim();
+    } else {
+      const downloaded = await this.wahaService.downloadMediaBuffer(mediaUrl);
+      if (downloaded) {
+        buffer = downloaded;
+        const tail = mediaUrl.split('?')[0].split('/').pop();
+        if (tail) filename = tail;
+      }
+    }
+
+    if (!buffer) return false;
+    if (!mime) mime = 'application/octet-stream';
+
+    if (String(sourceMessage.mediaType || '').toUpperCase() === 'IMAGE' || mime.startsWith('image/')) {
+      await this.wahaService.sendImage(
+        sessionName,
+        toChatId,
+        { mimetype: mime, data: buffer.toString('base64'), filename },
+        '',
+      );
+      return true;
+    }
+
+    await this.wahaService.sendFile(
+      sessionName,
+      toChatId,
+      { mimetype: mime, data: buffer.toString('base64'), filename },
+      '',
+    );
+    return true;
+  }
+
+  private resolveUploadPath(mediaUrl: string): string | null {
+    const marker = '/uploads/';
+    const idx = mediaUrl.indexOf(marker);
+    if (idx < 0) return null;
+    const rel = mediaUrl.slice(idx + marker.length).split('?')[0];
+    if (!rel) return null;
+    return join(process.cwd(), 'uploads', rel);
   }
 }

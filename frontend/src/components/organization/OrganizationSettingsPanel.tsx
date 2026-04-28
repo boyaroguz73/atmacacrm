@@ -63,6 +63,8 @@ export default function OrganizationSettingsPanel({
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploadingLogo, setUploadingLogo] = useState(false);
+  const [opResetPassword, setOpResetPassword] = useState('');
+  const [opResetRunning, setOpResetRunning] = useState(false);
 
   const [name, setName] = useState('');
   const [primaryColor, setPrimaryColor] = useState('#25D366');
@@ -329,6 +331,32 @@ export default function OrganizationSettingsPanel({
     }
   };
 
+  const handleOperationalReset = async () => {
+    if (!opResetPassword.trim()) {
+      toast.error('Şifre zorunlu');
+      return;
+    }
+    const ok = window.confirm(
+      'Bu işlem teklifleri, siparişleri, görev/takvim kayıtlarını sıfırlar ve 0415/0456/0440 eşleştirmesine göre konuşma atamalarını yeniden uygular. Devam edilsin mi?',
+    );
+    if (!ok) return;
+
+    setOpResetRunning(true);
+    try {
+      const { data } = await api.post('/organizations/my/reset-operational-data', {
+        password: opResetPassword,
+      });
+      setOpResetPassword('');
+      toast.success(
+        `Sıfırlama tamamlandı · Teklif: ${data?.reset?.quotes ?? 0}, Sipariş: ${data?.reset?.orders ?? 0}, Görev: ${data?.reset?.tasks ?? 0}`,
+      );
+    } catch (err: any) {
+      toast.error(getApiErrorMessage(err, 'İşlem başarısız'));
+    } finally {
+      setOpResetRunning(false);
+    }
+  };
+
   const toggleMenuKey = (key: string) => {
     setMenuSelections((prev) => {
       const cur = new Set(prev[menuTab]);
@@ -444,6 +472,39 @@ export default function OrganizationSettingsPanel({
                   {planInfo.label}
                 </span>
               </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-white border border-red-200 rounded-xl p-5">
+        <div className="flex items-start gap-3">
+          <div className="w-10 h-10 rounded-xl bg-red-50 flex items-center justify-center shrink-0">
+            <Shield className="w-5 h-5 text-red-600" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <h2 className="text-lg font-semibold text-red-700">Operasyonel Sıfırlama</h2>
+            <p className="text-xs text-gray-600 mt-1 leading-relaxed">
+              Bu işlem <span className="font-semibold">teklifleri, siparişleri, görev/takvim kayıtlarını</span> temizler
+              ve konuşma atamalarını şu eşleştirmeye göre tekrar uygular: 0415 → Umeyma, 0456 → Betül, 0440 → Sümeyye.
+            </p>
+            <div className="mt-4 flex flex-col sm:flex-row gap-2 sm:items-center">
+              <input
+                type="password"
+                value={opResetPassword}
+                onChange={(e) => setOpResetPassword(e.target.value)}
+                placeholder="Onay şifresi"
+                className="w-full sm:w-64 px-3 py-2 border border-red-200 rounded-lg text-sm focus:outline-none focus:border-red-400 focus:ring-1 focus:ring-red-100"
+              />
+              <button
+                type="button"
+                onClick={handleOperationalReset}
+                disabled={opResetRunning || !opResetPassword.trim()}
+                className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-red-600 text-white rounded-lg text-sm font-semibold hover:bg-red-700 transition-colors disabled:opacity-50"
+              >
+                {opResetRunning ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                Sıfırla ve Eşleştirmeyi Çalıştır
+              </button>
             </div>
           </div>
         </div>

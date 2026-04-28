@@ -33,11 +33,13 @@ interface ProductHit {
   id: string;
   sku: string;
   name: string;
+  property2?: string | null;
   unitPrice: number;
   salePriceAmount?: number | null;
   vatRate: number;
   imageUrl?: string | null;
   priceIncludesVat?: boolean;
+  metadata?: unknown;
 }
 
 interface SupplierHit {
@@ -101,6 +103,16 @@ function emptyLine(): LocalLineItem {
 
 function fmt(amount: number) {
   return new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY' }).format(amount);
+}
+
+function productProperty2Text(p: ProductHit): string {
+  if (typeof p.property2 === 'string' && p.property2.trim()) return p.property2.trim();
+  const meta =
+    p.metadata && typeof p.metadata === 'object' && !Array.isArray(p.metadata)
+      ? (p.metadata as Record<string, unknown>)
+      : null;
+  const v = meta?.Property2 ?? meta?.property2;
+  return typeof v === 'string' ? v.trim() : '';
 }
 
 export default function NewOrderPage() {
@@ -492,6 +504,9 @@ export default function NewOrderPage() {
                   </div>
                   <div>
                     <div className="text-sm text-gray-900">{p.name}</div>
+                    {productProperty2Text(p) ? (
+                      <div className="text-[11px] text-gray-500">{productProperty2Text(p)}</div>
+                    ) : null}
                     <div className="text-xs text-gray-400 flex items-center gap-1.5 flex-wrap">
                       <span>{p.sku || 'SKU yok'}</span>
                       {p.salePriceAmount != null && p.salePriceAmount > 0 ? (

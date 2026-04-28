@@ -147,6 +147,63 @@ export class AutoReplyService {
     return this.update(id, { isActive: !flow.isActive }, userId);
   }
 
+  /**
+   * Hazır akış: Sepet terk durumunda 12 saat bekle, sipariş tamamlanmadıysa hatırlatma gönder.
+   * İkinci çağrılarda aynı isimdeki akışı güncelleyerek idempotent çalışır.
+   */
+  async ensureCartAbandonPreset(
+    userId: string,
+    organizationId?: string,
+  ) {
+    const name = 'Hazır • Sepet Terk Hatırlatma (12 Saat)';
+    const payload = {
+      name,
+      description:
+        'T-Soft sepet terk siparişlerinde 12 saat sonra sipariş hâlâ tamamlanmadıysa şablon hatırlatma mesajı gönderir.',
+      trigger: 'order_status',
+      conditions: {
+        statuses: ['AWAITING_CHECKOUT'],
+      },
+      steps: [
+        {
+          id: 'wait-12h',
+          type: 'wait',
+          data: { hours: 12 },
+        },
+        {
+          id: 'check-order-still-open',
+          type: 'condition',
+          data: {
+            field: 'order_status_not_in',
+            statuses: ['COMPLETED', 'CANCELLED', 'SHIPPED'],
+          },
+        },
+        {
+          id: 'send-reminder',
+          type: 'send_message',
+          data: {
+            sentKey: 'cart_abandon_reminder_sent',
+            message:
+              'Merhaba, sepetinizde bekleyen ürünleriniz var. Dilerseniz siparişinizi şimdi tamamlayabilirsiniz. Yardımcı olmamı ister misiniz?',
+          },
+        },
+      ] as FlowStep[],
+      isActive: true,
+    };
+
+    if (!organizationId) {
+      throw new NotFoundException('Organizasyon bulunamadı');
+    }
+    const existing = await this.prisma.autoReplyFlow.findFirst({
+      where: { organizationId, name },
+      orderBy: { createdAt: 'asc' },
+    });
+    if (!existing) {
+      return this.create(payload, userId, organizationId);
+    }
+    return this.update(existing.id, payload, userId);
+  }
+
   matchesTrigger(
     flow: { trigger: string; conditions: any },
     messageBody: string,
