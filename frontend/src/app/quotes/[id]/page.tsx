@@ -39,6 +39,13 @@ function toDateInputValue(iso: string | null | undefined): string {
   return d.toISOString().slice(0, 10);
 }
 
+function formatSelectedDateLabel(value: string, prefix: string): string {
+  if (!value) return prefix;
+  const d = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return prefix;
+  return `${prefix}: ${d.toLocaleDateString('tr-TR')}`;
+}
+
 /** HTML editörden gelen değeri kontrol eder; boşsa null döner */
 function stripHtmlEmpty(html: string | undefined | null): string | null {
   if (!html) return null;
@@ -1054,20 +1061,6 @@ export default function QuoteDetailPage() {
               {showOptionalDetails && (
                 <div className="p-4 pt-0 grid sm:grid-cols-2 gap-4 border-t border-gray-100">
                   <div>
-                    <label className="block text-xs font-semibold text-gray-500 mb-1">Genel indirim tipi</label>
-                    <select value={discountType} onChange={(e) => setDiscountType(e.target.value as DiscountType)}
-                      className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:border-whatsapp">
-                      <option value="PERCENT">Yüzde (%)</option>
-                      <option value="AMOUNT">Tutar ({currency === 'TRY' ? 'TL' : currency})</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-500 mb-1">Genel indirim değeri</label>
-                    <input type="number" min={0} step={0.01} value={discountValue}
-                      onChange={(e) => setDiscountValue(parseFloat(e.target.value) || 0)}
-                      className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-whatsapp tabular-nums" />
-                  </div>
-                  <div>
                     <label className="block text-xs font-semibold text-gray-500 mb-1">Para birimi</label>
                     <select value={currency} onChange={(e) => setCurrency(e.target.value)}
                       className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:border-whatsapp">
@@ -1084,16 +1077,6 @@ export default function QuoteDetailPage() {
                       <option value="QUOTE">Satış teklifi</option>
                     </select>
                   </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-500 mb-1">Geçerlilik tarihi</label>
-                    <input type="date" value={validUntil} onChange={(e) => setValidUntil(e.target.value)}
-                      className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-whatsapp" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-500 mb-1">Teslimat tarihi</label>
-                    <input type="date" value={deliveryDate} onChange={(e) => setDeliveryDate(e.target.value)}
-                      className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-whatsapp" />
-                  </div>
                   <div className="sm:col-span-2">
                     <label className="block text-xs font-semibold text-gray-500 mb-1">Ödeme Koşulları (bu teklife özel)</label>
                     <HtmlEditor value={termsOverride} onChange={setTermsOverride} placeholder="Bu teklifte PDF'e basılacak ödeme koşulları…" minHeight="96px" />
@@ -1109,6 +1092,47 @@ export default function QuoteDetailPage() {
 
           {/* Sağ sidebar */}
           <aside className="w-full xl:w-[320px] xl:sticky xl:top-6 space-y-4">
+            <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-4 space-y-2">
+              <select
+                value={discountType}
+                onChange={(e) => setDiscountType(e.target.value as DiscountType)}
+                className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:border-whatsapp"
+              >
+                <option value="PERCENT">Genel indirim tipi: Yüzde (%)</option>
+                <option value="AMOUNT">Genel indirim tipi: Tutar ({currency === 'TRY' ? 'TL' : currency})</option>
+              </select>
+              <input
+                type="number"
+                min={0}
+                step={0.01}
+                value={discountValue}
+                onChange={(e) => setDiscountValue(parseFloat(e.target.value) || 0)}
+                placeholder="Genel indirim değeri"
+                className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-whatsapp tabular-nums"
+              />
+              <div className="relative">
+                <div className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-700 bg-white">
+                  {formatSelectedDateLabel(validUntil, 'Geçerlilik tarihi')}
+                </div>
+                <input
+                  type="date"
+                  value={validUntil}
+                  onChange={(e) => setValidUntil(e.target.value)}
+                  className="absolute inset-0 opacity-0 cursor-pointer"
+                />
+              </div>
+              <div className="relative">
+                <div className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-700 bg-white">
+                  {formatSelectedDateLabel(deliveryDate, 'Teslim tarihi')}
+                </div>
+                <input
+                  type="date"
+                  value={deliveryDate}
+                  onChange={(e) => setDeliveryDate(e.target.value)}
+                  className="absolute inset-0 opacity-0 cursor-pointer"
+                />
+              </div>
+            </div>
             <div className="bg-gradient-to-b from-green-50/80 to-white rounded-2xl border border-green-100 shadow-md p-5 space-y-4">
               <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wide text-whatsapp">Özet</h3>
               <dl className="space-y-3 text-sm">
