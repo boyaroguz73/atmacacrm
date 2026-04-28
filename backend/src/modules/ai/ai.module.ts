@@ -9,7 +9,7 @@ import { WahaModule } from '../waha/waha.module';
 import { MessagesModule } from '../messages/messages.module';
 
 @Module({
-  imports: [PrismaModule, forwardRef(() => WahaModule), MessagesModule],
+  imports: [PrismaModule, forwardRef(() => WahaModule), forwardRef(() => MessagesModule)],
   controllers: [AiController],
   providers: [AiService, AiEngineService, AiLearningService, AiIntentRouterService],
   exports: [AiService, AiEngineService, AiLearningService, AiIntentRouterService],
