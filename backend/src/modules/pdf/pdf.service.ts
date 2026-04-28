@@ -588,12 +588,6 @@ export class PdfService {
         if (data.contactCompany) { leftY += txt(this.t(data.contactCompany), leftX, leftY, { size: 8, width: leftW, lineBreak: true }) + 2; }
         if (data.contactPhone)   { leftY += txt(`Tel: ${data.contactPhone}`, leftX, leftY, { size: 8, width: leftW, lineBreak: true }) + 2; }
         if (data.contactEmail)   { leftY += txt(`E: ${data.contactEmail}`, leftX, leftY, { size: 8, width: leftW, lineBreak: true }) + 2; }
-        if (data.contactTaxOffice || data.contactTaxNumber) {
-          leftY += txt(`VD: ${this.t(data.contactTaxOffice || '')}  VN: ${data.contactTaxNumber || ''}`, leftX, leftY, { size: 8, width: leftW, lineBreak: true }) + 2;
-        }
-        if (data.contactIdentityNumber) {
-          leftY += txt(`TC: ${data.contactIdentityNumber}`, leftX, leftY, { size: 8, width: leftW, lineBreak: true }) + 2;
-        }
         if (data.createdByName) {
           leftY += txt(`${this.t('Temsilci')}: ${this.t(data.createdByName)}`, leftX, leftY, { size: 8, bold: true, color: primary, width: leftW, lineBreak: true }) + 2;
         }
@@ -609,6 +603,12 @@ export class PdfService {
           rightY += txt(this.t(data.contactAddress), rightX, rightY, { size: 8, width: rightW, lineBreak: true }) + 2;
         } else {
           rightY += txt('-', rightX, rightY, { size: 8, width: rightW, lineBreak: true }) + 2;
+        }
+        if (data.contactTaxOffice || data.contactTaxNumber) {
+          rightY += txt(`VD: ${this.t(data.contactTaxOffice || '')}  VN: ${data.contactTaxNumber || ''}`, rightX, rightY, { size: 8, width: rightW, lineBreak: true }) + 2;
+        }
+        if (data.contactIdentityNumber) {
+          rightY += txt(`TC: ${data.contactIdentityNumber}`, rightX, rightY, { size: 8, width: rightW, lineBreak: true }) + 2;
         }
 
         startY = Math.max(leftY, rightY);
@@ -995,8 +995,9 @@ export class PdfService {
           const textH = Math.max(h1, h2);
           const blockH = Math.max(textH, qrSize);
           const approxTitle = 16;
-          const bankWithSignatureReserve = approxTitle + blockH + 24 + (settings.showSignatureArea ? 72 : 0);
-          ensureSpace(bankWithSignatureReserve, signatureBottomPad);
+          // Imza icin alt pad zaten ayrildigindan burada ekstra agresif rezerv
+          // kullanmiyoruz; sadece banka/QR blogu sigmiyorsa yeni sayfaya geciyoruz.
+          ensureSpace(approxTitle + blockH + 24, signatureBottomPad);
 
           rowY += txt(this.t('Banka Bilgileri:'), ML, rowY, { size: 8.5, bold: true, width: PW, lineBreak: true }) + 2;
           const yBank = rowY;
