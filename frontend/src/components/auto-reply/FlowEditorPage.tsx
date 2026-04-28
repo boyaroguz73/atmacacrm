@@ -58,6 +58,7 @@ const ORDER_STATUS_OPTIONS = [
   { value: 'AWAITING_CHECKOUT', label: 'Sepet Terk (Henüz Tamamlanmadı)' },
   { value: 'AWAITING_PAYMENT', label: 'Ödeme Bekleniyor' },
   { value: 'PREPARING', label: 'Ürün Hazırlanıyor' },
+  { value: 'READY_TO_SHIP', label: 'Gönderime Hazır' },
   { value: 'SHIPPED', label: 'Kargoya Verildi' },
   { value: 'COMPLETED', label: 'Tamamlandı' },
   { value: 'CANCELLED', label: 'İptal / İade' },

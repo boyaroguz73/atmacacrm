@@ -462,7 +462,7 @@ export default function ContactPanel({
                           <input type="text" value={editData.district} onChange={(e) => setEditData((d) => ({ ...d, district: e.target.value }))} placeholder="İlçe" className={inputCls} />
                         )}
                       </div>
-                      <textarea value={editData.address} onChange={(e) => setEditData((d) => ({ ...d, address: e.target.value }))} placeholder="Açık adres" rows={2} className={`${inputCls} mt-1.5 resize-none`} />
+                      <textarea value={editData.address} onChange={(e) => setEditData((d) => ({ ...d, address: e.target.value }))} placeholder="Sevkiyat adresi" rows={2} className={`${inputCls} mt-1.5 resize-none`} />
                     </div>
 
                     {/* Sevk Adresi */}
@@ -475,7 +475,7 @@ export default function ContactPanel({
                     <div>
                       <p className={labelCls}>Fatura / Firma</p>
                       <div className="mt-1 space-y-1.5">
-                        <textarea value={editData.billingAddress} onChange={(e) => setEditData((d) => ({ ...d, billingAddress: e.target.value }))} placeholder="Fatura adresi (boşsa genel adres)" rows={2} className={`${inputCls} resize-none`} />
+                        <textarea value={editData.billingAddress} onChange={(e) => setEditData((d) => ({ ...d, billingAddress: e.target.value }))} placeholder="Fatura adresi (boşsa sevkiyat adresi)" rows={2} className={`${inputCls} resize-none`} />
                         <input type="email" value={editData.billingEmail} onChange={(e) => setEditData((d) => ({ ...d, billingEmail: e.target.value }))} placeholder="Fatura e-posta" className={inputCls} />
                         <input type="text" value={editData.taxOffice} onChange={(e) => setEditData((d) => ({ ...d, taxOffice: e.target.value }))} placeholder="Vergi dairesi" className={inputCls} />
                         <div className="grid grid-cols-2 gap-1.5">

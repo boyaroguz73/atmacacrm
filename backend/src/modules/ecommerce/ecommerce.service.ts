@@ -597,6 +597,48 @@ export class EcommerceService {
   }
 
   /**
+   * Kişiyle daha önce konuşan/atanan temsilciyi bulur.
+   * Öncelik:
+   * 1) Kişiyle yapılan son giden mesajın temsilcisi (AGENT)
+   * 2) Kişinin konuşmalarındaki aktif atama (AGENT)
+   */
+  private async resolveExistingAgentForContact(
+    organizationId: string,
+    contactId: string,
+  ): Promise<string | null> {
+    const latestAgentMessage = await this.prisma.message.findFirst({
+      where: {
+        conversation: { contactId },
+        direction: 'OUTGOING',
+        sentById: { not: null },
+        sentBy: {
+          role: 'AGENT',
+          isActive: true,
+          organizationId,
+        },
+      },
+      orderBy: { timestamp: 'desc' },
+      select: { sentById: true },
+    });
+    if (latestAgentMessage?.sentById) return latestAgentMessage.sentById;
+
+    const activeAssignment = await this.prisma.assignment.findFirst({
+      where: {
+        unassignedAt: null,
+        conversation: { contactId },
+        user: {
+          role: 'AGENT',
+          isActive: true,
+          organizationId,
+        },
+      },
+      orderBy: [{ conversation: { lastMessageAt: 'desc' } }, { assignedAt: 'desc' }],
+      select: { userId: true },
+    });
+    return activeAssignment?.userId ?? null;
+  }
+
+  /**
    * T-Soft siparişlerini çeker ve CRM SalesOrder tablosuna yazar.
    * - Normal siparişler (son 30 gün)
    * - Sepet terk siparişler (orderStatusId=1, 'Henüz Tamamlanmadı')
@@ -840,8 +882,13 @@ export class EcommerceService {
         }
         const validDate = Number.isFinite(parsedDate.getTime()) ? parsedDate : new Date();
 
-        // Round-robin: atanacak AGENT seç (bulunamazsa senkronu başlatan kullanıcı)
-        const assignedUserId = (await this.pickNextAgentRoundRobin(organizationId)) ?? userId;
+        // Öncelik: bu kişiyle zaten konuşan/atanmış AGENT varsa ona ata.
+        // Yoksa round-robin, o da yoksa senkronu başlatan kullanıcı.
+        const existingAgentId = await this.resolveExistingAgentForContact(organizationId, contact.id);
+        const assignedUserId =
+          existingAgentId ||
+          (await this.pickNextAgentRoundRobin(organizationId)) ||
+          userId;
 
         const newOrder = await this.prisma.salesOrder.create({
           data: {

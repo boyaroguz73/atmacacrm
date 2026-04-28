@@ -1305,6 +1305,31 @@ export default function OrganizationSettingsPanel({
                   />
                 </button>
               </div>
+              <div className="flex items-center justify-between gap-3 rounded-lg border border-gray-200 bg-gray-50/60 px-3 py-2.5">
+                <label className="text-xs font-medium text-gray-700">Yetkili İmza Alanı Göster</label>
+                <button
+                  onClick={async () => {
+                    const current = pdfSettings.find((s) => s.key === 'pdf_show_authorized_signature')?.value !== 'false';
+                    try {
+                      const next = current ? 'false' : 'true';
+                      await api.patch('/system-settings', { key: 'pdf_show_authorized_signature', value: next });
+                      upsertPdfSetting('pdf_show_authorized_signature', next);
+                      toast.success('Güncellendi');
+                    } catch {
+                      toast.error('Güncellenemedi');
+                    }
+                  }}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                    pdfSettings.find((s) => s.key === 'pdf_show_authorized_signature')?.value !== 'false' ? 'bg-whatsapp' : 'bg-gray-200'
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                      pdfSettings.find((s) => s.key === 'pdf_show_authorized_signature')?.value !== 'false' ? 'translate-x-6' : 'translate-x-1'
+                    }`}
+                  />
+                </button>
+              </div>
             </div>
           </div>
         </div>

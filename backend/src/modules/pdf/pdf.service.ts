@@ -25,6 +25,7 @@ interface PdfSettings {
   footerNote: string;
   primaryColor: string;
   showSignatureArea: boolean;
+  showAuthorizedSignature: boolean;
   currencySymbolPosition: 'before' | 'after';
 }
 
@@ -316,6 +317,7 @@ export class PdfService {
       footerNote: m.get('pdf_footer_note') || '',
       primaryColor: m.get('pdf_primary_color') || '#1a7a4a',
       showSignatureArea: m.get('pdf_show_signature') !== 'false',
+      showAuthorizedSignature: m.get('pdf_show_authorized_signature') !== 'false',
       currencySymbolPosition: (m.get('pdf_currency_position') as any) || 'after',
     };
   }
@@ -605,13 +607,13 @@ export class PdfService {
         // Header row
         doc.rect(ML, tableY, PW, HEADER_H).fill(primary);
         let colX = ML;
-        cols.forEach((col) => {
+        cols.forEach((col, colIdx) => {
           txt(col.label, colX + 3, tableY + 5, {
             size: 7.5,
             bold: true,
             color: '#ffffff',
             width: col.w - 6,
-            align: 'center',
+            align: colIdx === 1 ? 'left' : (colIdx === 4 ? 'right' : 'center'),
           });
           colX += col.w;
         });
@@ -625,9 +627,12 @@ export class PdfService {
             ? String((item as LineItem).lineDetail).trim()
             : '';
 
+          // Ürün görselini %15 büyüt.
+          const imageScale = 1.15;
           // Kalem satırı yüksekliği: ürün adı + renk/kumaş & ölçü (çok satır) — sabit 16px taşmayı önler
-          const thumb = 22;
-          const namePadSoft = imgBuf ? 26 + 8 : 4;
+          const thumb = Math.round(22 * imageScale);
+          const thumbSz = Math.round(26 * imageScale);
+          const namePadSoft = imgBuf ? thumbSz + 8 : 4;
           const namePadDefault = imgBuf ? thumb + 8 : 6;
           const nameWSoft = cols[1].w - namePadSoft - 4;
           const nameWDefault = cols[1].w - namePadDefault - 3;
@@ -674,7 +679,6 @@ export class PdfService {
             doc.text(String(idx + 1), rx, rowY + 8, { width: cols[0].w - 4, align: 'center', lineBreak: false });
             rx += cols[0].w;
             const nameColLeft = rx;
-            const thumbSz = 26;
             const namePad = imgBuf ? thumbSz + 8 : 4;
             if (imgBuf) {
               try {
@@ -702,7 +706,7 @@ export class PdfService {
             B(); doc.fillColor(primary);
             doc.text((item.unitPrice * item.quantity).toFixed(2), rx, rowY + 10, {
               width: cols[4].w - 6,
-              align: 'center',
+              align: 'right',
               lineBreak: false,
             });
             rowY += itemH + 6;
@@ -731,21 +735,21 @@ export class PdfService {
             const contentStartY = rowY + Math.max(4, (rowHDefault - stackedHeight) / 2);
             doc.text(this.t(item.name), nameColX + pad, contentStartY, {
               width: nameBlockWidth,
-              align: 'center',
+              align: 'left',
               lineBreak: true,
             });
             if (lineDetailRaw) {
               doc.fontSize(7).fillColor('#444444');
               doc.text(this.t(lineDetailRaw), nameColX + pad, contentStartY + nameHeight + 2, {
                 width: detailBlockWidth,
-                align: 'center',
+                align: 'left',
                 lineBreak: true,
               });
             }
             rx += cols[1].w;
             txt(String(item.quantity), rx + 3, rowY + 6, { size: 8, width: cols[2].w - 6, align: 'center' }); rx += cols[2].w;
             txt(item.unitPrice.toFixed(2), rx + 3, rowY + 6, { size: 8, width: cols[3].w - 6, align: 'center' }); rx += cols[3].w;
-            txt((item.unitPrice * item.quantity).toFixed(2), rx + 3, rowY + 6, { size: 8, width: cols[4].w - 6, align: 'center' });
+            txt((item.unitPrice * item.quantity).toFixed(2), rx + 3, rowY + 6, { size: 8, width: cols[4].w - 6, align: 'right' });
             rowY += rowHDefault;
           }
         });
@@ -753,6 +757,17 @@ export class PdfService {
         // Table bottom line
         doc.moveTo(ML, rowY).lineTo(ML + PW, rowY).lineWidth(0.5).strokeColor('#cccccc').stroke();
         rowY += 12;
+
+        const drawPageTop = () => {
+          doc.addPage({ margin: 0 });
+          doc.rect(0, 0, doc.page.width, 8).fill(primary);
+          rowY = 28;
+        };
+        const signatureBottomPad = settings.showSignatureArea ? 92 : 56;
+        const ensureSpace = (neededHeight: number, bottomPad = signatureBottomPad) => {
+          if (rowY + neededHeight <= PAGE_H - bottomPad) return;
+          drawPageTop();
+        };
 
         // ── SUMMARY ──────────────────────────────────────────────────────
         const sumX = ML + PW - 220;
@@ -786,6 +801,27 @@ export class PdfService {
           singleVatPercent != null
             ? `KDV Tutari (%${singleVatPercent}):`
             : 'KDV Tutari:';
+        // Toplamlar bloğunu tek parça gibi ele al: altta kesilme/taşma olmasın.
+        const estimateSumRowHeight = (label: string, value: string, bold = false) => {
+          R();
+          doc.fontSize(9);
+          const lh = doc.heightOfString(this.t(label), { width: lblW });
+          const rh = doc.heightOfString(value, { width: valW, align: 'right' });
+          return Math.max(lh, rh, 11) + 6 + (bold ? 0 : 0);
+        };
+        const summaryNeeded =
+          estimateSumRowHeight('Ara Tutar (KDV haric):', fmtMoney(hasGeneralDiscount ? subBeforeDiscount : subEx)) +
+          (hasGeneralDiscount
+            ? estimateSumRowHeight('Iskontolu Ara Tutar (KDV haric):', fmtMoney(subEx), true)
+            : 0) +
+          estimateSumRowHeight(kdvLabel, fmtMoney(vatAmt)) +
+          // genel toplam kutusu + blok sonrası boşluk
+          (Math.max(
+            doc.heightOfString(this.t('GENEL TOPLAM (KDV dahil):'), { width: lblW }),
+            doc.heightOfString(fmtMoney(data.grandTotal), { width: valW, align: 'right' }),
+            12,
+          ) + 16 + 10);
+        ensureSpace(summaryNeeded + 4);
         rowY += sumRow(this.t(kdvLabel), fmtMoney(vatAmt), rowY);
 
         // Genel toplam kutusu: sabit 22px yerine etiket+tutar yüksekliğine göre
@@ -814,19 +850,15 @@ export class PdfService {
           : settings.footerNote;
         const termsText = this.htmlToPlainText(rawTermsSource);
         const footerNoteText = this.htmlToPlainText(rawFooterSource);
-        const ensureSpace = (neededHeight: number) => {
-          if (rowY + neededHeight <= PAGE_H - 95) return;
-          doc.addPage({ margin: 0 });
-          doc.rect(0, 0, doc.page.width, 8).fill(primary);
-          rowY = 28;
-        };
         if (data.notes) {
           const notesRaw = data.notes;
           const notesPlain = this.htmlToPlainText(notesRaw);
           R(); doc.fontSize(8).fillColor('#444');
           const h = doc.heightOfString(this.t(notesPlain), { width: PW }) + 8;
-          ensureSpace(h);
+          ensureSpace(h + 8);
           if (String(notesRaw).includes('<')) {
+            const estimated = Math.max(h * 1.25, 24);
+            ensureSpace(estimated + 8);
             rowY += richTxt(String(notesRaw), ML, rowY, { width: PW, size: 8, color: '#444' }) + 6;
           } else {
             doc.text(this.t(notesPlain), ML, rowY, { width: PW, lineBreak: true });
@@ -847,19 +879,24 @@ export class PdfService {
           rowY += 6;
           R(); doc.fontSize(7.5).fillColor('#333333');
           const termsBlockWidth = PW;
-          const paragraphs = this.t(termsText).split(/\n{2,}/);
-          for (const p of paragraphs) {
-            const block = p.replace(/\n/g, ' \n');
-            const hBlock = doc.heightOfString(block, { width: termsBlockWidth }) + 3;
-            ensureSpace(hBlock + 10);
-            if (String(rawTermsSource).includes('<')) {
-              rowY += richTxt(String(rawTermsSource), ML, rowY, {
-                width: termsBlockWidth,
-                size: 7.5,
-                color: '#333333',
-              }) + 3;
-              break;
-            } else {
+          const termsIsHtml = String(rawTermsSource).includes('<');
+          if (termsIsHtml) {
+            const estimated = Math.max(
+              doc.heightOfString(this.t(termsText), { width: termsBlockWidth }) * 1.3,
+              28,
+            );
+            ensureSpace(estimated + 14);
+            rowY += richTxt(String(rawTermsSource), ML, rowY, {
+              width: termsBlockWidth,
+              size: 7.5,
+              color: '#333333',
+            }) + 3;
+          } else {
+            const paragraphs = this.t(termsText).split(/\n{2,}/);
+            for (const p of paragraphs) {
+              const block = p.replace(/\n/g, ' \n');
+              const hBlock = doc.heightOfString(block, { width: termsBlockWidth }) + 3;
+              ensureSpace(hBlock + 10);
               doc.text(block, ML, rowY, { width: termsBlockWidth, lineBreak: true });
               rowY += hBlock + 3;
             }
@@ -869,8 +906,10 @@ export class PdfService {
         if (footerNoteText) {
           R(); doc.fontSize(8).fillColor('#444');
           const h = doc.heightOfString(this.t(footerNoteText), { width: PW }) + 8;
-          ensureSpace(h);
+          ensureSpace(h + 8);
           if (String(rawFooterSource).includes('<')) {
+            const estimated = Math.max(h * 1.25, 24);
+            ensureSpace(estimated + 10);
             rowY += richTxt(String(rawFooterSource), ML, rowY, {
               width: PW,
               size: 8,
@@ -899,11 +938,7 @@ export class PdfService {
           const textH = Math.max(h1, h2);
           const blockH = Math.max(textH, qrSize);
           const approxTitle = 16;
-          if (rowY + approxTitle + blockH + 24 > PAGE_H - 95) {
-            doc.addPage({ margin: 0 });
-            doc.rect(0, 0, doc.page.width, 8).fill(primary);
-            rowY = 28;
-          }
+          ensureSpace(approxTitle + blockH + 24);
 
           rowY += txt(this.t('Banka Bilgileri:'), ML, rowY, { size: 8.5, bold: true, width: PW, lineBreak: true }) + 2;
           const yBank = rowY;
@@ -932,10 +967,13 @@ export class PdfService {
 
         // ── SIGNATURE ────────────────────────────────────────────────────
         if (settings.showSignatureArea) {
+          ensureSpace(72, 92);
           const sigY = Math.max(rowY + 10, PAGE_H - 100);
           if (sigY < PAGE_H - 30) {
-            doc.moveTo(ML, sigY).lineTo(ML + 150, sigY).lineWidth(0.4).strokeColor('#aaaaaa').stroke();
-            txt(this.t('Yetkili Imza / Kase'), ML, sigY + 4, { size: 8, color: '#666' });
+            if (settings.showAuthorizedSignature) {
+              doc.moveTo(ML, sigY).lineTo(ML + 150, sigY).lineWidth(0.4).strokeColor('#aaaaaa').stroke();
+              txt(this.t('Yetkili Imza / Kase'), ML, sigY + 4, { size: 8, color: '#666' });
+            }
             doc.moveTo(ML + PW - 150, sigY).lineTo(ML + PW, sigY).lineWidth(0.4).strokeColor('#aaaaaa').stroke();
             txt(this.t('Musteri Imza / Kase'), ML + PW - 150, sigY + 4, { size: 8, color: '#666' });
           }

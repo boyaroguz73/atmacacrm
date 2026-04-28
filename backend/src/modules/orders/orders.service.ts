@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { PdfService } from '../pdf/pdf.service';
-import { OrderStatus, DiscountType } from '@prisma/client';
+import { OrderStatus, DiscountType, LeadStatus } from '@prisma/client';
 import { splitSearchTokens } from '../../common/search-tokens';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { TsoftApiService } from '../ecommerce/tsoft-api.service';
@@ -259,7 +259,7 @@ export class OrdersService {
   ) {
     const order = await this.prisma.salesOrder.findUnique({
       where: { id: orderId },
-      select: { id: true, orderNumber: true, grandTotal: true },
+      select: { id: true, orderNumber: true, grandTotal: true, status: true },
     });
     if (!order) throw new NotFoundException('Sipariş bulunamadı');
 
@@ -288,7 +288,7 @@ export class OrdersService {
       }
     }
 
-    return this.prisma.cashBookEntry.create({
+    const created = await this.prisma.cashBookEntry.create({
       data: {
         userId,
         orderId,
@@ -301,6 +301,23 @@ export class OrdersService {
       },
       include: { user: { select: { id: true, name: true } } },
     });
+
+    // Siparişe tahsilat eklendiğinde otomatik "Hazırlanıyor" durumuna geçir.
+    if (
+      direction === 'INCOME' &&
+      order.status !== OrderStatus.PREPARING &&
+      order.status !== OrderStatus.READY_TO_SHIP &&
+      order.status !== OrderStatus.SHIPPED &&
+      order.status !== OrderStatus.COMPLETED &&
+      order.status !== OrderStatus.CANCELLED
+    ) {
+      await this.prisma.salesOrder.update({
+        where: { id: orderId },
+        data: { status: OrderStatus.PREPARING },
+      });
+    }
+
+    return created;
   }
 
   /**
@@ -443,6 +460,27 @@ export class OrdersService {
       },
       include: this.includeRelations,
     });
+
+    // Sipariş oluştuğunda müşteri durumu otomatik "Kazanıldı" (WON) olsun.
+    try {
+      const lead = await this.prisma.lead.findUnique({
+        where: { contactId: data.contactId },
+        select: { id: true, status: true },
+      });
+      if (!lead) {
+        await this.prisma.lead.create({
+          data: { contactId: data.contactId, status: LeadStatus.WON, closedAt: new Date() },
+        });
+      } else if (lead.status !== LeadStatus.WON) {
+        await this.prisma.lead.update({
+          where: { id: lead.id },
+          data: { status: LeadStatus.WON, closedAt: new Date(), lossReason: null },
+        });
+      }
+    } catch (e: any) {
+      this.logger.warn(`Sipariş sonrası lead WON güncellemesi başarısız: ${e?.message || e}`);
+    }
+
     this.auditLog.log({
       userId,
       action: 'CREATE',

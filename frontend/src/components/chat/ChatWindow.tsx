@@ -73,6 +73,34 @@ function isLikelyEncodedPayload(text: string): boolean {
   return /^[A-Za-z0-9+/=\s]+$/.test(s) && !/\s{2,}/.test(s.slice(0, 300));
 }
 
+function jidToPhone(raw?: string | null): string {
+  const v = String(raw || '').trim();
+  if (!v) return '';
+  const base = v.includes('@') ? v.split('@')[0] : v;
+  const digits = base.replace(/\D/g, '');
+  return digits;
+}
+
+function groupSenderLabel(msg: Message, isOutgoing: boolean): string {
+  const participantName = String(msg.participantName || '').trim();
+  if (participantName) return participantName;
+
+  const meta = (msg.metadata || {}) as Record<string, unknown>;
+  const metaName =
+    String(meta.participantName || meta.senderName || meta.pushName || meta.notifyName || '').trim();
+  if (metaName) return metaName;
+
+  const phoneRaw =
+    String(msg.participantPhone || meta.participantPhone || meta.senderPhone || meta.author || '').trim();
+  const phoneDigits = jidToPhone(phoneRaw);
+  if (phoneDigits) return formatPhone(phoneDigits);
+
+  const agentName = String(msg.sentBy?.name || '').trim();
+  if (agentName) return agentName;
+
+  return isOutgoing ? 'Siz' : 'Katılımcı';
+}
+
 function dayKey(input: string | Date): string {
   const d = new Date(input);
   return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
@@ -1415,9 +1443,7 @@ export default function ChatWindow({ onMobileBack }: ChatWindowProps) {
                       {/* Grup: her mesajda gönderen (giden: Siz / temsilci) */}
                       {activeConversation?.isGroup && (
                         <div className="text-xs font-semibold text-green-600 mb-1 truncate">
-                          {isOutgoing
-                            ? (msg.participantName || msg.sentBy?.name || 'Siz')
-                            : (msg.participantName || formatPhone(msg.participantPhone) || msg.sentBy?.name || 'Katılımcı')}
+                          {groupSenderLabel(msg, isOutgoing)}
                         </div>
                       )}
                       {/* Bire bir: aynı müşteriye birden fazla temsilci yazabildiği için gönderen adı */}

@@ -36,7 +36,7 @@ import { QuoteEmbeddedChat } from '@/components/quotes/QuoteEmbeddedChat';
 import PanelEditedBadge from '@/components/ui/PanelEditedBadge';
 import SiteOrderDetailsPanel from '@/components/orders/SiteOrderDetailsPanel';
 
-type OrderStatus = 'AWAITING_CHECKOUT' | 'AWAITING_PAYMENT' | 'PREPARING' | 'SHIPPED' | 'COMPLETED' | 'CANCELLED';
+type OrderStatus = 'AWAITING_CHECKOUT' | 'AWAITING_PAYMENT' | 'PREPARING' | 'READY_TO_SHIP' | 'SHIPPED' | 'COMPLETED' | 'CANCELLED';
 
 interface OrderItemRow {
   id: string;
@@ -174,6 +174,7 @@ const STATUS_LABELS: Record<OrderStatus, string> = {
   AWAITING_CHECKOUT: 'Sepet Terk',
   AWAITING_PAYMENT: 'Ödeme Bekleniyor',
   PREPARING: 'Hazırlanıyor',
+  READY_TO_SHIP: 'Gönderime Hazır',
   SHIPPED: 'Kargoda',
   COMPLETED: 'Tamamlandı',
   CANCELLED: 'İptal',
@@ -284,9 +285,9 @@ export default function OrderDetailPage() {
   const [payOccurredAt, setPayOccurredAt] = useState('');
   const [chatOpen, setChatOpen] = useState(true);
 
-  const fetchOrder = async () => {
+  const fetchOrder = async (silent = false) => {
     if (!orderId) return;
-    setLoading(true);
+    if (!silent) setLoading(true);
     try {
       const { data } = await api.get<SalesOrder>(`/orders/${orderId}`);
       setOrder(data);
@@ -294,7 +295,7 @@ export default function OrderDetailPage() {
       toast.error(getApiErrorMessage(err, 'Sipariş detayı alınamadı'));
       router.push('/orders');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
@@ -355,8 +356,8 @@ export default function OrderDetailPage() {
     if (!order) return;
     setStatusSaving(true);
     try {
-      const { data } = await api.patch<SalesOrder>(`/orders/${order.id}/status`, { status });
-      setOrder(data);
+      await api.patch<SalesOrder>(`/orders/${order.id}/status`, { status });
+      await fetchOrder(true);
       toast.success('Durum güncellendi');
     } catch (err) {
       toast.error(getApiErrorMessage(err, 'Durum güncellenemedi'));
@@ -822,21 +823,6 @@ export default function OrderDetailPage() {
                                       />
                                     ) : (
                                       <p className="text-sm text-gray-800 text-right tabular-nums">{formatMoney(item.unitPrice, order.currency)}</p>
-                                    )}
-                                  </div>
-                                  <div className="col-span-2">
-                                    <label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide block mb-1">Fiyat tipi</label>
-                                    {editable ? (
-                                      <select
-                                        value={d.priceIncludesVat ? 'incl' : 'excl'}
-                                        onChange={(e) => updateLineDraft(item.id, { priceIncludesVat: e.target.value === 'incl' })}
-                                        className="w-full px-2.5 py-1.5 rounded-md border border-gray-200 text-sm bg-white"
-                                      >
-                                        <option value="incl">KDV dahil</option>
-                                        <option value="excl">KDV hariç</option>
-                                      </select>
-                                    ) : (
-                                      <p className="text-sm text-gray-800">{item.priceIncludesVat !== false ? 'KDV dahil' : 'KDV hariç'}</p>
                                     )}
                                   </div>
                                 </div>

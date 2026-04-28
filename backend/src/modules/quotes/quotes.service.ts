@@ -66,6 +66,10 @@ export class QuotesService {
     return `${fmt(from)} - ${fmt(to)}`;
   }
 
+  private defaultValidUntilDate(baseDate: Date = new Date()): Date {
+    return this.addBusinessDays(baseDate, 5);
+  }
+
   /**
    * Satır indirimi sonrası KDV hariç tutar ve KDV dahil brüt (genel iskonto öncesi).
    * Birim fiyat: priceIncludesVat true ise KDV dahil, false ise KDV hariç.
@@ -267,6 +271,11 @@ export class QuotesService {
       data.discountValue || 0,
     );
 
+    const validUntilDate =
+      data.validUntil && String(data.validUntil).trim() !== ''
+        ? new Date(data.validUntil)
+        : this.defaultValidUntilDate();
+
     const quote = await this.prisma.quote.create({
       data: {
         contactId: data.contactId,
@@ -278,7 +287,7 @@ export class QuotesService {
         subtotal: totals.subtotal,
         vatTotal: totals.vatTotal,
         grandTotal: totals.grandTotal,
-        validUntil: data.validUntil ? new Date(data.validUntil) : null,
+        validUntil: validUntilDate,
         deliveryDate: data.deliveryDate ? new Date(data.deliveryDate) : null,
         notes: data.notes,
         termsOverride:
@@ -483,7 +492,7 @@ export class QuotesService {
     if ('validUntil' in data) {
       const v = data.validUntil;
       patch.validUntil =
-        v == null || String(v).trim() === '' ? null : new Date(String(v));
+        v == null || String(v).trim() === '' ? this.defaultValidUntilDate() : new Date(String(v));
     }
     if ('deliveryDate' in data) {
       const v = data.deliveryDate;
@@ -763,6 +772,31 @@ export class QuotesService {
     }
 
     await this.updateStatus(id, { status: QuoteStatus.SENT });
+
+    // Teklif gönderildiğinde kişi durumunu otomatik "Teklif Gönderildi" yap
+    try {
+      const lead = await this.prisma.lead.findUnique({
+        where: { contactId: c.id },
+        select: { id: true, status: true },
+      });
+
+      if (!lead) {
+        await this.prisma.lead.create({
+          data: {
+            contactId: c.id,
+            status: LeadStatus.OFFER_SENT,
+          },
+        });
+      } else if (lead.status !== LeadStatus.WON && lead.status !== LeadStatus.LOST && lead.status !== LeadStatus.OFFER_SENT) {
+        await this.prisma.lead.update({
+          where: { id: lead.id },
+          data: { status: LeadStatus.OFFER_SENT },
+        });
+      }
+    } catch (err: any) {
+      this.logger.warn(`Teklif gönderimi sonrası lead durumu güncellenemedi: ${err.message}`);
+    }
+
     return { message: 'Teklif gönderildi', pdfUrl };
   }
 
@@ -895,6 +929,26 @@ export class QuotesService {
         quote: { select: { id: true, quoteNumber: true } },
       },
     });
+
+    // Teklif siparişe çevrilince müşteri durumu otomatik "Kazanıldı" (WON) olsun.
+    try {
+      const lead = await this.prisma.lead.findUnique({
+        where: { contactId: quote.contactId },
+        select: { id: true, status: true },
+      });
+      if (!lead) {
+        await this.prisma.lead.create({
+          data: { contactId: quote.contactId, status: LeadStatus.WON, closedAt: new Date() },
+        });
+      } else if (lead.status !== LeadStatus.WON) {
+        await this.prisma.lead.update({
+          where: { id: lead.id },
+          data: { status: LeadStatus.WON, closedAt: new Date(), lossReason: null },
+        });
+      }
+    } catch (err: any) {
+      this.logger.warn(`Teklif->sipariş sonrası lead WON güncellemesi başarısız: ${err?.message || err}`);
+    }
 
     try {
       const orgId = (quote as any)?.contact?.organizationId as string | undefined;

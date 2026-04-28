@@ -175,7 +175,7 @@ export class AutoReplyService {
           type: 'condition',
           data: {
             field: 'order_status_not_in',
-            statuses: ['COMPLETED', 'CANCELLED', 'SHIPPED'],
+            statuses: ['COMPLETED', 'CANCELLED', 'READY_TO_SHIP', 'SHIPPED'],
           },
         },
         {

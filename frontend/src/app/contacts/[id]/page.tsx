@@ -412,7 +412,7 @@ export default function ContactDetailPage() {
                   </div>
                   <label className="block">
                     <span className="text-xs text-gray-500 flex items-center gap-1">
-                      <MapPin className="w-3 h-3" /> Açık adres
+                      <MapPin className="w-3 h-3" /> Sevkiyat adresi
                     </span>
                     <textarea
                       rows={3}
@@ -427,7 +427,7 @@ export default function ContactDetailPage() {
                     <textarea
                       rows={3}
                       className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-lg resize-y"
-                      placeholder="Boşsa açık adres kullanılır"
+                      placeholder="Boşsa sevkiyat adresi kullanılır"
                       value={editData.billingAddress}
                       onChange={(e) => setEditData((d) => ({ ...d, billingAddress: e.target.value }))}
                     />
@@ -782,6 +782,7 @@ export default function ContactDetailPage() {
                       o.status === 'COMPLETED' ? 'bg-green-50 text-green-700'
                         : o.status === 'CANCELLED' ? 'bg-red-50 text-red-600'
                         : o.status === 'PREPARING' ? 'bg-yellow-50 text-yellow-700'
+                        : o.status === 'READY_TO_SHIP' ? 'bg-cyan-50 text-cyan-700'
                         : o.status === 'SHIPPED' ? 'bg-blue-50 text-blue-600'
                         : o.status === 'AWAITING_CHECKOUT' ? 'bg-orange-50 text-orange-600'
                         : 'bg-gray-50 text-gray-600'
@@ -789,6 +790,7 @@ export default function ContactDetailPage() {
                       {o.status === 'AWAITING_PAYMENT' ? 'Ödeme Bekl.'
                         : o.status === 'AWAITING_CHECKOUT' ? 'Sepet Terk'
                         : o.status === 'PREPARING' ? 'Hazırlanıyor'
+                        : o.status === 'READY_TO_SHIP' ? 'Gönderime Hazır'
                         : o.status === 'SHIPPED' ? 'Kargoda'
                         : o.status === 'COMPLETED' ? 'Tamamlandı'
                         : o.status === 'CANCELLED' ? 'İptal' : o.status}

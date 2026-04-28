@@ -20,6 +20,7 @@ import {
   Search,
   Package,
   Upload,
+  Eye,
   Edit3,
   Save,
   ChevronDown,
@@ -65,7 +66,8 @@ interface LocalLineItem {
   productVariantId?: string;
   lineImageUrl?: string;
   name: string;
-  description?: string;
+  /** Sadece önizleme içindir, teklife kaydedilmez */
+  previewDescription?: string;
   colorFabricInfo?: string;
   measurementInfo?: string;
   quantity: number;
@@ -262,6 +264,8 @@ export default function QuoteDetailPage() {
   const productDebounceRef = useRef<ReturnType<typeof setTimeout>>();
   const productSearchSeqRef = useRef(0);
   const [uploadingLineKey, setUploadingLineKey] = useState<string | null>(null);
+  const [expandedLineKey, setExpandedLineKey] = useState<string | null>(null);
+  const [descriptionPreview, setDescriptionPreview] = useState<{ title: string; html: string } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -296,7 +300,7 @@ export default function QuoteDetailPage() {
     }[];
   } | null>(null);
 
-  const [showOptionalDetails, setShowOptionalDetails] = useState(true);
+  const [showOptionalDetails, setShowOptionalDetails] = useState(false);
   // Accept modal
   const [chatOpen, setChatOpen] = useState(true);
   const [showAcceptModal, setShowAcceptModal] = useState(false);
@@ -344,16 +348,16 @@ export default function QuoteDetailPage() {
         productVariantId: it.productVariantId || undefined,
         lineImageUrl: it.lineImageUrl || undefined,
         name: String(it.name || ''),
-        description: it.description || undefined,
+        previewDescription: it.description || undefined,
         colorFabricInfo: it.colorFabricInfo != null ? String(it.colorFabricInfo) : '',
         measurementInfo: it.measurementInfo != null ? String(it.measurementInfo) : '',
         quantity: Math.max(1, Math.round(Number(it.quantity || 1))),
         unitPrice: Number(it.unitPrice || 0),
         vatRate: Math.round(Number(it.vatRate ?? 20)),
         priceIncludesVat: it.priceIncludesVat !== false,
-        applyDiscount: Number(it.discountValue || 0) > 0,
-        discountType: (it.discountType || 'PERCENT') as DiscountType,
-        discountValue: Number(it.discountValue || 0),
+        applyDiscount: false,
+        discountType: 'PERCENT',
+        discountValue: 0,
       })),
     );
     setDiscountType((q.discountType || 'PERCENT') as DiscountType);
@@ -462,26 +466,38 @@ export default function QuoteDetailPage() {
           ? p.priceIncludesVat
           : true;
 
-    setLines((prev) => [
-      ...prev,
-      {
-        key: genKey(),
-        productId: p.id,
-        productVariantId: variant?.id ?? undefined,
-        lineImageUrl: (variant?.imageUrl && String(variant.imageUrl).trim()) || p.imageUrl || undefined,
-        name: variant ? variant.name : String(p.name ?? ''),
-        description: p.description || undefined,
-        colorFabricInfo: '',
-        measurementInfo: variant?.property2 ?? '',
-        quantity: 1,
-        unitPrice: effectiveUnitPrice,
-        vatRate: effectiveVat,
-        priceIncludesVat: effectivePic,
-        applyDiscount: false,
-        discountType: 'PERCENT',
-        discountValue: 0,
-      },
-    ]);
+    const newKey = genKey();
+    let targetKey = newKey;
+    const nextLine: LocalLineItem = {
+      key: newKey,
+      productId: p.id,
+      productVariantId: variant?.id ?? undefined,
+      lineImageUrl: (variant?.imageUrl && String(variant.imageUrl).trim()) || p.imageUrl || undefined,
+      name: variant ? variant.name : String(p.name ?? ''),
+      previewDescription: p.description || undefined,
+      colorFabricInfo: '',
+      measurementInfo: variant?.property2 ?? '',
+      quantity: 1,
+      unitPrice: effectiveUnitPrice,
+      vatRate: effectiveVat,
+      priceIncludesVat: effectivePic,
+      applyDiscount: false,
+      discountType: 'PERCENT',
+      discountValue: 0,
+    };
+    setLines((prev) => {
+      const first = prev[0];
+      const canReplaceFirst =
+        prev.length === 1 &&
+        first &&
+        !first.productId &&
+        !first.productVariantId &&
+        !String(first.name || '').trim();
+      if (!canReplaceFirst) return [...prev, nextLine];
+      targetKey = first.key;
+      return [{ ...nextLine, key: first.key }];
+    });
+    setExpandedLineKey(targetKey);
     toast.success(salePrice != null ? 'Ürün indirimli fiyatla eklendi' : 'Ürün satıra eklendi');
   };
 
@@ -566,13 +582,12 @@ export default function QuoteDetailPage() {
           productVariantId: l.productVariantId || undefined,
           lineImageUrl: l.lineImageUrl?.trim() || undefined,
           name: String(l.name ?? '').trim(),
-          description: l.description || undefined,
           quantity: l.quantity,
           unitPrice: l.unitPrice,
           vatRate: Math.round(l.vatRate),
           priceIncludesVat: l.priceIncludesVat,
-          discountType: l.discountType,
-          discountValue: l.applyDiscount ? (l.discountValue || 0) : 0,
+          discountType: 'PERCENT',
+          discountValue: 0,
           colorFabricInfo: String(l.colorFabricInfo ?? '').trim() || null,
           measurementInfo: String(l.measurementInfo ?? '').trim() || null,
         })),
@@ -765,6 +780,32 @@ export default function QuoteDetailPage() {
             </div>
           </div>
         )}
+        {descriptionPreview && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/45">
+            <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col">
+              <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+                <div>
+                  <h3 className="text-base font-bold text-gray-900">Ürün açıklaması</h3>
+                  <p className="text-xs text-gray-500 mt-0.5 line-clamp-1">{descriptionPreview.title}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setDescriptionPreview(null)}
+                  className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500"
+                  aria-label="Kapat"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="p-5 overflow-y-auto">
+                <div
+                  className="prose prose-sm max-w-none text-gray-700 prose-p:my-2 prose-ul:my-2 prose-ol:my-2"
+                  dangerouslySetInnerHTML={{ __html: descriptionPreview.html }}
+                />
+              </div>
+            </div>
+          </div>
+        )}
         <div className="flex items-center gap-4 mb-8 rounded-2xl border border-gray-100 bg-white/90 shadow-sm px-4 py-4 md:px-6">
           <button
             type="button"
@@ -792,8 +833,7 @@ export default function QuoteDetailPage() {
 
         <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_320px] gap-6 items-start">
           <div className="min-w-0 space-y-5">
-            {/* Ürün arama */}
-            <section className="bg-white rounded-xl border border-gray-100 shadow-sm p-5 space-y-3">
+            <section className="bg-white rounded-xl border border-gray-100 shadow-sm p-4 space-y-3">
               <h2 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
                 <Package className="w-4 h-4 text-whatsapp" />
                 Ürün ekle
@@ -819,64 +859,134 @@ export default function QuoteDetailPage() {
                         className="w-full text-left px-4 py-2.5 hover:bg-green-50/60 border-b border-gray-50 last:border-0"
                       >
                         <p className="text-sm font-medium text-gray-900">{p.name}</p>
-                      {productProperty2Text(p) ? (
-                        <p className="text-[11px] text-gray-500 mt-0.5">{productProperty2Text(p)}</p>
-                      ) : null}
+                        {productProperty2Text(p) ? (
+                          <p className="text-[11px] text-gray-500 mt-0.5">{productProperty2Text(p)}</p>
+                        ) : null}
                       </button>
                     ))}
                   </div>
                 )}
               </div>
-            </section>
-
-            {/* Satırlar */}
-            <section className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-              <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
-                <h2 className="text-sm font-semibold text-gray-900">Kalemler</h2>
-                <button
-                  type="button"
-                  onClick={() => setLines((p) => [...p, emptyLine(defaultVatRate)])}
-                  className="text-xs font-semibold text-whatsapp hover:text-green-700"
-                >
-                  + Boş satır
-                </button>
+              <div className="grid grid-cols-[minmax(0,1fr)_80px_140px_140px_40px] gap-2 px-3 pb-1">
+                <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide">Ürün</span>
+                <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide text-right">Adet</span>
+                <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide text-right">Birim fiyat</span>
+                <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide text-right">Toplam (KDV hariç)</span>
+                <span />
               </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs min-w-[900px]">
-                  <thead>
-                    <tr className="bg-gray-50/90 text-gray-500 font-semibold uppercase tracking-wide text-[10px]">
-                      <th className="text-left px-2 py-2 w-20 sm:w-24">Görsel</th>
-                      <th className="text-left px-3 py-2 w-[18%]">Ürün</th>
-                      <th className="text-left px-2 py-2 w-[12%]">Renk/Kumaş</th>
-                      <th className="text-left px-2 py-2 w-[10%]">Ölçü</th>
-                      <th className="text-left px-2 py-2 w-16">Miktar</th>
-                      <th className="text-left px-2 py-2 w-28">Birim fiyat</th>
-                      <th className="text-left px-2 py-2 w-40">Satır indirimi</th>
-                      <th className="text-right px-3 py-2 w-28">Toplam (KDV hariç)</th>
-                      <th className="w-10" />
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
-                    {lines.map((line, idx) => (
-                      <tr key={line.key} className="align-top">
-                        <td className="px-2 py-2 w-16">
-                          <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-lg border border-gray-100 bg-gray-50 overflow-hidden shrink-0">
-                            {line.lineImageUrl ? (
-                              // eslint-disable-next-line @next/next/no-img-element
-                              <img
-                                src={rewriteMediaUrlForClient(line.lineImageUrl)}
-                                alt=""
-                                className="w-full h-full object-cover"
+              <div className="space-y-2">
+                {lines.map((line, idx) => {
+                  const isExpanded = expandedLineKey === line.key;
+                  return (
+                    <div key={line.key} className="rounded-xl border border-gray-100 overflow-hidden">
+                      <div className="grid grid-cols-[minmax(0,1fr)_80px_140px_140px_40px] items-center gap-2 px-3 py-2.5 bg-white">
+                        <button
+                          type="button"
+                          onClick={() => setExpandedLineKey((prev) => (prev === line.key ? null : line.key))}
+                          className="text-left min-w-0"
+                        >
+                          <p className="text-sm font-semibold text-gray-900 truncate">
+                            {line.name?.trim() || `Kalem ${idx + 1}`}
+                          </p>
+                          <p className="text-[11px] text-gray-500 truncate">
+                            {[line.measurementInfo?.trim(), line.colorFabricInfo?.trim()]
+                              .filter(Boolean)
+                              .join(' · ') || '—'}
+                          </p>
+                        </button>
+                        <input
+                          type="number"
+                          min={1}
+                          step={1}
+                          value={line.quantity}
+                          onChange={(e) =>
+                            updateLine(line.key, {
+                              quantity: Math.max(1, parseInt(e.target.value, 10) || 1),
+                            })
+                          }
+                          className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm text-right tabular-nums"
+                        />
+                        <input
+                          type="number"
+                          min={0}
+                          step={0.01}
+                          value={line.unitPrice}
+                          onChange={(e) => updateLine(line.key, { unitPrice: parseFloat(e.target.value) || 0 })}
+                          className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm text-right tabular-nums"
+                        />
+                        <div className="text-right tabular-nums">
+                          <p className="text-sm font-bold text-gray-800">{sym}{fmtNum(totals.lineExTotals[idx] ?? 0)}</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => removeLine(line.key)}
+                          className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg"
+                          title="Satırı sil"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                      {isExpanded && (
+                        <div className="px-3 pb-3 pt-2 border-t border-gray-100 bg-gray-50/60 space-y-3">
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            <label className="block">
+                              <span className="text-xs text-gray-500">Ürün adı</span>
+                              <input
+                                value={line.name}
+                                onChange={(e) => updateLine(line.key, { name: e.target.value })}
+                                placeholder="Ürün adı"
+                                className="mt-1 w-full px-2.5 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-whatsapp bg-white"
                               />
-                            ) : (
-                              <span className="flex w-full h-full items-center justify-center text-[9px] text-gray-300">
-                                —
-                              </span>
-                            )}
+                            </label>
+                            <div className="block">
+                              <span className="text-xs text-gray-500">Açıklama</span>
+                              {line.previewDescription?.trim() ? (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setDescriptionPreview({
+                                      title: String(line.name || `Kalem ${idx + 1}`),
+                                      html: String(line.previewDescription),
+                                    })
+                                  }
+                                  className="mt-1 inline-flex items-center gap-1 text-[11px] font-medium text-whatsapp hover:text-green-700"
+                                >
+                                  <Eye className="w-3.5 h-3.5" />
+                                  Açıklamayı gör
+                                </button>
+                              ) : (
+                                <p className="mt-1 text-[11px] text-gray-400">Açıklama yok</p>
+                              )}
+                              <p className="mt-1 text-[10px] text-gray-400">
+                                Bu açıklama teklife yazılmaz, yalnızca sizin görmeniz için gösterilir.
+                              </p>
+                            </div>
+                            <label className="block">
+                              <span className="text-xs text-gray-500">Renk / kumaş</span>
+                              <input
+                                value={line.colorFabricInfo ?? ''}
+                                onChange={(e) => updateLine(line.key, { colorFabricInfo: e.target.value })}
+                                placeholder="Örn. krem"
+                                className="mt-1 w-full px-2.5 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-whatsapp bg-white"
+                              />
+                            </label>
+                            <label className="block">
+                              <span className="text-xs text-gray-500">Ölçü</span>
+                              <input
+                                value={line.measurementInfo ?? ''}
+                                onChange={(e) => updateLine(line.key, { measurementInfo: e.target.value })}
+                                placeholder="Örn. 180x200"
+                                className="mt-1 w-full px-2.5 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-whatsapp bg-white"
+                              />
+                            </label>
                           </div>
-                          <div className="mt-1 flex items-center gap-1">
-                            <label className="inline-flex items-center gap-1 px-1.5 py-0.5 border border-gray-200 rounded text-[10px] text-gray-700 cursor-pointer hover:bg-gray-50">
-                              {uploadingLineKey === line.key ? <Loader2 className="w-3 h-3 animate-spin" /> : <Upload className="w-3 h-3" />}
+                          <div className="flex items-center gap-2">
+                            <label className="inline-flex items-center gap-1.5 px-2 py-1 border border-gray-200 rounded text-xs text-gray-700 cursor-pointer hover:bg-white bg-white">
+                              {uploadingLineKey === line.key ? (
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              ) : (
+                                <Upload className="w-3.5 h-3.5" />
+                              )}
                               Görsel yükle
                               <input
                                 type="file"
@@ -890,136 +1000,38 @@ export default function QuoteDetailPage() {
                                 }}
                               />
                             </label>
-                            {line.lineImageUrl && (
-                              <button
-                                type="button"
-                                onClick={() => updateLine(line.key, { lineImageUrl: undefined })}
-                                className="px-1.5 py-0.5 border border-gray-200 rounded text-[10px] text-gray-600 hover:bg-gray-50"
-                              >
-                                Temizle
-                              </button>
-                            )}
+                            {line.lineImageUrl ? (
+                              <>
+                                <div className="w-10 h-10 rounded border border-gray-200 overflow-hidden bg-white">
+                                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                                  <img
+                                    src={rewriteMediaUrlForClient(line.lineImageUrl)}
+                                    alt=""
+                                    className="w-full h-full object-cover"
+                                  />
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => updateLine(line.key, { lineImageUrl: undefined })}
+                                  className="px-2 py-1 border border-gray-200 rounded text-xs text-gray-600 hover:bg-white"
+                                >
+                                  Temizle
+                                </button>
+                              </>
+                            ) : null}
                           </div>
-                        </td>
-                        <td className="px-3 py-2">
-                          <input
-                            value={line.name}
-                            onChange={(e) => updateLine(line.key, { name: e.target.value })}
-                            placeholder="Ürün adı"
-                            className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-whatsapp"
-                          />
-                        </td>
-                        <td className="px-2 py-2">
-                          <input
-                            value={line.colorFabricInfo ?? ''}
-                            onChange={(e) =>
-                              updateLine(line.key, { colorFabricInfo: e.target.value })
-                            }
-                            placeholder="Renk/kumaş"
-                            className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-whatsapp"
-                          />
-                        </td>
-                        <td className="px-2 py-2">
-                          <input
-                            value={line.measurementInfo ?? ''}
-                            onChange={(e) => updateLine(line.key, { measurementInfo: e.target.value })}
-                            placeholder="Örn. 180×200"
-                            className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-whatsapp"
-                          />
-                        </td>
-                        <td className="px-2 py-2">
-                          <input
-                            type="number"
-                            min={0.01}
-                            step={0.01}
-                            value={line.quantity}
-                            onChange={(e) =>
-                              updateLine(line.key, { quantity: parseFloat(e.target.value) || 0 })
-                            }
-                            className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm tabular-nums"
-                          />
-                        </td>
-                        <td className="px-2 py-2">
-                          <div className="flex flex-col gap-1">
-                            <input
-                              type="number"
-                              min={0}
-                              step={0.01}
-                              value={line.unitPrice}
-                              onChange={(e) =>
-                                updateLine(line.key, { unitPrice: parseFloat(e.target.value) || 0 })
-                              }
-                              className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm tabular-nums"
-                            />
-                            <span className="text-[10px] text-gray-400 px-0.5">
-                              {line.priceIncludesVat ? 'KDV dahil' : 'KDV hariç'} · %{line.vatRate}
-                            </span>
-                          </div>
-                        </td>
-                        <td className="px-2 py-2">
-                        <div className="flex flex-col gap-1.5 min-w-0">
-                          <label className="inline-flex items-center gap-2 text-[11px] font-medium text-gray-700">
-                            <input
-                              type="checkbox"
-                              checked={line.applyDiscount}
-                              onChange={(e) =>
-                                updateLine(line.key, {
-                                  applyDiscount: e.target.checked,
-                                  ...(e.target.checked ? {} : { discountValue: 0, discountType: 'PERCENT' }),
-                                })
-                              }
-                              className="rounded border-gray-300 text-whatsapp focus:ring-whatsapp shrink-0"
-                            />
-                            İndirim uygula
-                          </label>
-                          {line.applyDiscount ? (
-                            <div className="flex gap-1 items-center">
-                              <select
-                                value={line.discountType}
-                                onChange={(e) =>
-                                  updateLine(line.key, {
-                                    discountType: e.target.value as DiscountType,
-                                  })
-                                }
-                                className="w-14 shrink-0 px-1 py-1 border border-gray-200 rounded-lg text-[11px] font-medium bg-white"
-                              >
-                                <option value="PERCENT">%</option>
-                                <option value="AMOUNT">TL</option>
-                              </select>
-                              <input
-                                type="number"
-                                min={0}
-                                step={0.01}
-                                value={line.discountValue}
-                                onChange={(e) =>
-                                  updateLine(line.key, {
-                                    discountValue: parseFloat(e.target.value) || 0,
-                                  })
-                                }
-                                className="min-w-0 flex-1 px-2 py-1 border border-gray-200 rounded-lg text-sm tabular-nums"
-                              />
-                            </div>
-                          ) : null}
                         </div>
-                        </td>
-                        <td className="px-3 py-2 text-right text-sm font-semibold text-gray-800 tabular-nums">
-                          {sym}
-                          {fmtNum(totals.lineExTotals[idx] ?? 0)}
-                        </td>
-                        <td className="px-1 py-2 text-center">
-                          <button
-                            type="button"
-                            onClick={() => removeLine(line.key)}
-                            className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg"
-                            title="Satırı sil"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                      )}
+                    </div>
+                  );
+                })}
+                <button
+                  type="button"
+                  onClick={() => setLines((p) => [...p, emptyLine(defaultVatRate)])}
+                  className="w-full border border-dashed border-gray-300 rounded-xl py-2.5 text-xs font-semibold text-gray-600 hover:bg-gray-50"
+                >
+                  + Boş satır ekle
+                </button>
               </div>
             </section>
 
@@ -1081,10 +1093,6 @@ export default function QuoteDetailPage() {
                     <label className="block text-xs font-semibold text-gray-500 mb-1">Teslimat tarihi</label>
                     <input type="date" value={deliveryDate} onChange={(e) => setDeliveryDate(e.target.value)}
                       className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-whatsapp" />
-                  </div>
-                  <div className="sm:col-span-2">
-                    <label className="block text-xs font-semibold text-gray-500 mb-1">Notlar</label>
-                    <HtmlEditor value={notes} onChange={setNotes} placeholder="Teklif ile ilgili notlar…" minHeight="80px" />
                   </div>
                   <div className="sm:col-span-2">
                     <label className="block text-xs font-semibold text-gray-500 mb-1">Ödeme Koşulları (bu teklife özel)</label>

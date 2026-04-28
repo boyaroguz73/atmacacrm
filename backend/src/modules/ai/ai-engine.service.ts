@@ -27,6 +27,17 @@ interface ScrapedProduct {
 export class AiEngineService {
   private readonly logger = new Logger(AiEngineService.name);
 
+  private addBusinessDays(startDate: Date, businessDays: number): Date {
+    const d = new Date(startDate);
+    let added = 0;
+    while (added < businessDays) {
+      d.setDate(d.getDate() + 1);
+      const day = d.getDay();
+      if (day !== 0 && day !== 6) added += 1;
+    }
+    return d;
+  }
+
   constructor(
     private prisma: PrismaService,
     private waha: WahaService,
@@ -530,6 +541,7 @@ export class AiEngineService {
         subtotal: Math.round(subtotal * 100) / 100,
         vatTotal: Math.round(vatTotal * 100) / 100,
         grandTotal,
+        validUntil: this.addBusinessDays(new Date(), 5),
         notes: args.note ?? null,
         items: {
           create: lineItems.map((li) => ({
@@ -603,6 +615,26 @@ export class AiEngineService {
       },
       select: { id: true, orderNumber: true, grandTotal: true },
     });
+
+    // AI sipariş oluşturduğunda müşteri durumu otomatik "Kazanıldı" (WON) olsun.
+    try {
+      const lead = await this.prisma.lead.findUnique({
+        where: { contactId: ctx.contactId },
+        select: { id: true, status: true },
+      });
+      if (!lead) {
+        await this.prisma.lead.create({
+          data: { contactId: ctx.contactId, status: 'WON', closedAt: new Date() },
+        });
+      } else if (lead.status !== 'WON') {
+        await this.prisma.lead.update({
+          where: { id: lead.id },
+          data: { status: 'WON', closedAt: new Date(), lossReason: null },
+        });
+      }
+    } catch (err: any) {
+      this.logger.warn(`AI sipariş sonrası lead WON güncellemesi başarısız: ${err?.message || err}`);
+    }
 
     const msg = `✅ Siparişiniz oluşturuldu.\nSipariş No: *#${order.orderNumber}*\nToplam: *${order.grandTotal.toLocaleString('tr-TR')} TRY*`;
     await this.sendWhatsApp(ctx, msg, config);

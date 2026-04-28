@@ -359,7 +359,7 @@ export default function ContactsPage() {
                 </label>
               </div>
               <label className="block text-sm">
-                <span className="text-gray-500 font-medium">Açık adres</span>
+                <span className="text-gray-500 font-medium">Sevkiyat adresi</span>
                 <textarea
                   rows={2}
                   className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl text-sm resize-y"

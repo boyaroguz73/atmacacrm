@@ -22,7 +22,7 @@ import {
 } from 'lucide-react';
 import PanelEditedBadge from '@/components/ui/PanelEditedBadge';
 
-type OrderStatus = 'AWAITING_CHECKOUT' | 'AWAITING_PAYMENT' | 'PREPARING' | 'SHIPPED' | 'COMPLETED' | 'CANCELLED';
+type OrderStatus = 'AWAITING_CHECKOUT' | 'AWAITING_PAYMENT' | 'PREPARING' | 'READY_TO_SHIP' | 'SHIPPED' | 'COMPLETED' | 'CANCELLED';
 
 interface OrderItemRow {
   id: string;
@@ -112,7 +112,7 @@ function cargoFor(o: SalesOrder): string {
 function packagingFor(o: SalesOrder): string {
   const p = siteField(o, 'PackageStatus', 'PackageStatusLabel', 'PackagingStatus');
   if (p) return p;
-  if (o.status === 'SHIPPED' || o.status === 'COMPLETED') return 'Paketlendi';
+  if (o.status === 'READY_TO_SHIP' || o.status === 'SHIPPED' || o.status === 'COMPLETED') return 'Paketlendi';
   return '—';
 }
 
@@ -135,6 +135,7 @@ const STATUS_FILTERS: { value: '' | OrderStatus; label: string }[] = [
   { value: '', label: 'Tümü' },
   { value: 'AWAITING_PAYMENT', label: 'Ödeme Bekleniyor' },
   { value: 'PREPARING', label: 'Hazırlanıyor' },
+  { value: 'READY_TO_SHIP', label: 'Gönderime Hazır' },
   { value: 'SHIPPED', label: 'Kargoda' },
   { value: 'COMPLETED', label: 'Tamamlandı' },
   { value: 'CANCELLED', label: 'İptal' },
@@ -144,6 +145,7 @@ const STATUS_LABELS: Record<OrderStatus, string> = {
   AWAITING_CHECKOUT: 'Sepet Terk',
   AWAITING_PAYMENT: 'Ödeme Bekleniyor',
   PREPARING: 'Hazırlanıyor',
+  READY_TO_SHIP: 'Gönderime Hazır',
   SHIPPED: 'Kargoda',
   COMPLETED: 'Tamamlandı',
   CANCELLED: 'İptal',
@@ -170,6 +172,8 @@ function statusBadgeClass(status: OrderStatus) {
       return 'bg-amber-100 text-amber-900 border border-amber-300';
     case 'PREPARING':
       return 'bg-blue-100 text-blue-900 border border-blue-300';
+    case 'READY_TO_SHIP':
+      return 'bg-cyan-100 text-cyan-900 border border-cyan-300';
     case 'SHIPPED':
       return 'bg-purple-100 text-purple-900 border border-purple-300';
     case 'COMPLETED':

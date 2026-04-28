@@ -344,7 +344,7 @@ export default function NewQuotePage() {
   const [grandTotalOverride, setGrandTotalOverride] = useState<string>('');
   const [submitting, setSubmitting] = useState(false);
   const [showCustomerDetails, setShowCustomerDetails] = useState(false);
-  const [showOptionalDetails, setShowOptionalDetails] = useState(true);
+  const [showOptionalDetails, setShowOptionalDetails] = useState(false);
   const [chatOpen, setChatOpen] = useState(true); // Açık gelsin
   const [expandedLineKey, setExpandedLineKey] = useState<string | null>(null);
   const [descriptionPreview, setDescriptionPreview] = useState<{ title: string; html: string } | null>(null);
@@ -588,28 +588,39 @@ export default function NewQuotePage() {
           : true;
 
     const newKey = genKey();
-    setLines((prev) => [
-      ...prev,
-      {
-        key: newKey,
-        productId: p.id,
-        productVariantId: variant?.id ?? undefined,
-        lineImageUrl: (variant?.imageUrl && String(variant.imageUrl).trim()) || p.imageUrl || undefined,
-        name: variant ? variant.name : String(p.name ?? ''),
-        previewDescription: p.description || undefined,
-        colorFabricInfo: '',
-        measurementInfo: variant?.property2 ?? '',
-        quantity: 1,
-        unitPrice: effectiveUnitPrice,
-        vatRate: effectiveVat,
-        priceIncludesVat: effectivePic,
-        applyDiscount: false,
-        discountType: 'PERCENT',
-        discountValue: 0,
-      },
-    ]);
+    let targetKey = newKey;
+    const nextLine: LocalLineItem = {
+      key: newKey,
+      productId: p.id,
+      productVariantId: variant?.id ?? undefined,
+      lineImageUrl: (variant?.imageUrl && String(variant.imageUrl).trim()) || p.imageUrl || undefined,
+      name: variant ? variant.name : String(p.name ?? ''),
+      previewDescription: p.description || undefined,
+      colorFabricInfo: '',
+      measurementInfo: variant?.property2 ?? '',
+      quantity: 1,
+      unitPrice: effectiveUnitPrice,
+      vatRate: effectiveVat,
+      priceIncludesVat: effectivePic,
+      applyDiscount: false,
+      discountType: 'PERCENT',
+      discountValue: 0,
+    };
+    setLines((prev) => {
+      // İlk satır boşsa yeni satır açmak yerine onu doldur.
+      const first = prev[0];
+      const canReplaceFirst =
+        prev.length === 1 &&
+        first &&
+        !first.productId &&
+        !first.productVariantId &&
+        !String(first.name || '').trim();
+      if (!canReplaceFirst) return [...prev, nextLine];
+      targetKey = first.key;
+      return [{ ...nextLine, key: first.key }];
+    });
     // Ürün eklenince kutusu açık gelsin (ölçü, renk/kumaş alanları görünsün)
-    setExpandedLineKey(newKey);
+    setExpandedLineKey(targetKey);
     toast.success(salePrice != null ? 'Ürün indirimli fiyatla eklendi' : 'Ürün satıra eklendi');
   };
 
@@ -1221,7 +1232,7 @@ export default function NewQuotePage() {
                           />
                         </label>
                         <label className="sm:col-span-2 block">
-                          <span className="text-xs text-gray-500">Açık adres</span>
+                          <span className="text-xs text-gray-500">Sevkiyat adresi</span>
                           <textarea
                             rows={2}
                             className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl resize-y"
@@ -1540,15 +1551,6 @@ export default function NewQuotePage() {
                     value={deliveryDate}
                     onChange={(e) => setDeliveryDate(e.target.value)}
                     className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-whatsapp"
-                  />
-                </div>
-                <div className="sm:col-span-2">
-                  <label className="block text-xs font-semibold text-gray-500 mb-1">Notlar</label>
-                  <HtmlEditor
-                    value={notes}
-                    onChange={setNotes}
-                    placeholder="Teklif ile ilgili notlar…"
-                    minHeight="80px"
                   />
                 </div>
                 <div className="sm:col-span-2">

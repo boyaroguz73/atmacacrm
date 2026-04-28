@@ -246,6 +246,7 @@ const ORDER_STATUS_LABELS: Record<string, string> = {
   AWAITING_CHECKOUT: 'Sepette Bekliyor',
   AWAITING_PAYMENT: 'Ödeme Bekleniyor',
   PREPARING: 'Hazırlanıyor',
+  READY_TO_SHIP: 'Gönderime Hazır',
   SHIPPED: 'Kargoya Verildi',
   COMPLETED: 'Tamamlandı',
   CANCELLED: 'İptal',
