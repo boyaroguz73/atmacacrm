@@ -343,6 +343,8 @@ export default function NewQuotePage() {
   const [currency, setCurrency] = useState('TRY');
   const [validUntil, setValidUntil] = useState('');
   const [deliveryDate, setDeliveryDate] = useState('');
+  const validUntilInputRef = useRef<HTMLInputElement>(null);
+  const deliveryDateInputRef = useRef<HTMLInputElement>(null);
   const [notes, setNotes] = useState('');
   const [termsOverride, setTermsOverride] = useState('');
   const [footerNoteOverride, setFooterNoteOverride] = useState('');
@@ -1573,10 +1575,21 @@ export default function NewQuotePage() {
               className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-whatsapp tabular-nums"
             />
             <div className="relative">
-              <div className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-700 bg-white">
+              <button
+                type="button"
+                onClick={() => {
+                  try {
+                    validUntilInputRef.current?.showPicker?.();
+                  } catch {}
+                  validUntilInputRef.current?.focus();
+                  validUntilInputRef.current?.click();
+                }}
+                className="w-full text-left px-3 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-700 bg-white"
+              >
                 {formatSelectedDateLabel(validUntil, 'Geçerlilik tarihi')}
-              </div>
+              </button>
               <input
+                ref={validUntilInputRef}
                 type="date"
                 value={validUntil}
                 onChange={(e) => setValidUntil(e.target.value)}
@@ -1584,10 +1597,21 @@ export default function NewQuotePage() {
               />
             </div>
             <div className="relative">
-              <div className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-700 bg-white">
+              <button
+                type="button"
+                onClick={() => {
+                  try {
+                    deliveryDateInputRef.current?.showPicker?.();
+                  } catch {}
+                  deliveryDateInputRef.current?.focus();
+                  deliveryDateInputRef.current?.click();
+                }}
+                className="w-full text-left px-3 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-700 bg-white"
+              >
                 {formatSelectedDateLabel(deliveryDate, 'Teslim tarihi')}
-              </div>
+              </button>
               <input
+                ref={deliveryDateInputRef}
                 type="date"
                 value={deliveryDate}
                 onChange={(e) => setDeliveryDate(e.target.value)}
