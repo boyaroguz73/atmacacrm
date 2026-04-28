@@ -1113,47 +1113,37 @@ export default function QuoteDetailPage() {
                 className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-whatsapp tabular-nums"
               />
               <div className="relative">
-                <button
-                  type="button"
-                  onClick={() => {
-                    try {
-                      validUntilInputRef.current?.showPicker?.();
-                    } catch {}
-                    validUntilInputRef.current?.focus();
-                    validUntilInputRef.current?.click();
-                  }}
-                  className="w-full text-left px-3 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-700 bg-white"
-                >
+                <div className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-700 bg-white pointer-events-none">
                   {formatSelectedDateLabel(validUntil, 'Geçerlilik tarihi')}
-                </button>
+                </div>
                 <input
                   ref={validUntilInputRef}
                   type="date"
                   value={validUntil}
                   onChange={(e) => setValidUntil(e.target.value)}
-                  className="absolute inset-0 opacity-0 cursor-pointer"
+                  onClick={(e) => {
+                    try {
+                      (e.currentTarget as HTMLInputElement).showPicker?.();
+                    } catch {}
+                  }}
+                  className="absolute inset-0 opacity-0 cursor-pointer z-10"
                 />
               </div>
               <div className="relative">
-                <button
-                  type="button"
-                  onClick={() => {
-                    try {
-                      deliveryDateInputRef.current?.showPicker?.();
-                    } catch {}
-                    deliveryDateInputRef.current?.focus();
-                    deliveryDateInputRef.current?.click();
-                  }}
-                  className="w-full text-left px-3 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-700 bg-white"
-                >
+                <div className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-700 bg-white pointer-events-none">
                   {formatSelectedDateLabel(deliveryDate, 'Teslim tarihi')}
-                </button>
+                </div>
                 <input
                   ref={deliveryDateInputRef}
                   type="date"
                   value={deliveryDate}
                   onChange={(e) => setDeliveryDate(e.target.value)}
-                  className="absolute inset-0 opacity-0 cursor-pointer"
+                  onClick={(e) => {
+                    try {
+                      (e.currentTarget as HTMLInputElement).showPicker?.();
+                    } catch {}
+                  }}
+                  className="absolute inset-0 opacity-0 cursor-pointer z-10"
                 />
               </div>
             </div>
