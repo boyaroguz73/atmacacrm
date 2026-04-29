@@ -792,25 +792,9 @@ export class PdfService {
           rowY = 28;
         };
         const signatureBottomPad = settings.showSignatureArea ? 92 : 56;
-        // Alt kısımdaki banka/QR + imza blokları için yer rezerve et.
-        // Böylece şartlar/koşullar bu alanı tüketip bu blokları gereksiz şekilde
-        // ikinci sayfaya itmez.
-        let bankTailReserve = 0;
-        if (settings.bankInfo || settings.bank2Info || bankQrBuffer) {
-          const qrSize = bankQrBuffer ? 82 : 0;
-          const qrGap = bankQrBuffer ? 10 : 0;
-          const textW = bankQrBuffer ? Math.max(160, PW - qrSize - qrGap) : PW;
-          const halfW = textW > 20 ? (textW - 10) / 2 : textW;
-          R();
-          doc.fontSize(8).fillColor('#444');
-          const bankH1 = settings.bankInfo ? doc.heightOfString(this.t(settings.bankInfo), { width: halfW }) : 0;
-          const bankH2 = settings.bank2Info ? doc.heightOfString(this.t(settings.bank2Info), { width: halfW }) : 0;
-          const textH = Math.max(bankH1, bankH2);
-          const blockH = Math.max(textH, qrSize);
-          const approxTitle = 16;
-          bankTailReserve = approxTitle + blockH + 24;
-        }
-        const tailReserve = Math.max(signatureBottomPad, bankTailReserve + (settings.showSignatureArea ? 72 : 0));
+        const sigTopGap = 10;
+        const sigBlockH = 20;
+        const sigBottomSafe = 34;
         const ensureSpace = (neededHeight: number, bottomPad = signatureBottomPad) => {
           if (rowY + neededHeight <= PAGE_H - bottomPad) return;
           drawPageTop();
@@ -995,9 +979,10 @@ export class PdfService {
           const textH = Math.max(h1, h2);
           const blockH = Math.max(textH, qrSize);
           const approxTitle = 16;
-          // Imza icin alt pad zaten ayrildigindan burada ekstra agresif rezerv
-          // kullanmiyoruz; sadece banka/QR blogu sigmiyorsa yeni sayfaya geciyoruz.
-          ensureSpace(approxTitle + blockH + 24, signatureBottomPad);
+          const bankSectionHeight = approxTitle + blockH + 10;
+          const signatureReserve = settings.showSignatureArea ? sigTopGap + sigBlockH + 8 : 0;
+          // Mümkün olduğunda banka/QR ve imzayı aynı sayfada tut.
+          ensureSpace(bankSectionHeight + signatureReserve, signatureBottomPad);
 
           rowY += txt(this.t('Banka Bilgileri:'), ML, rowY, { size: 8.5, bold: true, width: PW, lineBreak: true }) + 2;
           const yBank = rowY;
@@ -1026,16 +1011,21 @@ export class PdfService {
 
         // ── SIGNATURE ────────────────────────────────────────────────────
         if (settings.showSignatureArea) {
-          ensureSpace(72, 92);
-          const sigY = Math.max(rowY + 10, PAGE_H - 100);
-          if (sigY < PAGE_H - 30) {
-            if (settings.showAuthorizedSignature) {
-              doc.moveTo(ML, sigY).lineTo(ML + 150, sigY).lineWidth(0.4).strokeColor('#aaaaaa').stroke();
-              txt(this.t('Yetkili Imza / Kase'), ML, sigY + 4, { size: 8, color: '#666' });
-            }
-            doc.moveTo(ML + PW - 150, sigY).lineTo(ML + PW, sigY).lineWidth(0.4).strokeColor('#aaaaaa').stroke();
-            txt(this.t('Musteri Imza / Kase'), ML + PW - 150, sigY + 4, { size: 8, color: '#666' });
+          // İmza sadece gerçekten sığmıyorsa yeni sayfaya alınır.
+          let sigMinY = rowY + sigTopGap;
+          let sigMaxY = PAGE_H - sigBottomSafe - sigBlockH;
+          if (sigMinY > sigMaxY) {
+            drawPageTop();
+            sigMinY = rowY + sigTopGap;
+            sigMaxY = PAGE_H - sigBottomSafe - sigBlockH;
           }
+          const sigY = Math.max(sigMinY, Math.min(PAGE_H - 100, sigMaxY));
+          if (settings.showAuthorizedSignature) {
+            doc.moveTo(ML, sigY).lineTo(ML + 150, sigY).lineWidth(0.4).strokeColor('#aaaaaa').stroke();
+            txt(this.t('Yetkili Imza / Kase'), ML, sigY + 4, { size: 8, color: '#666' });
+          }
+          doc.moveTo(ML + PW - 150, sigY).lineTo(ML + PW, sigY).lineWidth(0.4).strokeColor('#aaaaaa').stroke();
+          txt(this.t('Musteri Imza / Kase'), ML + PW - 150, sigY + 4, { size: 8, color: '#666' });
         }
 
         // ── FOOTER ───────────────────────────────────────────────────────

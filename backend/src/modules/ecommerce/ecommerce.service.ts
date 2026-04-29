@@ -639,6 +639,44 @@ export class EcommerceService {
   }
 
   /**
+   * T-Soft'tan PREPARING gelen siparişlerde tahsilatı "tam ödendi" seviyesine getirir.
+   * Mükerrer kayıt üretmemek için sadece eksik kalan fark kadar INCOME ekler.
+   */
+  private async ensureTsoftPreparingOrderFullyPaid(
+    orderId: string,
+    grandTotal: number,
+    currency: string,
+    actorUserId: string,
+  ): Promise<void> {
+    const target = Math.max(0, Math.round(Number(grandTotal || 0) * 100) / 100);
+    if (!(target > 0)) return;
+
+    const entries = await this.prisma.cashBookEntry.findMany({
+      where: { orderId },
+      select: { amount: true, direction: true },
+    });
+    let paid = 0;
+    for (const e of entries) {
+      if (e.direction === 'INCOME') paid += Number(e.amount || 0);
+      else paid -= Number(e.amount || 0);
+    }
+    paid = Math.round(paid * 100) / 100;
+    const missing = Math.round((target - paid) * 100) / 100;
+    if (!(missing > 0.0001)) return;
+
+    await this.prisma.cashBookEntry.create({
+      data: {
+        orderId,
+        userId: actorUserId,
+        amount: missing,
+        currency: (currency || 'TRY').toUpperCase(),
+        direction: 'INCOME',
+        note: 'T-Soft senkron: Hazırlanıyor durumunda otomatik tam tahsilat.',
+      },
+    });
+  }
+
+  /**
    * T-Soft siparişlerini çeker ve CRM SalesOrder tablosuna yazar.
    * - Normal siparişler (son 30 gün)
    * - Sepet terk siparişler (orderStatusId=1, 'Henüz Tamamlanmadı')
@@ -787,6 +825,14 @@ export class EcommerceService {
             status: crmStatus as any,
           },
         });
+        if (crmStatus === 'PREPARING') {
+          await this.ensureTsoftPreparingOrderFullyPaid(
+            existing.id,
+            Number(existing.grandTotal ?? 0),
+            String(existing.currency || 'TRY'),
+            existing.createdById || userId,
+          );
+        }
         if (prevStatus !== crmStatus) {
           await this.autoReplyEngine.processOrderStatusEvent({
             orderId: existing.id,
@@ -921,6 +967,14 @@ export class EcommerceService {
           } as any,
           select: { id: true, orderNumber: true },
         });
+        if (crmStatus === 'PREPARING') {
+          await this.ensureTsoftPreparingOrderFullyPaid(
+            newOrder.id,
+            Math.round(grandTotal * 100) / 100,
+            currency,
+            assignedUserId,
+          );
+        }
 
         // Otomatik görev oluştur
         try {
