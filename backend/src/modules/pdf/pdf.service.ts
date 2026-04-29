@@ -377,8 +377,9 @@ export class PdfService {
           ? FOOTER_STRIP_H + SIG_BLOCK_H + SIG_TOP_GAP + SIG_BOTTOM_SAFE   // ~94
           : FOOTER_STRIP_H + 36;                                             // ~56
 
-        // Metin akışı için (notes/terms/footer): aynı rezerv — önceki 36 çok azdı
-        const textFlowBottomPad = signatureBottomPad + 16;
+        // Metin akışı için: imza artık içeriğin hemen altında, sayfaya sabitli değil.
+        // Sadece footer şeridi kadar rezerv yeterli.
+        const textFlowBottomPad = FOOTER_STRIP_H + 12;
 
         // Tablo satırları için: özetler + metin akışı da alt kısımda yer tutacak
         const TABLE_ROW_BOTTOM_PAD = signatureBottomPad + 120;
@@ -852,7 +853,7 @@ export class PdfService {
         }
 
         if (settings.bankInfo || settings.bank2Info || bankQrBuffer) {
-          const qrSize = bankQrBuffer ? 82 : 0;
+          const qrSize = bankQrBuffer ? 110 : 0;
           const qrGap = bankQrBuffer ? 10 : 0;
           const textW = bankQrBuffer ? Math.max(160, PW - qrSize - qrGap) : PW;
           const halfW = textW > 20 ? (textW - 10) / 2 : textW;
@@ -887,17 +888,10 @@ export class PdfService {
 
         // ── SIGNATURE ────────────────────────────────────────────────────
         if (settings.showSignatureArea) {
-          const sigMinY = rowY + SIG_TOP_GAP;
-          const sigMaxY = PAGE_H - SIG_BOTTOM_SAFE - SIG_BLOCK_H;
-
-          // FIX 9: imza için yer yoksa yeni sayfaya al — rowY zorla kesilmiyor
-          let sigY: number;
-          if (sigMinY > sigMaxY) {
-            rowY = drawPageTopFn();
-            sigY = rowY + SIG_TOP_GAP;
-          } else {
-            sigY = Math.max(sigMinY, Math.min(PAGE_H - 100, sigMaxY));
-          }
+          // İçeriğin hemen altına yerleştir — sayfanın en altına sabitlenmez
+          const sigNeeded = SIG_TOP_GAP + SIG_BLOCK_H + 16;
+          rowY = ensureSpace(rowY, sigNeeded, FOOTER_STRIP_H + 10);
+          const sigY = rowY + SIG_TOP_GAP;
 
           if (settings.showAuthorizedSignature) {
             doc.moveTo(ML, sigY).lineTo(ML + 150, sigY).lineWidth(0.4).strokeColor('#aaaaaa').stroke();
@@ -905,6 +899,7 @@ export class PdfService {
           }
           doc.moveTo(ML + PW - 150, sigY).lineTo(ML + PW, sigY).lineWidth(0.4).strokeColor('#aaaaaa').stroke();
           txt(this.t('Musteri Imza / Kase'), ML + PW - 150, sigY + 4, { size: 8, color: '#666' });
+          rowY = sigY + SIG_BLOCK_H;
         }
 
         // ── FOOTER ───────────────────────────────────────────────────────

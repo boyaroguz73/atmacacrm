@@ -631,8 +631,9 @@ export class QuotesService {
     const title = docKind === 'QUOTE' ? 'SATIŞ TEKLİFİ' : 'PROFORMA TEKLİF';
 
     const addr =
-      (c.billingAddress && String(c.billingAddress).trim()) ||
+      (c.shippingAddress && String(c.shippingAddress).trim()) ||
       (c.address && String(c.address).trim()) ||
+      (c.billingAddress && String(c.billingAddress).trim()) ||
       undefined;
 
     const overrideGrandTotal =
@@ -901,7 +902,7 @@ export class QuotesService {
         vatTotal: quote.vatTotal,
         grandTotal: quote.grandTotal,
         notes: mergedNotes,
-        shippingAddress: quote.contact?.address ?? undefined,
+        shippingAddress: quote.contact?.shippingAddress ?? quote.contact?.address ?? undefined,
         depositBalanceReminderSent: false,
         expectedDeliveryDate: quote.deliveryDate ?? undefined,
         items: {
@@ -919,6 +920,7 @@ export class QuotesService {
             email: true,
             company: true,
             address: true,
+            shippingAddress: true,
             billingAddress: true,
             taxOffice: true,
             taxNumber: true,
@@ -998,7 +1000,7 @@ export class QuotesService {
           contactCompany: orderFull.contact.company || undefined,
           contactPhone: orderFull.contact.phone,
           contactEmail: orderFull.contact.email || undefined,
-          shippingAddress: orderFull.contact.address || undefined,
+          shippingAddress: orderFull.contact.shippingAddress || orderFull.contact.address || undefined,
           expectedDelivery: orderFull.expectedDeliveryDate
             ? new Date(orderFull.expectedDeliveryDate).toLocaleDateString('tr-TR')
             : undefined,
