@@ -58,8 +58,6 @@ export interface PdfData {
   contactPhone?: string;
   contactEmail?: string;
   contactAddress?: string;
-  shippingAddress?: string;
-  billingAddress?: string;
   contactTaxOffice?: string;
   contactTaxNumber?: string;
   contactIdentityNumber?: string;
@@ -384,7 +382,7 @@ export class PdfService {
         const textFlowBottomPad = FOOTER_STRIP_H + 12;
 
         // Tablo satırları için: özetler + metin akışı da alt kısımda yer tutacak
-        const TABLE_ROW_BOTTOM_PAD = signatureBottomPad + 48;
+        const TABLE_ROW_BOTTOM_PAD = signatureBottomPad + 120;
 
         // ── Helper: txt ─────────────────────────────────────────────────
         const txt = (
@@ -567,23 +565,11 @@ export class PdfService {
           leftY += txt(`${this.t('Temsilci')}: ${this.t(data.createdByName)}`, leftX, leftY, { size: 8, bold: true, color: primary, width: leftW, lineBreak: true }) + 2;
         }
 
-        const shippingAddress = data.shippingAddress?.trim() || '';
-        const billingAddress = data.billingAddress?.trim() || '';
         rightY += txt(this.t('Adres Bilgileri'), rightX, rightY, { size: 8, bold: true, color: primary, width: rightW, lineBreak: true }) + 2;
-        if (shippingAddress) {
-          rightY += txt(this.t('Sevkiyat Adresi:'), rightX, rightY, { size: 8, bold: true, color: '#555', width: rightW, lineBreak: true }) + 1;
-          rightY += txt(this.t(shippingAddress), rightX, rightY, { size: 8, width: rightW, lineBreak: true }) + 3;
-        }
-        if (billingAddress) {
-          rightY += txt(this.t('Fatura Adresi:'), rightX, rightY, { size: 8, bold: true, color: '#555', width: rightW, lineBreak: true }) + 1;
-          rightY += txt(this.t(billingAddress), rightX, rightY, { size: 8, width: rightW, lineBreak: true }) + 3;
-        }
-        if (!shippingAddress && !billingAddress) {
-          if (data.contactAddress) {
-            rightY += txt(this.t(data.contactAddress), rightX, rightY, { size: 8, width: rightW, lineBreak: true }) + 2;
-          } else {
-            rightY += txt('-', rightX, rightY, { size: 8, width: rightW, lineBreak: true }) + 2;
-          }
+        if (data.contactAddress) {
+          rightY += txt(this.t(data.contactAddress), rightX, rightY, { size: 8, width: rightW, lineBreak: true }) + 2;
+        } else {
+          rightY += txt('-', rightX, rightY, { size: 8, width: rightW, lineBreak: true }) + 2;
         }
         if (data.contactTaxOffice || data.contactTaxNumber) {
           rightY += txt(`VD: ${this.t(data.contactTaxOffice || '')}  VN: ${data.contactTaxNumber || ''}`, rightX, rightY, { size: 8, width: rightW, lineBreak: true }) + 2;
@@ -881,10 +867,9 @@ export class PdfService {
           const blockH = Math.max(textH, qrSize);
           const approxTitle = 16;
           const bankSectionHeight = approxTitle + blockH + 10;
-          const signatureReserve = settings.showSignatureArea ? SIG_TOP_GAP + SIG_BLOCK_H + 6 : 0;
+          const signatureReserve = settings.showSignatureArea ? SIG_TOP_GAP + SIG_BLOCK_H + 8 : 0;
 
-          // Banka + QR + imza artık içeriğin hemen altında aktığından, yalnızca
-          // footer şeridi kadar alt pay bırakmak yeterli.
+          // Banka + imza aynı sayfada kalsın; sadece footer şeridi kadar rezerv tut
           rowY = ensureSpace(rowY, bankSectionHeight + signatureReserve, FOOTER_STRIP_H + 10);
 
           rowY += txt(this.t('Banka Bilgileri:'), ML, rowY, { size: 8.5, bold: true, width: PW, lineBreak: true }) + 2;
@@ -943,6 +928,13 @@ export class PdfService {
     ].filter(Boolean);
     const bill = data.billingAddress?.trim();
     const ship = data.shippingAddress?.trim();
+    let mergedAddr: string | undefined;
+    if (bill && ship && bill !== ship) {
+      mergedAddr = `${bill}\n\n${this.t('Teslimat')}: ${ship}`;
+    } else {
+      mergedAddr = bill || ship || undefined;
+    }
+
     return this.generateDocument({
       title: this.t('SIPARIS ONAY FORMU'),
       documentNumber: data.documentNumber,
@@ -952,8 +944,7 @@ export class PdfService {
       contactCompany: data.contactCompany,
       contactPhone: data.contactPhone,
       contactEmail: data.contactEmail,
-      shippingAddress: ship || undefined,
-      billingAddress: bill || undefined,
+      contactAddress: mergedAddr,
       contactTaxOffice: data.contactTaxOffice,
       contactTaxNumber: data.contactTaxNumber,
       contactIdentityNumber: data.contactIdentityNumber,
