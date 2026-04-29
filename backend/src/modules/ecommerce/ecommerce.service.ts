@@ -664,14 +664,15 @@ export class EcommerceService {
     const missing = Math.round((target - paid) * 100) / 100;
     if (!(missing > 0.0001)) return;
 
+    const cur = (currency || 'TRY').toUpperCase();
     await this.prisma.cashBookEntry.create({
       data: {
         orderId,
         userId: actorUserId,
         amount: missing,
-        currency: (currency || 'TRY').toUpperCase(),
         direction: 'INCOME',
-        note: 'T-Soft senkron: Hazırlanıyor durumunda otomatik tam tahsilat.',
+        method: 'OTHER',
+        description: `T-Soft senkron: Hazırlanıyor durumunda otomatik tam tahsilat. (${cur})`,
       },
     });
   }
