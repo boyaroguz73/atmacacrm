@@ -153,6 +153,7 @@ export class QuotesService {
         company: true,
         city: true,
         address: true,
+        shippingAddress: true,
         billingAddress: true,
         taxOffice: true,
         taxNumber: true,
