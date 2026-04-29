@@ -672,6 +672,8 @@ export class QuotesService {
       contactPhone: c.phone,
       contactEmail: c.email || undefined,
       contactAddress: addr,
+      shippingAddress: c.shippingAddress?.trim() || c.address?.trim() || undefined,
+      billingAddress: c.billingAddress?.trim() || undefined,
       contactTaxOffice: c.taxOffice?.trim() || undefined,
       contactTaxNumber: c.taxNumber?.trim() || undefined,
       contactIdentityNumber: c.identityNumber?.trim() || undefined,
