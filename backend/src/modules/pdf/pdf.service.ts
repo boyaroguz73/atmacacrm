@@ -58,6 +58,7 @@ export interface PdfData {
   contactPhone?: string;
   contactEmail?: string;
   contactAddress?: string;
+  billingAddress?: string;
   shippingAddress?: string;
   contactTaxOffice?: string;
   contactTaxNumber?: string;
