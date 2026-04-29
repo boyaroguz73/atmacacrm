@@ -695,16 +695,22 @@ export default function OrderDetailPage() {
                 </p>
               </div>
             </div>
-            <select
-              value={order.status}
-              disabled={statusSaving}
-              onChange={(e) => void patchStatus(e.target.value as OrderStatus)}
-              className="px-2.5 py-1.5 rounded-lg border border-gray-200 text-xs bg-white font-medium shrink-0"
-            >
-              {(Object.keys(STATUS_LABELS) as OrderStatus[]).map((s) => (
-                <option key={s} value={s}>{STATUS_LABELS[s]}</option>
-              ))}
-            </select>
+            <div className="shrink-0 flex flex-col items-end gap-1">
+              <p className="text-[11px] text-gray-500">
+                Atanan temsilci:{' '}
+                <span className="font-semibold text-gray-700">{order.createdBy?.name || '—'}</span>
+              </p>
+              <select
+                value={order.status}
+                disabled={statusSaving}
+                onChange={(e) => void patchStatus(e.target.value as OrderStatus)}
+                className="px-2.5 py-1.5 rounded-lg border border-gray-200 text-xs bg-white font-medium"
+              >
+                {(Object.keys(STATUS_LABELS) as OrderStatus[]).map((s) => (
+                  <option key={s} value={s}>{STATUS_LABELS[s]}</option>
+                ))}
+              </select>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-4 gap-3">

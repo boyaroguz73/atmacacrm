@@ -17,7 +17,6 @@ interface PdfSettings {
   companyMersisNo: string;
   logoUrl: string;
   logoHeight: number;
-  /** Banka QR (FAST/EFT); PDF’te banka metinleriyle hizalı sağ alt */
   bankQrUrl: string;
   bankInfo: string;
   bank2Info: string;
@@ -38,14 +37,12 @@ interface StyledRun {
 interface LineItem {
   name: string;
   description?: string;
-  /** Renk/kumaş · ölçü (satır altı) */
   lineDetail?: string;
   quantity: number;
   unitPrice: number;
   vatRate: number;
   discountText?: string;
   lineTotal: number;
-  /** Uzak ürün görseli; PDF oluşturulurken küçük önizleme için indirilir */
   imageUrl?: string;
 }
 
@@ -63,7 +60,6 @@ export interface PdfData {
   contactAddress?: string;
   contactTaxOffice?: string;
   contactTaxNumber?: string;
-  /** TC Kimlik No (şahıs / fatura) */
   contactIdentityNumber?: string;
   items: LineItem[];
   currency: string;
@@ -74,13 +70,10 @@ export interface PdfData {
   notes?: string;
   termsOverride?: string;
   footerNoteOverride?: string;
-  /** order_form: kalem satırları çizgisiz yumuşak bloklar */
   layout?: 'default' | 'order_form';
-  /** Belgeyi oluşturan temsilci adı */
   createdByName?: string;
 }
 
-/** Teklif → sipariş onay formu (tablo çizgileri yumuşak, kurumsal düzen) */
 export interface OrderConfirmationPdfData {
   documentNumber: string;
   date: string;
@@ -88,7 +81,6 @@ export interface OrderConfirmationPdfData {
   contactCompany?: string;
   contactPhone?: string;
   contactEmail?: string;
-  /** Fatura / firma adresi (öncelikli) */
   billingAddress?: string;
   shippingAddress?: string;
   contactTaxOffice?: string;
@@ -104,7 +96,6 @@ export interface OrderConfirmationPdfData {
   vatTotal: number;
   grandTotal: number;
   orderNotes?: string;
-  /** Belgeyi oluşturan temsilci adı */
   createdByName?: string;
 }
 
@@ -151,13 +142,6 @@ export class PdfService {
     return this.fontPath ? (text || '') : tr(text || '');
   }
 
-  /**
-   * HTML içeriğini PDFKit'in işleyebileceği düz metne çevirir.
-   * <b>, <strong> → kalın belirteç korunmaz (PDFKit inline bold desteklemiyor)
-   * <li> → "• " öneki eklenir
-   * <br>, <p>, </div>, </li> → satır sonu
-   * HTML entity'leri decode edilir
-   */
   private htmlToPlainText(html: string): string {
     if (!html) return '';
     if (!html.includes('<')) return html;
@@ -180,10 +164,6 @@ export class PdfService {
       .trim();
   }
 
-  /**
-   * Rich text içeriğin gerçekten metin içerip içermediğini kontrol eder.
-   * Sadece etiket/boşluk (ör. <p><br></p>) varsa false döner.
-   */
   private hasMeaningfulText(html?: string | null): boolean {
     if (html == null) return false;
     const raw = String(html);
@@ -192,14 +172,11 @@ export class PdfService {
     return plain.length > 0;
   }
 
-  /** Basit HTML (b/strong, i/em, br, p, li) -> satir bazli stilli metin */
   private htmlToStyledLines(html: string): StyledRun[][] {
     if (!html) return [];
     const raw = String(html);
     if (!raw.includes('<')) {
-      return raw
-        .split('\n')
-        .map((line) => [{ text: line }]);
+      return raw.split('\n').map((line) => [{ text: line }]);
     }
 
     const decodeEntities = (s: string) =>
@@ -223,63 +200,36 @@ export class PdfService {
       const decoded = decodeEntities(txt).replace(/\r/g, '');
       const chunks = decoded.split('\n');
       chunks.forEach((chunk, i) => {
-        if (chunk.length > 0) {
-          currentLine().push({ text: chunk, bold, italic });
-        }
+        if (chunk.length > 0) currentLine().push({ text: chunk, bold, italic });
         if (i < chunks.length - 1) pushLine();
       });
     };
 
-    // Stack for inline style overrides (span with style attributes)
     const boldStack: boolean[] = [];
     const italicStack: boolean[] = [];
 
     for (const token of parts) {
-      if (!token.startsWith('<')) {
-        pushText(token);
-        continue;
-      }
+      if (!token.startsWith('<')) { pushText(token); continue; }
       const tag = token.toLowerCase().replace(/\s+/g, ' ').trim();
-      if (tag.startsWith('<br')) {
-        pushLine();
-        continue;
-      }
+      if (tag.startsWith('<br')) { pushLine(); continue; }
       if (tag === '<p>' || tag === '<div>') continue;
-      if (tag === '</p>' || tag === '</div>' || tag === '</ul>' || tag === '</ol>' || tag === '</li>') {
-        pushLine();
-        continue;
-      }
+      if (tag === '</p>' || tag === '</div>' || tag === '</ul>' || tag === '</ol>' || tag === '</li>') { pushLine(); continue; }
       if (tag.startsWith('<li')) {
         if (currentLine().length > 0) pushLine();
         currentLine().push({ text: '• ', bold, italic });
         continue;
       }
-      if (tag === '<b>' || tag === '<strong>') {
-        bold = true;
-        continue;
-      }
-      if (tag === '</b>' || tag === '</strong>') {
-        bold = false;
-        continue;
-      }
-      if (tag === '<i>' || tag === '<em>') {
-        italic = true;
-        continue;
-      }
-      if (tag === '</i>' || tag === '</em>') {
-        italic = false;
-        continue;
-      }
-      // Handle <span style="..."> with inline font-weight/font-style
+      if (tag === '<b>' || tag.startsWith('<b ') || tag === '<strong>' || tag.startsWith('<strong ')) { bold = true; continue; }
+      if (tag === '</b>' || tag === '</strong>') { bold = false; continue; }
+      if (tag === '<i>' || tag.startsWith('<i ') || tag === '<em>' || tag.startsWith('<em ')) { italic = true; continue; }
+      if (tag === '</i>' || tag === '</em>') { italic = false; continue; }
       if (tag.startsWith('<span')) {
         const styleMatch = token.match(/style\s*=\s*["']([^"']+)["']/i);
         const style = styleMatch ? styleMatch[1].toLowerCase() : '';
-        const isBoldStyle = /font-weight\s*:\s*(bold|700|800|900)/.test(style);
-        const isItalicStyle = /font-style\s*:\s*italic/.test(style);
         boldStack.push(bold);
         italicStack.push(italic);
-        if (isBoldStyle) bold = true;
-        if (isItalicStyle) italic = true;
+        if (/font-weight\s*:\s*(bold|700|800|900)/.test(style)) bold = true;
+        if (/font-style\s*:\s*italic/.test(style)) italic = true;
         continue;
       }
       if (tag === '</span>') {
@@ -296,9 +246,7 @@ export class PdfService {
     const rows = await this.prisma.systemSetting.findMany({ where: { key: { startsWith: 'pdf_' } } });
     const m = new Map(rows.map((r) => [r.key, r.value]));
     const rawLogoHeight = Number(m.get('pdf_logo_height'));
-    const logoHeight = Number.isFinite(rawLogoHeight)
-      ? Math.max(20, Math.min(120, rawLogoHeight))
-      : 44;
+    const logoHeight = Number.isFinite(rawLogoHeight) ? Math.max(20, Math.min(120, rawLogoHeight)) : 44;
     return {
       companyName: m.get('pdf_company_name') || 'Firma',
       companyAddress: m.get('pdf_company_address') || '',
@@ -336,7 +284,6 @@ export class PdfService {
         });
         return Buffer.from(resp.data);
       }
-      /** `/uploads/...` (`POST /messages/upload`) — axios göreli yolu indiremez; diskten oku */
       let diskRef = u;
       if (diskRef.startsWith('/api/uploads/')) diskRef = diskRef.replace(/^\/api/, '');
       const localPath = diskRef.startsWith('/')
@@ -414,17 +361,32 @@ export class PdfService {
         const R = () => doc.font(this.fontPath ? 'R' : 'Helvetica');
         const B = () => doc.font(this.fontPath ? 'B' : 'Helvetica-Bold');
 
-        // ── Helper: draw text at absolute position, no cursor side effects ──
+        const ML = 40;
+        const MR = 40;
+        const PW = doc.page.width - ML - MR;
+        const PAGE_H = doc.page.height;
+
+        // ── FIX 1: Sayfa alt rezervleri gerçekçi değerlere çıkarıldı ──
+        // İmza + banka + footer için yeterli boşluk
+        const FOOTER_STRIP_H = 20;           // en alttaki footer çizgisi
+        const SIG_BLOCK_H = 30;             // imza çizgisi + yazı
+        const SIG_TOP_GAP = 10;
+        const SIG_BOTTOM_SAFE = 34;
+        // Toplam rezerv: footer + imza bloğu + üst boşluk
+        const signatureBottomPad = settings.showSignatureArea
+          ? FOOTER_STRIP_H + SIG_BLOCK_H + SIG_TOP_GAP + SIG_BOTTOM_SAFE   // ~94
+          : FOOTER_STRIP_H + 36;                                             // ~56
+
+        // Metin akışı için (notes/terms/footer): aynı rezerv — önceki 36 çok azdı
+        const textFlowBottomPad = signatureBottomPad + 16;
+
+        // Tablo satırları için: özetler + metin akışı da alt kısımda yer tutacak
+        const TABLE_ROW_BOTTOM_PAD = signatureBottomPad + 120;
+
+        // ── Helper: txt ─────────────────────────────────────────────────
         const txt = (
           text: string, x: number, y: number,
-          opts: {
-            width?: number;
-            align?: string;
-            size?: number;
-            color?: string;
-            bold?: boolean;
-            lineBreak?: boolean;
-          } = {},
+          opts: { width?: number; align?: string; size?: number; color?: string; bold?: boolean; lineBreak?: boolean } = {},
         ) => {
           if (opts.bold) B(); else R();
           if (opts.size) doc.fontSize(opts.size);
@@ -440,15 +402,14 @@ export class PdfService {
           return h;
         };
 
+        // ── FIX 2: richTxt artık doc ve primary'e erişebilir, ──────────
+        //          her satır öncesi sayfa taşması kontrol edilir
         const richTxt = (
           html: string,
           x: number,
           y: number,
-          opts: {
-            width: number;
-            size?: number;
-            color?: string;
-          },
+          opts: { width: number; size?: number; color?: string },
+          bottomPad = textFlowBottomPad,
         ) => {
           const lines = this.htmlToStyledLines(html);
           let cursorY = y;
@@ -461,6 +422,18 @@ export class PdfService {
               cursorY += Math.max(6, size * 0.8);
               continue;
             }
+
+            // FIX: her satırdan önce sayfa taşması kontrolü
+            const lineText = line.map((r) => r.text).join('');
+            R();
+            doc.fontSize(size);
+            const lineH = doc.heightOfString(this.t(lineText), { width });
+            if (cursorY + lineH > PAGE_H - bottomPad) {
+              doc.addPage({ margin: 0 });
+              doc.rect(0, 0, doc.page.width, 8).fill(primary);
+              cursorY = 28;
+            }
+
             doc.fillColor(color);
             doc.fontSize(size);
             doc.y = cursorY;
@@ -485,30 +458,35 @@ export class PdfService {
           return cursorY - y;
         };
 
-        const ML = 40; // margin left
-        const MR = 40; // margin right
-        const PW = doc.page.width - ML - MR; // 515
-        const PAGE_H = doc.page.height; // 841.89
+        // ── drawPageTop: yeni sayfa aç, üst bant çiz, rowY sıfırla ─────
+        // FIX 3: rowY closure referansıyla değil, döndürerek yönetiliyor
+        const drawPageTopFn = (): number => {
+          doc.addPage({ margin: 0 });
+          doc.rect(0, 0, doc.page.width, 8).fill(primary);
+          return 28;
+        };
+
+        // FIX 4: ensureSpace rowY'yi mutate eden closure yerine değer döndürür
+        const ensureSpace = (currentRowY: number, neededHeight: number, bottomPad = signatureBottomPad): number => {
+          if (currentRowY + neededHeight <= PAGE_H - bottomPad) return currentRowY;
+          return drawPageTopFn();
+        };
 
         // ── HEADER ───────────────────────────────────────────────────────
         doc.rect(0, 0, doc.page.width, 8).fill(primary);
 
         const titleBoxW = 190;
         const titleBoxX = doc.page.width - MR - titleBoxW;
-
-        // Sağ sütun (başlık kutusu) için dinamik yükseklik hesapla.
-        // Böylece içerik kutu dışına taşmaz.
-        const rightMetaCount = 2  // No + Tarih
+        const rightMetaCount = 2
           + (data.validUntil   ? 1 : 0)
           + (data.deliveryDate ? 1 : 0)
           + (data.dueDate      ? 1 : 0);
-        const TITLE_H = 22;          // başlık satırı yüksekliği
-        const META_LINE_H = 13;      // meta satır yüksekliği
-        const BOX_PAD = 10;          // üst + alt iç boşluk
+        const TITLE_H = 22;
+        const META_LINE_H = 13;
+        const BOX_PAD = 10;
         const titleBoxH = Math.max(72, BOX_PAD + TITLE_H + rightMetaCount * META_LINE_H + BOX_PAD);
-        const TITLE_BOX_Y = 10;      // renk bandının hemen altı (8px)
+        const TITLE_BOX_Y = 10;
 
-        // Sol sütun: logo + firma bilgileri
         const logoX = ML + 6;
         const logoY = TITLE_BOX_Y + 4;
         let logoBottom = logoY;
@@ -548,7 +526,6 @@ export class PdfService {
           }
         }
 
-        // Sağ sütun: başlık kutusu
         doc.rect(titleBoxX, TITLE_BOX_Y, titleBoxW, titleBoxH).fill('#f5f5f5');
         let ry2 = TITLE_BOX_Y + BOX_PAD;
         B(); doc.fontSize(12).fillColor(primary);
@@ -556,24 +533,19 @@ export class PdfService {
         ry2 += TITLE_H;
         R(); doc.fontSize(8).fillColor('#444444');
         doc.text(`No: ${data.documentNumber}`, titleBoxX + 8, ry2, { width: titleBoxW - 16, lineBreak: false }); ry2 += META_LINE_H;
-        doc.text(`Tarih: ${data.date}`,         titleBoxX + 8, ry2, { width: titleBoxW - 16, lineBreak: false }); ry2 += META_LINE_H;
+        doc.text(`Tarih: ${data.date}`, titleBoxX + 8, ry2, { width: titleBoxW - 16, lineBreak: false }); ry2 += META_LINE_H;
         if (data.validUntil)   { doc.text(`Gecerlilik: ${data.validUntil}`, titleBoxX + 8, ry2, { width: titleBoxW - 16, lineBreak: false }); ry2 += META_LINE_H; }
-        if (data.deliveryDate) { doc.text(`Teslim: ${data.deliveryDate}`,   titleBoxX + 8, ry2, { width: titleBoxW - 16, lineBreak: false }); ry2 += META_LINE_H; }
-        if (data.dueDate)      { doc.text(`Vade: ${data.dueDate}`,          titleBoxX + 8, ry2, { width: titleBoxW - 16, lineBreak: false }); }
+        if (data.deliveryDate) { doc.text(`Teslim: ${data.deliveryDate}`, titleBoxX + 8, ry2, { width: titleBoxW - 16, lineBreak: false }); ry2 += META_LINE_H; }
+        if (data.dueDate)      { doc.text(`Vade: ${data.dueDate}`, titleBoxX + 8, ry2, { width: titleBoxW - 16, lineBreak: false }); }
 
-        // headerBottom: her iki sütunun (sol ve sağ) en aşağı noktasının altından çizgi
         const titleBoxBottom = TITLE_BOX_Y + titleBoxH;
         const headerBottom = Math.max(cy + 6, titleBoxBottom + 6);
         doc.moveTo(ML, headerBottom).lineTo(ML + PW, headerBottom).lineWidth(1).strokeColor(primary).stroke();
 
-        // ── CUSTOMER INFO (inline / iki sutun) ───────────────────────────
+        // ── CUSTOMER INFO ────────────────────────────────────────────────
         let startY = headerBottom + 8;
         startY += txt(this.t('MUSTERI BILGILERI'), ML, startY, {
-          size: 8,
-          bold: true,
-          color: primary,
-          width: PW,
-          lineBreak: true,
+          size: 8, bold: true, color: primary, width: PW, lineBreak: true,
         }) + 4;
 
         const infoGap = 14;
@@ -585,20 +557,14 @@ export class PdfService {
         let rightY = startY;
 
         leftY += txt(this.t(data.contactName), leftX, leftY, { size: 9, bold: true, width: leftW, lineBreak: true }) + 3;
-        if (data.contactCompany) { leftY += txt(this.t(data.contactCompany), leftX, leftY, { size: 8, width: leftW, lineBreak: true }) + 2; }
-        if (data.contactPhone)   { leftY += txt(`Tel: ${data.contactPhone}`, leftX, leftY, { size: 8, width: leftW, lineBreak: true }) + 2; }
-        if (data.contactEmail)   { leftY += txt(`E: ${data.contactEmail}`, leftX, leftY, { size: 8, width: leftW, lineBreak: true }) + 2; }
+        if (data.contactCompany)  { leftY += txt(this.t(data.contactCompany), leftX, leftY, { size: 8, width: leftW, lineBreak: true }) + 2; }
+        if (data.contactPhone)    { leftY += txt(`Tel: ${data.contactPhone}`, leftX, leftY, { size: 8, width: leftW, lineBreak: true }) + 2; }
+        if (data.contactEmail)    { leftY += txt(`E: ${data.contactEmail}`, leftX, leftY, { size: 8, width: leftW, lineBreak: true }) + 2; }
         if (data.createdByName) {
           leftY += txt(`${this.t('Temsilci')}: ${this.t(data.createdByName)}`, leftX, leftY, { size: 8, bold: true, color: primary, width: leftW, lineBreak: true }) + 2;
         }
 
-        rightY += txt(this.t('Adres Bilgileri'), rightX, rightY, {
-          size: 8,
-          bold: true,
-          color: primary,
-          width: rightW,
-          lineBreak: true,
-        }) + 2;
+        rightY += txt(this.t('Adres Bilgileri'), rightX, rightY, { size: 8, bold: true, color: primary, width: rightW, lineBreak: true }) + 2;
         if (data.contactAddress) {
           rightY += txt(this.t(data.contactAddress), rightX, rightY, { size: 8, width: rightW, lineBreak: true }) + 2;
         } else {
@@ -618,7 +584,6 @@ export class PdfService {
         const ROW_H = 20;
         const HEADER_H = 18;
 
-        /* Sütun genişlikleri toplamı PW olmalı; son sütun (toplam) dar kalınca başlık taşması önlenir */
         const COL_IDX = 30;
         const COL_NAME = 196;
         const COL_QTY = 52;
@@ -632,32 +597,30 @@ export class PdfService {
           { label: `${this.t('Toplam KDV Haric')} (${cs})`, w: COL_TOT },
         ];
 
-        // Header row
-        doc.rect(ML, tableY, PW, HEADER_H).fill(primary);
-        let colX = ML;
-        cols.forEach((col, colIdx) => {
-          txt(col.label, colX + 3, tableY + 5, {
-            size: 7.5,
-            bold: true,
-            color: '#ffffff',
-            width: col.w - 6,
-            align: colIdx === 1 ? 'left' : (colIdx === 4 ? 'right' : 'center'),
+        // Tablo başlığı çiz (yeni sayfada da tekrar kullanılmak üzere fonksiyon)
+        const drawTableHeader = (y: number) => {
+          doc.rect(ML, y, PW, HEADER_H).fill(primary);
+          let colX = ML;
+          cols.forEach((col, colIdx) => {
+            txt(col.label, colX + 3, y + 5, {
+              size: 7.5, bold: true, color: '#ffffff', width: col.w - 6,
+              align: colIdx === 1 ? 'left' : (colIdx === 4 ? 'right' : 'center'),
+            });
+            colX += col.w;
           });
-          colX += col.w;
-        });
+          return y + HEADER_H;
+        };
 
-        // Data rows
-        let rowY = tableY + HEADER_H;
+        let rowY = drawTableHeader(tableY);
         const softLayout = data.layout === 'order_form';
+
         data.items.forEach((item, idx) => {
           const imgBuf = itemImageBuffers[idx];
           const lineDetailRaw = (item as LineItem).lineDetail
             ? String((item as LineItem).lineDetail).trim()
             : '';
 
-          // Ürün görselini %15 büyüt.
           const imageScale = 1.15;
-          // Kalem satırı yüksekliği: ürün adı + renk/kumaş & ölçü (çok satır) — sabit 16px taşmayı önler
           const thumb = Math.round(22 * imageScale);
           const thumbSz = Math.round(26 * imageScale);
           const namePadSoft = imgBuf ? thumbSz + 8 : 4;
@@ -669,22 +632,13 @@ export class PdfService {
           const nameHSoft = doc.heightOfString(this.t(item.name), { width: nameWSoft });
           R(); doc.fontSize(8);
           const nameHDefault = doc.heightOfString(this.t(item.name), { width: nameWDefault });
-
           R(); doc.fontSize(7);
-          const detailHSoft = lineDetailRaw
-            ? doc.heightOfString(this.t(lineDetailRaw), { width: nameWSoft })
-            : 0;
+          const detailHSoft = lineDetailRaw ? doc.heightOfString(this.t(lineDetailRaw), { width: nameWSoft }) : 0;
           R(); doc.fontSize(7);
-          const detailHDefault = lineDetailRaw
-            ? doc.heightOfString(this.t(lineDetailRaw), { width: nameWDefault })
-            : 0;
+          const detailHDefault = lineDetailRaw ? doc.heightOfString(this.t(lineDetailRaw), { width: nameWDefault }) : 0;
 
           const itemH = softLayout
-            ? Math.max(
-                32,
-                imgBuf ? 36 : 0,
-                6 + nameHSoft + (lineDetailRaw ? 2 + detailHSoft : 0) + 8,
-              )
+            ? Math.max(32, imgBuf ? 36 : 0, 6 + nameHSoft + (lineDetailRaw ? 2 + detailHSoft : 0) + 8)
             : 0;
 
           const rowHDefault = Math.max(
@@ -694,12 +648,15 @@ export class PdfService {
           );
 
           const blockH = softLayout ? itemH + 6 : rowHDefault;
-          // Sayfa taşması
-          if (rowY + blockH + 8 > PAGE_H - 120) {
+
+          // FIX 5: TABLE_ROW_BOTTOM_PAD gerçekçi rezervle sayfa taşmasını önler
+          //        Yeni sayfada tablo başlığı da yeniden çiziliyor
+          if (rowY + blockH + 8 > PAGE_H - TABLE_ROW_BOTTOM_PAD) {
             doc.addPage({ margin: 0 });
             doc.rect(0, 0, doc.page.width, 8).fill(primary);
-            rowY = 30;
+            rowY = drawTableHeader(20);
           }
+
           if (softLayout) {
             doc.roundedRect(ML, rowY, PW, itemH, 3).fill(idx % 2 === 0 ? '#f4f6f9' : '#eef1f6');
             let rx = ML + 8;
@@ -709,21 +666,13 @@ export class PdfService {
             const nameColLeft = rx;
             const namePad = imgBuf ? thumbSz + 8 : 4;
             if (imgBuf) {
-              try {
-                doc.image(imgBuf, nameColLeft + 2, rowY + 5, { width: thumbSz, height: thumbSz, fit: [thumbSz, thumbSz] });
-              } catch { /* gecersiz goruntu */ }
+              try { doc.image(imgBuf, nameColLeft + 2, rowY + 5, { width: thumbSz, height: thumbSz, fit: [thumbSz, thumbSz] }); } catch { /* */ }
             }
             R(); doc.fontSize(9).fillColor('#222');
-            doc.text(this.t(item.name), nameColLeft + namePad, rowY + 6, {
-              width: cols[1].w - namePad - 4,
-              lineBreak: true,
-            });
+            doc.text(this.t(item.name), nameColLeft + namePad, rowY + 6, { width: cols[1].w - namePad - 4, lineBreak: true });
             if (lineDetailRaw) {
               doc.fontSize(7).fillColor('#444444');
-              doc.text(this.t(lineDetailRaw), nameColLeft + namePad, rowY + 6 + nameHSoft + 2, {
-                width: cols[1].w - namePad - 4,
-                lineBreak: true,
-              });
+              doc.text(this.t(lineDetailRaw), nameColLeft + namePad, rowY + 6 + nameHSoft + 2, { width: cols[1].w - namePad - 4, lineBreak: true });
             }
             rx += cols[1].w;
             doc.fontSize(8).fillColor('#333');
@@ -732,47 +681,29 @@ export class PdfService {
             doc.text(item.unitPrice.toFixed(2), rx, rowY + 10, { width: cols[3].w - 6, align: 'center', lineBreak: false });
             rx += cols[3].w;
             B(); doc.fillColor(primary);
-            doc.text((item.unitPrice * item.quantity).toFixed(2), rx, rowY + 10, {
-              width: cols[4].w - 6,
-              align: 'right',
-              lineBreak: false,
-            });
+            doc.text((item.unitPrice * item.quantity).toFixed(2), rx, rowY + 10, { width: cols[4].w - 6, align: 'right', lineBreak: false });
             rowY += itemH + 6;
           } else {
-            if (idx % 2 === 1) {
-              doc.rect(ML, rowY, PW, rowHDefault).fill('#f9f9f9');
-            }
+            if (idx % 2 === 1) doc.rect(ML, rowY, PW, rowHDefault).fill('#f9f9f9');
             let rx = ML;
             R(); doc.fontSize(8).fillColor('#333');
             doc.text(String(idx + 1), rx + 3, rowY + 6, { width: cols[0].w - 6, align: 'center', lineBreak: false }); rx += cols[0].w;
             const nameColX = rx;
             const pad = imgBuf ? thumb + 8 : 6;
             if (imgBuf) {
-              try {
-                doc.image(imgBuf, nameColX + 3, rowY + 4, { width: thumb, height: thumb, fit: [thumb, thumb] });
-              } catch { /* */ }
+              try { doc.image(imgBuf, nameColX + 3, rowY + 4, { width: thumb, height: thumb, fit: [thumb, thumb] }); } catch { /* */ }
             }
             R(); doc.fontSize(8).fillColor('#333333');
             const nameBlockWidth = cols[1].w - pad - 3;
             const detailBlockWidth = cols[1].w - pad - 3;
             const nameHeight = doc.heightOfString(this.t(item.name), { width: nameBlockWidth, align: 'center' });
-            const detailHeight = lineDetailRaw
-              ? doc.heightOfString(this.t(lineDetailRaw), { width: detailBlockWidth, align: 'center' })
-              : 0;
+            const detailHeight = lineDetailRaw ? doc.heightOfString(this.t(lineDetailRaw), { width: detailBlockWidth, align: 'center' }) : 0;
             const stackedHeight = nameHeight + (lineDetailRaw ? 2 + detailHeight : 0);
             const contentStartY = rowY + Math.max(4, (rowHDefault - stackedHeight) / 2);
-            doc.text(this.t(item.name), nameColX + pad, contentStartY, {
-              width: nameBlockWidth,
-              align: 'left',
-              lineBreak: true,
-            });
+            doc.text(this.t(item.name), nameColX + pad, contentStartY, { width: nameBlockWidth, align: 'left', lineBreak: true });
             if (lineDetailRaw) {
               doc.fontSize(7).fillColor('#444444');
-              doc.text(this.t(lineDetailRaw), nameColX + pad, contentStartY + nameHeight + 2, {
-                width: detailBlockWidth,
-                align: 'left',
-                lineBreak: true,
-              });
+              doc.text(this.t(lineDetailRaw), nameColX + pad, contentStartY + nameHeight + 2, { width: detailBlockWidth, align: 'left', lineBreak: true });
             }
             rx += cols[1].w;
             txt(String(item.quantity), rx + 3, rowY + 6, { size: 8, width: cols[2].w - 6, align: 'center' }); rx += cols[2].w;
@@ -782,30 +713,14 @@ export class PdfService {
           }
         });
 
-        // Table bottom line
         doc.moveTo(ML, rowY).lineTo(ML + PW, rowY).lineWidth(0.5).strokeColor('#cccccc').stroke();
         rowY += 12;
-
-        const drawPageTop = () => {
-          doc.addPage({ margin: 0 });
-          doc.rect(0, 0, doc.page.width, 8).fill(primary);
-          rowY = 28;
-        };
-        const signatureBottomPad = settings.showSignatureArea ? 92 : 56;
-        const sigTopGap = 10;
-        const sigBlockH = 20;
-        const sigBottomSafe = 34;
-        const ensureSpace = (neededHeight: number, bottomPad = signatureBottomPad) => {
-          if (rowY + neededHeight <= PAGE_H - bottomPad) return;
-          drawPageTop();
-        };
 
         // ── SUMMARY ──────────────────────────────────────────────────────
         const sumX = ML + PW - 220;
         const lblW = 125;
         const valW = 95;
 
-        /** Etiket çok satıra düşebilir; satır yüksekliği içerik kadar (üst üste binmeyi önler) */
         const sumRow = (label: string, value: string, y: number, bold = false, color = '#333333') => {
           const hL = txt(label, sumX, y, { size: 9, bold, color, width: lblW, lineBreak: true });
           const hR = txt(value, sumX + lblW, y, { size: 9, bold, color, width: valW, align: 'right', lineBreak: false });
@@ -818,49 +733,42 @@ export class PdfService {
         const hasGeneralDiscount = discAmt > 0.005;
         const subBeforeDiscount = Math.round((subEx + discAmt) * 100) / 100;
 
+        // FIX 6: Özet bloğu tek parça olarak sığmıyorsa yeni sayfa aç
+        const estimateSumRowH = (label: string, value: string) => {
+          R(); doc.fontSize(9);
+          return Math.max(
+            doc.heightOfString(this.t(label), { width: lblW }),
+            doc.heightOfString(value, { width: valW, align: 'right' }),
+            11,
+          ) + 6;
+        };
+        const uniqueVatRates = [
+          ...new Set((data.items ?? []).map((i) => Math.round(Number((i as LineItem).vatRate) || 0))),
+        ].filter((r) => r > 0);
+        const singleVatPercent = uniqueVatRates.length === 1 ? uniqueVatRates[0] : null;
+        const kdvLabel = singleVatPercent != null ? `KDV Tutari (%${singleVatPercent}):` : 'KDV Tutari:';
+
+        const summaryNeeded =
+          estimateSumRowH('Ara Tutar (KDV haric):', fmtMoney(hasGeneralDiscount ? subBeforeDiscount : subEx)) +
+          (hasGeneralDiscount ? estimateSumRowH('Iskontolu Ara Tutar (KDV haric):', fmtMoney(subEx)) : 0) +
+          estimateSumRowH(kdvLabel, fmtMoney(vatAmt)) +
+          Math.max(
+            doc.heightOfString(this.t('GENEL TOPLAM (KDV dahil):'), { width: lblW }),
+            doc.heightOfString(fmtMoney(data.grandTotal), { width: valW }),
+            12,
+          ) + 16 + 10;
+
+        rowY = ensureSpace(rowY, summaryNeeded + 4);
+
         rowY += sumRow(this.t('Ara Tutar (KDV haric):'), fmtMoney(hasGeneralDiscount ? subBeforeDiscount : subEx), rowY);
         if (hasGeneralDiscount) {
           rowY += sumRow(this.t('Iskontolu Ara Tutar (KDV haric):'), fmtMoney(subEx), rowY, true, primary);
         }
-        const uniqueVatRates = [
-          ...new Set(
-            (data.items ?? []).map((i) => Math.round(Number((i as LineItem).vatRate) || 0)),
-          ),
-        ].filter((r) => r > 0);
-        const singleVatPercent = uniqueVatRates.length === 1 ? uniqueVatRates[0] : null;
-        const kdvLabel =
-          singleVatPercent != null
-            ? `KDV Tutari (%${singleVatPercent}):`
-            : 'KDV Tutari:';
-        // Toplamlar bloğunu tek parça gibi ele al: altta kesilme/taşma olmasın.
-        const estimateSumRowHeight = (label: string, value: string, bold = false) => {
-          R();
-          doc.fontSize(9);
-          const lh = doc.heightOfString(this.t(label), { width: lblW });
-          const rh = doc.heightOfString(value, { width: valW, align: 'right' });
-          return Math.max(lh, rh, 11) + 6 + (bold ? 0 : 0);
-        };
-        const summaryNeeded =
-          estimateSumRowHeight('Ara Tutar (KDV haric):', fmtMoney(hasGeneralDiscount ? subBeforeDiscount : subEx)) +
-          (hasGeneralDiscount
-            ? estimateSumRowHeight('Iskontolu Ara Tutar (KDV haric):', fmtMoney(subEx), true)
-            : 0) +
-          estimateSumRowHeight(kdvLabel, fmtMoney(vatAmt)) +
-          // genel toplam kutusu + blok sonrası boşluk
-          (Math.max(
-            doc.heightOfString(this.t('GENEL TOPLAM (KDV dahil):'), { width: lblW }),
-            doc.heightOfString(fmtMoney(data.grandTotal), { width: valW, align: 'right' }),
-            12,
-          ) + 16 + 10);
-        ensureSpace(summaryNeeded + 4);
         rowY += sumRow(this.t(kdvLabel), fmtMoney(vatAmt), rowY);
 
-        // Genel toplam kutusu: sabit 22px yerine etiket+tutar yüksekliğine göre
         const labelGT = this.t('GENEL TOPLAM (KDV dahil):');
         const valGT = fmtMoney(data.grandTotal);
-        B();
-        doc.fontSize(9);
-        doc.fillColor('#ffffff');
+        B(); doc.fontSize(9); doc.fillColor('#ffffff');
         const hGTLabel = doc.heightOfString(labelGT, { width: lblW });
         const hGTVal = doc.heightOfString(valGT, { width: valW, align: 'right' });
         const innerH = Math.max(hGTLabel, hGTVal, 12);
@@ -881,86 +789,68 @@ export class PdfService {
           : settings.footerNote;
         const termsText = this.htmlToPlainText(rawTermsSource);
         const footerNoteText = this.htmlToPlainText(rawFooterSource);
+
         if (data.notes) {
           const notesRaw = data.notes;
           const notesPlain = this.htmlToPlainText(notesRaw);
           R(); doc.fontSize(8).fillColor('#444');
-          const h = doc.heightOfString(this.t(notesPlain), { width: PW }) + 8;
-          ensureSpace(h + 8, signatureBottomPad);
           if (String(notesRaw).includes('<')) {
-            const estimated = Math.max(h * 1.25, 24);
-            ensureSpace(estimated + 8, signatureBottomPad);
+            // FIX 7: richTxt içinde satır başı kontrolü var, direkt çağır
             rowY += richTxt(String(notesRaw), ML, rowY, { width: PW, size: 8, color: '#444' }) + 6;
           } else {
+            const h = doc.heightOfString(this.t(notesPlain), { width: PW }) + 8;
+            rowY = ensureSpace(rowY, h + 8, textFlowBottomPad);
             doc.text(this.t(notesPlain), ML, rowY, { width: PW, lineBreak: true });
             rowY += h + 6;
           }
         }
+
         if (termsText) {
           rowY += 4;
-          // Basligin bir sayfada tek basina kalmasini engelle:
-          // en az baslik + ayirici + ilk 1-2 satir metin birlikte sigsin.
-          R();
-          doc.fontSize(7.5);
-          const minTermsBody = Math.max(
-            doc.heightOfString(this.t(termsText), { width: PW }) * 0.18,
-            24,
-          );
-          const termsHeaderReserve = 4 + 12 + 6 + minTermsBody + 6;
-          ensureSpace(termsHeaderReserve, signatureBottomPad);
+          const termsBlockWidth = PW;
+          const termsIsHtml = String(rawTermsSource).includes('<');
+
+          R(); doc.fontSize(7.5);
+          const firstParagraph = this.t(termsText).split(/\n{2,}/).find((p) => p.trim().length > 0) || this.t(termsText);
+          const firstParagraphH = doc.heightOfString(firstParagraph.replace(/\n/g, ' \n'), { width: termsBlockWidth });
+          const htmlIntroEstimate = Math.max(doc.heightOfString(this.t(termsText), { width: termsBlockWidth }) * 0.25, 24);
+          const minTermsBody = termsIsHtml ? htmlIntroEstimate : Math.max(firstParagraphH, 24);
+          const termsHeaderReserve = 12 + 6 + minTermsBody + 6;
+
+          rowY = ensureSpace(rowY, termsHeaderReserve, textFlowBottomPad);
           R(); doc.fontSize(8.5).fillColor(primary);
           doc.text(this.t('Sartlar ve Kosullar'), ML, rowY, { width: PW, lineBreak: false });
           rowY += 12;
-          doc
-            .moveTo(ML, rowY - 2)
-            .lineTo(ML + PW, rowY - 2)
-            .lineWidth(0.4)
-            .strokeColor(primary)
-            .stroke();
+          doc.moveTo(ML, rowY - 2).lineTo(ML + PW, rowY - 2).lineWidth(0.4).strokeColor(primary).stroke();
           rowY += 6;
           R(); doc.fontSize(7.5).fillColor('#333333');
-          const termsBlockWidth = PW;
-          const termsIsHtml = String(rawTermsSource).includes('<');
           if (termsIsHtml) {
-            const estimated = Math.max(
-              doc.heightOfString(this.t(termsText), { width: termsBlockWidth }) * 1.3,
-              28,
-            );
-            ensureSpace(estimated + 14, signatureBottomPad);
-            rowY += richTxt(String(rawTermsSource), ML, rowY, {
-              width: termsBlockWidth,
-              size: 7.5,
-              color: '#333333',
-            }) + 3;
+            rowY += richTxt(String(rawTermsSource), ML, rowY, { width: termsBlockWidth, size: 7.5, color: '#333333' }) + 3;
           } else {
             const paragraphs = this.t(termsText).split(/\n{2,}/);
             for (const p of paragraphs) {
               const block = p.replace(/\n/g, ' \n');
               const hBlock = doc.heightOfString(block, { width: termsBlockWidth }) + 3;
-              ensureSpace(hBlock + 10, signatureBottomPad);
+              rowY = ensureSpace(rowY, hBlock + 10, textFlowBottomPad);
               doc.text(block, ML, rowY, { width: termsBlockWidth, lineBreak: true });
               rowY += hBlock + 3;
             }
           }
           rowY += 6;
         }
+
         if (footerNoteText) {
           R(); doc.fontSize(8).fillColor('#444');
-          const h = doc.heightOfString(this.t(footerNoteText), { width: PW }) + 8;
-          ensureSpace(h + 8, signatureBottomPad);
           if (String(rawFooterSource).includes('<')) {
-            const estimated = Math.max(h * 1.25, 24);
-            ensureSpace(estimated + 10, signatureBottomPad);
-            rowY += richTxt(String(rawFooterSource), ML, rowY, {
-              width: PW,
-              size: 8,
-              color: '#444',
-            }) + 8;
+            rowY += richTxt(String(rawFooterSource), ML, rowY, { width: PW, size: 8, color: '#444' }) + 8;
           } else {
+            const h = doc.heightOfString(this.t(footerNoteText), { width: PW }) + 8;
+            rowY = ensureSpace(rowY, h + 8, textFlowBottomPad);
             doc.text(this.t(footerNoteText), ML, rowY, { width: PW, lineBreak: true });
             rowY += h + 8;
           }
         }
+
         if (settings.bankInfo || settings.bank2Info || bankQrBuffer) {
           const qrSize = bankQrBuffer ? 82 : 0;
           const qrGap = bankQrBuffer ? 10 : 0;
@@ -970,56 +860,45 @@ export class PdfService {
           R(); doc.fontSize(8).fillColor('#444');
           let h1 = 0;
           let h2 = 0;
-          if (settings.bankInfo) {
-            h1 = doc.heightOfString(this.t(settings.bankInfo), { width: halfW });
-          }
-          if (settings.bank2Info) {
-            h2 = doc.heightOfString(this.t(settings.bank2Info), { width: halfW });
-          }
+          if (settings.bankInfo) h1 = doc.heightOfString(this.t(settings.bankInfo), { width: halfW });
+          if (settings.bank2Info) h2 = doc.heightOfString(this.t(settings.bank2Info), { width: halfW });
           const textH = Math.max(h1, h2);
           const blockH = Math.max(textH, qrSize);
           const approxTitle = 16;
           const bankSectionHeight = approxTitle + blockH + 10;
-          const signatureReserve = settings.showSignatureArea ? sigTopGap + sigBlockH + 8 : 0;
-          // Mümkün olduğunda banka/QR ve imzayı aynı sayfada tut.
-          ensureSpace(bankSectionHeight + signatureReserve, signatureBottomPad);
+          const signatureReserve = settings.showSignatureArea ? SIG_TOP_GAP + SIG_BLOCK_H + 8 : 0;
+
+          // FIX 8: banka + imza bloğunu mümkünse aynı sayfada tut
+          rowY = ensureSpace(rowY, bankSectionHeight + signatureReserve, signatureBottomPad);
 
           rowY += txt(this.t('Banka Bilgileri:'), ML, rowY, { size: 8.5, bold: true, width: PW, lineBreak: true }) + 2;
           const yBank = rowY;
-
           R(); doc.fontSize(8).fillColor('#444');
-          if (settings.bankInfo) {
-            doc.text(this.t(settings.bankInfo), ML, yBank, { width: halfW, lineBreak: true });
-          }
-          if (settings.bank2Info) {
-            doc.text(this.t(settings.bank2Info), ML + halfW + 10, yBank, { width: halfW, lineBreak: true });
-          }
+          if (settings.bankInfo) doc.text(this.t(settings.bankInfo), ML, yBank, { width: halfW, lineBreak: true });
+          if (settings.bank2Info) doc.text(this.t(settings.bank2Info), ML + halfW + 10, yBank, { width: halfW, lineBreak: true });
           if (bankQrBuffer) {
             try {
               const qy = yBank + (textH > qrSize ? textH - qrSize : 0);
-              doc.image(bankQrBuffer, ML + textW + qrGap, qy, {
-                width: qrSize,
-                height: qrSize,
-                fit: [qrSize, qrSize],
-              });
-            } catch {
-              /* geçersiz görsel */
-            }
+              doc.image(bankQrBuffer, ML + textW + qrGap, qy, { width: qrSize, height: qrSize, fit: [qrSize, qrSize] });
+            } catch { /* geçersiz görsel */ }
           }
           rowY = yBank + blockH + 10;
         }
 
         // ── SIGNATURE ────────────────────────────────────────────────────
         if (settings.showSignatureArea) {
-          // İmza sadece gerçekten sığmıyorsa yeni sayfaya alınır.
-          let sigMinY = rowY + sigTopGap;
-          let sigMaxY = PAGE_H - sigBottomSafe - sigBlockH;
+          const sigMinY = rowY + SIG_TOP_GAP;
+          const sigMaxY = PAGE_H - SIG_BOTTOM_SAFE - SIG_BLOCK_H;
+
+          // FIX 9: imza için yer yoksa yeni sayfaya al — rowY zorla kesilmiyor
+          let sigY: number;
           if (sigMinY > sigMaxY) {
-            drawPageTop();
-            sigMinY = rowY + sigTopGap;
-            sigMaxY = PAGE_H - sigBottomSafe - sigBlockH;
+            rowY = drawPageTopFn();
+            sigY = rowY + SIG_TOP_GAP;
+          } else {
+            sigY = Math.max(sigMinY, Math.min(PAGE_H - 100, sigMaxY));
           }
-          const sigY = Math.max(sigMinY, Math.min(PAGE_H - 100, sigMaxY));
+
           if (settings.showAuthorizedSignature) {
             doc.moveTo(ML, sigY).lineTo(ML + 150, sigY).lineWidth(0.4).strokeColor('#aaaaaa').stroke();
             txt(this.t('Yetkili Imza / Kase'), ML, sigY + 4, { size: 8, color: '#666' });
@@ -1030,8 +909,6 @@ export class PdfService {
 
         // ── FOOTER ───────────────────────────────────────────────────────
         const footerY = PAGE_H - 20;
-        const sigBottomPad = settings.showSignatureArea ? 92 : 56;
-        if (rowY > PAGE_H - sigBottomPad) rowY = PAGE_H - sigBottomPad;
         doc.moveTo(ML, footerY - 8).lineTo(ML + PW, footerY - 8).lineWidth(0.3).strokeColor('#dddddd').stroke();
 
         doc.end();
@@ -1042,7 +919,6 @@ export class PdfService {
     });
   }
 
-  /** Tekliften oluşan sipariş için onay PDF’i (logo, banka, şartlar, imza alanları — yumuşak kalem blokları) */
   async generateOrderConfirmationPdf(data: OrderConfirmationPdfData): Promise<string> {
     const discountLine =
       data.discountTotal > 0.005

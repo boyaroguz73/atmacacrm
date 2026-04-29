@@ -522,6 +522,9 @@ export default function OrdersPage() {
                       <span className={`inline-flex text-[11px] font-semibold px-3 py-1.5 rounded-full whitespace-nowrap ${statusBadgeClass(order.status)}`}>
                         {STATUS_LABELS[order.status]}
                       </span>
+                      <div className="mt-1 text-[11px] text-gray-500">
+                        Atanan: <span className="font-medium text-gray-700">{order.createdBy?.name || '—'}</span>
+                      </div>
                       {ecomVisible && order.pushToTsoft && order.tsoftLastError && !order.tsoftSiteOrderId ? (
                         <div
                           className="mt-1 inline-flex text-[10px] font-semibold px-2 py-0.5 rounded-full bg-red-50 text-red-700"
