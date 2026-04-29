@@ -53,7 +53,6 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 
 export default function SiteOrderDetailsPanel({ data }: Props) {
   const [open, setOpen] = useState(true);
-  const [showRaw, setShowRaw] = useState(false);
 
   const f = useMemo(() => {
     if (!data) return null;
@@ -161,20 +160,6 @@ export default function SiteOrderDetailsPanel({ data }: Props) {
               <Row label="Taksit" value={f.installment} />
             </Section>
 
-            <Section title="Kargo">
-              <Row label="Firma" value={f.cargo} />
-              <Row label="Takip No" value={f.cargoTracking} />
-              <Row label="Kargo Kodu" value={f.cargoCode} />
-              <Row label="Bedel (KDV Hariç)" value={f.cargoCharge} />
-              <Row label="KDV %" value={f.cargoVat} />
-            </Section>
-
-            <Section title="Hizmet">
-              <Row label="Ad" value={f.serviceName} />
-              <Row label="Bedel" value={f.serviceCharge} />
-              <Row label="KDV %" value={f.serviceVat} />
-            </Section>
-
             <Section title="Müşteri (site)">
               <Row label="Site ID" value={f.customerId} />
               <Row label="WS Kodu" value={f.customerCode} />
@@ -213,20 +198,6 @@ export default function SiteOrderDetailsPanel({ data }: Props) {
             </Section>
           </div>
 
-          <div className="pt-2 border-t border-amber-100/70">
-            <button
-              type="button"
-              onClick={() => setShowRaw((v) => !v)}
-              className="text-xs text-amber-800 hover:text-amber-900 underline"
-            >
-              {showRaw ? 'Ham veriyi gizle' : 'Ham T-Soft verisini göster'}
-            </button>
-            {showRaw ? (
-              <pre className="mt-2 text-[11px] font-mono bg-white border border-amber-100 rounded-lg p-3 max-h-96 overflow-auto whitespace-pre-wrap break-all">
-                {JSON.stringify(data, null, 2)}
-              </pre>
-            ) : null}
-          </div>
         </div>
       ) : null}
     </div>

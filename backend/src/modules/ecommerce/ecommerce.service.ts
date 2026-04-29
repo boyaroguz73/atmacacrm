@@ -677,6 +677,42 @@ export class EcommerceService {
     });
   }
 
+  /** T-Soft ödeme bilgisinden kredi kartı/online kart tahsilatını heuristik olarak yakalar. */
+  private isTsoftCardPayment(raw: Record<string, unknown>): boolean {
+    const val = String(
+      raw.PaymentType ??
+      raw.paymentType ??
+      raw.PaymentInfo ??
+      raw.paymentInfo ??
+      raw.PaymentName ??
+      raw.paymentName ??
+      '',
+    )
+      .toLowerCase()
+      .trim();
+    if (!val) return false;
+
+    // "havale", "kapida odeme", "nakit" gibi kart disi tipleri ele.
+    if (
+      val.includes('havale') ||
+      val.includes('eft') ||
+      val.includes('kapida') ||
+      val.includes('nakit') ||
+      val.includes('virman') ||
+      val.includes('transfer')
+    ) {
+      return false;
+    }
+    return (
+      val.includes('kredi kart') ||
+      val.includes('credit card') ||
+      val.includes('bank card') ||
+      val.includes('sanal pos') ||
+      val.includes('pos') ||
+      val.includes('card')
+    );
+  }
+
   /**
    * T-Soft siparişlerini çeker ve CRM SalesOrder tablosuna yazar.
    * - Normal siparişler (son 30 gün)
@@ -826,7 +862,7 @@ export class EcommerceService {
             status: crmStatus as any,
           },
         });
-        if (crmStatus === 'PREPARING') {
+        if (crmStatus === 'PREPARING' && this.isTsoftCardPayment(raw)) {
           await this.ensureTsoftPreparingOrderFullyPaid(
             existing.id,
             Number(existing.grandTotal ?? 0),
@@ -968,7 +1004,7 @@ export class EcommerceService {
           } as any,
           select: { id: true, orderNumber: true },
         });
-        if (crmStatus === 'PREPARING') {
+        if (crmStatus === 'PREPARING' && this.isTsoftCardPayment(raw)) {
           await this.ensureTsoftPreparingOrderFullyPaid(
             newOrder.id,
             Math.round(grandTotal * 100) / 100,
